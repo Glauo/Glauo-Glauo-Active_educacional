@@ -220,9 +220,9 @@ def format_money(value):
 # ==============================================================================
 if not st.session_state["logged_in"]:
     left, right = st.columns([1.15, 1])
-with left:
-    st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
+    with left:
+        st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
             st.image(str(logo_path), width=210)
