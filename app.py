@@ -1,5 +1,4 @@
 import base64
-import base64
 import datetime
 from pathlib import Path
 
@@ -35,9 +34,9 @@ st.markdown(
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 700; color: #1a2a44; font-size: 1.05rem;}
-    .login-area {max-width: 520px; margin: 0 auto;}
-    .login-card {background: #9ed9ea; border: 2.5px solid #111; padding: 18px; border-radius: 4px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
+    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
+    .login-area {max-width: 460px; margin: 0 auto;}
+    .login-card {background: #bfe9f6; border: 2.5px solid #0d1b6f; padding: 16px; border-radius: 8px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
     .login-card div[data-testid="stForm"] {background: transparent !important; border: none !important; padding: 0 !important;}
     .login-card .stForm {background: transparent !important; border: none !important; padding: 0 !important;}
     .login-card fieldset {border: none !important;}
@@ -46,6 +45,7 @@ st.markdown(
         font-family: 'Manrope', sans-serif;
         font-weight: 800;
         color: #111;
+        font-size: 0.95rem;
     }
     .login-hero {text-align: center;}
     .login-hero img {display: block; margin: 0 auto;}
@@ -56,8 +56,8 @@ st.markdown(
         padding: 22px;
         box-shadow: 0 14px 36px rgba(10,20,60,0.12);
     }
-    .hero-header {display: flex; align-items: center; gap: 18px; justify-content: flex-start;}
-    .hero-logo {width: 160px; height: auto; display: block;}
+    .hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
+    .hero-logo {width: 120px; height: auto; display: block;}
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -76,7 +76,7 @@ st.markdown(
         font-weight: 700;
         color: var(--brand-900);
         font-family: 'Sora', sans-serif;
-        margin: 8px 0 6px;
+        margin: 6px 0 6px;
     }
     .hero-sub {
         font-size: 1rem;
@@ -94,7 +94,7 @@ st.markdown(
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     div.stButton > button {width: 100%;}
     .login-card div.stButton > button {
-        background: #ffd54f;
+        background: #ffe082;
         color: #111;
         border: 2px solid #f2c230;
         font-weight: 800;
@@ -104,9 +104,9 @@ st.markdown(
     .login-card [data-baseweb="input"] input,
     .login-card [data-baseweb="textarea"] textarea,
     .login-card [data-baseweb="select"] > div {
-        background: #ffffff !important;
-        border: 1.4px solid #111 !important;
-        border-radius: 3px !important;
+        background: #f8fbff !important;
+        border: 1.6px solid #0d1b6f !important;
+        border-radius: 6px !important;
     }
     .login-card [data-baseweb="input"] input:focus,
     .login-card [data-baseweb="textarea"] textarea:focus,
@@ -151,14 +151,14 @@ if "users" not in st.session_state:
 
 def get_logo_path():
     candidates = [
-        Path("logo_active.png"),
-        Path("logo_active.jpg"),
-        Path("logo_active.jpeg"),
-        Path("logo_active.webp"),
         Path("logo_active2.png"),
         Path("logo_active2.jpg"),
         Path("logo_active2.jpeg"),
         Path("logo_active2.webp"),
+        Path("logo_active.png"),
+        Path("logo_active.jpg"),
+        Path("logo_active.jpeg"),
+        Path("logo_active.webp"),
         Path("logo.png"),
         Path("logo.jpg"),
         Path("logo.jpeg"),
@@ -256,15 +256,14 @@ if not st.session_state["logged_in"]:
             unsafe_allow_html=True,
         )
         st.markdown("<div class='hero-points'>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Mensagens diretas com alunos e turmas</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Aulas gravadas e materiais organizados</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Financeiro simples e controle de matriculas</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Mensagens diretas com alunos e turmas</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Aulas gravadas e materiais organizados</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Financeiro simples e controle de matriculas</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='hero-badges'>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Seguro</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Rapido</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Profissional</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
