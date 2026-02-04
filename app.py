@@ -35,23 +35,29 @@ st.markdown(
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 600; color: #1a2a44; font-size: 1.05rem;}
-    .login-area {max-width: 680px; margin: 0 auto;}
-    .login-card {background: var(--mint-50); border: 3px solid var(--brand-700); padding: 22px; border-radius: 16px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
+    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 700; color: #1a2a44; font-size: 1.05rem;}
+    .login-area {max-width: 520px; margin: 0 auto;}
+    .login-card {background: #9ed9ea; border: 2.5px solid #111; padding: 18px; border-radius: 4px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
     .login-card div[data-testid="stForm"] {background: transparent !important; border: none !important; padding: 0 !important;}
     .login-card .stForm {background: transparent !important; border: none !important; padding: 0 !important;}
     .login-card fieldset {border: none !important;}
     .login-card form {margin-top: 0 !important;}
-    .login-area label {font-family: 'Manrope', sans-serif; font-weight: 700; color: #111;}
+    .login-area label {
+        font-family: 'Manrope', sans-serif;
+        font-weight: 800;
+        color: #111;
+    }
     .login-hero {text-align: center;}
     .login-hero img {display: block; margin: 0 auto;}
     .hero-card {
         background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
         border: 2px solid rgba(26,35,126,0.2);
         border-radius: 18px;
-        padding: 26px;
+        padding: 22px;
         box-shadow: 0 14px 36px rgba(10,20,60,0.12);
     }
+    .hero-header {display: flex; align-items: center; gap: 18px; justify-content: flex-start;}
+    .hero-logo {width: 160px; height: auto; display: block;}
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -66,14 +72,14 @@ st.markdown(
         font-family: 'Sora', sans-serif;
     }
     .hero-title {
-        font-size: 2.1rem;
+        font-size: 2rem;
         font-weight: 700;
         color: var(--brand-900);
         font-family: 'Sora', sans-serif;
         margin: 8px 0 6px;
     }
     .hero-sub {
-        font-size: 1.05rem;
+        font-size: 1rem;
         color: #2c3e62;
         font-weight: 600;
         margin-bottom: 14px;
@@ -83,16 +89,30 @@ st.markdown(
     .hero-point:last-child {border-bottom: none;}
     .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
+    .login-header-empty {display: none !important;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     div.stButton > button {width: 100%;}
     .login-card div.stButton > button {
-        background: linear-gradient(135deg, #1A237E, #2c4be0);
-        color: #fff;
-        border: none;
-        font-weight: 700;
+        background: #ffd54f;
+        color: #111;
+        border: 2px solid #f2c230;
+        font-weight: 800;
         border-radius: 10px;
-        padding: 0.6rem 1rem;
+        padding: 0.55rem 1rem;
+    }
+    .login-card [data-baseweb="input"] input,
+    .login-card [data-baseweb="textarea"] textarea,
+    .login-card [data-baseweb="select"] > div {
+        background: #ffffff !important;
+        border: 1.4px solid #111 !important;
+        border-radius: 3px !important;
+    }
+    .login-card [data-baseweb="input"] input:focus,
+    .login-card [data-baseweb="textarea"] textarea:focus,
+    .login-card [data-baseweb="select"] > div:focus-within {
+        border-color: #2c4be0 !important;
+        box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
     }
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
 </style>
@@ -217,14 +237,20 @@ def format_money(value):
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state["logged_in"]:
-    left, right = st.columns([1.15, 1])
+    left, right = st.columns([1.05, 1])
     with left:
-        st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
         st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
-            st.image(str(logo_path), width=210)
-        st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
+            st.markdown("<div class='hero-header'>", unsafe_allow_html=True)
+            st.markdown(
+                f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
         st.markdown(
             "<div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>",
             unsafe_allow_html=True,
