@@ -33,33 +33,26 @@ st.markdown(
     }
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
-    .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-<<<<<<< HEAD
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 600; color: #1a2a44; font-size: 1.05rem;}
-    .login-area {max-width: 680px; margin: 0 auto;}
-    .login-card {background: var(--mint-50); border: 3px solid var(--brand-700); padding: 22px; border-radius: 16px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
-    .login-card div[data-testid="stForm"] {background: transparent !important; border: none !important; padding: 0 !important;}
-    .login-card .stForm {background: transparent !important; border: none !important; padding: 0 !important;}
-    .login-card fieldset {border: none !important;}
-    .login-card form {margin-top: 0 !important;}
-    .login-area label {font-family: 'Manrope', sans-serif; font-weight: 700; color: #111;}
-=======
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
->>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
+.login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
+.login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
+.login-area {max-width: 680px; margin: 0 auto;}
+.login-card {background: var(--mint-50); border: 3px solid var(--brand-700); padding: 22px; border-radius: 16px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
+.login-card div[data-testid="stForm"] {background: transparent !important; border: none !important; padding: 0 !important;}
+.login-card .stForm {background: transparent !important; border: none !important; padding: 0 !important;}
+.login-card fieldset {border: none !important;}
+.login-card form {margin-top: 0 !important;}
+.login-area label {font-family: 'Manrope', sans-serif; font-weight: 700; color: #111;}
     .login-hero {text-align: center;}
     .login-hero img {display: block; margin: 0 auto;}
-    .hero-card {
-        background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
-        border: 2px solid rgba(26,35,126,0.2);
-        border-radius: 18px;
-        padding: 26px;
-        box-shadow: 0 14px 36px rgba(10,20,60,0.12);
-    }
-<<<<<<< HEAD
-=======
-    .hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
-    .hero-logo {width: 180px; height: auto; display: block;}
->>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
+.hero-card {
+    background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
+    border: 2px solid rgba(26,35,126,0.2);
+    border-radius: 18px;
+    padding: 26px;
+    box-shadow: 0 14px 36px rgba(10,20,60,0.12);
+}
+.hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
+.hero-logo {width: 180px; height: auto; display: block;}
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -93,19 +86,16 @@ st.markdown(
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
-    div.stButton > button {width: 100%;}
-<<<<<<< HEAD
-    .login-card div.stButton > button {
-        background: linear-gradient(135deg, #1A237E, #2c4be0);
-        color: #fff;
-        border: none;
-        font-weight: 700;
-        border-radius: 10px;
-        padding: 0.6rem 1rem;
-    }
-=======
-    .login-form-title {margin-bottom: 6px;}
->>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
+div.stButton > button {width: 100%;}
+.login-card div.stButton > button {
+    background: linear-gradient(135deg, #1A237E, #2c4be0);
+    color: #fff;
+    border: none;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+}
+.login-form-title {margin-bottom: 6px;}
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
 </style>
 """,
@@ -230,12 +220,9 @@ def format_money(value):
 # ==============================================================================
 if not st.session_state["logged_in"]:
     left, right = st.columns([1.15, 1])
-    with left:
-<<<<<<< HEAD
-        st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
-=======
->>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
-        st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
+with left:
+    st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
             st.image(str(logo_path), width=210)
@@ -256,10 +243,6 @@ if not st.session_state["logged_in"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-<<<<<<< HEAD
-        st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='login-title'>Conecte-se</div>", unsafe_allow_html=True)
-=======
         st.markdown(
             """
 <style>
@@ -305,7 +288,6 @@ if not st.session_state["logged_in"]:
             unsafe_allow_html=True,
         )
         st.markdown("<div class='login-title login-form-title'>Conecte-se</div>", unsafe_allow_html=True)
->>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
         st.markdown(
             "<div class='login-tagline'>Acesse a Plataforma Educacional</div>",
             unsafe_allow_html=True,
