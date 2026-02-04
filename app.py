@@ -239,8 +239,6 @@ def format_money(value):
 if not st.session_state["logged_in"]:
     left, right = st.columns([1.05, 1])
     with left:
-        st.markdown("<div class='hero-card login-header-empty'>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
@@ -270,8 +268,6 @@ if not st.session_state["logged_in"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div class='hero-card login-header-empty'>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
         st.markdown("<div class='login-title'>Conecte-se</div>", unsafe_allow_html=True)
         st.markdown(
