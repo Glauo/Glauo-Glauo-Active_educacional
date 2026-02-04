@@ -89,6 +89,7 @@ st.markdown(
     .hero-point:last-child {border-bottom: none;}
     .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
+    .login-header-empty {display: none !important;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     div.stButton > button {width: 100%;}
@@ -238,7 +239,8 @@ def format_money(value):
 if not st.session_state["logged_in"]:
     left, right = st.columns([1.05, 1])
     with left:
-        st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-card login-header-empty'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
@@ -268,6 +270,8 @@ if not st.session_state["logged_in"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
+        st.markdown("<div class='hero-card login-header-empty'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
         st.markdown("<div class='login-title'>Conecte-se</div>", unsafe_allow_html=True)
         st.markdown(
