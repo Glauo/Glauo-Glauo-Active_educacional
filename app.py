@@ -1,5 +1,4 @@
 import base64
-import base64
 import datetime
 from pathlib import Path
 
@@ -35,6 +34,7 @@ st.markdown(
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
+<<<<<<< HEAD
     .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 600; color: #1a2a44; font-size: 1.05rem;}
     .login-area {max-width: 680px; margin: 0 auto;}
     .login-card {background: var(--mint-50); border: 3px solid var(--brand-700); padding: 22px; border-radius: 16px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
@@ -43,6 +43,9 @@ st.markdown(
     .login-card fieldset {border: none !important;}
     .login-card form {margin-top: 0 !important;}
     .login-area label {font-family: 'Manrope', sans-serif; font-weight: 700; color: #111;}
+=======
+    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
+>>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
     .login-hero {text-align: center;}
     .login-hero img {display: block; margin: 0 auto;}
     .hero-card {
@@ -52,6 +55,11 @@ st.markdown(
         padding: 26px;
         box-shadow: 0 14px 36px rgba(10,20,60,0.12);
     }
+<<<<<<< HEAD
+=======
+    .hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
+    .hero-logo {width: 180px; height: auto; display: block;}
+>>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -70,7 +78,7 @@ st.markdown(
         font-weight: 700;
         color: var(--brand-900);
         font-family: 'Sora', sans-serif;
-        margin: 8px 0 6px;
+        margin: 6px 0 6px;
     }
     .hero-sub {
         font-size: 1.05rem;
@@ -86,6 +94,7 @@ st.markdown(
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     div.stButton > button {width: 100%;}
+<<<<<<< HEAD
     .login-card div.stButton > button {
         background: linear-gradient(135deg, #1A237E, #2c4be0);
         color: #fff;
@@ -94,6 +103,9 @@ st.markdown(
         border-radius: 10px;
         padding: 0.6rem 1rem;
     }
+=======
+    .login-form-title {margin-bottom: 6px;}
+>>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
 </style>
 """,
@@ -131,14 +143,14 @@ if "users" not in st.session_state:
 
 def get_logo_path():
     candidates = [
-        Path("logo_active.png"),
-        Path("logo_active.jpg"),
-        Path("logo_active.jpeg"),
-        Path("logo_active.webp"),
         Path("logo_active2.png"),
         Path("logo_active2.jpg"),
         Path("logo_active2.jpeg"),
         Path("logo_active2.webp"),
+        Path("logo_active.png"),
+        Path("logo_active.jpg"),
+        Path("logo_active.jpeg"),
+        Path("logo_active.webp"),
         Path("logo.png"),
         Path("logo.jpg"),
         Path("logo.jpeg"),
@@ -219,7 +231,10 @@ def format_money(value):
 if not st.session_state["logged_in"]:
     left, right = st.columns([1.15, 1])
     with left:
+<<<<<<< HEAD
         st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
+=======
+>>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
         st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
@@ -230,20 +245,67 @@ if not st.session_state["logged_in"]:
             unsafe_allow_html=True,
         )
         st.markdown("<div class='hero-points'>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Mensagens diretas com alunos e turmas</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Aulas gravadas e materiais organizados</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>• Financeiro simples e controle de matriculas</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Mensagens diretas com alunos e turmas</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Aulas gravadas e materiais organizados</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-point'>- Financeiro simples e controle de matriculas</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div class='hero-badges'>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Seguro</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Rapido</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Profissional</span>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
+<<<<<<< HEAD
         st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
         st.markdown("<div class='login-title'>Conecte-se</div>", unsafe_allow_html=True)
+=======
+        st.markdown(
+            """
+<style>
+    div[data-testid="stForm"] {
+        max-width: 460px;
+        margin: 10px auto 0;
+        background: #bfe9f6;
+        border: 2.5px solid #0d1b6f;
+        padding: 16px;
+        border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(13,27,111,0.12);
+    }
+    div[data-testid="stForm"] fieldset {border: none !important;}
+    div[data-testid="stForm"] label {
+        font-family: 'Manrope', 'Segoe UI', sans-serif;
+        font-weight: 800;
+        color: #111;
+        font-size: 0.95rem;
+    }
+    div[data-testid="stForm"] div.stButton > button {
+        background: #ffe082;
+        color: #111;
+        border: 2px solid #f2c230;
+        font-weight: 800;
+        border-radius: 10px;
+        padding: 0.55rem 1rem;
+    }
+    div[data-testid="stForm"] [data-baseweb="input"] input,
+    div[data-testid="stForm"] [data-baseweb="textarea"] textarea,
+    div[data-testid="stForm"] [data-baseweb="select"] > div {
+        background: #f8fbff !important;
+        border: 1.6px solid #0d1b6f !important;
+        border-radius: 6px !important;
+    }
+    div[data-testid="stForm"] [data-baseweb="input"] input:focus,
+    div[data-testid="stForm"] [data-baseweb="textarea"] textarea:focus,
+    div[data-testid="stForm"] [data-baseweb="select"] > div:focus-within {
+        border-color: #2c4be0 !important;
+        box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
+    }
+</style>
+""",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div class='login-title login-form-title'>Conecte-se</div>", unsafe_allow_html=True)
+>>>>>>> 700640b469d8ee9d41737f3b605828469c61f4d9
         st.markdown(
             "<div class='login-tagline'>Acesse a Plataforma Educacional</div>",
             unsafe_allow_html=True,
@@ -261,7 +323,6 @@ if not st.session_state["logged_in"]:
             entrar = st.form_submit_button("Entrar")
         if entrar:
             login_user(role, nome.strip() or "Usuario", unidade.strip())
-        st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # AREA DO ALUNO
