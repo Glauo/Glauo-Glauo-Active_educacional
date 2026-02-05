@@ -214,6 +214,20 @@ ADMIN_PASSWORD = "123"
 USERS_FILE = Path("users.json")
 WHATSAPP_NUMBER = "5599999999999"
 
+if not st.session_state["logged_in"]:
+    st.markdown(get_background_css(), unsafe_allow_html=True)
+else:
+    st.markdown(
+        """
+<style>
+    .stApp {
+        background: #e0e0e0;
+    }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
 
 
 def get_logo_path():
@@ -262,7 +276,6 @@ def get_background_css():
 """
 
 
-st.markdown(get_background_css(), unsafe_allow_html=True)
 
 
 # --- FUNCOES DE LOGIN ---
