@@ -121,8 +121,15 @@ st.markdown(
         font-weight: 600;
         margin: 6px 0 10px;
     }
-    .hero-list {list-style: none; padding-left: 0; margin: 10px 0 0;}
-    .hero-list li {padding: 6px 0; border-bottom: 1px dashed rgba(26,35,126,0.15); color: #2b3550;}
+    .hero-list {list-style: none; padding-left: 0; margin: 12px 0 0; display: grid; gap: 8px;}
+    .hero-list li {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.92);
+        box-shadow: 0 6px 14px rgba(13,27,111,0.12);
+        color: #2b3550;
+        border: 1px solid rgba(13,27,111,0.12);
+    }
     .hero-list li:last-child {border-bottom: none;}
     .hero-badges {margin-top: 14px; display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
