@@ -141,6 +141,19 @@ st.markdown(
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
     header, footer {visibility: hidden;}
     [data-testid="stToolbar"] {display: none;}
+    .whatsapp-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #25d366;
+        color: #0c0f1a;
+        font-weight: 800;
+        padding: 10px 14px;
+        border-radius: 12px;
+        text-decoration: none;
+        box-shadow: 0 10px 24px rgba(37,211,102,0.25);
+        border: 1px solid rgba(0,0,0,0.08);
+    }
     [data-testid="stSidebar"] .stButton > button {
         width: 100%;
         border-radius: 10px;
@@ -189,6 +202,8 @@ if "payables" not in st.session_state:
     st.session_state["payables"] = []
 if "users" not in st.session_state:
     st.session_state["users"] = []
+if "fee_templates" not in st.session_state:
+    st.session_state["fee_templates"] = []
 if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
 if "email_log" not in st.session_state:
@@ -197,6 +212,7 @@ if "email_log" not in st.session_state:
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
 USERS_FILE = Path("users.json")
+WHATSAPP_NUMBER = "5599999999999"
 
 
 
@@ -322,6 +338,39 @@ def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def parse_date(value):
+    try:
+        return datetime.datetime.strptime(value, "%d/%m/%Y").date()
+    except Exception:
+        return None
+
+
+def is_overdue(item):
+    if item.get("status") == "Pago":
+        return False
+    venc = parse_date(item.get("vencimento", ""))
+    if not venc:
+        return False
+    return venc < datetime.date.today()
+
+
+def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
+    codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
+    st.session_state["receivables"].append(
+        {
+            "descricao": descricao.strip() or "Mensalidade",
+            "aluno": aluno.strip(),
+            "categoria": categoria,
+            "cobranca": cobranca,
+            "codigo": codigo,
+            "valor": valor.strip(),
+            "vencimento": vencimento.strftime("%d/%m/%Y"),
+            "status": "Aberto",
+        }
+    )
+    return codigo
+
+
 def allowed_portals(profile):
     if profile == "Aluno":
         return ["Aluno"]
@@ -406,6 +455,9 @@ if not st.session_state["logged_in"]:
                 <span class='hero-badge'>Rapido</span>
                 <span class='hero-badge'>Profissional</span>
             </div>
+            <div style="margin-top: 16px;">
+                <a class="whatsapp-btn" href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank">💬 Atendimento no WhatsApp</a>
+            </div>
         </div>
         """
         st.markdown(hero_html, unsafe_allow_html=True)
@@ -467,6 +519,7 @@ elif st.session_state["role"] == "Aluno":
                 "📊 Boletim e Frequencia",
                 "💬 Mensagens",
                 "🎥 Aulas Gravadas",
+                "💰 Financeiro",
                 "📂 Materiais de Ciz",
             ],
             "menu_aluno",
@@ -482,6 +535,7 @@ elif st.session_state["role"] == "Aluno":
         "📊 Boletim e Frequencia": "Boletim & Frequencia",
         "💬 Mensagens": "Mensagens",
         "🎥 Aulas Gravadas": "Aulas Gravadas",
+        "💰 Financeiro": "Financeiro",
         "📂 Materiais de Ciz": "Materiais de Estudo",
     }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
@@ -604,6 +658,34 @@ elif st.session_state["role"] == "Aluno":
                 if mat["link"]:
                     st.markdown(f"[Abrir material]({mat['link']})")
                 st.markdown("---")
+
+    elif menu_aluno == "Financeiro":
+        st.markdown('<p class="main-header">Financeiro do Aluno</p>', unsafe_allow_html=True)
+        nome_aluno = st.session_state["user_name"]
+        meus = [r for r in st.session_state["receivables"] if r.get("aluno") == nome_aluno]
+        if not meus:
+            st.info("Nenhuma cobranca cadastrada para voce.")
+        else:
+            abertos = [r for r in meus if not is_overdue(r) and r.get("status") != "Pago"]
+            vencidos = [r for r in meus if is_overdue(r)]
+
+            st.markdown("### A pagar")
+            if abertos:
+                st.dataframe(pd.DataFrame(abertos), use_container_width=True)
+            else:
+                st.info("Sem cobrancas em aberto.")
+
+            st.markdown("### Vencidas")
+            if vencidos:
+                st.dataframe(pd.DataFrame(vencidos), use_container_width=True)
+            else:
+                st.info("Sem cobrancas vencidas.")
+
+            st.markdown("### Segunda via do boleto")
+            for idx, item in enumerate(meus, start=1):
+                if item.get("cobranca") == "Boleto":
+                    if st.button(f"Gerar 2a via - {item.get('descricao')} ({item.get('vencimento')})", key=f"boleto_{idx}"):
+                        st.info(f"Codigo: {item.get('codigo')}. Link do boleto sera integrado via API.")
 
 # ==============================================================================
 # AREA DO PROFESSOR
@@ -1058,7 +1140,7 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Financeiro":
         st.markdown('<p class="main-header">Financeiro</p>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
+        tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Tabela de Valores"])
 
         with tab1:
             with st.form("form_receber"):
@@ -1078,18 +1160,15 @@ elif st.session_state["role"] == "Coordenador":
                 enviar_email = st.checkbox("Enviar email automatico", value=True, key="rec_email")
                 cadastrar = st.form_submit_button("Lancar conta a receber")
             if cadastrar:
-                codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
-                st.session_state["receivables"].append(
-                    {
-                        "descricao": descricao.strip() or "Mensalidade",
-                        "aluno": aluno.strip(),
-                        "cobranca": cobranca,
-                        "codigo": codigo,
-                        "valor": valor.strip(),
-                        "vencimento": vencimento.strftime("%d/%m/%Y"),
-                        "status": status,
-                    }
+                codigo = add_receivable(
+                    aluno=aluno,
+                    descricao=descricao or "Mensalidade",
+                    valor=valor,
+                    vencimento=vencimento,
+                    cobranca=cobranca,
+                    categoria="Manual",
                 )
+                st.session_state["receivables"][-1]["status"] = status
                 st.success("Conta a receber cadastrada.")
 
                 if enviar_msg:
@@ -1170,6 +1249,63 @@ elif st.session_state["role"] == "Coordenador":
                     st.rerun()
             else:
                 st.info("Nenhuma conta a pagar cadastrada.")
+
+        with tab3:
+            st.markdown("### Cadastrar valores padrao")
+            with st.form("form_tabela_valores"):
+                tipo = st.selectbox("Tipo", ["Mensalidade", "Material", "Matricula", "Outro"])
+                descricao = st.text_input("Descricao do valor")
+                valor = st.text_input("Valor (ex: 150,00)")
+                cobranca = st.selectbox("Forma de cobranca", ["Boleto", "Pix"])
+                vencimento = st.date_input("Vencimento padrao", datetime.date.today())
+                aplicar = st.selectbox(
+                    "Aplicar para",
+                    ["Todos os alunos", "Selecionar aluno"],
+                )
+                aluno_sel = ""
+                if aplicar == "Selecionar aluno":
+                    alunos = [s["nome"] for s in st.session_state["students"]]
+                    aluno_sel = st.selectbox("Aluno", alunos) if alunos else ""
+                gerar = st.checkbox("Gerar cobrancas automaticamente", value=True)
+                salvar = st.form_submit_button("Salvar tabela de valores")
+
+            if salvar:
+                st.session_state["fee_templates"].append(
+                    {
+                        "tipo": tipo,
+                        "descricao": descricao.strip() or tipo,
+                        "valor": valor.strip(),
+                        "cobranca": cobranca,
+                        "vencimento": vencimento.strftime("%d/%m/%Y"),
+                    }
+                )
+                st.success("Tabela salva.")
+
+                if gerar:
+                    if aplicar == "Selecionar aluno" and aluno_sel:
+                        add_receivable(
+                            aluno=aluno_sel,
+                            descricao=descricao or tipo,
+                            valor=valor,
+                            vencimento=vencimento,
+                            cobranca=cobranca,
+                            categoria=tipo,
+                        )
+                    else:
+                        for student in st.session_state["students"]:
+                            add_receivable(
+                                aluno=student.get("nome", "Aluno"),
+                                descricao=descricao or tipo,
+                                valor=valor,
+                                vencimento=vencimento,
+                                cobranca=cobranca,
+                                categoria=tipo,
+                            )
+
+            if st.session_state["fee_templates"]:
+                st.markdown("### Valores cadastrados")
+                df_tpl = pd.DataFrame(st.session_state["fee_templates"])
+                st.dataframe(df_tpl, use_container_width=True)
 
     elif menu_coord == "Usuarios e Logins":
         st.markdown('<p class="main-header">Usuarios e Logins</p>', unsafe_allow_html=True)
