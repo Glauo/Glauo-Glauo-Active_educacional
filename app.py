@@ -35,21 +35,23 @@ st.markdown(
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
     .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
     .login-area {max-width: 460px; margin: 0 auto;}
-    .login-card {
+    div[data-testid="stForm"] {
+        max-width: 460px;
+        margin: 10px auto 0;
         background: var(--mint-100);
         border: 3px solid var(--brand-700);
         padding: 20px;
         border-radius: 14px;
         box-shadow: 0 10px 30px rgba(13,27,111,0.12);
     }
-    .login-card label {
+    div[data-testid="stForm"] label {
         font-family: 'Manrope', 'Segoe UI', sans-serif;
         font-weight: 800;
         color: #111;
         font-size: 0.95rem;
     }
-    .login-card div.stButton {display: flex; justify-content: flex-start;}
-    .login-card div.stButton > button {
+    div[data-testid="stForm"] div.stButton {display: flex; justify-content: flex-start;}
+    div[data-testid="stForm"] div.stButton > button {
         background: #ffd54f;
         color: #111;
         border: 2px solid #f2c230;
@@ -58,16 +60,16 @@ st.markdown(
         padding: 0.55rem 1.1rem;
         width: auto;
     }
-    .login-card [data-baseweb="input"] input,
-    .login-card [data-baseweb="textarea"] textarea,
-    .login-card [data-baseweb="select"] > div {
+    div[data-testid="stForm"] [data-baseweb="input"] input,
+    div[data-testid="stForm"] [data-baseweb="textarea"] textarea,
+    div[data-testid="stForm"] [data-baseweb="select"] > div {
         background: #ffffff !important;
         border: 1.6px solid #0d1b6f !important;
         border-radius: 8px !important;
     }
-    .login-card [data-baseweb="input"] input:focus,
-    .login-card [data-baseweb="textarea"] textarea:focus,
-    .login-card [data-baseweb="select"] > div:focus-within {
+    div[data-testid="stForm"] [data-baseweb="input"] input:focus,
+    div[data-testid="stForm"] [data-baseweb="textarea"] textarea:focus,
+    div[data-testid="stForm"] [data-baseweb="select"] > div:focus-within {
         border-color: #2c4be0 !important;
         box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
     }
@@ -106,14 +108,14 @@ st.markdown(
         font-weight: 600;
         margin-bottom: 14px;
     }
-    .hero-points {margin-top: 10px; font-size: 0.95rem; color: #2b3550;}
-    .hero-point {padding: 6px 0; border-bottom: 1px dashed rgba(26,35,126,0.15);}
-    .hero-point:last-child {border-bottom: none;}
+    .hero-list {list-style: none; padding-left: 0; margin: 10px 0 0;}
+    .hero-list li {padding: 6px 0; border-bottom: 1px dashed rgba(26,35,126,0.15); color: #2b3550;}
+    .hero-list li:last-child {border-bottom: none;}
     .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
-.login-form-title {margin-bottom: 6px;}
+    .login-form-title {margin-bottom: 6px;}
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
 </style>
 """,
@@ -237,39 +239,36 @@ def format_money(value):
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state["logged_in"]:
-    left, right = st.columns([1.15, 1])
+    left, right = st.columns([1.1, 1])
+    logo_path = get_logo_path()
+    logo_html = ""
+    if logo_path:
+        logo_html = f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>"
+
     with left:
-        st.markdown("<div class='hero-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
-        logo_path = get_logo_path()
-        if logo_path:
-            st.markdown("<div class='hero-header'>", unsafe_allow_html=True)
-            st.markdown(
-                f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>",
-                unsafe_allow_html=True,
-            )
-            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
-        st.markdown(
-            "<div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<div class='hero-points'>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>- Mensagens diretas com alunos e turmas</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>- Aulas gravadas e materiais organizados</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-point'>- Financeiro simples e controle de matriculas</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-badges'>", unsafe_allow_html=True)
-        st.markdown("<span class='hero-badge'>Seguro</span>", unsafe_allow_html=True)
-        st.markdown("<span class='hero-badge'>Rapido</span>", unsafe_allow_html=True)
-        st.markdown("<span class='hero-badge'>Profissional</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        hero_html = f"""
+        <div class='hero-card'>
+            <div class='hero-kicker'>Active Educacional</div>
+            <div class='hero-header'>
+                {logo_html}
+                <div class='hero-title'>Sistema Educacional Ativo</div>
+            </div>
+            <div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>
+            <ul class='hero-list'>
+                <li>Mensagens diretas com alunos e turmas</li>
+                <li>Aulas gravadas e materiais organizados</li>
+                <li>Financeiro simples e controle de matriculas</li>
+            </ul>
+            <div class='hero-badges'>
+                <span class='hero-badge'>Seguro</span>
+                <span class='hero-badge'>Rapido</span>
+                <span class='hero-badge'>Profissional</span>
+            </div>
+        </div>
+        """
+        st.markdown(hero_html, unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
         st.markdown("<div class='login-title login-form-title'>Conecte-se</div>", unsafe_allow_html=True)
         st.markdown(
             "<div class='login-tagline'>Acesse a Plataforma Educacional</div>",
@@ -288,7 +287,6 @@ if not st.session_state["logged_in"]:
             entrar = st.form_submit_button("Entrar")
         if entrar:
             login_user(role, nome.strip() or "Usuario", unidade.strip())
-        st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # AREA DO ALUNO
