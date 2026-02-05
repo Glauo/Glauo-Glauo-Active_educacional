@@ -139,6 +139,22 @@ st.markdown(
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
     header, footer {visibility: hidden;}
     [data-testid="stToolbar"] {display: none;}
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        border-radius: 10px;
+        padding: 0.55rem 0.9rem;
+        font-weight: 700;
+        text-align: left;
+        border: 1px solid rgba(13,27,111,0.18);
+    }
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+        background: #f7f9ff;
+        color: #0d1b6f;
+    }
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: #0d1b6f;
+        color: #ffffff;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -171,6 +187,8 @@ if "payables" not in st.session_state:
     st.session_state["payables"] = []
 if "users" not in st.session_state:
     st.session_state["users"] = []
+
+ADMIN_PASSWORD = "admin123"
 
 
 def get_logo_path():
@@ -257,6 +275,17 @@ def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def sidebar_menu(title, options, key):
+    st.markdown(f"### {title}")
+    if key not in st.session_state:
+        st.session_state[key] = options[0]
+    for option in options:
+        active = st.session_state[key] == option
+        if st.button(option, key=f"{key}_{option}", type="primary" if active else "secondary"):
+            st.session_state[key] = option
+    return st.session_state[key]
+
+
 # ==============================================================================
 # TELA DE LOGIN
 # ==============================================================================
@@ -316,7 +345,10 @@ if not st.session_state["logged_in"]:
             senha = st.text_input("Senha", type="password")
             entrar = st.form_submit_button("Entrar")
         if entrar:
-            login_user(role, nome.strip() or "Usuario", unidade.strip())
+            if role == "Coordenador" and senha.strip() != ADMIN_PASSWORD:
+                st.error("Senha do administrador invalida.")
+            else:
+                login_user(role, nome.strip() or "Usuario", unidade.strip())
 
 # ==============================================================================
 # AREA DO ALUNO
@@ -334,22 +366,33 @@ elif st.session_state["role"] == "Aluno":
             st.caption(f"Unidade: {st.session_state['unit']}")
         st.info("Nivel: Intermediario B1")
         st.markdown("---")
-        menu_aluno = st.radio(
+        menu_aluno_label = sidebar_menu(
             "Navegacao",
             [
-                "Dashboard",
-                "Minhas Aulas",
-                "Boletim & Frequencia",
-                "Mensagens",
-                "Aulas Gravadas",
-                "Materiais de Estudo",
+                "🏠 Painel",
+                "📚 Minhas Aulas",
+                "📊 Boletim e Frequencia",
+                "💬 Mensagens",
+                "🎥 Aulas Gravadas",
+                "📂 Materiais de Ciz",
             ],
+            "menu_aluno",
         )
         st.markdown("---")
         if st.button("Sair"):
             logout_user()
 
     # Conteudo Principal
+    menu_aluno_map = {
+        "🏠 Painel": "Dashboard",
+        "📚 Minhas Aulas": "Minhas Aulas",
+        "📊 Boletim e Frequencia": "Boletim & Frequencia",
+        "💬 Mensagens": "Mensagens",
+        "🎥 Aulas Gravadas": "Aulas Gravadas",
+        "📂 Materiais de Ciz": "Materiais de Estudo",
+    }
+    menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
+
     if menu_aluno == "Dashboard":
         st.markdown('<p class="main-header">Painel do Aluno</p>', unsafe_allow_html=True)
 
@@ -485,19 +528,29 @@ elif st.session_state["role"] == "Professor":
             st.caption(f"Unidade: {st.session_state['unit']}")
         st.warning("Perfil: Docente")
         st.markdown("---")
-        menu_prof = st.radio(
+        menu_prof_label = sidebar_menu(
             "Gestao",
             [
-                "Minhas Turmas",
-                "Diario de Classe (Chamada)",
-                "Mensagens para Alunos",
-                "Aulas Gravadas",
-                "Materiais de Estudo",
+                "👥 Minhas Turmas",
+                "📝 Diario de Classe",
+                "💬 Mensagens para Alunos",
+                "🎥 Aulas Gravadas",
+                "📂 Materiais de Estudo",
             ],
+            "menu_prof",
         )
         st.markdown("---")
         if st.button("Sair"):
             logout_user()
+
+    menu_prof_map = {
+        "👥 Minhas Turmas": "Minhas Turmas",
+        "📝 Diario de Classe": "Diario de Classe (Chamada)",
+        "💬 Mensagens para Alunos": "Mensagens para Alunos",
+        "🎥 Aulas Gravadas": "Aulas Gravadas",
+        "📂 Materiais de Estudo": "Materiais de Estudo",
+    }
+    menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<p class="main-header">Painel do Professor</p>', unsafe_allow_html=True)
@@ -663,21 +716,33 @@ elif st.session_state["role"] == "Coordenador":
             st.caption(f"Unidade: {st.session_state['unit']}")
         st.success("Perfil: Coordenador")
         st.markdown("---")
-        menu_coord = st.radio(
+        menu_coord_label = sidebar_menu(
             "Administracao",
             [
-                "Dashboard",
-                "Cadastro de Alunos",
-                "Cadastro de Professores",
-                "Turmas",
-                "Financeiro",
-                "Usuarios e Logins",
-                "Conteudos",
+                "📊 Dashboard",
+                "🧑‍🎓 Cadastro de Alunos",
+                "👩‍🏫 Cadastro de Professores",
+                "🏫 Turmas",
+                "💰 Financeiro",
+                "🔐 Usuarios e Logins",
+                "📚 Conteudos",
             ],
+            "menu_coord",
         )
         st.markdown("---")
         if st.button("Sair"):
             logout_user()
+
+    menu_coord_map = {
+        "📊 Dashboard": "Dashboard",
+        "🧑‍🎓 Cadastro de Alunos": "Cadastro de Alunos",
+        "👩‍🏫 Cadastro de Professores": "Cadastro de Professores",
+        "🏫 Turmas": "Turmas",
+        "💰 Financeiro": "Financeiro",
+        "🔐 Usuarios e Logins": "Usuarios e Logins",
+        "📚 Conteudos": "Conteudos",
+    }
+    menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
 
     if menu_coord == "Dashboard":
         st.markdown('<p class="main-header">Painel do Coordenador</p>', unsafe_allow_html=True)
