@@ -35,8 +35,41 @@ st.markdown(
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
     .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
-    .login-hero {text-align: center;}
-    .login-hero img {display: block; margin: 0 auto;}
+    .login-area {max-width: 440px; margin: 0 auto;}
+    .login-card {
+        background: #bfe9f6;
+        border: 3px solid #0d1b6f;
+        padding: 18px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(13,27,111,0.12);
+    }
+    .login-card label {
+        font-family: 'Manrope', 'Segoe UI', sans-serif;
+        font-weight: 800;
+        color: #111;
+        font-size: 0.95rem;
+    }
+    .login-card div.stButton > button {
+        background: #ffe082;
+        color: #111;
+        border: 2px solid #f2c230;
+        font-weight: 800;
+        border-radius: 10px;
+        padding: 0.55rem 1rem;
+    }
+    .login-card [data-baseweb="input"] input,
+    .login-card [data-baseweb="textarea"] textarea,
+    .login-card [data-baseweb="select"] > div {
+        background: #f8fbff !important;
+        border: 1.6px solid #0d1b6f !important;
+        border-radius: 8px !important;
+    }
+    .login-card [data-baseweb="input"] input:focus,
+    .login-card [data-baseweb="textarea"] textarea:focus,
+    .login-card [data-baseweb="select"] > div:focus-within {
+        border-color: #2c4be0 !important;
+        box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
+    }
     .hero-card {
         background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
         border: 2px solid rgba(26,35,126,0.2);
@@ -75,9 +108,8 @@ st.markdown(
     .hero-points {margin-top: 10px; font-size: 0.95rem; color: #2b3550;}
     .hero-point {padding: 6px 0; border-bottom: 1px dashed rgba(26,35,126,0.15);}
     .hero-point:last-child {border-bottom: none;}
-    .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;}
+    .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
-    .login-header-empty {display: none !important;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     div.stButton > button {width: 100%;}
@@ -235,50 +267,7 @@ if not st.session_state["logged_in"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown(
-            """
-<style>
-    div[data-testid="stForm"] {
-        max-width: 460px;
-        margin: 10px auto 0;
-        background: #bfe9f6;
-        border: 2.5px solid #0d1b6f;
-        padding: 16px;
-        border-radius: 8px;
-        box-shadow: 0 10px 30px rgba(13,27,111,0.12);
-    }
-    div[data-testid="stForm"] fieldset {border: none !important;}
-    div[data-testid="stForm"] label {
-        font-family: 'Manrope', 'Segoe UI', sans-serif;
-        font-weight: 800;
-        color: #111;
-        font-size: 0.95rem;
-    }
-    div[data-testid="stForm"] div.stButton > button {
-        background: #ffe082;
-        color: #111;
-        border: 2px solid #f2c230;
-        font-weight: 800;
-        border-radius: 10px;
-        padding: 0.55rem 1rem;
-    }
-    div[data-testid="stForm"] [data-baseweb="input"] input,
-    div[data-testid="stForm"] [data-baseweb="textarea"] textarea,
-    div[data-testid="stForm"] [data-baseweb="select"] > div {
-        background: #f8fbff !important;
-        border: 1.6px solid #0d1b6f !important;
-        border-radius: 6px !important;
-    }
-    div[data-testid="stForm"] [data-baseweb="input"] input:focus,
-    div[data-testid="stForm"] [data-baseweb="textarea"] textarea:focus,
-    div[data-testid="stForm"] [data-baseweb="select"] > div:focus-within {
-        border-color: #2c4be0 !important;
-        box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
-    }
-</style>
-""",
-            unsafe_allow_html=True,
-        )
+        st.markdown("<div class='login-area'><div class='login-card'>", unsafe_allow_html=True)
         st.markdown("<div class='login-title login-form-title'>Conecte-se</div>", unsafe_allow_html=True)
         st.markdown(
             "<div class='login-tagline'>Acesse a Plataforma Educacional</div>",
@@ -297,6 +286,7 @@ if not st.session_state["logged_in"]:
             entrar = st.form_submit_button("Entrar")
         if entrar:
             login_user(role, nome.strip() or "Usuario", unidade.strip())
+        st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # AREA DO ALUNO
