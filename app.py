@@ -190,6 +190,8 @@ if "videos" not in st.session_state:
     st.session_state["videos"] = []
 if "materials" not in st.session_state:
     st.session_state["materials"] = []
+if "grades" not in st.session_state:
+    st.session_state["grades"] = []
 if "students" not in st.session_state:
     st.session_state["students"] = []
 if "teachers" not in st.session_state:
@@ -215,6 +217,7 @@ USERS_FILE = Path("users.json")
 MESSAGES_FILE = Path("messages.json")
 VIDEOS_FILE = Path("videos.json")
 MATERIALS_FILE = Path("materials.json")
+GRADES_FILE = Path("grades.json")
 WHATSAPP_NUMBER = "5516996043314"
 
 
@@ -450,6 +453,7 @@ def refresh_content_state():
     st.session_state["messages"] = load_list(MESSAGES_FILE)
     st.session_state["videos"] = load_list(VIDEOS_FILE)
     st.session_state["materials"] = load_list(MATERIALS_FILE)
+    st.session_state["grades"] = load_list(GRADES_FILE)
 
 
 # ==============================================================================
@@ -574,6 +578,7 @@ elif st.session_state["role"] == "Aluno":
         "💬 Mensagens": "Mensagens",
         "🎥 Aulas Gravadas": "Aulas Gravadas",
         "💰 Financeiro": "Financeiro",
+        "Aprovacao de Notas": "Aprovacao de Notas",
         "📂 Materiais de Ciz": "Materiais de Estudo",
     }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
@@ -627,33 +632,49 @@ elif st.session_state["role"] == "Aluno":
         )
 
         tab1, tab2 = st.tabs(["Notas", "Presenca"])
+        aluno_nome = st.session_state["user_name"]
+        notas_aprovadas = [
+            g
+            for g in st.session_state["grades"]
+            if g.get("aluno") == aluno_nome and g.get("status") == "Aprovado"
+        ]
 
         with tab1:
-            data = {
-                "Competencia": ["Speaking", "Listening", "Reading", "Writing", "Grammar"],
-                "Nota": [8.5, 9.0, 7.5, 8.0, 7.0],
-                "Meta": [7.0, 7.0, 7.0, 7.0, 7.0],
-            }
-            df_notas = pd.DataFrame(data)
-
-            # Grafico de barras simples
-            st.bar_chart(df_notas.set_index("Competencia"))
-            st.dataframe(df_notas, use_container_width=True)
+            if not notas_aprovadas:
+                st.info("Nenhuma nota aprovada ainda.")
+            else:
+                df_notas = pd.DataFrame(
+                    [
+                        {
+                            "Turma": g.get("turma", ""),
+                            "Trabalhos": g.get("nota_trabalhos", ""),
+                            "Presenca": g.get("nota_presenca", ""),
+                            "Situacao": g.get("situacao", ""),
+                            "Professor": g.get("professor", ""),
+                            "Data": g.get("data", ""),
+                            "Observacao": g.get("observacao", ""),
+                        }
+                        for g in notas_aprovadas
+                    ]
+                )
+                st.dataframe(df_notas, use_container_width=True)
 
         with tab2:
-            st.write("Historico de Frequencia - Fev/2026")
-            col1, col2 = st.columns(2)
-            col1.metric("Presencas", "12")
-            col2.metric("Faltas", "2", "-1")
-
-            # Tabela simples de presenca
-            presenca = pd.DataFrame(
-                {
-                    "Data": ["01/02", "03/02", "05/02", "08/02"],
-                    "Status": ["Presente", "Presente", "Falta", "Presente"],
-                }
-            )
-            st.table(presenca)
+            if not notas_aprovadas:
+                st.info("Nenhuma nota de presenca aprovada ainda.")
+            else:
+                df_presenca = pd.DataFrame(
+                    [
+                        {
+                            "Turma": g.get("turma", ""),
+                            "Nota de Presenca": g.get("nota_presenca", ""),
+                            "Professor": g.get("professor", ""),
+                            "Data": g.get("data", ""),
+                        }
+                        for g in notas_aprovadas
+                    ]
+                )
+                st.dataframe(df_presenca, use_container_width=True)
 
     elif menu_aluno == "Mensagens":
         st.markdown('<p class="main-header">Mensagens</p>', unsafe_allow_html=True)
@@ -747,6 +768,7 @@ elif st.session_state["role"] == "Professor":
                 "👥 Minhas Turmas",
                 "📝 Diario de Classe",
                 "💬 Mensagens para Alunos",
+                "Notas e Avaliacoes",
                 "🎥 Aulas Gravadas",
                 "📂 Materiais de Estudo",
             ],
@@ -760,6 +782,7 @@ elif st.session_state["role"] == "Professor":
         "👥 Minhas Turmas": "Minhas Turmas",
         "📝 Diario de Classe": "Diario de Classe (Chamada)",
         "💬 Mensagens para Alunos": "Mensagens para Alunos",
+        "Notas e Avaliacoes": "Notas e Avaliacoes",
         "🎥 Aulas Gravadas": "Aulas Gravadas",
         "📂 Materiais de Estudo": "Materiais de Estudo",
     }
@@ -860,6 +883,98 @@ elif st.session_state["role"] == "Professor":
                 corpo = mensagem.strip() or "Sem conteudo."
                 email_students_by_turma(turma, assunto, corpo, "Professor")
             st.success("Mensagem enviada.")
+
+    elif menu_prof == "Notas e Avaliacoes":
+        st.markdown('<p class="main-header">Lancamento de Notas</p>', unsafe_allow_html=True)
+        alunos = st.session_state["students"]
+        if not alunos:
+            st.info("Nenhum aluno cadastrado para lancar notas.")
+        else:
+            turmas = class_names()
+            if not turmas:
+                turmas = sorted(
+                    {
+                        (s.get("turma") or "").strip()
+                        for s in alunos
+                        if (s.get("turma") or "").strip()
+                    }
+                )
+
+            with st.form("form_notas"):
+                if turmas:
+                    turma = st.selectbox("Turma", turmas)
+                else:
+                    turma = st.text_input("Turma")
+
+                alunos_turma = [
+                    s for s in alunos if (s.get("turma") or "").strip() == turma
+                ]
+                if alunos_turma:
+                    aluno = st.selectbox(
+                        "Aluno", [s.get("nome", "Aluno") for s in alunos_turma]
+                    )
+                else:
+                    aluno = st.text_input("Aluno")
+
+                nota_trabalhos = st.number_input(
+                    "Nota de trabalhos",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=0.0,
+                    step=0.5,
+                )
+                nota_presenca = st.number_input(
+                    "Nota de presenca",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=0.0,
+                    step=0.5,
+                )
+                situacao = st.selectbox("Situacao", ["Aprovado", "Reprovado"])
+                observacao = st.text_area("Observacao (opcional)")
+                enviar = st.form_submit_button("Enviar para aprovacao")
+
+            if enviar:
+                st.session_state["grades"].append(
+                    {
+                        "id": uuid.uuid4().hex[:8].upper(),
+                        "aluno": aluno.strip() or "Aluno",
+                        "turma": turma.strip(),
+                        "nota_trabalhos": nota_trabalhos,
+                        "nota_presenca": nota_presenca,
+                        "situacao": situacao,
+                        "observacao": observacao.strip(),
+                        "professor": st.session_state["user_name"],
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                        "status": "Pendente",
+                    }
+                )
+                save_list(GRADES_FILE, st.session_state["grades"])
+                st.success("Notas enviadas para aprovacao do coordenador.")
+
+            st.markdown("---")
+            minhas = [
+                g for g in st.session_state["grades"] if g.get("professor") == st.session_state["user_name"]
+            ]
+            if minhas:
+                df_minhas = pd.DataFrame(
+                    [
+                        {
+                            "Aluno": g.get("aluno", ""),
+                            "Turma": g.get("turma", ""),
+                            "Trabalhos": g.get("nota_trabalhos", ""),
+                            "Presenca": g.get("nota_presenca", ""),
+                            "Situacao": g.get("situacao", ""),
+                            "Status": g.get("status", ""),
+                            "Data": g.get("data", ""),
+                        }
+                        for g in reversed(minhas)
+                    ]
+                )
+                st.markdown("### Lancamentos recentes")
+                st.dataframe(df_minhas, use_container_width=True)
+            else:
+                st.info("Nenhuma nota lancada por voce ainda.")
 
     elif menu_prof == "Aulas Gravadas":
         st.markdown('<p class="main-header">Cadastrar Aula Gravada</p>', unsafe_allow_html=True)
@@ -975,6 +1090,7 @@ elif st.session_state["role"] == "Coordenador":
                 "👩‍🏫 Cadastro de Professores",
                 "🏫 Turmas",
                 "💰 Financeiro",
+                "Aprovacao de Notas",
                 "🔐 Usuarios e Logins",
                 "📚 Conteudos",
             ],
@@ -990,6 +1106,7 @@ elif st.session_state["role"] == "Coordenador":
         "👩‍🏫 Cadastro de Professores": "Cadastro de Professores",
         "🏫 Turmas": "Turmas",
         "💰 Financeiro": "Financeiro",
+        "Aprovacao de Notas": "Aprovacao de Notas",
         "🔐 Usuarios e Logins": "Usuarios e Logins",
         "📚 Conteudos": "Conteudos",
     }
@@ -1350,6 +1467,56 @@ elif st.session_state["role"] == "Coordenador":
                 st.markdown("### Valores cadastrados")
                 df_tpl = pd.DataFrame(st.session_state["fee_templates"])
                 st.dataframe(df_tpl, use_container_width=True)
+
+    elif menu_coord == "Aprovacao de Notas":
+        st.markdown('<p class="main-header">Aprovacao de Notas</p>', unsafe_allow_html=True)
+        pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
+        if not pendentes:
+            st.info("Nenhuma nota pendente de aprovacao.")
+        else:
+            df_pend = pd.DataFrame(
+                [
+                    {
+                        "Aluno": g.get("aluno", ""),
+                        "Turma": g.get("turma", ""),
+                        "Trabalhos": g.get("nota_trabalhos", ""),
+                        "Presenca": g.get("nota_presenca", ""),
+                        "Situacao": g.get("situacao", ""),
+                        "Professor": g.get("professor", ""),
+                        "Data": g.get("data", ""),
+                    }
+                    for g in pendentes
+                ]
+            )
+            st.dataframe(df_pend, use_container_width=True)
+
+            opcoes = [
+                f"{idx + 1} - {g.get('aluno','')} ({g.get('turma','')}) - {g.get('data','')}"
+                for idx, g in enumerate(pendentes)
+            ]
+            sel = st.selectbox("Selecione para aprovar/recusar", opcoes, key="grade_aprov")
+            motivo = st.text_area("Motivo (opcional para recusa)", key="grade_motivo")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Aprovar nota", type="primary"):
+                    idx = opcoes.index(sel)
+                    pendentes[idx]["status"] = "Aprovado"
+                    pendentes[idx]["aprovado_por"] = st.session_state["user_name"]
+                    pendentes[idx]["aprovado_em"] = datetime.date.today().strftime("%d/%m/%Y")
+                    save_list(GRADES_FILE, st.session_state["grades"])
+                    st.success("Nota aprovada e enviada ao aluno.")
+                    st.rerun()
+            with col2:
+                if st.button("Recusar nota"):
+                    idx = opcoes.index(sel)
+                    pendentes[idx]["status"] = "Recusado"
+                    pendentes[idx]["recusado_por"] = st.session_state["user_name"]
+                    pendentes[idx]["recusado_em"] = datetime.date.today().strftime("%d/%m/%Y")
+                    pendentes[idx]["motivo"] = motivo.strip()
+                    save_list(GRADES_FILE, st.session_state["grades"])
+                    st.warning("Nota recusada. O professor deve reenviar.")
+                    st.rerun()
 
     elif menu_coord == "Usuarios e Logins":
         st.markdown('<p class="main-header">Usuarios e Logins</p>', unsafe_allow_html=True)
