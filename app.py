@@ -768,7 +768,7 @@ elif st.session_state["role"] == "Professor":
                 "👥 Minhas Turmas",
                 "📝 Diario de Classe",
                 "💬 Mensagens para Alunos",
-                "Notas e Avaliacoes",
+                "📊 Notas e Avaliacoes",
                 "🎥 Aulas Gravadas",
                 "📂 Materiais de Estudo",
             ],
@@ -782,7 +782,7 @@ elif st.session_state["role"] == "Professor":
         "👥 Minhas Turmas": "Minhas Turmas",
         "📝 Diario de Classe": "Diario de Classe (Chamada)",
         "💬 Mensagens para Alunos": "Mensagens para Alunos",
-        "Notas e Avaliacoes": "Notas e Avaliacoes",
+        "📊 Notas e Avaliacoes": "Notas e Avaliacoes",
         "🎥 Aulas Gravadas": "Aulas Gravadas",
         "📂 Materiais de Estudo": "Materiais de Estudo",
     }
