@@ -33,21 +33,21 @@ st.markdown(
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
-    .login-area {max-width: 460px; margin: 0 auto;}
+    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #0c0f1a; font-size: 1.05rem;}
+    .login-head {max-width: 420px; margin: 0 auto; text-align: left;}
     div[data-testid="stForm"] {
-        max-width: 460px;
-        margin: 10px auto 0;
+        max-width: 420px;
+        margin: 8px auto 0;
         background: var(--mint-100);
         border: 3px solid var(--brand-700);
-        padding: 20px;
+        padding: 18px;
         border-radius: 14px;
-        box-shadow: 0 10px 30px rgba(13,27,111,0.12);
+        box-shadow: 0 12px 30px rgba(13,27,111,0.14);
     }
     div[data-testid="stForm"] label {
         font-family: 'Manrope', 'Segoe UI', sans-serif;
         font-weight: 800;
-        color: #111;
+        color: #0c0f1a;
         font-size: 0.95rem;
     }
     div[data-testid="stForm"] div.stButton {display: flex; justify-content: flex-start;}
@@ -74,14 +74,26 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
     }
     .hero-card {
-        background: rgba(255,255,255,0.92);
+        background: rgba(255,255,255,0.94);
         border: 2px solid rgba(13,27,111,0.18);
-        border-radius: 18px;
-        padding: 22px;
-        box-shadow: 0 14px 36px rgba(10,20,60,0.10);
+        border-radius: 20px;
+        padding: 26px;
+        box-shadow: 0 16px 40px rgba(10,20,60,0.12);
     }
-    .hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
-    .hero-logo {width: 170px; height: auto; display: block;}
+    .hero-header {display: flex; align-items: center; gap: 18px; justify-content: flex-start;}
+    .hero-logo-wrap {
+        width: 120px;
+        height: 120px;
+        border-radius: 16px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 10px 24px rgba(13,27,111,0.10);
+        border: 1px solid rgba(13,27,111,0.12);
+    }
+    .hero-logo {width: 96px; height: auto; display: block;}
+    .hero-text {display: flex; flex-direction: column; gap: 6px;}
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -96,22 +108,23 @@ st.markdown(
         font-family: 'Sora', sans-serif;
     }
     .hero-title {
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 700;
         color: var(--brand-900);
         font-family: 'Sora', sans-serif;
-        margin: 6px 0 6px;
+        margin: 0;
+        line-height: 1.2;
     }
     .hero-sub {
-        font-size: 1rem;
+        font-size: 1.02rem;
         color: #2c3e62;
         font-weight: 600;
-        margin-bottom: 14px;
+        margin: 6px 0 10px;
     }
     .hero-list {list-style: none; padding-left: 0; margin: 10px 0 0;}
     .hero-list li {padding: 6px 0; border-bottom: 1px dashed rgba(26,35,126,0.15); color: #2b3550;}
     .hero-list li:last-child {border-bottom: none;}
-    .hero-badges {margin-top: 12px; display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap;}
+    .hero-badges {margin-top: 14px; display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap;}
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
@@ -243,7 +256,11 @@ if not st.session_state["logged_in"]:
     logo_path = get_logo_path()
     logo_html = ""
     if logo_path:
-        logo_html = f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>"
+        logo_html = (
+            "<div class='hero-logo-wrap'>"
+            f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>"
+            "</div>"
+        )
 
     with left:
         hero_html = f"""
@@ -251,9 +268,11 @@ if not st.session_state["logged_in"]:
             <div class='hero-kicker'>Active Educacional</div>
             <div class='hero-header'>
                 {logo_html}
-                <div class='hero-title'>Sistema Educacional Ativo</div>
+                <div class='hero-text'>
+                    <div class='hero-title'>Sistema Educacional Ativo</div>
+                    <div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>
+                </div>
             </div>
-            <div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>
             <ul class='hero-list'>
                 <li>Mensagens diretas com alunos e turmas</li>
                 <li>Aulas gravadas e materiais organizados</li>
@@ -269,9 +288,11 @@ if not st.session_state["logged_in"]:
         st.markdown(hero_html, unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div class='login-title login-form-title'>Conecte-se</div>", unsafe_allow_html=True)
         st.markdown(
-            "<div class='login-tagline'>Acesse a Plataforma Educacional</div>",
+            "<div class='login-head'>"
+            "<div class='login-title login-form-title'>Conecte-se</div>"
+            "<div class='login-tagline'>Acesse a Plataforma Educacional</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
         with st.form("login_form"):
