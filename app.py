@@ -446,6 +446,7 @@ def sidebar_menu(title, options, key):
         active = st.session_state[key] == option
         if st.button(option, key=f"{key}_{option}", type="primary" if active else "secondary"):
             st.session_state[key] = option
+            st.rerun()
     return st.session_state[key]
 
 
