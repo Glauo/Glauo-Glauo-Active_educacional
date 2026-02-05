@@ -22,9 +22,8 @@ st.markdown(
         --brand-900: #0d1b6f;
         --brand-700: #1A237E;
         --brand-500: #2c4be0;
-        --mint-50: #f3fff7;
-        --mint-100: #e8fbf0;
-        --mint-200: #c9f1da;
+        --mint-50: #f1fbf4;
+        --mint-100: #dff6e6;
         --ink-900: #0c0f1a;
     }
     .stApp, .stMarkdown, label, input, select, textarea {
@@ -33,36 +32,14 @@ st.markdown(
     }
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
-<<<<<<< HEAD
-.login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-.login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
-.login-area {max-width: 680px; margin: 0 auto;}
-.login-card {background: var(--mint-50); border: 3px solid var(--brand-700); padding: 22px; border-radius: 16px; box-shadow: 0 10px 30px rgba(13,27,111,0.12);}
-.login-card div[data-testid="stForm"] {background: transparent !important; border: none !important; padding: 0 !important;}
-.login-card .stForm {background: transparent !important; border: none !important; padding: 0 !important;}
-.login-card fieldset {border: none !important;}
-.login-card form {margin-top: 0 !important;}
-.login-area label {font-family: 'Manrope', sans-serif; font-weight: 700; color: #111;}
-    .login-hero {text-align: center;}
-    .login-hero img {display: block; margin: 0 auto;}
-.hero-card {
-    background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
-    border: 2px solid rgba(26,35,126,0.2);
-    border-radius: 18px;
-    padding: 26px;
-    box-shadow: 0 14px 36px rgba(10,20,60,0.12);
-}
-.hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
-.hero-logo {width: 180px; height: auto; display: block;}
-=======
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
     .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #111; font-size: 1.05rem;}
-    .login-area {max-width: 440px; margin: 0 auto;}
+    .login-area {max-width: 460px; margin: 0 auto;}
     .login-card {
-        background: #bfe9f6;
-        border: 3px solid #0d1b6f;
-        padding: 18px;
-        border-radius: 12px;
+        background: var(--mint-100);
+        border: 3px solid var(--brand-700);
+        padding: 20px;
+        border-radius: 14px;
         box-shadow: 0 10px 30px rgba(13,27,111,0.12);
     }
     .login-card label {
@@ -71,18 +48,20 @@ st.markdown(
         color: #111;
         font-size: 0.95rem;
     }
+    .login-card div.stButton {display: flex; justify-content: flex-start;}
     .login-card div.stButton > button {
-        background: #ffe082;
+        background: #ffd54f;
         color: #111;
         border: 2px solid #f2c230;
         font-weight: 800;
         border-radius: 10px;
-        padding: 0.55rem 1rem;
+        padding: 0.55rem 1.1rem;
+        width: auto;
     }
     .login-card [data-baseweb="input"] input,
     .login-card [data-baseweb="textarea"] textarea,
     .login-card [data-baseweb="select"] > div {
-        background: #f8fbff !important;
+        background: #ffffff !important;
         border: 1.6px solid #0d1b6f !important;
         border-radius: 8px !important;
     }
@@ -93,15 +72,14 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(44,75,224,0.15);
     }
     .hero-card {
-        background: linear-gradient(145deg, rgba(26,35,126,0.08), rgba(76,175,80,0.08)), #ffffff;
-        border: 2px solid rgba(26,35,126,0.2);
+        background: rgba(255,255,255,0.92);
+        border: 2px solid rgba(13,27,111,0.18);
         border-radius: 18px;
         padding: 22px;
-        box-shadow: 0 14px 36px rgba(10,20,60,0.12);
+        box-shadow: 0 14px 36px rgba(10,20,60,0.10);
     }
     .hero-header {display: flex; align-items: center; gap: 16px; justify-content: flex-start;}
-    .hero-logo {width: 180px; height: auto; display: block;}
->>>>>>> a3a67ff25c88c5f2c89656e8056e2fb1b92454f5
+    .hero-logo {width: 170px; height: auto; display: block;}
     .hero-kicker {
         display: inline-block;
         padding: 6px 12px;
@@ -116,14 +94,14 @@ st.markdown(
         font-family: 'Sora', sans-serif;
     }
     .hero-title {
-        font-size: 2.1rem;
+        font-size: 2rem;
         font-weight: 700;
         color: var(--brand-900);
         font-family: 'Sora', sans-serif;
         margin: 6px 0 6px;
     }
     .hero-sub {
-        font-size: 1.05rem;
+        font-size: 1rem;
         color: #2c3e62;
         font-weight: 600;
         margin-bottom: 14px;
@@ -135,15 +113,6 @@ st.markdown(
     .hero-badge {background: #f0f7ff; color: #0d1b6f; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700;}
     .card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 10px;}
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
-div.stButton > button {width: 100%;}
-.login-card div.stButton > button {
-    background: linear-gradient(135deg, #1A237E, #2c4be0);
-    color: #fff;
-    border: none;
-    font-weight: 700;
-    border-radius: 10px;
-    padding: 0.6rem 1rem;
-}
 .login-form-title {margin-bottom: 6px;}
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
 </style>
@@ -274,8 +243,15 @@ if not st.session_state["logged_in"]:
         st.markdown("<div class='hero-kicker'>Active Educacional</div>", unsafe_allow_html=True)
         logo_path = get_logo_path()
         if logo_path:
-            st.image(str(logo_path), width=210)
-        st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
+            st.markdown("<div class='hero-header'>", unsafe_allow_html=True)
+            st.markdown(
+                f"<img class='hero-logo' src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode('utf-8')}'/>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='hero-title'>Sistema Active Educacional</div>", unsafe_allow_html=True)
         st.markdown(
             "<div class='hero-sub'>Gestao academica, comunicacao e conteudo em um unico lugar.</div>",
             unsafe_allow_html=True,
@@ -289,6 +265,7 @@ if not st.session_state["logged_in"]:
         st.markdown("<span class='hero-badge'>Seguro</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Rapido</span>", unsafe_allow_html=True)
         st.markdown("<span class='hero-badge'>Profissional</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
