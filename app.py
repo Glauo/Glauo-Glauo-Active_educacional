@@ -1,5 +1,7 @@
 import base64
 import datetime
+import json
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -187,8 +189,15 @@ if "payables" not in st.session_state:
     st.session_state["payables"] = []
 if "users" not in st.session_state:
     st.session_state["users"] = []
+if "account_profile" not in st.session_state:
+    st.session_state["account_profile"] = None
+if "email_log" not in st.session_state:
+    st.session_state["email_log"] = []
 
-ADMIN_PASSWORD = "admin123"
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "123"
+USERS_FILE = Path("users.json")
+
 
 
 def get_logo_path():
@@ -241,11 +250,48 @@ st.markdown(get_background_css(), unsafe_allow_html=True)
 
 
 # --- FUNCOES DE LOGIN ---
-def login_user(role, name, unit):
+def load_users():
+    if USERS_FILE.exists():
+        try:
+            data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def save_users(users):
+    USERS_FILE.write_text(
+        json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def ensure_admin_user(users):
+    if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
+        users.append(
+            {
+                "usuario": ADMIN_USERNAME,
+                "senha": ADMIN_PASSWORD,
+                "perfil": "Admin",
+                "pessoa": "Administrador",
+            }
+        )
+    return users
+
+
+def find_user(username):
+    for user in st.session_state["users"]:
+        if user.get("usuario", "").lower() == username.lower():
+            return user
+    return None
+
+
+def login_user(role, name, unit, account_profile):
     st.session_state["logged_in"] = True
     st.session_state["role"] = role
     st.session_state["user_name"] = name
     st.session_state["unit"] = unit
+    st.session_state["account_profile"] = account_profile
     st.rerun()
 
 
@@ -253,6 +299,7 @@ def logout_user():
     st.session_state["logged_in"] = False
     st.session_state["role"] = None
     st.session_state["unit"] = ""
+    st.session_state["account_profile"] = None
     st.rerun()
 
 
@@ -275,6 +322,39 @@ def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def allowed_portals(profile):
+    if profile == "Aluno":
+        return ["Aluno"]
+    if profile == "Professor":
+        return ["Professor"]
+    if profile == "Coordenador":
+        return ["Aluno", "Professor", "Coordenador"]
+    if profile == "Admin":
+        return ["Aluno", "Professor", "Coordenador"]
+    return []
+
+
+def append_email_log(destinatario, email, assunto, corpo, origem):
+    st.session_state["email_log"].append(
+        {
+            "destinatario": destinatario,
+            "email": email,
+            "assunto": assunto,
+            "mensagem": corpo,
+            "origem": origem,
+            "data": datetime.date.today().strftime("%d/%m/%Y"),
+        }
+    )
+
+
+def email_students_by_turma(turma, assunto, corpo, origem):
+    for student in st.session_state["students"]:
+        if turma == "Todas" or student.get("turma") == turma:
+            email = student.get("email", "").strip()
+            if email:
+                append_email_log(student.get("nome", "Aluno"), email, assunto, corpo, origem)
+
+
 def sidebar_menu(title, options, key):
     st.markdown(f"### {title}")
     if key not in st.session_state:
@@ -290,6 +370,11 @@ def sidebar_menu(title, options, key):
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state["logged_in"]:
+    if not st.session_state["users"]:
+        st.session_state["users"] = load_users()
+        st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+        save_users(st.session_state["users"])
+
     left, right = st.columns([1.1, 1])
     logo_path = get_logo_path()
     logo_html = ""
@@ -341,14 +426,22 @@ if not st.session_state["logged_in"]:
                 unidade = st.text_input("Digite a unidade")
             else:
                 unidade = unidade_sel
-            nome = st.text_input("Nome do usuario")
+            usuario = st.text_input("Usuario")
             senha = st.text_input("Senha", type="password")
             entrar = st.form_submit_button("Entrar")
         if entrar:
-            if role == "Coordenador" and senha.strip() != ADMIN_PASSWORD:
-                st.error("Senha do administrador invalida.")
+            user = find_user(usuario.strip())
+            if not usuario.strip() or not senha.strip():
+                st.error("Informe usuario e senha.")
+            elif not user or user.get("senha") != senha.strip():
+                st.error("Usuario ou senha invalidos.")
             else:
-                login_user(role, nome.strip() or "Usuario", unidade.strip())
+                perfil_conta = user.get("perfil", "")
+                if role not in allowed_portals(perfil_conta):
+                    st.error("Perfil sem permissao para este acesso.")
+                else:
+                    display_name = user.get("pessoa") or usuario.strip()
+                    login_user(role, display_name, unidade.strip(), perfil_conta)
 
 # ==============================================================================
 # AREA DO ALUNO
@@ -629,6 +722,7 @@ elif st.session_state["role"] == "Professor":
             titulo = st.text_input("Titulo da mensagem")
             mensagem = st.text_area("Mensagem")
             turma = st.selectbox("Turma", ["Todas", "Ingles Teens B1", "Adults Conversation"])
+            enviar_email = st.checkbox("Enviar email automatico", value=True)
             enviar = st.form_submit_button("Enviar")
         if enviar:
             st.session_state["messages"].append(
@@ -640,6 +734,10 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            if enviar_email:
+                assunto = titulo.strip() or "Mensagem"
+                corpo = mensagem.strip() or "Sem conteudo."
+                email_students_by_turma(turma, assunto, corpo, "Professor")
             st.success("Mensagem enviada.")
 
     elif menu_prof == "Aulas Gravadas":
@@ -648,6 +746,7 @@ elif st.session_state["role"] == "Professor":
             titulo = st.text_input("Titulo da aula gravada")
             url = st.text_input("Link do video (YouTube/Drive)")
             turma = st.selectbox("Turma do video", ["Ingles Teens B1", "Adults Conversation"])
+            enviar_email = st.checkbox("Notificar alunos por email", value=True, key="video_email")
             enviar = st.form_submit_button("Cadastrar")
         if enviar:
             st.session_state["videos"].append(
@@ -658,6 +757,19 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            st.session_state["messages"].append(
+                {
+                    "titulo": f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}",
+                    "mensagem": f"Nova aula disponivel para a turma {turma}.",
+                    "turma": turma,
+                    "autor": st.session_state["user_name"],
+                    "data": datetime.date.today().strftime("%d/%m/%Y"),
+                }
+            )
+            if enviar_email:
+                assunto = f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}"
+                corpo = f"A aula foi publicada para a turma {turma}. Link: {url.strip()}"
+                email_students_by_turma(turma, assunto, corpo, "Aulas Gravadas")
             st.success("Video cadastrado.")
 
         if st.session_state["videos"]:
@@ -676,6 +788,7 @@ elif st.session_state["role"] == "Professor":
             descricao = st.text_area("Descricao")
             link = st.text_input("Link do material (Drive/Docs)")
             turma = st.selectbox("Turma do material", ["Ingles Teens B1", "Adults Conversation"])
+            enviar_email = st.checkbox("Notificar alunos por email", value=True, key="mat_email")
             enviar = st.form_submit_button("Cadastrar")
         if enviar:
             st.session_state["materials"].append(
@@ -687,6 +800,19 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            st.session_state["messages"].append(
+                {
+                    "titulo": f"Novo material: {titulo.strip() or 'Material'}",
+                    "mensagem": f"Material disponivel para a turma {turma}.",
+                    "turma": turma,
+                    "autor": st.session_state["user_name"],
+                    "data": datetime.date.today().strftime("%d/%m/%Y"),
+                }
+            )
+            if enviar_email:
+                assunto = f"Novo material: {titulo.strip() or 'Material'}"
+                corpo = f"Material disponivel para a turma {turma}. Link: {link.strip()}"
+                email_students_by_turma(turma, assunto, corpo, "Materiais")
             st.success("Material cadastrado.")
 
         if st.session_state["materials"]:
@@ -942,23 +1068,44 @@ elif st.session_state["role"] == "Coordenador":
                     aluno = st.selectbox("Aluno", alunos, key="rec_aluno")
                 else:
                     aluno = st.text_input("Aluno", key="rec_aluno_txt")
+                cobranca = st.selectbox("Forma de cobranca", ["Boleto", "Pix"], key="rec_tipo")
                 valor = st.text_input("Valor (ex: 150,00)", key="rec_valor")
                 vencimento = st.date_input(
                     "Vencimento", datetime.date.today(), key="rec_venc"
                 )
                 status = st.selectbox("Status", ["Aberto", "Pago"], key="rec_status")
+                enviar_msg = st.checkbox("Enviar mensagem automatica", value=True, key="rec_msg")
+                enviar_email = st.checkbox("Enviar email automatico", value=True, key="rec_email")
                 cadastrar = st.form_submit_button("Lancar conta a receber")
             if cadastrar:
+                codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
                 st.session_state["receivables"].append(
                     {
                         "descricao": descricao.strip() or "Mensalidade",
                         "aluno": aluno.strip(),
+                        "cobranca": cobranca,
+                        "codigo": codigo,
                         "valor": valor.strip(),
                         "vencimento": vencimento.strftime("%d/%m/%Y"),
                         "status": status,
                     }
                 )
                 st.success("Conta a receber cadastrada.")
+
+                if enviar_msg:
+                    st.session_state["messages"].append(
+                        {
+                            "titulo": f"Cobranca {cobranca}",
+                            "mensagem": f"{descricao or 'Mensalidade'} - {valor} (venc. {vencimento.strftime('%d/%m/%Y')}). Codigo: {codigo}",
+                            "turma": "Financeiro",
+                            "autor": "Sistema",
+                            "data": datetime.date.today().strftime("%d/%m/%Y"),
+                        }
+                    )
+                if enviar_email:
+                    assunto = f"Cobranca {cobranca} - {descricao or 'Mensalidade'}"
+                    corpo = f"Valor: {valor} | Vencimento: {vencimento.strftime('%d/%m/%Y')} | Codigo: {codigo}"
+                    email_students_by_turma("Todas", assunto, corpo, "Financeiro")
 
             if st.session_state["receivables"]:
                 st.markdown("### Contas a receber")
@@ -978,6 +1125,10 @@ elif st.session_state["role"] == "Coordenador":
                     st.rerun()
             else:
                 st.info("Nenhuma conta a receber cadastrada.")
+
+            if st.session_state["email_log"]:
+                st.markdown("### Emails automaticos enviados")
+                st.dataframe(pd.DataFrame(st.session_state["email_log"]), use_container_width=True)
 
         with tab2:
             with st.form("form_pagar"):
@@ -1024,7 +1175,10 @@ elif st.session_state["role"] == "Coordenador":
         st.markdown('<p class="main-header">Usuarios e Logins</p>', unsafe_allow_html=True)
         st.info("Cadastro simples de login (demo, sem criptografia).")
         with st.form("form_login"):
-            perfil = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+            perfis = ["Aluno", "Professor", "Coordenador"]
+            if st.session_state["account_profile"] == "Admin":
+                perfis.append("Admin")
+            perfil = st.selectbox("Perfil", perfis)
             if perfil == "Aluno":
                 alunos = [s["nome"] for s in st.session_state["students"]]
                 pessoa = st.selectbox("Aluno", alunos) if alunos else st.text_input("Aluno")
@@ -1041,15 +1195,23 @@ elif st.session_state["role"] == "Coordenador":
             senha = st.text_input("Senha", type="password")
             cadastrar = st.form_submit_button("Criar login")
         if cadastrar:
-            st.session_state["users"].append(
-                {
-                    "usuario": usuario.strip() or "usuario",
-                    "perfil": perfil,
-                    "pessoa": pessoa.strip(),
-                    "senha": senha.strip(),
-                }
-            )
-            st.success("Login criado.")
+            if perfil == "Admin" and st.session_state["account_profile"] != "Admin":
+                st.error("Apenas admin pode criar outro admin.")
+            elif not usuario.strip() or not senha.strip():
+                st.error("Informe usuario e senha.")
+            elif find_user(usuario.strip()):
+                st.error("Usuario ja existe.")
+            else:
+                st.session_state["users"].append(
+                    {
+                        "usuario": usuario.strip() or "usuario",
+                        "perfil": perfil,
+                        "pessoa": pessoa.strip(),
+                        "senha": senha.strip(),
+                    }
+                )
+                save_users(st.session_state["users"])
+                st.success("Login criado.")
 
         if st.session_state["users"]:
             st.markdown("### Usuarios cadastrados")
@@ -1066,9 +1228,14 @@ elif st.session_state["role"] == "Coordenador":
             user_sel = st.selectbox("Selecione o usuario", user_options, key="del_user")
             if st.button("Excluir usuario selecionado"):
                 idx = user_options.index(user_sel)
-                st.session_state["users"].pop(idx)
-                st.success("Usuario excluido.")
-                st.rerun()
+                removed = st.session_state["users"].pop(idx)
+                if removed.get("usuario") == ADMIN_USERNAME and removed.get("perfil") == "Admin":
+                    st.error("Nao e possivel excluir o admin principal.")
+                    st.session_state["users"].insert(idx, removed)
+                else:
+                    save_users(st.session_state["users"])
+                    st.success("Usuario excluido.")
+                    st.rerun()
         else:
             st.info("Nenhum usuario cadastrado.")
 
