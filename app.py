@@ -33,13 +33,13 @@ st.markdown(
     .main-header {font-size: 2.6rem; color: var(--brand-900); font-weight: 700; font-family: 'Sora', sans-serif;}
     .sub-header {font-size: 1.5rem; color: #333;}
     .login-title {font-family: 'Sora', sans-serif; font-weight: 700; color: var(--brand-900); font-size: 1.35rem;}
-    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 800; color: #0c0f1a; font-size: 1.05rem;}
+    .login-tagline {font-family: 'Manrope', sans-serif; font-weight: 900; color: #0c0f1a; font-size: 1.05rem;}
     .login-head {max-width: 420px; margin: 0 auto; text-align: left;}
     div[data-testid="stForm"] {
         max-width: 420px;
         margin: 8px auto 0;
-        background: var(--mint-100);
-        border: 3px solid var(--brand-700);
+        background: #d9f2e2;
+        border: 3.5px solid var(--brand-700);
         padding: 18px;
         border-radius: 14px;
         box-shadow: 0 12px 30px rgba(13,27,111,0.14);
