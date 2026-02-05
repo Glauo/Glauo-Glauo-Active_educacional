@@ -212,6 +212,9 @@ if "email_log" not in st.session_state:
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
 USERS_FILE = Path("users.json")
+MESSAGES_FILE = Path("messages.json")
+VIDEOS_FILE = Path("videos.json")
+MATERIALS_FILE = Path("materials.json")
 WHATSAPP_NUMBER = "5516996043314"
 
 
@@ -294,6 +297,20 @@ def save_users(users):
     USERS_FILE.write_text(
         json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def load_list(path):
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def save_list(path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def ensure_admin_user(users):
@@ -429,9 +446,16 @@ def sidebar_menu(title, options, key):
     return st.session_state[key]
 
 
+def refresh_content_state():
+    st.session_state["messages"] = load_list(MESSAGES_FILE)
+    st.session_state["videos"] = load_list(VIDEOS_FILE)
+    st.session_state["materials"] = load_list(MATERIALS_FILE)
+
+
 # ==============================================================================
 # TELA DE LOGIN
 # ==============================================================================
+refresh_content_state()
 if not st.session_state["logged_in"]:
     if not st.session_state["users"]:
         st.session_state["users"] = load_users()
@@ -830,6 +854,7 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            save_list(MESSAGES_FILE, st.session_state["messages"])
             if enviar_email:
                 assunto = titulo.strip() or "Mensagem"
                 corpo = mensagem.strip() or "Sem conteudo."
@@ -853,6 +878,7 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            save_list(VIDEOS_FILE, st.session_state["videos"])
             st.session_state["messages"].append(
                 {
                     "titulo": f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}",
@@ -862,6 +888,7 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            save_list(MESSAGES_FILE, st.session_state["messages"])
             if enviar_email:
                 assunto = f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}"
                 corpo = f"A aula foi publicada para a turma {turma}. Link: {url.strip()}"
@@ -896,6 +923,7 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            save_list(MATERIALS_FILE, st.session_state["materials"])
             st.session_state["messages"].append(
                 {
                     "titulo": f"Novo material: {titulo.strip() or 'Material'}",
@@ -905,6 +933,7 @@ elif st.session_state["role"] == "Professor":
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 }
             )
+            save_list(MESSAGES_FILE, st.session_state["messages"])
             if enviar_email:
                 assunto = f"Novo material: {titulo.strip() or 'Material'}"
                 corpo = f"Material disponivel para a turma {turma}. Link: {link.strip()}"
@@ -1195,6 +1224,7 @@ elif st.session_state["role"] == "Coordenador":
                             "data": datetime.date.today().strftime("%d/%m/%Y"),
                         }
                     )
+                    save_list(MESSAGES_FILE, st.session_state["messages"])
                 if enviar_email:
                     assunto = f"Cobranca {cobranca} - {descricao or 'Mensalidade'}"
                     corpo = f"Valor: {valor} | Vencimento: {vencimento.strftime('%d/%m/%Y')} | Codigo: {codigo}"
@@ -1394,6 +1424,43 @@ elif st.session_state["role"] == "Coordenador":
         tab1, tab2, tab3 = st.tabs(["Mensagens", "Aulas Gravadas", "Materiais"])
 
         with tab1:
+            st.markdown("### Nova mensagem")
+            with st.form("form_coord_msg"):
+                titulo = st.text_input("Titulo da mensagem", key="coord_msg_titulo")
+                mensagem = st.text_area("Mensagem", key="coord_msg_texto")
+                turmas = class_names()
+                if turmas:
+                    turma = st.selectbox(
+                        "Turma",
+                        ["Todas"] + turmas,
+                        key="coord_msg_turma",
+                    )
+                else:
+                    turma = st.selectbox("Turma", ["Todas"], key="coord_msg_turma")
+                enviar_email = st.checkbox(
+                    "Enviar email automatico",
+                    value=True,
+                    key="coord_msg_email",
+                )
+                enviar = st.form_submit_button("Enviar mensagem")
+            if enviar:
+                st.session_state["messages"].append(
+                    {
+                        "titulo": titulo.strip() or "Mensagem",
+                        "mensagem": mensagem.strip() or "Sem conteudo.",
+                        "turma": turma,
+                        "autor": st.session_state["user_name"],
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(MESSAGES_FILE, st.session_state["messages"])
+                if enviar_email:
+                    assunto = titulo.strip() or "Mensagem"
+                    corpo = mensagem.strip() or "Sem conteudo."
+                    email_students_by_turma(turma, assunto, corpo, "Coordenador")
+                st.success("Mensagem enviada.")
+
+            st.markdown("---")
             if st.session_state["messages"]:
                 st.markdown("### Mensagens enviadas")
                 df_msg = pd.DataFrame(st.session_state["messages"])
@@ -1406,12 +1473,55 @@ elif st.session_state["role"] == "Coordenador":
                 if st.button("Excluir mensagem"):
                     idx = msg_options.index(msg_sel)
                     st.session_state["messages"].pop(idx)
+                    save_list(MESSAGES_FILE, st.session_state["messages"])
                     st.success("Mensagem excluida.")
                     st.rerun()
             else:
                 st.info("Nenhuma mensagem enviada.")
 
         with tab2:
+            st.markdown("### Nova aula gravada")
+            with st.form("form_coord_video"):
+                titulo = st.text_input("Titulo da aula gravada", key="coord_video_titulo")
+                url = st.text_input("Link do video (YouTube/Drive)", key="coord_video_url")
+                turmas = class_names()
+                if turmas:
+                    turma = st.selectbox("Turma do video", turmas, key="coord_video_turma")
+                else:
+                    turma = st.text_input("Turma do video", key="coord_video_turma_txt")
+                enviar_email = st.checkbox(
+                    "Notificar alunos por email",
+                    value=True,
+                    key="coord_video_email",
+                )
+                enviar = st.form_submit_button("Cadastrar aula gravada")
+            if enviar:
+                st.session_state["videos"].append(
+                    {
+                        "titulo": titulo.strip() or "Aula gravada",
+                        "url": url.strip(),
+                        "turma": turma.strip(),
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(VIDEOS_FILE, st.session_state["videos"])
+                st.session_state["messages"].append(
+                    {
+                        "titulo": f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}",
+                        "mensagem": f"Nova aula disponivel para a turma {turma}.",
+                        "turma": turma.strip(),
+                        "autor": st.session_state["user_name"],
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(MESSAGES_FILE, st.session_state["messages"])
+                if enviar_email:
+                    assunto = f"Nova aula gravada: {titulo.strip() or 'Aula gravada'}"
+                    corpo = f"A aula foi publicada para a turma {turma}. Link: {url.strip()}"
+                    email_students_by_turma(turma.strip(), assunto, corpo, "Aulas Gravadas")
+                st.success("Aula gravada cadastrada.")
+
+            st.markdown("---")
             if st.session_state["videos"]:
                 st.markdown("### Aulas gravadas")
                 df_vid = pd.DataFrame(st.session_state["videos"])
@@ -1424,12 +1534,57 @@ elif st.session_state["role"] == "Coordenador":
                 if st.button("Excluir aula gravada"):
                     idx = vid_options.index(vid_sel)
                     st.session_state["videos"].pop(idx)
+                    save_list(VIDEOS_FILE, st.session_state["videos"])
                     st.success("Aula excluida.")
                     st.rerun()
             else:
                 st.info("Nenhuma aula gravada cadastrada.")
 
         with tab3:
+            st.markdown("### Novo material")
+            with st.form("form_coord_material"):
+                titulo = st.text_input("Titulo do material", key="coord_mat_titulo")
+                descricao = st.text_area("Descricao", key="coord_mat_desc")
+                link = st.text_input("Link do material (Drive/Docs)", key="coord_mat_link")
+                turmas = class_names()
+                if turmas:
+                    turma = st.selectbox("Turma do material", turmas, key="coord_mat_turma")
+                else:
+                    turma = st.text_input("Turma do material", key="coord_mat_turma_txt")
+                enviar_email = st.checkbox(
+                    "Notificar alunos por email",
+                    value=True,
+                    key="coord_mat_email",
+                )
+                enviar = st.form_submit_button("Cadastrar material")
+            if enviar:
+                st.session_state["materials"].append(
+                    {
+                        "titulo": titulo.strip() or "Material",
+                        "descricao": descricao.strip(),
+                        "link": link.strip(),
+                        "turma": turma.strip(),
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(MATERIALS_FILE, st.session_state["materials"])
+                st.session_state["messages"].append(
+                    {
+                        "titulo": f"Novo material: {titulo.strip() or 'Material'}",
+                        "mensagem": f"Material disponivel para a turma {turma}.",
+                        "turma": turma.strip(),
+                        "autor": st.session_state["user_name"],
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(MESSAGES_FILE, st.session_state["messages"])
+                if enviar_email:
+                    assunto = f"Novo material: {titulo.strip() or 'Material'}"
+                    corpo = f"Material disponivel para a turma {turma}. Link: {link.strip()}"
+                    email_students_by_turma(turma.strip(), assunto, corpo, "Materiais")
+                st.success("Material cadastrado.")
+
+            st.markdown("---")
             if st.session_state["materials"]:
                 st.markdown("### Materiais")
                 df_mat = pd.DataFrame(st.session_state["materials"])
@@ -1442,6 +1597,7 @@ elif st.session_state["role"] == "Coordenador":
                 if st.button("Excluir material"):
                     idx = mat_options.index(mat_sel)
                     st.session_state["materials"].pop(idx)
+                    save_list(MATERIALS_FILE, st.session_state["materials"])
                     st.success("Material excluido.")
                     st.rerun()
             else:
