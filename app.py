@@ -140,20 +140,8 @@ st.markdown(
     .login-form-title {margin-bottom: 6px;}
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
     footer {visibility: hidden;}
-    /* Garantir que o controle de colapsar a sidebar continue visivel */
+    /* Manter o topo visivel para a seta de abrir/fechar o menu */
     header {visibility: visible !important;}
-    [data-testid="stToolbar"] {display: none;}
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        opacity: 1 !important;
-        display: flex !important;
-        pointer-events: auto !important;
-        position: fixed;
-        top: 12px;
-        left: 12px;
-        z-index: 10000;
-    }
     .whatsapp-btn {
         display: inline-flex;
         align-items: center;
