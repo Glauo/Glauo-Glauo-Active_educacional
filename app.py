@@ -21,8 +21,13 @@ VIDEOS_FILE = Path("videos.json")
 MATERIALS_FILE = Path("materials.json")
 GRADES_FILE = Path("grades.json")
 FINANCIAL_FILE = Path("financial.json")
+CLASSES_FILE = Path("classes.json")
 
-WHATSAPP_NUMBER = "5516996043314" 
+WHATSAPP_NUMBER = "5516996043314"
+
+# --- CREDENCIAIS DE ADMIN ---
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"
 
 # --- FUNCOES DE UTILIDADE (LOAD/SAVE) ---
 def get_logo_path():
@@ -42,6 +47,12 @@ def load_data(path):
 
 def save_data(path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def load_users():
+    return load_data(USERS_FILE)
+
+def save_users(users):
+    save_data(USERS_FILE, users)
 
 def load_financial():
     if FINANCIAL_FILE.exists():
@@ -112,6 +123,19 @@ def parse_money(value):
     except ValueError:
         return 0.0
 
+def parse_date(date_str):
+    """Parse date string in format dd/mm/yyyy to datetime.date object."""
+    if not date_str or not isinstance(date_str, str):
+        return None
+    try:
+        parts = date_str.split("/")
+        if len(parts) == 3:
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+            return datetime.date(year, month, day)
+    except (ValueError, IndexError):
+        return None
+    return None
+
 def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -171,14 +195,14 @@ st.markdown(CSS_GLOBAL, unsafe_allow_html=True)
 # ==============================================================================
 # LOGICA DE INICIALIZACAO DE DADOS
 # ==============================================================================
-st.session_state["messages"] = load_list(MESSAGES_FILE)
-st.session_state["videos"] = load_list(VIDEOS_FILE)
-st.session_state["materials"] = load_list(MATERIALS_FILE)
-st.session_state["grades"] = load_list(GRADES_FILE)
+st.session_state["messages"] = load_data(MESSAGES_FILE)
+st.session_state["videos"] = load_data(VIDEOS_FILE)
+st.session_state["materials"] = load_data(MATERIALS_FILE)
+st.session_state["grades"] = load_data(GRADES_FILE)
 
-if not st.session_state["users"]:
+if "users" not in st.session_state or not st.session_state["users"]:
     st.session_state["users"] = load_users()
-    st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+    st.session_state["users"] = ensure_admin_user()
     save_users(st.session_state["users"])
 
 # ==============================================================================
@@ -323,7 +347,10 @@ elif st.session_state["role"] == "Professor":
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    if menu == "👥 Minhas Turmas":
+    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "📝 Diário de Classe": "Diário", "💬 Mensagens": "Mensagens", "📊 Notas": "Notas", "🎥 Aulas Gravadas": "Aulas", "📂 Materiais": "Materiais"}
+    menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
+
+    if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
         # Filtra turmas onde o nome do professor aparece
         turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
@@ -355,7 +382,11 @@ elif st.session_state["role"] == "Professor":
                 if t_obj.get("link_zoom"): 
                     st.link_button("Iniciar Aula Agora", t_obj["link_zoom"], type="primary")
 
-    elif menu == "🧑‍🎓 Meus Alunos":
+    elif menu_prof == "Mensagens":
+        st.markdown('<div class="main-header">Mensagens</div>', unsafe_allow_html=True)
+        st.write("Funcionalidade de mensagens (em desenvolvimento).")
+
+    elif menu_prof == "Diário":
         st.markdown('<div class="main-header">Meus Alunos (Visualização)</div>', unsafe_allow_html=True)
         # 1. Minhas Turmas
         minhas_turmas_nomes = [c["nome"] for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
@@ -372,10 +403,8 @@ elif st.session_state["role"] == "Professor":
             valid_cols = [c for c in cols if c in df.columns]
             st.dataframe(df[valid_cols], use_container_width=True)
 
-    elif menu == "📝 Diário":
-        st.write("Funcionalidade de chamada (em desenvolvimento).")
     
-    elif menu == "📊 Notas":
+    elif menu_prof == "Notas":
         with st.form("lancar_notas"):
             st.write("Lançar Notas")
             aluno = st.text_input("Nome do Aluno")
@@ -459,7 +488,7 @@ elif st.session_state["role"] == "Coordenador":
                         turma_obj["link_zoom"] = novo_link
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
-    elif menu == "🧑‍🎓 Alunos":
+    elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
         
         # LISTA GERAL
@@ -841,7 +870,11 @@ elif st.session_state["role"] == "Coordenador":
                 with c2: val = st.text_input("Valor (Ex: 150,00)")
                 aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
                 if st.form_submit_button("Lançar"):
-                    add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
+                    st.session_state["receivables"].append({
+                        "descricao": desc, "valor": parse_money(val), "aluno": aluno, 
+                        "vencimento": str(datetime.date.today()), "status": "Aberto", "tipo": "Boleto"
+                    })
+                    save_financial()
                     st.success("Lançado!")
             st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
         with tab2:
@@ -854,7 +887,7 @@ elif st.session_state["role"] == "Coordenador":
                 st.success("Excluído!")
                 st.rerun()
 
-    elif menu == "💰 Financeiro":
+    elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         with st.form("fin_rec"):
             st.write("Lançar Recebimento")
