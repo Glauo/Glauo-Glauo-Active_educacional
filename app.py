@@ -139,7 +139,7 @@ st.markdown(
     .metric-container {background-color: white; padding: 15px; border-radius: 8px; border-left: 5px solid #1A237E; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
     .login-form-title {margin-bottom: 6px;}
     .pill {display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8eaf6; color: #1A237E; font-size: 0.85rem;}
-    header, footer {visibility: hidden;}
+    footer {visibility: hidden;}
     [data-testid="stToolbar"] {display: none;}
     .whatsapp-btn {
         display: inline-flex;
