@@ -15,45 +15,35 @@ st.set_page_config(
 )
 
 # --- ARQUIVOS DE DADOS (PERSISTENCIA) ---
-# Nomes dos arquivos onde os dados serao salvos
 USERS_FILE = Path("users.json")
-STUDENTS_FILE = Path("students.json")
-TEACHERS_FILE = Path("teachers.json")
-CLASSES_FILE = Path("classes.json")
 MESSAGES_FILE = Path("messages.json")
 VIDEOS_FILE = Path("videos.json")
 MATERIALS_FILE = Path("materials.json")
 GRADES_FILE = Path("grades.json")
 FINANCIAL_FILE = Path("financial.json")
 
-# Configurações Globais
 WHATSAPP_NUMBER = "5516996043314" 
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "123"
 
-# --- FUNCOES DE UTILIDADE (CARREGAR/SALVAR) ---
+# --- FUNCOES DE UTILIDADE (LOAD/SAVE) ---
 def get_logo_path():
-    # Tenta encontrar o logo em varios formatos
     candidates = [Path("image_8fc66d.png"), Path("logo_active2.png"), Path("logo.png")]
     for path in candidates:
-        if path.exists(): return path
+        if path.exists():
+            return path
     return None
 
 def load_data(path):
-    # Carrega dados de um arquivo JSON generico
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
-        except: return []
+        except Exception: return []
     return []
 
 def save_data(path, data):
-    # Salva dados em um arquivo JSON generico
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def load_financial():
-    # Carregamento especifico para o financeiro (dicionario com 2 listas)
     if FINANCIAL_FILE.exists():
         try:
             data = json.loads(FINANCIAL_FILE.read_text(encoding="utf-8"))
@@ -62,7 +52,6 @@ def load_financial():
     return [], []
 
 def save_financial():
-    # Salvamento especifico para financeiro
     data = {
         "receivables": st.session_state["receivables"],
         "payables": st.session_state["payables"]
@@ -70,17 +59,19 @@ def save_financial():
     FINANCIAL_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def ensure_admin_user():
-    # Garante que o usuario admin sempre exista
     users = load_data(USERS_FILE)
     if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
-        users.append({"usuario": ADMIN_USERNAME, "senha": ADMIN_PASSWORD, "perfil": "Admin", "pessoa": "Administrador"})
-        save_data(USERS_FILE, users)
+        users.append({
+            "usuario": ADMIN_USERNAME,
+            "senha": ADMIN_PASSWORD,
+            "perfil": "Admin",
+            "pessoa": "Administrador",
+        })
     return users
 
 def create_or_update_login(username, password, role, person_name):
-    # Funcao auxiliar para criar login automaticamente ao cadastrar aluno/professor
     users = st.session_state["users"]
-    # Remove se ja existir para atualizar (evita duplicidade)
+    # Remove se ja existir para atualizar
     users = [u for u in users if u["usuario"] != username]
     users.append({"usuario": username, "senha": password, "perfil": role, "pessoa": person_name})
     st.session_state["users"] = users
@@ -116,37 +107,39 @@ def teacher_names():
     return [t["nome"] for t in st.session_state["teachers"]]
 
 def parse_money(value):
-    try: return float(str(value).replace(",", "."))
-    except ValueError: return 0.0
+    try:
+        return float(str(value).replace(",", "."))
+    except ValueError:
+        return 0.0
 
 def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
-    codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
-    st.session_state["receivables"].append({
-        "descricao": descricao.strip() or "Mensalidade",
-        "aluno": aluno.strip(),
-        "categoria": categoria,
-        "cobranca": cobranca,
-        "codigo": codigo,
-        "valor": valor, 
-        "vencimento": vencimento.strftime("%d/%m/%Y") if isinstance(vencimento, datetime.date) else vencimento,
-        "status": "Aberto",
-    })
-    save_financial()
-    return codigo
 
 def allowed_portals(profile):
     # Define quem pode acessar o que
     if profile == "Aluno": return ["Aluno"]
     if profile == "Professor": return ["Professor"]
-    if profile in ["Coordenador", "Admin"]: return ["Aluno", "Professor", "Coordenador"]
+    if profile == "Coordenador": return ["Aluno", "Professor", "Coordenador"]
+    if profile == "Admin": return ["Aluno", "Professor", "Coordenador"]
     return []
 
+def email_students_by_turma(turma, assunto, corpo, origem):
+    # Simulacao de envio de email
+    for student in st.session_state["students"]:
+        if turma == "Todas" or student.get("turma") == turma:
+            email = student.get("email", "").strip()
+            if email:
+                st.session_state["email_log"].append({
+                    "destinatario": student.get("nome", "Aluno"),
+                    "email": email,
+                    "assunto": assunto,
+                    "mensagem": corpo,
+                    "origem": origem,
+                    "data": datetime.date.today().strftime("%d/%m/%Y"),
+                })
+
 def sidebar_menu(title, options, key):
-    # Menu lateral estilizado
-    st.markdown(f"<h3 style='color:#1e3a8a; font-family:sans-serif; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state: st.session_state[key] = options[0]
     for option in options:
         active = st.session_state[key] == option
@@ -155,17 +148,20 @@ def sidebar_menu(title, options, key):
             st.rerun()
     return st.session_state[key]
 # ==============================================================================
-# CSS E ESTILOS
+# CSS DINAMICO
 # ==============================================================================
 CSS_GLOBAL = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap');
     .stApp { background: #f8fafc; font-family: 'Manrope', sans-serif; }
     .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
     .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
     div[data-testid="stDataFrame"] { background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 16px; }
     div[data-testid="stForm"] { background: white; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
     button[kind="primary"] { background: #1e3a8a; border-radius: 8px; }
+    
+    /* Login CSS Especifico */
+    .login-bg { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%); }
     .info-card { background: rgba(255, 255, 255, 0.95); border-radius: 24px; padding: 40px; height: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
     .whatsapp-button { display: flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 20px; }
 </style>
@@ -173,50 +169,56 @@ CSS_GLOBAL = """
 st.markdown(CSS_GLOBAL, unsafe_allow_html=True)
 
 # ==============================================================================
-# INICIALIZACAO DE DADOS
+# LOGICA DE INICIALIZACAO DE DADOS
 # ==============================================================================
-if "init_done" not in st.session_state:
-    st.session_state["users"] = ensure_admin_user()
-    st.session_state["students"] = load_data(STUDENTS_FILE)
-    st.session_state["teachers"] = load_data(TEACHERS_FILE)
-    st.session_state["classes"] = load_data(CLASSES_FILE)
-    st.session_state["messages"] = load_data(MESSAGES_FILE)
-    st.session_state["videos"] = load_data(VIDEOS_FILE)
-    st.session_state["materials"] = load_data(MATERIALS_FILE)
-    st.session_state["grades"] = load_data(GRADES_FILE)
-    rec, pag = load_financial()
-    st.session_state["receivables"] = rec
-    st.session_state["payables"] = pag
-    st.session_state["init_done"] = True
+st.session_state["messages"] = load_list(MESSAGES_FILE)
+st.session_state["videos"] = load_list(VIDEOS_FILE)
+st.session_state["materials"] = load_list(MATERIALS_FILE)
+st.session_state["grades"] = load_list(GRADES_FILE)
+
+if not st.session_state["users"]:
+    st.session_state["users"] = load_users()
+    st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+    save_users(st.session_state["users"])
 
 # ==============================================================================
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state["logged_in"]:
+    # Aplica fundo de login
     st.markdown("""<style>.stApp {background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%);}</style>""", unsafe_allow_html=True)
     
     col_left, col_right = st.columns([1, 0.8], gap="large")
     with col_left:
         logo_path = get_logo_path()
-        logo_html = f"<img src='data:image/png;base64,{base64.b64encode(logo_path.read_bytes()).decode()}' style='max-width:80px;'>" if logo_path else ""
+        logo_html = ""
+        if logo_path:
+            encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
+            logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='logo-img'>"
         st.markdown(f"""
-        <div class="info-card">
-            <div style="margin-bottom:24px;">{logo_html}</div>
-            <div style="font-family:'Sora'; font-size:2rem; font-weight:700; color:#0f172a; line-height:1.2; margin-bottom:12px;">Sistema Educacional<br>Ativo</div>
-            <div style="color:#64748b; margin-bottom:32px;">Gestão acadêmica, comunicação e conteúdo.</div>
-            <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Suporte WhatsApp</a>
-        </div>""", unsafe_allow_html=True)
+<div class="info-card">
+<div class="logo-area">{logo_html}</div>
+<div class="info-title">Sistema Educacional<br>Ativo</div>
+<div class="info-subtitle">Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.</div>
+<div class="feature-item"><div class="feature-icon-box">💬</div><div><div class="feature-text">Mensagens Diretas</div><div class="feature-sub">Comunicação rápida com alunos e turmas.</div></div></div>
+<div class="feature-item"><div class="feature-icon-box">🎥</div><div><div class="feature-text">Aulas Gravadas</div><div class="feature-sub">Conteúdo organizado e acessível 24h.</div></div></div>
+<div class="feature-item"><div class="feature-icon-box">💲</div><div><div class="feature-text">Financeiro Simples</div><div class="feature-sub">Controle de matrículas e pagamentos.</div></div></div>
+<a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+</div>
+""", unsafe_allow_html=True)
 
     with col_right:
-        st.write(""); st.write("")
+        st.write("") 
+        st.write("")
         with st.form("login_form"):
-            st.markdown("<h3 style='font-family:Sora;'>Conecte-se</h3>", unsafe_allow_html=True)
+            st.markdown("""<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""", unsafe_allow_html=True)
             role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
             unidade = st.selectbox("Unidade", ["Matriz", "Unidade Centro", "Unidade Norte", "Outra"])
             if unidade == "Outra": unidade = st.text_input("Nome da Unidade")
             user_input = st.text_input("Usuário")
             pass_input = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
+                # Procura usuario
                 u_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_input), None)
                 if not u_obj or u_obj["senha"] != pass_input:
                     st.error("Usuário ou senha inválidos.")
@@ -224,18 +226,28 @@ if not st.session_state["logged_in"]:
                     st.error(f"Sem permissão de {role}.")
                 else:
                     login_user(role, u_obj.get("pessoa", user_input), str(unidade), u_obj.get("perfil"))
-                    # ==============================================================================
+
+# ==============================================================================
 # DASHBOARD: ALUNO
 # ==============================================================================
 elif st.session_state["role"] == "Aluno":
     with st.sidebar:
+        logo_path = get_logo_path()
+        if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### Olá, {st.session_state['user_name']}")
-        st.info("Painel do Aluno")
-        menu = sidebar_menu("Menu", ["🏠 Painel", "📚 Minhas Aulas", "📊 Boletim", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais"], "aluno_menu")
+        if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
+        st.info("Nível: Intermediário B1")
+        st.markdown("---")
+        menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo"], "menu_aluno")
+        st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    if menu == "🏠 Painel":
+    menu_aluno_map = {"🏠 Painel": "Dashboard", "📚 Minhas Aulas": "Minhas Aulas", "📊 Boletim e Frequência": "Boletim & Frequencia", "💬 Mensagens": "Mensagens", "🎥 Aulas Gravadas": "Aulas Gravadas", "💰 Financeiro": "Financeiro", "📂 Materiais de Estudo": "Materiais de Estudo"}
+    menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
+
+    if menu_aluno == "Dashboard":
         st.markdown('<div class="main-header">Painel do Aluno</div>', unsafe_allow_html=True)
+        # Logica do Link Zoom
         link = "https://zoom.us/join"
         meu_cadastro = next((s for s in st.session_state["students"] if s["nome"] == st.session_state["user_name"]), None)
         if meu_cadastro:
@@ -249,51 +261,71 @@ elif st.session_state["role"] == "Aluno":
         c1.markdown("""<div class="dash-card"><h4>Aulas Assistidas</h4><h2>24/30</h2></div>""", unsafe_allow_html=True)
         c2.markdown("""<div class="dash-card"><h4>Média Geral</h4><h2>8.5</h2></div>""", unsafe_allow_html=True)
 
-    elif menu == "📚 Minhas Aulas":
-        st.markdown('<div class="main-header">Minhas Aulas</div>', unsafe_allow_html=True)
-        st.info("Conteúdo programático das aulas.")
+    elif menu_aluno == "Minhas Aulas":
+        st.markdown('<div class="main-header">Grade Curricular</div>', unsafe_allow_html=True)
+        modules = {"Módulo 1: Introdução": ["Aula 1.1 - Hello", "Aula 1.2 - Colors"], "Módulo 2: Verbos": ["Aula 2.1 - To Be", "Aula 2.2 - Can"]}
+        for mod, aulas in modules.items():
+            with st.expander(mod):
+                for aula in aulas: st.checkbox(f"{aula}", value=True)
+                st.button(f"Ver Material {mod}", key=mod)
 
-    elif menu == "📊 Boletim":
-        st.markdown('<div class="main-header">Boletim</div>', unsafe_allow_html=True)
-        my_grades = [g for g in st.session_state["grades"] if g["aluno"] == st.session_state["user_name"]]
-        if my_grades: st.dataframe(pd.DataFrame(my_grades), use_container_width=True)
-        else: st.info("Sem notas lançadas.")
+    elif menu_aluno == "Boletim & Frequencia":
+        st.markdown('<div class="main-header">Desempenho Acadêmico</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Notas", "Presença"])
+        aluno_nome = st.session_state["user_name"]
+        notas = [g for g in st.session_state["grades"] if g.get("aluno") == aluno_nome and g.get("status") == "Aprovado"]
+        with tab1:
+            if notas: st.dataframe(pd.DataFrame(notas), use_container_width=True)
+            else: st.info("Nenhuma nota lançada.")
+        with tab2: st.info("Frequência: 92% de presença.")
 
-    elif menu == "💬 Mensagens":
+    elif menu_aluno == "Mensagens":
         st.markdown('<div class="main-header">Mensagens</div>', unsafe_allow_html=True)
-        for m in reversed(st.session_state["messages"]):
-            st.markdown(f"**{m['titulo']}** ({m.get('data','')})\n\n{m['mensagem']}\n\n---")
+        if not st.session_state["messages"]: st.info("Sem mensagens.")
+        for msg in reversed(st.session_state["messages"]):
+            with st.container():
+                st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg['titulo']}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg['data']} | {msg['autor']}</div><div>{msg['mensagem']}</div></div>""", unsafe_allow_html=True)
 
-    elif menu == "🎥 Aulas Gravadas":
+    elif menu_aluno == "Aulas Gravadas":
         st.markdown('<div class="main-header">Aulas Gravadas</div>', unsafe_allow_html=True)
+        if not st.session_state["videos"]: st.info("Sem vídeos.")
         for v in reversed(st.session_state["videos"]):
-            with st.expander(v['titulo']):
+            with st.expander(f"🎥 {v['titulo']} ({v['data']})"):
                 if v['url']: st.video(v['url'])
-
-    elif menu == "💰 Financeiro":
-        st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
-        my_fin = [r for r in st.session_state["receivables"] if r["aluno"] == st.session_state["user_name"]]
-        if my_fin: st.dataframe(pd.DataFrame(my_fin), use_container_width=True)
-        else: st.info("Nada consta.")
-
-    elif menu == "📂 Materiais":
+            
+    elif menu_aluno == "Materiais de Estudo":
         st.markdown('<div class="main-header">Materiais</div>', unsafe_allow_html=True)
-        for mat in st.session_state["materials"]:
-            st.markdown(f"📄 **{mat['titulo']}**: {mat['descricao']}")
-            if mat['link']: st.markdown(f"[Baixar]({mat['link']})")
-            st.markdown("---")
+        if not st.session_state["materials"]: st.info("Sem materiais.")
+        for m in reversed(st.session_state["materials"]):
+            with st.container():
+                st.markdown(f"**{m['titulo']}**")
+                st.write(m['descricao'])
+                if m['link']: st.markdown(f"[📥 Baixar Arquivo]({m['link']})")
+                st.markdown("---")
+
+    elif menu_aluno == "Financeiro":
+        st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        meus = [r for r in st.session_state["receivables"] if r.get("aluno") == st.session_state["user_name"]]
+        if meus: st.dataframe(pd.DataFrame(meus), use_container_width=True)
+        else: st.info("Financeiro em dia.")
 
 # ==============================================================================
-# DASHBOARD: PROFESSOR
+# PROFESSOR
 # ==============================================================================
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
-        st.markdown(f"### Prof. {st.session_state['user_name']}")
-        menu = sidebar_menu("Docência", ["👥 Minhas Turmas", "🧑‍🎓 Meus Alunos", "📝 Diário", "📊 Notas", "🎥 Cadastrar Aula", "📂 Cadastrar Material"], "prof_menu")
+        logo_path = get_logo_path()
+        if logo_path: st.image(str(logo_path), width=120)
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.caption("Perfil: Docente")
+        st.markdown("---")
+        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "📝 Diário de Classe", "💬 Mensagens", "📊 Notas", "🎥 Aulas Gravadas", "📂 Materiais"], "menu_prof")
+        st.markdown("---")
         if st.button("Sair"): logout_user()
 
     if menu == "👥 Minhas Turmas":
         st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
+        # Filtra turmas onde o nome do professor aparece
         turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
         
         if not turmas: 
@@ -305,6 +337,7 @@ elif st.session_state["role"] == "Professor":
                 t_sel = st.selectbox("Selecione a Turma", [t["nome"] for t in turmas])
                 t_obj = next(t for t in turmas if t["nome"] == t_sel)
                 
+                # Edição do Link
                 novo_link = st.text_input("Link Zoom", value=t_obj.get("link_zoom", ""))
                 if st.button("Salvar Link e Enviar aos Alunos"):
                     t_obj["link_zoom"] = novo_link
@@ -324,14 +357,18 @@ elif st.session_state["role"] == "Professor":
 
     elif menu == "🧑‍🎓 Meus Alunos":
         st.markdown('<div class="main-header">Meus Alunos (Visualização)</div>', unsafe_allow_html=True)
+        # 1. Minhas Turmas
         minhas_turmas_nomes = [c["nome"] for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
+        # 2. Alunos dessas turmas
         meus_alunos = [s for s in st.session_state["students"] if s.get("turma") in minhas_turmas_nomes]
         
         if not meus_alunos:
             st.warning("Nenhum aluno encontrado nas suas turmas.")
         else:
+            # Mostra dados, mas sem editar
             df = pd.DataFrame(meus_alunos)
             cols = ["nome", "turma", "celular", "email"]
+            # Filtra colunas existentes
             valid_cols = [c for c in cols if c in df.columns]
             st.dataframe(df[valid_cols], use_container_width=True)
 
@@ -352,16 +389,16 @@ elif st.session_state["role"] == "Professor":
                 save_data(GRADES_FILE, st.session_state["grades"])
                 st.success("Nota enviada!")
 
-    elif menu == "🎥 Cadastrar Aula":
-        with st.form("new_aula"):
-            titulo = st.text_input("Título da Aula")
-            link_yt = st.text_input("Link YouTube")
-            if st.form_submit_button("Salvar Aula"):
-                st.session_state["videos"].append({"titulo": titulo, "url": link_yt, "data": str(datetime.date.today())})
-                save_data(VIDEOS_FILE, st.session_state["videos"])
-                st.success("Aula salva!")
+    elif menu_prof == "Aulas":
+        st.markdown('<div class="main-header">Cadastrar Aula Gravada</div>', unsafe_allow_html=True)
+        with st.form("new_vid"):
+            st.text_input("Título")
+            st.text_input("Link (YouTube)")
+            st.selectbox("Turma", ["Teens B1", "Adults"])
+            st.form_submit_button("Cadastrar")
 
-    elif menu == "📂 Cadastrar Material":
+    elif menu_prof == "Materiais":
+        st.markdown('<div class="main-header">Cadastrar Material</div>', unsafe_allow_html=True)
         with st.form("new_mat"):
             titulo = st.text_input("Título")
             desc = st.text_area("Descrição")
@@ -370,37 +407,57 @@ elif st.session_state["role"] == "Professor":
                 st.session_state["materials"].append({"titulo": titulo, "descricao": desc, "link": link_drv})
                 save_data(MATERIALS_FILE, st.session_state["materials"])
                 st.success("Material salvo!")
-                # ==============================================================================
+
+# ==============================================================================
 # DASHBOARD: COORDENADOR
 # ==============================================================================
 elif st.session_state["role"] == "Coordenador":
     with st.sidebar:
-        st.markdown(f"### Coord. {st.session_state['user_name']}")
-        menu = sidebar_menu("Admin", ["📊 Dash", "🔗 Links Ao Vivo", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🏫 Turmas", "💰 Financeiro", "🔐 Usuários"], "coord_menu")
+        logo_path = get_logo_path()
+        if logo_path: st.image(str(logo_path), width=120)
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.caption("Perfil: Coordenação")
+        st.markdown("---")
+        menu_coord_label = sidebar_menu("Administração", ["📊 Dashboard", "🔗 Links Ao Vivo", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🔐 Usuários", "🏫 Turmas", "💰 Financeiro", "📝 Aprovação Notas", "📚 Conteúdos"], "menu_coord")
+        st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    if menu == "📊 Dash":
-        st.markdown('<div class="main-header">Visão Geral</div>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Alunos", len(st.session_state["students"]))
-        c2.metric("Professores", len(st.session_state["teachers"]))
-        c3.metric("Turmas", len(st.session_state["classes"]))
+    menu_coord_map = {"📊 Dashboard": "Dashboard", "🔗 Links Ao Vivo": "Links", "🧑‍🎓 Alunos": "Alunos", "👩‍🏫 Professores": "Professores", "🔐 Usuários": "Usuarios", "🏫 Turmas": "Turmas", "💰 Financeiro": "Financeiro", "📝 Aprovação Notas": "Notas", "📚 Conteúdos": "Conteudos"}
+    menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
 
-    elif menu == "🔗 Links Ao Vivo":
-        st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
-        turmas = [t["nome"] for t in st.session_state["classes"]]
-        if not turmas: st.warning("Sem turmas cadastradas.")
+    if menu_coord == "Dashboard":
+        st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Total de Alunos</div><div class="card-value">{len(st.session_state["students"])}</div></div><div class="card-sub"><span class="trend-up">Ativos</span></div></div>""", unsafe_allow_html=True)
+        with c2: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Professores</div><div class="card-value">{len(st.session_state["teachers"])}</div></div></div>""", unsafe_allow_html=True)
+        with c3: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Turmas</div><div class="card-value">{len(st.session_state["classes"])}</div></div></div>""", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        total_rec = sum(parse_money(i["valor"]) for i in st.session_state["receivables"])
+        total_pag = sum(parse_money(i["valor"]) for i in st.session_state["payables"])
+        saldo = total_rec - total_pag
+        c4, c5, c6 = st.columns(3)
+        with c4: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Receber</div><div class="card-value" style="color:#2563eb;">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
+        with c5: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Pagar</div><div class="card-value" style="color:#dc2626;">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
+        with c6:
+             color = "#16a34a" if saldo >= 0 else "#dc2626"
+             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Saldo Atual</div><div class="card-value" style="color:{color};">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
+
+    elif menu_coord == "Links":
+        st.markdown('<div class="main-header">🔗 Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
+        st.info("Aqui você define o link da aula ao vivo para cada turma. Esse link aparecerá automaticamente para todos os alunos.")
+        turmas_disponiveis = [t["nome"] for t in st.session_state["classes"]]
+        if not turmas_disponiveis:
+            st.warning("Cadastre turmas primeiro na aba 'Turmas'.")
         else:
-            sel = st.selectbox("Selecione a Turma", turmas)
-            obj = next(t for t in st.session_state["classes"] if t["nome"] == sel)
-            
-            st.info("Este link aparecerá automaticamente para todos os alunos desta turma.")
-            novo = st.text_input("Link Zoom/Meet", value=obj.get("link_zoom", ""))
-            
-            if st.button("Salvar Link"):
-                obj["link_zoom"] = novo
-                save_data(CLASSES_FILE, st.session_state["classes"])
-                st.success("Link atualizado!")
+            with st.form("gerenciar_links"):
+                turma_sel = st.selectbox("Selecione a Turma", turmas_disponiveis)
+                turma_obj = next((t for t in st.session_state["classes"] if t["nome"] == turma_sel), None)
+                link_atual = turma_obj.get("link_zoom", "") if turma_obj else ""
+                novo_link = st.text_input("Link da Aula Ao Vivo (Zoom/Meet/Teams)", value=link_atual)
+                if st.form_submit_button("Salvar Link para a Turma"):
+                    if turma_obj:
+                        turma_obj["link_zoom"] = novo_link
+                        st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
     elif menu == "🧑‍🎓 Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
@@ -409,170 +466,384 @@ elif st.session_state["role"] == "Coordenador":
         if st.session_state["students"]:
             with st.expander("📋 Ver Lista Completa de Alunos", expanded=False):
                 df = pd.DataFrame(st.session_state["students"])
+                # Mostra colunas seguras
                 safe_cols = [c for c in ["nome", "turma", "celular", "email", "idade", "responsavel_nome"] if c in df.columns]
                 st.dataframe(df[safe_cols], use_container_width=True)
         
         tab1, tab2 = st.tabs(["➕ Novo Cadastro", "✏️ Gerenciar / Excluir"])
         
         with tab1:
-            with st.form("cad_aluno"):
-                st.subheader("Dados Pessoais")
-                c1, c2 = st.columns(2)
-                nome = c1.text_input("Nome Completo *")
-                nasc = c2.date_input("Data Nascimento", datetime.date(2010,1,1), format="DD/MM/YYYY")
-                
-                c3, c4, c5 = st.columns(3)
-                idade = c3.number_input("Idade", 1, 100)
-                rg = c4.text_input("RG")
-                cpf = c5.text_input("CPF")
-                
-                c6, c7 = st.columns(2)
-                celular = c6.text_input("Celular *")
-                email = c7.text_input("Email *")
-                
-                st.subheader("Endereço")
-                ce1, ce2 = st.columns(2)
-                cidade = ce1.text_input("Cidade")
-                bairro = ce2.text_input("Bairro")
-                ce3, ce4 = st.columns([3, 1])
-                rua = ce3.text_input("Rua")
-                num = ce4.text_input("Nº")
-                
-                st.subheader("Turma & Acesso")
-                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                login_u = st.text_input("Criar Login do Aluno")
-                login_p = st.text_input("Criar Senha do Aluno", type="password")
-                
-                st.subheader("Responsável (Obrigatório se < 18)")
-                resp_nome = st.text_input("Nome Responsável")
-                resp_cpf = st.text_input("CPF Responsável")
-                
-                if st.form_submit_button("Salvar Aluno"):
-                    if idade < 18 and not resp_nome:
-                        st.error("Menor de idade exige responsável.")
-                    elif not nome:
-                        st.error("Nome é obrigatório.")
+            with st.form("add_student_full"):
+                st.markdown("### ?? Dados Pessoais")
+                c1, c2, c3 = st.columns(3)
+                with c1: nome = st.text_input("Nome Completo *")
+                with c2: data_nascimento = st.date_input("Data de Nascimento *")
+                with c3: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
+
+                c4, c5, c6 = st.columns(3)
+                with c4: celular = st.text_input("Celular/WhatsApp *")
+                with c5: email = st.text_input("E-mail do Aluno *")
+                with c6: rg = st.text_input("RG")
+
+                c7, c8, c9 = st.columns(3)
+                with c7: cpf = st.text_input("CPF")
+                with c8: natal = st.text_input("Cidade Natal")
+                with c9: pais = st.text_input("Pa?s de Origem", value="Brasil")
+
+                st.divider()
+                st.markdown("### ?? Endere?o")
+                ce1, ce2, ce3 = st.columns(3)
+                with ce1: cep = st.text_input("CEP")
+                with ce2: cidade = st.text_input("Cidade")
+                with ce3: bairro = st.text_input("Bairro")
+
+                ce4, ce5 = st.columns([3, 1])
+                with ce4: rua = st.text_input("Rua")
+                with ce5: numero = st.text_input("N?mero")
+
+                st.divider()
+                st.markdown("### ?? Turma")
+                turma = st.selectbox("Vincular ? Turma", ["Sem Turma"] + class_names())
+
+                st.divider()
+                st.markdown("### ?? Acesso do Aluno (opcional)")
+                ca1, ca2 = st.columns(2)
+                with ca1: login_aluno = st.text_input("Login do Aluno")
+                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password")
+
+                st.divider()
+                st.markdown("### ???????? Respons?vel Legal / Financeiro")
+                st.caption("Obrigat?rio para menores de 18 anos.")
+
+                cr1, cr2 = st.columns(2)
+                with cr1: resp_nome = st.text_input("Nome do Respons?vel")
+                with cr2: resp_cpf = st.text_input("CPF do Respons?vel")
+
+                cr3, cr4 = st.columns(2)
+                with cr3: resp_cel = st.text_input("Celular do Respons?vel")
+                with cr4: resp_email = st.text_input("E-mail do Respons?vel")
+
+                if st.form_submit_button("Cadastrar Aluno"):
+                    if idade < 18 and (not resp_nome or not resp_cpf):
+                        st.error("? ERRO: Aluno menor de idade! ? obrigat?rio preencher Nome e CPF do Respons?vel.")
+                    elif not nome or not email:
+                        st.error("? ERRO: Nome e E-mail s?o obrigat?rios.")
+                    elif (login_aluno and not senha_aluno) or (senha_aluno and not login_aluno):
+                        st.error("? ERRO: Para criar o login, informe usu?rio e senha.")
+                    elif login_aluno and find_user(login_aluno):
+                        st.error("? ERRO: Este login j? existe.")
                     else:
-                        new_student = {
-                            "nome": nome, "idade": idade, "nascimento": str(nasc),
-                            "rg": rg, "cpf": cpf, "celular": celular, "email": email,
-                            "cidade": cidade, "bairro": bairro, "rua": rua, "numero": num,
-                            "turma": turma, "responsavel_nome": resp_nome, "responsavel_cpf": resp_cpf
+                        novo_aluno = {
+                            "nome": nome,
+                            "idade": idade,
+                            "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
+                            "celular": celular,
+                            "email": email,
+                            "rg": rg,
+                            "cpf": cpf,
+                            "cidade_natal": natal,
+                            "pais": pais,
+                            "cep": cep,
+                            "cidade": cidade,
+                            "bairro": bairro,
+                            "rua": rua,
+                            "numero": numero,
+                            "turma": turma,
+                            "usuario": login_aluno.strip(),
+                            "senha": senha_aluno.strip(),
+                            "responsavel": {
+                                "nome": resp_nome,
+                                "cpf": resp_cpf,
+                                "celular": resp_cel,
+                                "email": resp_email,
+                            },
                         }
-                        st.session_state["students"].append(new_student)
-                        save_data(STUDENTS_FILE, st.session_state["students"])
-                        
-                        if login_u and login_p:
-                            create_or_update_login(login_u, login_p, "Aluno", nome)
-                            st.toast("Login criado!")
-                        
-                        st.success("Aluno cadastrado com sucesso!")
-        
+                        st.session_state["students"].append(novo_aluno)
+
+                        if login_aluno and senha_aluno:
+                            st.session_state["users"].append(
+                                {
+                                    "usuario": login_aluno.strip(),
+                                    "senha": senha_aluno.strip(),
+                                    "perfil": "Aluno",
+                                    "pessoa": nome,
+                                }
+                            )
+                            save_users(st.session_state["users"])
+
+                        destinatario_email = resp_email if idade < 18 else email
+                        st.toast("? Cadastro realizado com sucesso!", icon="??")
+                        st.success(
+                            f"?? E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos."
+                        )
+
         with tab2:
-            names = [s["nome"] for s in st.session_state["students"]]
-            sel = st.selectbox("Selecione Aluno", names) if names else None
-            if sel:
-                obj = next(s for s in st.session_state["students"] if s["nome"] == sel)
-                with st.form("edit_aluno"):
-                    st.write(f"Editando: {sel}")
-                    nn = st.text_input("Nome", obj["nome"])
-                    nt = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                    nc = st.text_input("Celular", obj.get("celular", ""))
-                    
-                    c_ed, c_del = st.columns(2)
-                    if c_ed.form_submit_button("Salvar Alterações"):
-                        obj["nome"] = nn
-                        obj["turma"] = nt
-                        obj["celular"] = nc
-                        save_data(STUDENTS_FILE, st.session_state["students"])
+            if not st.session_state["students"]:
+                st.info("Nenhum aluno cadastrado.")
+            else:
+                aluno_nomes = [s["nome"] for s in st.session_state["students"]]
+                aluno_sel = st.selectbox("Selecione o Aluno para Editar/Excluir", aluno_nomes)
+                aluno_obj = next((s for s in st.session_state["students"] if s["nome"] == aluno_sel), None)
+
+                if aluno_obj:
+                    turmas = ["Sem Turma"] + class_names()
+                    current_turma = aluno_obj.get("turma", "Sem Turma")
+                    if current_turma not in turmas:
+                        turmas.append(current_turma)
+                    current_dn = parse_date(aluno_obj.get("data_nascimento", "")) or datetime.date.today()
+
+                    with st.form("edit_student"):
+                        st.subheader(f"Editando: {aluno_obj['nome']}")
+                        new_nome = st.text_input("Nome", value=aluno_obj["nome"])
+
+                        c1, c2 = st.columns(2)
+                        with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
+                        with c2: new_email = st.text_input("Email", value=aluno_obj.get("email", ""))
+
+                        c3, c4 = st.columns(2)
+                        with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn)
+                        with c4: new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
+
+                        st.markdown("### ?? Acesso do Aluno")
+                        c5, c6 = st.columns(2)
+                        with c5: new_login = st.text_input("Login do Aluno", value=aluno_obj.get("usuario", ""))
+                        with c6: new_senha = st.text_input("Senha do Aluno", value=aluno_obj.get("senha", ""), type="password")
+
+                        c_edit, c_del = st.columns([1, 1])
+                        with c_edit:
+                            if st.form_submit_button("?? Salvar Altera??es"):
+                                old_login = aluno_obj.get("usuario", "").strip()
+                                login = new_login.strip() or old_login
+                                senha = new_senha.strip() or aluno_obj.get("senha", "")
+
+                                if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
+                                    st.error("? ERRO: Este login j? existe.")
+                                else:
+                                    if login:
+                                        user_obj = find_user(old_login) if old_login else None
+                                        if user_obj:
+                                            user_obj["usuario"] = login
+                                            user_obj["senha"] = senha
+                                            user_obj["perfil"] = "Aluno"
+                                            user_obj["pessoa"] = new_nome
+                                        else:
+                                            st.session_state["users"].append(
+                                                {
+                                                    "usuario": login,
+                                                    "senha": senha,
+                                                    "perfil": "Aluno",
+                                                    "pessoa": new_nome,
+                                                }
+                                            )
+                                        save_users(st.session_state["users"])
+
+                                    aluno_obj["nome"] = new_nome
+                                    aluno_obj["celular"] = new_cel
+                                    aluno_obj["turma"] = new_turma
+                                    aluno_obj["email"] = new_email
+                                    aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
+                                    aluno_obj["usuario"] = login
+                                    aluno_obj["senha"] = senha
+
+                                    st.success("Dados atualizados!")
+                                    st.rerun()
+                        with c_del:
+                            if st.form_submit_button("??? EXCLUIR ALUNO", type="primary"):
+                                login = aluno_obj.get("usuario", "").strip()
+                                if login:
+                                    user_obj = find_user(login)
+                                    if user_obj and user_obj.get("perfil") == "Aluno":
+                                        st.session_state["users"].remove(user_obj)
+                                        save_users(st.session_state["users"])
+                                st.session_state["students"].remove(aluno_obj)
+                                st.error("Aluno exclu?do permanentemente.")
+                                st.rerun()
+
+    elif menu_coord == "Professores":
+        st.markdown('<div class="main-header">Gest?o de Professores</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["? Novo Professor", "?? Gerenciar / Excluir"])
+        with tab1:
+            with st.form("add_prof"):
+                c1, c2 = st.columns(2)
+                with c1: nome = st.text_input("Nome")
+                with c2: area = st.text_input("?rea")
+
+                c3, c4 = st.columns(2)
+                with c3: login_prof = st.text_input("Login do Professor")
+                with c4: senha_prof = st.text_input("Senha do Professor", type="password")
+
+                if st.form_submit_button("Cadastrar"):
+                    if (login_prof and not senha_prof) or (senha_prof and not login_prof):
+                        st.error("? ERRO: Para criar o login, informe usu?rio e senha.")
+                    elif login_prof and find_user(login_prof):
+                        st.error("? ERRO: Este login j? existe.")
+                    else:
+                        st.session_state["teachers"].append(
+                            {
+                                "nome": nome,
+                                "area": area,
+                                "usuario": login_prof.strip(),
+                                "senha": senha_prof.strip(),
+                            }
+                        )
+                        if login_prof and senha_prof:
+                            st.session_state["users"].append(
+                                {
+                                    "usuario": login_prof.strip(),
+                                    "senha": senha_prof.strip(),
+                                    "perfil": "Professor",
+                                    "pessoa": nome,
+                                }
+                            )
+                            save_users(st.session_state["users"])
                         st.success("Salvo!")
-                        st.rerun()
-                    
-                    if c_del.form_submit_button("🗑️ EXCLUIR ALUNO", type="primary"):
-                        st.session_state["students"].remove(obj)
-                        save_data(STUDENTS_FILE, st.session_state["students"])
-                        st.error("Aluno excluído.")
-                        st.rerun()
-
-    elif menu == "👩‍🏫 Professores":
-        st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Novo", "✏️ Gerenciar"])
-        with tab1:
-            with st.form("cad_prof"):
-                nome = st.text_input("Nome")
-                area = st.text_input("Área")
-                lu = st.text_input("Criar Login")
-                lp = st.text_input("Criar Senha", type="password")
-                if st.form_submit_button("Salvar"):
-                    st.session_state["teachers"].append({"nome": nome, "area": area})
-                    save_data(TEACHERS_FILE, st.session_state["teachers"])
-                    if lu and lp: create_or_update_login(lu, lp, "Professor", nome)
-                    st.success("Professor salvo!")
         with tab2:
-            pnames = [t["nome"] for t in st.session_state["teachers"]]
-            sel = st.selectbox("Selecione", pnames) if pnames else None
-            if sel:
-                obj = next(t for t in st.session_state["teachers"] if t["nome"] == sel)
-                with st.form("edit_prof"):
-                    nn = st.text_input("Nome", obj["nome"])
-                    na = st.text_input("Área", obj.get("area",""))
-                    c1, c2 = st.columns(2)
-                    if c1.form_submit_button("Salvar"):
-                        obj["nome"] = nn
-                        obj["area"] = na
-                        save_data(TEACHERS_FILE, st.session_state["teachers"])
-                        st.success("Salvo!")
-                        st.rerun()
-                    if c2.form_submit_button("Excluir", type="primary"):
-                        st.session_state["teachers"].remove(obj)
-                        save_data(TEACHERS_FILE, st.session_state["teachers"])
-                        st.rerun()
+            if not st.session_state["teachers"]:
+                st.info("Nenhum professor cadastrado.")
+            else:
+                prof_nomes = [t["nome"] for t in st.session_state["teachers"]]
+                prof_sel = st.selectbox("Selecione o Professor", prof_nomes)
+                prof_obj = next((t for t in st.session_state["teachers"] if t["nome"] == prof_sel), None)
+                if prof_obj:
+                    with st.form("edit_prof"):
+                        new_nome = st.text_input("Nome", value=prof_obj["nome"])
+                        new_area = st.text_input("?rea", value=prof_obj.get("area", ""))
 
-    elif menu == "🏫 Turmas":
-        st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Nova Turma", "✏️ Gerenciar"])
+                        c3, c4 = st.columns(2)
+                        with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
+                        with c4: new_senha = st.text_input("Senha do Professor", value=prof_obj.get("senha", ""), type="password")
+
+                        c_edit, c_del = st.columns([1, 1])
+                        with c_edit:
+                            if st.form_submit_button("?? Salvar Altera??es"):
+                                old_login = prof_obj.get("usuario", "").strip()
+                                login = new_login.strip() or old_login
+                                senha = new_senha.strip() or prof_obj.get("senha", "")
+
+                                if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
+                                    st.error("? ERRO: Este login j? existe.")
+                                else:
+                                    if login:
+                                        user_obj = find_user(old_login) if old_login else None
+                                        if user_obj:
+                                            user_obj["usuario"] = login
+                                            user_obj["senha"] = senha
+                                            user_obj["perfil"] = "Professor"
+                                            user_obj["pessoa"] = new_nome
+                                        else:
+                                            st.session_state["users"].append(
+                                                {
+                                                    "usuario": login,
+                                                    "senha": senha,
+                                                    "perfil": "Professor",
+                                                    "pessoa": new_nome,
+                                                }
+                                            )
+                                        save_users(st.session_state["users"])
+
+                                    # Atualiza nome do professor em turmas
+                                    old_nome = prof_obj["nome"]
+                                    for turma in st.session_state["classes"]:
+                                        if str(turma.get("professor", "")).strip() == str(old_nome).strip():
+                                            turma["professor"] = new_nome
+
+                                    prof_obj["nome"] = new_nome
+                                    prof_obj["area"] = new_area
+                                    prof_obj["usuario"] = login
+                                    prof_obj["senha"] = senha
+                                    st.success("Professor atualizado!")
+                                    st.rerun()
+                        with c_del:
+                            if st.form_submit_button("??? EXCLUIR PROFESSOR", type="primary"):
+                                login = prof_obj.get("usuario", "").strip()
+                                if login:
+                                    user_obj = find_user(login)
+                                    if user_obj and user_obj.get("perfil") == "Professor":
+                                        st.session_state["users"].remove(user_obj)
+                                        save_users(st.session_state["users"])
+                                st.session_state["teachers"].remove(prof_obj)
+                                st.error("Professor exclu?do.")
+                                st.rerun()
+
+    elif menu_coord == "Turmas":
+        st.markdown('<div class="main-header">Gest?o de Turmas</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["? Nova Turma", "?? Gerenciar / Excluir"])
+
         with tab1:
-            with st.form("new_class"):
-                tnome = st.text_input("Nome Turma")
-                tprof = st.selectbox("Professor", teacher_names())
-                tdias = st.text_input("Dias")
-                if st.form_submit_button("Salvar"):
-                    st.session_state["classes"].append({"nome": tnome, "professor": tprof, "dias": tdias})
-                    save_data(CLASSES_FILE, st.session_state["classes"])
-                    st.success("Turma criada!")
+            with st.form("add_class"):
+                c1, c2 = st.columns(2)
+                with c1: nome = st.text_input("Nome da Turma")
+                with c2: prof = st.selectbox("Professor", ["Sem Professor"] + teacher_names())
+                c3, c4 = st.columns(2)
+                with c3: dias = st.text_input("Dias e Hor?rios")
+                with c4: link = st.text_input("Link do Zoom (Inicial)")
+                if st.form_submit_button("Cadastrar"):
+                    st.session_state["classes"].append(
+                        {"nome": nome, "professor": prof, "dias": dias, "link_zoom": link}
+                    )
+                    st.success("Turma salva!")
+
         with tab2:
-            tnames = class_names()
-            sel = st.selectbox("Selecione Turma", tnames) if tnames else None
-            if sel:
-                obj = next(c for c in st.session_state["classes"] if c["nome"] == sel)
-                with st.form("edit_class"):
-                    nn = st.text_input("Nome", obj["nome"])
-                    np = st.selectbox("Professor", teacher_names())
-                    nd = st.text_input("Dias", obj.get("dias",""))
-                    c1, c2 = st.columns(2)
-                    if c1.form_submit_button("Salvar"):
-                        obj["nome"] = nn
-                        obj["professor"] = np
-                        obj["dias"] = nd
-                        save_data(CLASSES_FILE, st.session_state["classes"])
-                        st.success("Atualizado!")
-                        st.rerun()
-                    if c2.form_submit_button("Excluir", type="primary"):
-                        st.session_state["classes"].remove(obj)
-                        save_data(CLASSES_FILE, st.session_state["classes"])
-                        st.rerun()
+            if not st.session_state["classes"]:
+                st.info("Nenhuma turma cadastrada.")
+            else:
+                turma_nomes = [t.get("nome", "") for t in st.session_state["classes"]]
+                turma_sel = st.selectbox("Selecione a Turma", turma_nomes)
+                turma_obj = next((t for t in st.session_state["classes"] if t.get("nome", "") == turma_sel), None)
 
-    elif menu == "🔐 Usuários":
-        st.markdown('<div class="main-header">Controle de Usuários</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Novo", "Excluir"])
+                if turma_obj:
+                    prof_list = ["Sem Professor"] + teacher_names()
+                    current_prof = turma_obj.get("professor", "Sem Professor")
+                    if current_prof not in prof_list:
+                        prof_list.append(current_prof)
+
+                    with st.form("edit_class"):
+                        new_nome = st.text_input("Nome da Turma", value=turma_obj.get("nome", ""))
+                        new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
+                        new_dias = st.text_input("Dias e Hor?rios", value=turma_obj.get("dias", ""))
+                        new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
+
+                        c_edit, c_del = st.columns([1, 1])
+                        with c_edit:
+                            if st.form_submit_button("?? Salvar Altera??es"):
+                                old_nome = turma_obj.get("nome", "")
+                                turma_obj["nome"] = new_nome
+                                turma_obj["professor"] = new_prof
+                                turma_obj["dias"] = new_dias
+                                turma_obj["link_zoom"] = new_link
+
+                                if old_nome and new_nome and old_nome != new_nome:
+                                    for aluno in st.session_state["students"]:
+                                        if aluno.get("turma") == old_nome:
+                                            aluno["turma"] = new_nome
+
+                                st.success("Turma atualizada!")
+                                st.rerun()
+                        with c_del:
+                            if st.form_submit_button("??? EXCLUIR TURMA", type="primary"):
+                                nome_turma = turma_obj.get("nome", "")
+                                if nome_turma:
+                                    for aluno in st.session_state["students"]:
+                                        if aluno.get("turma") == nome_turma:
+                                            aluno["turma"] = "Sem Turma"
+                                st.session_state["classes"].remove(turma_obj)
+                                st.error("Turma exclu?da.")
+                                st.rerun()
+
+    elif menu_coord == "Financeiro":
+        st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
         with tab1:
-            with st.form("u_new"):
-                u = st.text_input("User")
-                p = st.text_input("Pass", type="password")
-                r = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
-                if st.form_submit_button("Criar"):
-                    create_or_update_login(u, p, r, "Novo Usuário")
-                    st.success("Criado!")
+            with st.form("add_rec"):
+                st.markdown("### Lançar Recebimento")
+                c1, c2 = st.columns(2)
+                with c1: desc = st.text_input("Descrição (Ex: Mensalidade)")
+                with c2: val = st.text_input("Valor (Ex: 150,00)")
+                aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                if st.form_submit_button("Lançar"):
+                    add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
+                    st.success("Lançado!")
+            st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
         with tab2:
             us = [u["usuario"] for u in st.session_state["users"]]
             sel = st.selectbox("Usuario", us)
@@ -591,7 +862,11 @@ elif st.session_state["role"] == "Coordenador":
             val = st.number_input("Valor", 0.0)
             aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
             if st.form_submit_button("Lançar"):
-                add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
+                st.session_state["receivables"].append({
+                    "descricao": desc, "valor": val, "aluno": aluno, 
+                    "vencimento": str(datetime.date.today()), "status": "Aberto"
+                })
+                save_financial()
                 st.success("Lançado!")
         if st.session_state["receivables"]:
             st.dataframe(pd.DataFrame(st.session_state["receivables"]))
