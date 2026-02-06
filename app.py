@@ -3,7 +3,6 @@ import datetime
 import json
 import uuid
 from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
@@ -16,6 +15,7 @@ st.set_page_config(
 )
 
 # --- ARQUIVOS DE DADOS (PERSISTENCIA) ---
+# Nomes dos arquivos onde os dados serao salvos
 USERS_FILE = Path("users.json")
 STUDENTS_FILE = Path("students.json")
 TEACHERS_FILE = Path("teachers.json")
@@ -26,29 +26,34 @@ MATERIALS_FILE = Path("materials.json")
 GRADES_FILE = Path("grades.json")
 FINANCIAL_FILE = Path("financial.json")
 
+# Configurações Globais
 WHATSAPP_NUMBER = "5516996043314" 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
 
-# --- FUNCOES DE UTILIDADE (LOAD/SAVE) ---
+# --- FUNCOES DE UTILIDADE (CARREGAR/SALVAR) ---
 def get_logo_path():
+    # Tenta encontrar o logo em varios formatos
     candidates = [Path("image_8fc66d.png"), Path("logo_active2.png"), Path("logo.png")]
     for path in candidates:
         if path.exists(): return path
     return None
 
 def load_data(path):
+    # Carrega dados de um arquivo JSON generico
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
-        except Exception: return []
+        except: return []
     return []
 
 def save_data(path, data):
+    # Salva dados em um arquivo JSON generico
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def load_financial():
+    # Carregamento especifico para o financeiro (dicionario com 2 listas)
     if FINANCIAL_FILE.exists():
         try:
             data = json.loads(FINANCIAL_FILE.read_text(encoding="utf-8"))
@@ -57,6 +62,7 @@ def load_financial():
     return [], []
 
 def save_financial():
+    # Salvamento especifico para financeiro
     data = {
         "receivables": st.session_state["receivables"],
         "payables": st.session_state["payables"]
@@ -64,6 +70,7 @@ def save_financial():
     FINANCIAL_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def ensure_admin_user():
+    # Garante que o usuario admin sempre exista
     users = load_data(USERS_FILE)
     if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
         users.append({"usuario": ADMIN_USERNAME, "senha": ADMIN_PASSWORD, "perfil": "Admin", "pessoa": "Administrador"})
@@ -71,12 +78,20 @@ def ensure_admin_user():
     return users
 
 def create_or_update_login(username, password, role, person_name):
+    # Funcao auxiliar para criar login automaticamente ao cadastrar aluno/professor
     users = st.session_state["users"]
-    # Remove se ja existir para atualizar
+    # Remove se ja existir para atualizar (evita duplicidade)
     users = [u for u in users if u["usuario"] != username]
     users.append({"usuario": username, "senha": password, "perfil": role, "pessoa": person_name})
     st.session_state["users"] = users
     save_data(USERS_FILE, users)
+
+def find_user(username):
+    # Busca usuario no estado atual
+    for user in st.session_state["users"]:
+        if user.get("usuario", "").lower() == username.lower():
+            return user
+    return None
 
 def login_user(role, name, unit, account_profile):
     st.session_state["logged_in"] = True
@@ -107,14 +122,31 @@ def parse_money(value):
 def format_money(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
+    codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
+    st.session_state["receivables"].append({
+        "descricao": descricao.strip() or "Mensalidade",
+        "aluno": aluno.strip(),
+        "categoria": categoria,
+        "cobranca": cobranca,
+        "codigo": codigo,
+        "valor": valor, 
+        "vencimento": vencimento.strftime("%d/%m/%Y") if isinstance(vencimento, datetime.date) else vencimento,
+        "status": "Aberto",
+    })
+    save_financial()
+    return codigo
+
 def allowed_portals(profile):
+    # Define quem pode acessar o que
     if profile == "Aluno": return ["Aluno"]
     if profile == "Professor": return ["Professor"]
     if profile in ["Coordenador", "Admin"]: return ["Aluno", "Professor", "Coordenador"]
     return []
 
 def sidebar_menu(title, options, key):
-    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
+    # Menu lateral estilizado
+    st.markdown(f"<h3 style='color:#1e3a8a; font-family:sans-serif; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state: st.session_state[key] = options[0]
     for option in options:
         active = st.session_state[key] == option
@@ -122,22 +154,18 @@ def sidebar_menu(title, options, key):
             st.session_state[key] = option
             st.rerun()
     return st.session_state[key]
-
 # ==============================================================================
 # CSS E ESTILOS
 # ==============================================================================
 CSS_GLOBAL = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
     .stApp { background: #f8fafc; font-family: 'Manrope', sans-serif; }
     .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
     .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
     div[data-testid="stDataFrame"] { background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 16px; }
     div[data-testid="stForm"] { background: white; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
     button[kind="primary"] { background: #1e3a8a; border-radius: 8px; }
-    
-    /* Login CSS Especifico */
-    .login-bg { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%); }
     .info-card { background: rgba(255, 255, 255, 0.95); border-radius: 24px; padding: 40px; height: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
     .whatsapp-button { display: flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 20px; }
 </style>
@@ -165,7 +193,6 @@ if "init_done" not in st.session_state:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state["logged_in"]:
-    # Aplica fundo de login
     st.markdown("""<style>.stApp {background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%);}</style>""", unsafe_allow_html=True)
     
     col_left, col_right = st.columns([1, 0.8], gap="large")
@@ -190,7 +217,6 @@ if not st.session_state["logged_in"]:
             user_input = st.text_input("Usuário")
             pass_input = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
-                # Procura usuario
                 u_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_input), None)
                 if not u_obj or u_obj["senha"] != pass_input:
                     st.error("Usuário ou senha inválidos.")
@@ -198,8 +224,7 @@ if not st.session_state["logged_in"]:
                     st.error(f"Sem permissão de {role}.")
                 else:
                     login_user(role, u_obj.get("pessoa", user_input), str(unidade), u_obj.get("perfil"))
-
-# ==============================================================================
+                    # ==============================================================================
 # DASHBOARD: ALUNO
 # ==============================================================================
 elif st.session_state["role"] == "Aluno":
@@ -211,7 +236,6 @@ elif st.session_state["role"] == "Aluno":
 
     if menu == "🏠 Painel":
         st.markdown('<div class="main-header">Painel do Aluno</div>', unsafe_allow_html=True)
-        # Logica do Link Zoom
         link = "https://zoom.us/join"
         meu_cadastro = next((s for s in st.session_state["students"] if s["nome"] == st.session_state["user_name"]), None)
         if meu_cadastro:
@@ -270,7 +294,6 @@ elif st.session_state["role"] == "Professor":
 
     if menu == "👥 Minhas Turmas":
         st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
-        # Filtra turmas onde o nome do professor aparece
         turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
         
         if not turmas: 
@@ -282,7 +305,6 @@ elif st.session_state["role"] == "Professor":
                 t_sel = st.selectbox("Selecione a Turma", [t["nome"] for t in turmas])
                 t_obj = next(t for t in turmas if t["nome"] == t_sel)
                 
-                # Edição do Link
                 novo_link = st.text_input("Link Zoom", value=t_obj.get("link_zoom", ""))
                 if st.button("Salvar Link e Enviar aos Alunos"):
                     t_obj["link_zoom"] = novo_link
@@ -302,18 +324,14 @@ elif st.session_state["role"] == "Professor":
 
     elif menu == "🧑‍🎓 Meus Alunos":
         st.markdown('<div class="main-header">Meus Alunos (Visualização)</div>', unsafe_allow_html=True)
-        # 1. Minhas Turmas
         minhas_turmas_nomes = [c["nome"] for c in st.session_state["classes"] if st.session_state["user_name"] in c.get("professor", "")]
-        # 2. Alunos dessas turmas
         meus_alunos = [s for s in st.session_state["students"] if s.get("turma") in minhas_turmas_nomes]
         
         if not meus_alunos:
             st.warning("Nenhum aluno encontrado nas suas turmas.")
         else:
-            # Mostra dados, mas sem editar
             df = pd.DataFrame(meus_alunos)
             cols = ["nome", "turma", "celular", "email"]
-            # Filtra colunas existentes
             valid_cols = [c for c in cols if c in df.columns]
             st.dataframe(df[valid_cols], use_container_width=True)
 
@@ -352,8 +370,7 @@ elif st.session_state["role"] == "Professor":
                 st.session_state["materials"].append({"titulo": titulo, "descricao": desc, "link": link_drv})
                 save_data(MATERIALS_FILE, st.session_state["materials"])
                 st.success("Material salvo!")
-
-# ==============================================================================
+                # ==============================================================================
 # DASHBOARD: COORDENADOR
 # ==============================================================================
 elif st.session_state["role"] == "Coordenador":
@@ -392,7 +409,6 @@ elif st.session_state["role"] == "Coordenador":
         if st.session_state["students"]:
             with st.expander("📋 Ver Lista Completa de Alunos", expanded=False):
                 df = pd.DataFrame(st.session_state["students"])
-                # Mostra colunas seguras
                 safe_cols = [c for c in ["nome", "turma", "celular", "email", "idade", "responsavel_nome"] if c in df.columns]
                 st.dataframe(df[safe_cols], use_container_width=True)
         
@@ -575,11 +591,7 @@ elif st.session_state["role"] == "Coordenador":
             val = st.number_input("Valor", 0.0)
             aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
             if st.form_submit_button("Lançar"):
-                st.session_state["receivables"].append({
-                    "descricao": desc, "valor": val, "aluno": aluno, 
-                    "vencimento": str(datetime.date.today()), "status": "Aberto"
-                })
-                save_financial()
+                add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
                 st.success("Lançado!")
         if st.session_state["receivables"]:
             st.dataframe(pd.DataFrame(st.session_state["receivables"]))
