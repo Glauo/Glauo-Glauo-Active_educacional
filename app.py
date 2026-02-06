@@ -561,7 +561,7 @@ if not st.session_state["logged_in"]:
                     login_user(role, display_name, str(unidade).strip(), perfil_conta)
 
 # ==============================================================================
-# ALUNO - DASHBOARD COM VISUAL NOVO
+# ALUNO - DASHBOARD COM VISUAL NOVO + BOTÃO ZOOM FUNCIONAL
 # ==============================================================================
 elif st.session_state["role"] == "Aluno":
     with st.sidebar:
@@ -580,8 +580,20 @@ elif st.session_state["role"] == "Aluno":
 
     if menu_aluno == "Dashboard":
         st.markdown('<div class="main-header">Painel do Aluno</div>', unsafe_allow_html=True)
-        st.error("🔴 AULA AO VIVO AGORA: Conversation Class - Travel Tips")
-        if st.button("ENTRAR NA AULA (ZOOM)", type="primary"): st.write("Redirecionando para o Zoom...")
+        
+        # LOGICA DO ZOOM: Pega o link da turma do aluno, se existir
+        link_aula = "https://zoom.us/join" # Link padrao
+        
+        # Tenta achar a turma do aluno nos cadastros
+        turma_aluno = next((s["turma"] for s in st.session_state["students"] if s["nome"] == st.session_state["user_name"]), None)
+        if turma_aluno:
+            turma_obj = next((c for c in st.session_state["classes"] if c["nome"] == turma_aluno), None)
+            if turma_obj and "link_zoom" in turma_obj:
+                link_aula = turma_obj["link_zoom"]
+
+        st.error(f"🔴 AULA AO VIVO AGORA")
+        # Botão funcional que abre o link
+        st.link_button("ENTRAR NA AULA (ZOOM)", link_aula, type="primary")
         
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
@@ -647,7 +659,7 @@ elif st.session_state["role"] == "Aluno":
         else: st.info("Financeiro em dia.")
 
 # ==============================================================================
-# PROFESSOR - DASHBOARD VIP
+# PROFESSOR - DASHBOARD VIP + ENVIO DE LINK
 # ==============================================================================
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
@@ -665,26 +677,54 @@ elif st.session_state["role"] == "Professor":
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-             st.markdown("""
-             <div class="dash-card">
-                <div>
-                    <div class="card-title" style="color:#1d4ed8;">Próxima Aula: 14:00</div>
-                    <div class="card-value">Inglês Teens B1</div>
-                </div>
-                <div class="card-sub">Sala Virtual 01 • 12 Alunos</div>
-             </div>""", unsafe_allow_html=True)
-             st.button("Iniciar Aula (Zoom)", key="btn_zoom_prof")
-        with col2:
-             st.markdown("""
-             <div class="dash-card">
-                <div>
-                    <div class="card-title">Hoje: 19:00</div>
-                    <div class="card-value">Adults Conversation</div>
-                </div>
-                <div class="card-sub">Sala Virtual 03 • 8 Alunos</div>
-             </div>""", unsafe_allow_html=True)
+        
+        # Filtra turmas do professor logado (por nome)
+        # Se nao tiver, pega todas so pra nao dar erro na demonstracao, mas o ideal e filtrar
+        minhas_turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in str(c.get("professor", ""))]
+        if not minhas_turmas: minhas_turmas = st.session_state["classes"] # Fallback demo
+        
+        if not minhas_turmas:
+            st.info("Nenhuma turma encontrada para você.")
+        else:
+            col_control, col_card = st.columns([1, 1], gap="large")
+            
+            with col_control:
+                st.markdown("### 📡 Configurar Aula Ao Vivo")
+                with st.form("config_aula"):
+                    turma_selecionada_nome = st.selectbox("Selecione a Turma", [t["nome"] for t in minhas_turmas])
+                    turma_atual = next(t for t in minhas_turmas if t["nome"] == turma_selecionada_nome)
+                    
+                    link_atual = turma_atual.get("link_zoom", "")
+                    novo_link = st.text_input("Cole o Link do Zoom aqui", value=link_atual, placeholder="https://zoom.us/...")
+                    
+                    if st.form_submit_button("Salvar e Enviar para Alunos"):
+                        turma_atual["link_zoom"] = novo_link
+                        st.success(f"Link enviado com sucesso para a turma {turma_selecionada_nome}!")
+                        st.rerun()
+
+            with col_card:
+                st.markdown("### 👀 Visualização")
+                link_final = turma_atual.get("link_zoom", "#")
+                texto_botao = "Iniciar Aula (Zoom)" if link_final and link_final != "#" else "Aguardando Link..."
+                disabled_state = False if link_final and link_final != "#" else True
+                
+                st.markdown(f"""
+                <div class="dash-card">
+                    <div>
+                        <div class="card-title" style="color:#1d4ed8;">Turma Selecionada</div>
+                        <div class="card-value">{turma_atual['nome']}</div>
+                    </div>
+                    <div class="card-sub">📅 {turma_atual.get('dias', 'Horário a definir')}</div>
+                    <div style="margin-top:15px; font-size:0.9rem; color:#64748b;">
+                        Link atual: <a href="{link_final}" target="_blank">{link_final[:30]}...</a>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if not disabled_state:
+                    st.link_button(texto_botao, link_final, type="primary")
+                else:
+                    st.warning("⚠️ Cadastre o link ao lado para liberar o botão.")
 
     elif menu_prof == "Diario":
         st.markdown('<div class="main-header">Diário de Classe</div>', unsafe_allow_html=True)
@@ -734,7 +774,7 @@ elif st.session_state["role"] == "Professor":
             st.form_submit_button("Cadastrar")
 
 # ==============================================================================
-# COORDENADOR - DASHBOARD VIP
+# COORDENADOR - DASHBOARD VIP + CADASTRO DE LINK
 # ==============================================================================
 elif st.session_state["role"] == "Coordenador":
     with st.sidebar:
@@ -752,8 +792,6 @@ elif st.session_state["role"] == "Coordenador":
 
     if menu_coord == "Dashboard":
         st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
-        
-        # Cards de Totais
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Total de Alunos</div><div class="card-value">{len(st.session_state["students"])}</div></div><div class="card-sub"><span class="trend-up">Ativos</span></div></div>""", unsafe_allow_html=True)
@@ -761,19 +799,13 @@ elif st.session_state["role"] == "Coordenador":
             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Professores</div><div class="card-value">{len(st.session_state["teachers"])}</div></div></div>""", unsafe_allow_html=True)
         with c3:
             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Turmas</div><div class="card-value">{len(st.session_state["classes"])}</div></div></div>""", unsafe_allow_html=True)
-            
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Cards Financeiros
         total_rec = sum(parse_money(i["valor"]) for i in st.session_state["receivables"])
         total_pag = sum(parse_money(i["valor"]) for i in st.session_state["payables"])
         saldo = total_rec - total_pag
-        
         c4, c5, c6 = st.columns(3)
-        with c4:
-             st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Receber</div><div class="card-value" style="color:#2563eb;">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
-        with c5:
-             st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Pagar</div><div class="card-value" style="color:#dc2626;">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
+        with c4: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Receber</div><div class="card-value" style="color:#2563eb;">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
+        with c5: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Pagar</div><div class="card-value" style="color:#dc2626;">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
         with c6:
              color = "#16a34a" if saldo >= 0 else "#dc2626"
              st.markdown(f"""<div class="dash-card"><div><div class="card-title">Saldo Atual</div><div class="card-value" style="color:{color};">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
@@ -788,14 +820,10 @@ elif st.session_state["role"] == "Coordenador":
             c3, c4 = st.columns(2)
             with c3: turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
             with c4: email = st.text_input("Email")
-            
-            st.markdown("#### Responsável (se menor)")
             resp = st.text_input("Nome do Responsável")
-            
             if st.form_submit_button("Cadastrar Aluno"):
                 st.session_state["students"].append({"nome": nome, "matricula": mat, "turma": turma, "email": email, "resp": resp})
                 st.success("Aluno cadastrado com sucesso!")
-        
         if st.session_state["students"]:
             st.markdown("### Alunos Cadastrados")
             st.dataframe(pd.DataFrame(st.session_state["students"]), use_container_width=True)
@@ -817,16 +845,20 @@ elif st.session_state["role"] == "Coordenador":
             c1, c2 = st.columns(2)
             with c1: nome = st.text_input("Nome da Turma")
             with c2: prof = st.selectbox("Professor", ["Selecione"] + teacher_names())
-            dias = st.text_input("Dias e Horários")
+            
+            # --- CAMPO DE LINK TAMBEM NO COORDENADOR ---
+            c3, c4 = st.columns(2)
+            with c3: dias = st.text_input("Dias e Horários")
+            with c4: link = st.text_input("Link do Zoom (URL)")
+            
             if st.form_submit_button("Cadastrar"):
-                st.session_state["classes"].append({"nome": nome, "professor": prof, "dias": dias})
-                st.success("Salvo!")
+                st.session_state["classes"].append({"nome": nome, "professor": prof, "dias": dias, "link_zoom": link})
+                st.success("Turma salva com link do Zoom!")
         st.dataframe(pd.DataFrame(st.session_state["classes"]), use_container_width=True)
 
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
-        
         with tab1:
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
@@ -838,7 +870,6 @@ elif st.session_state["role"] == "Coordenador":
                     add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
                     st.success("Lançado!")
             st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
-            
         with tab2:
             with st.form("add_pag"):
                 st.markdown("### Lançar Despesa")
