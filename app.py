@@ -528,45 +528,94 @@ elif st.session_state["role"] == "Coordenador":
              color = "#16a34a" if saldo >= 0 else "#dc2626"
              st.markdown(f"""<div class="dash-card"><div><div class="card-title">Saldo Atual</div><div class="card-value" style="color:{color};">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
 
-    # --- ABA SEPARADA PARA LINKS AO VIVO (PEDIDO 1) ---
     elif menu_coord == "Links":
         st.markdown('<div class="main-header">🔗 Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
         st.info("Aqui você define o link da aula ao vivo para cada turma. Esse link aparecerá automaticamente para todos os alunos.")
-        
         turmas_disponiveis = [t["nome"] for t in st.session_state["classes"]]
         if not turmas_disponiveis:
             st.warning("Cadastre turmas primeiro na aba 'Turmas'.")
         else:
             with st.form("gerenciar_links"):
                 turma_sel = st.selectbox("Selecione a Turma", turmas_disponiveis)
-                # Pega a turma selecionada
                 turma_obj = next((t for t in st.session_state["classes"] if t["nome"] == turma_sel), None)
                 link_atual = turma_obj.get("link_zoom", "") if turma_obj else ""
-                
                 novo_link = st.text_input("Link da Aula Ao Vivo (Zoom/Meet/Teams)", value=link_atual)
-                
                 if st.form_submit_button("Salvar Link para a Turma"):
                     if turma_obj:
                         turma_obj["link_zoom"] = novo_link
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
-    # --- ALUNOS (COM EDITAR/EXCLUIR - PEDIDO 2) ---
+    # --- ALUNOS (CADASTRO COMPLETO E VALIDAÇÃO MENOR DE IDADE) ---
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Novo Aluno", "✏️ Gerenciar / Excluir"])
+        tab1, tab2 = st.tabs(["➕ Cadastro Completo", "✏️ Gerenciar / Excluir"])
         
         with tab1:
-            with st.form("add_student"):
-                c1, c2 = st.columns(2)
-                with c1: nome = st.text_input("Nome Completo")
-                with c2: mat = st.text_input("Matrícula")
-                c3, c4 = st.columns(2)
-                with c3: turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                with c4: email = st.text_input("Email")
-                resp = st.text_input("Nome do Responsável")
+            with st.form("add_student_full"):
+                st.markdown("### 👤 Dados Pessoais")
+                c1, c2, c3 = st.columns(3)
+                with c1: nome = st.text_input("Nome Completo *")
+                with c2: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
+                with c3: celular = st.text_input("Celular/WhatsApp *")
+                
+                c4, c5, c6 = st.columns(3)
+                with c4: email = st.text_input("E-mail do Aluno *")
+                with c5: rg = st.text_input("RG")
+                with c6: cpf = st.text_input("CPF")
+                
+                c7, c8 = st.columns(2)
+                with c7: natal = st.text_input("Cidade Natal")
+                with c8: pais = st.text_input("País de Origem", value="Brasil")
+                
+                st.divider()
+                st.markdown("### 📍 Endereço")
+                ce1, ce2, ce3 = st.columns(3)
+                with ce1: cep = st.text_input("CEP")
+                with ce2: cidade = st.text_input("Cidade")
+                with ce3: bairro = st.text_input("Bairro")
+                
+                ce4, ce5 = st.columns([3, 1])
+                with ce4: rua = st.text_input("Rua")
+                with ce5: numero = st.text_input("Número")
+
+                st.divider()
+                st.markdown("### 🎓 Turma")
+                turma = st.selectbox("Vincular à Turma", ["Sem Turma"] + class_names())
+                
+                st.divider()
+                st.markdown("### 👨‍👩‍👦 Responsável Legal / Financeiro")
+                st.caption("Obrigatório para menores de 18 anos.")
+                
+                cr1, cr2 = st.columns(2)
+                with cr1: resp_nome = st.text_input("Nome do Responsável")
+                with cr2: resp_cpf = st.text_input("CPF do Responsável")
+                
+                cr3, cr4 = st.columns(2)
+                with cr3: resp_cel = st.text_input("Celular do Responsável")
+                with cr4: resp_email = st.text_input("E-mail do Responsável")
+                
                 if st.form_submit_button("Cadastrar Aluno"):
-                    st.session_state["students"].append({"nome": nome, "matricula": mat, "turma": turma, "email": email, "resp": resp})
-                    st.success("Aluno cadastrado com sucesso!")
+                    # VALIDAÇÃO DE SEGURANÇA - MENOR DE IDADE
+                    if idade < 18 and (not resp_nome or not resp_cpf):
+                        st.error("⛔ ERRO: Aluno menor de idade! É obrigatório preencher Nome e CPF do Responsável.")
+                    elif not nome or not email:
+                        st.error("⛔ ERRO: Nome e E-mail são obrigatórios.")
+                    else:
+                        novo_aluno = {
+                            "nome": nome, "idade": idade, "celular": celular, "email": email,
+                            "rg": rg, "cpf": cpf, "cidade_natal": natal, "pais": pais,
+                            "cep": cep, "cidade": cidade, "bairro": bairro, "rua": rua, "numero": numero,
+                            "turma": turma,
+                            "responsavel": {
+                                "nome": resp_nome, "cpf": resp_cpf, "celular": resp_cel, "email": resp_email
+                            }
+                        }
+                        st.session_state["students"].append(novo_aluno)
+                        
+                        # MENSAGEM AUTOMÁTICA (SIMULAÇÃO)
+                        destinatario_email = resp_email if idade < 18 else email
+                        st.toast(f"✅ Cadastro realizado com sucesso!", icon="🎉")
+                        st.success(f"📧 E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos.")
         
         with tab2:
             if not st.session_state["students"]:
@@ -574,38 +623,34 @@ elif st.session_state["role"] == "Coordenador":
             else:
                 aluno_nomes = [s["nome"] for s in st.session_state["students"]]
                 aluno_sel = st.selectbox("Selecione o Aluno para Editar/Excluir", aluno_nomes)
-                
-                # Busca o objeto
                 aluno_obj = next((s for s in st.session_state["students"] if s["nome"] == aluno_sel), None)
                 
                 if aluno_obj:
                     with st.form("edit_student"):
+                        st.subheader(f"Editando: {aluno_obj['nome']}")
                         new_nome = st.text_input("Nome", value=aluno_obj["nome"])
-                        new_mat = st.text_input("Matrícula", value=aluno_obj["matricula"])
-                        new_turma = st.selectbox("Turma", ["Sem Turma"] + class_names(), index=0) # Simplificado index
+                        new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
+                        new_turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
                         new_email = st.text_input("Email", value=aluno_obj.get("email", ""))
                         
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("💾 Salvar Alterações"):
                                 aluno_obj["nome"] = new_nome
-                                aluno_obj["matricula"] = new_mat
+                                aluno_obj["celular"] = new_cel
                                 aluno_obj["turma"] = new_turma
                                 aluno_obj["email"] = new_email
                                 st.success("Dados atualizados!")
                                 st.rerun()
-                                
                         with c_del:
                             if st.form_submit_button("🗑️ EXCLUIR ALUNO", type="primary"):
                                 st.session_state["students"].remove(aluno_obj)
                                 st.error("Aluno excluído permanentemente.")
                                 st.rerun()
 
-    # --- PROFESSORES (COM EDITAR/EXCLUIR - PEDIDO 2) ---
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["➕ Novo Professor", "✏️ Gerenciar / Excluir"])
-        
         with tab1:
             with st.form("add_prof"):
                 c1, c2 = st.columns(2)
@@ -614,20 +659,16 @@ elif st.session_state["role"] == "Coordenador":
                 if st.form_submit_button("Cadastrar"):
                     st.session_state["teachers"].append({"nome": nome, "area": area})
                     st.success("Salvo!")
-        
         with tab2:
-            if not st.session_state["teachers"]:
-                st.info("Nenhum professor cadastrado.")
+            if not st.session_state["teachers"]: st.info("Nenhum professor cadastrado.")
             else:
                 prof_nomes = [t["nome"] for t in st.session_state["teachers"]]
                 prof_sel = st.selectbox("Selecione o Professor", prof_nomes)
                 prof_obj = next((t for t in st.session_state["teachers"] if t["nome"] == prof_sel), None)
-                
                 if prof_obj:
                     with st.form("edit_prof"):
                         new_nome = st.text_input("Nome", value=prof_obj["nome"])
                         new_area = st.text_input("Área", value=prof_obj.get("area", ""))
-                        
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("💾 Salvar Alterações"):
@@ -694,11 +735,9 @@ elif st.session_state["role"] == "Coordenador":
         else:
             st.info("Nenhuma nota pendente.")
 
-    # --- USUÁRIOS (COM EDITAR/EXCLUIR - PEDIDO 2) ---
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["➕ Novo Usuário", "✏️ Gerenciar / Excluir"])
-        
         with tab1:
             with st.form("new_user"):
                 c1, c2, c3 = st.columns(3)
@@ -708,21 +747,17 @@ elif st.session_state["role"] == "Coordenador":
                 if st.form_submit_button("Criar Acesso"):
                     st.session_state["users"].append({"usuario": u_user, "senha": u_pass, "perfil": u_role})
                     st.success("Usuário criado!")
-        
         with tab2:
-            if not st.session_state["users"]:
-                st.info("Nenhum usuário cadastrado.")
+            if not st.session_state["users"]: st.info("Nenhum usuário cadastrado.")
             else:
                 user_list = [u["usuario"] for u in st.session_state["users"]]
                 user_sel = st.selectbox("Selecione o Usuário", user_list)
                 user_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_sel), None)
-                
                 if user_obj:
                     with st.form("edit_user"):
                         new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
                         new_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"], index=["Aluno", "Professor", "Coordenador"].index(user_obj["perfil"]) if user_obj["perfil"] in ["Aluno", "Professor", "Coordenador"] else 0)
-                        
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("💾 Salvar Alterações"):
@@ -733,8 +768,7 @@ elif st.session_state["role"] == "Coordenador":
                                 st.rerun()
                         with c_del:
                             if st.form_submit_button("🗑️ EXCLUIR USUÁRIO", type="primary"):
-                                if user_obj["usuario"] == "admin":
-                                    st.error("Não é possível excluir o Admin principal.")
+                                if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")
                                 else:
                                     st.session_state["users"].remove(user_obj)
                                     st.success("Usuário excluído.")
