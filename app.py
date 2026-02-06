@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-import textwrap
 import uuid
 from pathlib import Path
 
@@ -244,7 +243,7 @@ if not st.session_state["logged_in"]:
             justify-content: center;
         }
         .logo-area { margin-bottom: 24px; }
-        .logo-img { max-width: 140px; width: 140px; height: auto; }
+        .logo-img { max-width: 80px; }
         
         .info-title {
             font-family: 'Sora', sans-serif;
@@ -426,48 +425,36 @@ if not st.session_state["logged_in"]:
             encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
             logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='logo-img'>"
         
-        st.markdown(
-            textwrap.dedent(
-                f"""
-                <div class="info-card">
-                    <div class="logo-area">{logo_html}</div>
-                    <div class="info-title">Sistema Educacional<br>Ativo</div>
-                    <div class="info-subtitle">
-                        Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.
-                    </div>
-
-                    <div class="feature-item">
-                        <div class="feature-icon-box">💬</div>
-                        <div>
-                            <div class="feature-text">Mensagens Diretas</div>
-                            <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
-                        </div>
-                    </div>
-
-                    <div class="feature-item">
-                        <div class="feature-icon-box">🎥</div>
-                        <div>
-                            <div class="feature-text">Aulas Gravadas</div>
-                            <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
-                        </div>
-                    </div>
-
-                    <div class="feature-item">
-                        <div class="feature-icon-box">💲</div>
-                        <div>
-                            <div class="feature-text">Financeiro Simples</div>
-                            <div class="feature-sub">Controle de matrículas e pagamentos.</div>
-                        </div>
-                    </div>
-
-                    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">
-                        📱 Falar com Suporte no WhatsApp
-                    </a>
-                </div>
-                """
-            ),
-            unsafe_allow_html=True,
-        )
+        # Correção aqui: Remoção da indentação para evitar bloco de código
+        st.markdown(f"""
+<div class="info-card">
+<div class="logo-area">{logo_html}</div>
+<div class="info-title">Sistema Educacional<br>Ativo</div>
+<div class="info-subtitle">Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.</div>
+<div class="feature-item">
+<div class="feature-icon-box">💬</div>
+<div>
+<div class="feature-text">Mensagens Diretas</div>
+<div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
+</div>
+</div>
+<div class="feature-item">
+<div class="feature-icon-box">🎥</div>
+<div>
+<div class="feature-text">Aulas Gravadas</div>
+<div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
+</div>
+</div>
+<div class="feature-item">
+<div class="feature-icon-box">💲</div>
+<div>
+<div class="feature-text">Financeiro Simples</div>
+<div class="feature-sub">Controle de matrículas e pagamentos.</div>
+</div>
+</div>
+<a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+</div>
+""", unsafe_allow_html=True)
 
     # --- COLUNA DA DIREITA (FORMULARIO) ---
     with col_right:
@@ -630,9 +617,6 @@ elif st.session_state["role"] == "Aluno":
 
 # --- MANTIDA A LOGICA DE PROFESSOR E COORDENADOR EXATAMENTE COMO ESTAVA ---
 elif st.session_state["role"] in ["Professor", "Coordenador"]:
-    # Simplificacao para nao estourar o tamanho da resposta, 
-    # mas a logica aqui e IDENTICA a que voce enviou, so encapsulada.
-    # Vou replicar a estrutura basica para garantir que funcione.
     
     perfil = st.session_state["role"]
     with st.sidebar:
@@ -654,7 +638,7 @@ elif st.session_state["role"] in ["Professor", "Coordenador"]:
 
     st.markdown(f'<p class="main-header">Área do {perfil}: {menu_sel}</p>', unsafe_allow_html=True)
     
-    # --- CONTEUDO DO COORDENADOR (Resumo da logica original) ---
+    # --- CONTEUDO DO COORDENADOR ---
     if perfil == "Coordenador":
         if menu_sel == "Dashboard":
             c1, c2, c3 = st.columns(3)
@@ -708,7 +692,7 @@ elif st.session_state["role"] in ["Professor", "Coordenador"]:
         elif menu_sel == "Conteúdos":
             st.write("Gestão de Mensagens e Materiais")
             
-    # --- CONTEUDO DO PROFESSOR (Resumo da logica original) ---
+    # --- CONTEUDO DO PROFESSOR ---
     elif perfil == "Professor":
         if menu_sel == "Minhas Turmas":
             st.info("Seus horários de aula.")
