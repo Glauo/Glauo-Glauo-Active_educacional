@@ -1,6 +1,7 @@
 import base64
 import datetime
 import json
+import textwrap
 import uuid
 from pathlib import Path
 
@@ -243,7 +244,7 @@ if not st.session_state["logged_in"]:
             justify-content: center;
         }
         .logo-area { margin-bottom: 24px; }
-        .logo-img { max-width: 80px; }
+        .logo-img { max-width: 140px; width: 140px; height: auto; }
         
         .info-title {
             font-family: 'Sora', sans-serif;
@@ -425,43 +426,48 @@ if not st.session_state["logged_in"]:
             encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
             logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='logo-img'>"
         
-        st.markdown(f"""
-        <div class="info-card">
-            <div class="logo-area">{logo_html}</div>
-            <div class="info-title">Sistema Educacional<br>Ativo</div>
-            <div class="info-subtitle">
-                Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.
-            </div>
-            
-            <div class="feature-item">
-                <div class="feature-icon-box">💬</div>
-                <div>
-                    <div class="feature-text">Mensagens Diretas</div>
-                    <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
-                </div>
-            </div>
-            
-            <div class="feature-item">
-                <div class="feature-icon-box">🎥</div>
-                <div>
-                    <div class="feature-text">Aulas Gravadas</div>
-                    <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
-                </div>
-            </div>
-            
-            <div class="feature-item">
-                <div class="feature-icon-box">💲</div>
-                <div>
-                    <div class="feature-text">Financeiro Simples</div>
-                    <div class="feature-sub">Controle de matrículas e pagamentos.</div>
-                </div>
-            </div>
+        st.markdown(
+            textwrap.dedent(
+                f"""
+                <div class="info-card">
+                    <div class="logo-area">{logo_html}</div>
+                    <div class="info-title">Sistema Educacional<br>Ativo</div>
+                    <div class="info-subtitle">
+                        Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.
+                    </div>
 
-            <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">
-                📱 Falar com Suporte no WhatsApp
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
+                    <div class="feature-item">
+                        <div class="feature-icon-box">💬</div>
+                        <div>
+                            <div class="feature-text">Mensagens Diretas</div>
+                            <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
+                        </div>
+                    </div>
+
+                    <div class="feature-item">
+                        <div class="feature-icon-box">🎥</div>
+                        <div>
+                            <div class="feature-text">Aulas Gravadas</div>
+                            <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
+                        </div>
+                    </div>
+
+                    <div class="feature-item">
+                        <div class="feature-icon-box">💲</div>
+                        <div>
+                            <div class="feature-text">Financeiro Simples</div>
+                            <div class="feature-sub">Controle de matrículas e pagamentos.</div>
+                        </div>
+                    </div>
+
+                    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">
+                        📱 Falar com Suporte no WhatsApp
+                    </a>
+                </div>
+                """
+            ),
+            unsafe_allow_html=True,
+        )
 
     # --- COLUNA DA DIREITA (FORMULARIO) ---
     with col_right:
