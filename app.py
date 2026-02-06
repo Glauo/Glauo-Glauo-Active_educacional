@@ -58,7 +58,7 @@ MESSAGES_FILE = Path("messages.json")
 VIDEOS_FILE = Path("videos.json")
 MATERIALS_FILE = Path("materials.json")
 GRADES_FILE = Path("grades.json")
-WHATSAPP_NUMBER = "5516996043314" # Seu numero
+WHATSAPP_NUMBER = "5516996043314" 
 
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
@@ -193,11 +193,10 @@ def email_students_by_turma(turma, assunto, corpo, origem):
                 })
 
 def sidebar_menu(title, options, key):
-    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora;'>{title}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state:
         st.session_state[key] = options[0]
     for option in options:
-        # Usa um estilo de botao nativo mas que sera estilizado pelo CSS global
         active = st.session_state[key] == option
         if st.button(option, key=f"{key}_{option}", type="primary" if active else "secondary"):
             st.session_state[key] = option
@@ -361,7 +360,7 @@ else:
         
         /* Fundo Geral */
         .stApp { 
-            background: #f8fafc; /* Cinza muito claro, quase branco */
+            background: #f8fafc; 
             font-family: 'Manrope', sans-serif; 
         }
         
@@ -380,8 +379,6 @@ else:
             border-right: 1px solid #e2e8f0;
             box-shadow: 2px 0 10px rgba(0,0,0,0.02);
         }
-        
-        /* Botões Inativos da Sidebar */
         section[data-testid="stSidebar"] .stButton > button {
             background-color: transparent;
             border: none;
@@ -399,8 +396,6 @@ else:
             background-color: #f1f5f9;
             transform: translateX(4px);
         }
-        
-        /* Botão ATIVO da Sidebar (Destaque) */
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
             background: linear-gradient(90deg, #eff6ff 0%, #ffffff 100%);
             color: #1d4ed8;
@@ -458,6 +453,7 @@ else:
             border-radius: 12px;
             border: 1px solid #e2e8f0;
             box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            margin-bottom: 16px;
         }
         
         /* Formularios Internos */
@@ -467,6 +463,7 @@ else:
             border-radius: 16px;
             border: 1px solid #e2e8f0;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
         }
         
         /* Inputs Internos */
@@ -477,6 +474,12 @@ else:
         input:focus {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+        }
+        
+        /* Botões Primarios Internos */
+        button[kind="primary"] {
+            background: #1e3a8a;
+            border-radius: 8px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -506,7 +509,6 @@ if not st.session_state["logged_in"]:
             encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
             logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='logo-img'>"
         
-        # Correção da identação do HTML
         st.markdown(f"""
 <div class="info-card">
 <div class="logo-area">{logo_html}</div>
@@ -559,7 +561,7 @@ if not st.session_state["logged_in"]:
                     login_user(role, display_name, str(unidade).strip(), perfil_conta)
 
 # ==============================================================================
-# LOGICA DO SISTEMA (DASHBOARD COM VISUAL NOVO)
+# ALUNO - DASHBOARD COM VISUAL NOVO
 # ==============================================================================
 elif st.session_state["role"] == "Aluno":
     with st.sidebar:
@@ -584,23 +586,11 @@ elif st.session_state["role"] == "Aluno":
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.markdown("""
-            <div class="dash-card">
-                <div><div class="card-title">Aulas Assistidas</div><div class="card-value">24/30</div></div>
-                <div class="card-sub"><span class="trend-up">80%</span> <span class="trend-neutral">Concluído</span></div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="dash-card"><div><div class="card-title">Aulas Assistidas</div><div class="card-value">24/30</div></div><div class="card-sub"><span class="trend-up">80%</span> <span class="trend-neutral">Concluído</span></div></div>""", unsafe_allow_html=True)
         with col2:
-            st.markdown("""
-            <div class="dash-card">
-                <div><div class="card-title">Média Geral</div><div class="card-value">8.5</div></div>
-                <div class="card-sub"><span class="trend-up">+0.5</span> <span class="trend-neutral">Último mês</span></div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="dash-card"><div><div class="card-title">Média Geral</div><div class="card-value">8.5</div></div><div class="card-sub"><span class="trend-up">+0.5</span> <span class="trend-neutral">Último mês</span></div></div>""", unsafe_allow_html=True)
         with col3:
-            st.markdown("""
-            <div class="dash-card">
-                <div><div class="card-title">Próxima Prova</div><div class="card-value">15/02</div></div>
-                <div class="card-sub"><span style="color:#64748b">Oral Test - Unit 5</span></div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">15/02</div></div><div class="card-sub"><span style="color:#64748b">Oral Test - Unit 5</span></div></div>""", unsafe_allow_html=True)
 
     elif menu_aluno == "Minhas Aulas":
         st.markdown('<div class="main-header">Grade Curricular</div>', unsafe_allow_html=True)
@@ -656,83 +646,236 @@ elif st.session_state["role"] == "Aluno":
         if meus: st.dataframe(pd.DataFrame(meus), use_container_width=True)
         else: st.info("Financeiro em dia.")
 
-elif st.session_state["role"] in ["Professor", "Coordenador"]:
-    perfil = st.session_state["role"]
+# ==============================================================================
+# PROFESSOR - DASHBOARD VIP
+# ==============================================================================
+elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### {st.session_state['user_name']}")
-        st.caption(f"Perfil: {perfil}")
+        st.caption("Perfil: Docente")
         st.markdown("---")
-        opts = ["Minhas Turmas", "Diário de Classe", "Mensagens", "Notas", "Aulas Gravadas", "Materiais"] if perfil == "Professor" else ["Dashboard", "Alunos", "Professores", "Turmas", "Financeiro", "Aprovação Notas", "Usuários", "Conteúdos"]
-        menu_sel = sidebar_menu("Menu", opts, f"menu_{perfil}")
+        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "📝 Diário de Classe", "💬 Mensagens", "📊 Notas", "🎥 Aulas Gravadas", "📂 Materiais"], "menu_prof")
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    st.markdown(f'<div class="main-header">Área do {perfil}: {menu_sel}</div>', unsafe_allow_html=True)
-    
-    if perfil == "Coordenador":
-        if menu_sel == "Dashboard":
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown(f"""<div class="dash-card"><div><div class="card-title">Total de Alunos</div><div class="card-value">{len(st.session_state["students"])}</div></div></div>""", unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"""<div class="dash-card"><div><div class="card-title">Professores</div><div class="card-value">{len(st.session_state["teachers"])}</div></div></div>""", unsafe_allow_html=True)
-            with c3:
-                st.markdown(f"""<div class="dash-card"><div><div class="card-title">Turmas Ativas</div><div class="card-value">{len(st.session_state["classes"])}</div></div></div>""", unsafe_allow_html=True)
+    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "📝 Diário de Classe": "Diario", "💬 Mensagens": "Mensagens", "📊 Notas": "Notas", "🎥 Aulas Gravadas": "Aulas", "📂 Materiais": "Materiais"}
+    menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
+
+    if menu_prof == "Minhas Turmas":
+        st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+             st.markdown("""
+             <div class="dash-card">
+                <div>
+                    <div class="card-title" style="color:#1d4ed8;">Próxima Aula: 14:00</div>
+                    <div class="card-value">Inglês Teens B1</div>
+                </div>
+                <div class="card-sub">Sala Virtual 01 • 12 Alunos</div>
+             </div>""", unsafe_allow_html=True)
+             st.button("Iniciar Aula (Zoom)", key="btn_zoom_prof")
+        with col2:
+             st.markdown("""
+             <div class="dash-card">
+                <div>
+                    <div class="card-title">Hoje: 19:00</div>
+                    <div class="card-value">Adults Conversation</div>
+                </div>
+                <div class="card-sub">Sala Virtual 03 • 8 Alunos</div>
+             </div>""", unsafe_allow_html=True)
+
+    elif menu_prof == "Diario":
+        st.markdown('<div class="main-header">Diário de Classe</div>', unsafe_allow_html=True)
+        with st.form("chamada"):
+            c1, c2 = st.columns(2)
+            with c1: turma = st.selectbox("Turma", ["Inglês Teens B1", "Adults Conversation"])
+            with c2: data = st.date_input("Data", datetime.date.today())
+            st.markdown("---")
+            df_alunos = pd.DataFrame([{"Aluno": "Ana Clara", "Presente": True}, {"Aluno": "Bruno Souza", "Presente": True}, {"Aluno": "Carlos Eduardo", "Presente": False}])
+            edited_df = st.data_editor(df_alunos, num_rows="dynamic", use_container_width=True)
+            st.form_submit_button("Salvar Chamada")
+
+    elif menu_prof == "Mensagens":
+        st.markdown('<div class="main-header">Enviar Mensagem</div>', unsafe_allow_html=True)
+        with st.form("form_msg"):
+            st.text_input("Título")
+            st.text_area("Mensagem")
+            st.selectbox("Turma", ["Todas", "Teens B1", "Adults"])
+            st.form_submit_button("Enviar")
+
+    elif menu_prof == "Notas":
+        st.markdown('<div class="main-header">Lançamento de Notas</div>', unsafe_allow_html=True)
+        with st.form("form_notas"):
+            c1, c2 = st.columns(2)
+            with c1: st.text_input("Aluno")
+            with c2: st.selectbox("Turma", class_names() or ["Sem Turmas"])
+            c3, c4 = st.columns(2)
+            with c3: st.number_input("Nota Trabalho", 0.0, 10.0)
+            with c4: st.number_input("Nota Presença", 0.0, 10.0)
+            st.selectbox("Situação", ["Aprovado", "Reprovado"])
+            st.form_submit_button("Enviar para Aprovação")
+
+    elif menu_prof == "Aulas":
+        st.markdown('<div class="main-header">Cadastrar Aula Gravada</div>', unsafe_allow_html=True)
+        with st.form("new_vid"):
+            st.text_input("Título")
+            st.text_input("Link (YouTube)")
+            st.selectbox("Turma", ["Teens B1", "Adults"])
+            st.form_submit_button("Cadastrar")
+
+    elif menu_prof == "Materiais":
+        st.markdown('<div class="main-header">Cadastrar Material</div>', unsafe_allow_html=True)
+        with st.form("new_mat"):
+            st.text_input("Título")
+            st.text_area("Descrição")
+            st.text_input("Link (Drive)")
+            st.form_submit_button("Cadastrar")
+
+# ==============================================================================
+# COORDENADOR - DASHBOARD VIP
+# ==============================================================================
+elif st.session_state["role"] == "Coordenador":
+    with st.sidebar:
+        logo_path = get_logo_path()
+        if logo_path: st.image(str(logo_path), width=120)
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.caption("Perfil: Coordenação")
+        st.markdown("---")
+        menu_coord_label = sidebar_menu("Administração", ["📊 Dashboard", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🏫 Turmas", "💰 Financeiro", "📝 Aprovação Notas", "🔐 Usuários", "📚 Conteúdos"], "menu_coord")
+        st.markdown("---")
+        if st.button("Sair"): logout_user()
+
+    menu_coord_map = {"📊 Dashboard": "Dashboard", "🧑‍🎓 Alunos": "Alunos", "👩‍🏫 Professores": "Professores", "🏫 Turmas": "Turmas", "💰 Financeiro": "Financeiro", "📝 Aprovação Notas": "Notas", "🔐 Usuários": "Usuarios", "📚 Conteúdos": "Conteudos"}
+    menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
+
+    if menu_coord == "Dashboard":
+        st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
+        
+        # Cards de Totais
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"""<div class="dash-card"><div><div class="card-title">Total de Alunos</div><div class="card-value">{len(st.session_state["students"])}</div></div><div class="card-sub"><span class="trend-up">Ativos</span></div></div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""<div class="dash-card"><div><div class="card-title">Professores</div><div class="card-value">{len(st.session_state["teachers"])}</div></div></div>""", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""<div class="dash-card"><div><div class="card-title">Turmas</div><div class="card-value">{len(st.session_state["classes"])}</div></div></div>""", unsafe_allow_html=True)
             
-        elif menu_sel == "Alunos":
-            with st.form("add_student"):
-                st.subheader("Novo Aluno")
-                c1, c2 = st.columns(2)
-                with c1: nome = st.text_input("Nome")
-                with c2: mat = st.text_input("Matrícula")
-                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                if st.form_submit_button("Cadastrar"):
-                    st.session_state["students"].append({"nome": nome, "matricula": mat, "turma": turma})
-                    st.success("Salvo!")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Cards Financeiros
+        total_rec = sum(parse_money(i["valor"]) for i in st.session_state["receivables"])
+        total_pag = sum(parse_money(i["valor"]) for i in st.session_state["payables"])
+        saldo = total_rec - total_pag
+        
+        c4, c5, c6 = st.columns(3)
+        with c4:
+             st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Receber</div><div class="card-value" style="color:#2563eb;">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
+        with c5:
+             st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Pagar</div><div class="card-value" style="color:#dc2626;">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
+        with c6:
+             color = "#16a34a" if saldo >= 0 else "#dc2626"
+             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Saldo Atual</div><div class="card-value" style="color:{color};">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
+
+    elif menu_coord == "Alunos":
+        st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
+        with st.form("add_student"):
+            st.markdown("### Novo Aluno")
+            c1, c2 = st.columns(2)
+            with c1: nome = st.text_input("Nome Completo")
+            with c2: mat = st.text_input("Matrícula")
+            c3, c4 = st.columns(2)
+            with c3: turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
+            with c4: email = st.text_input("Email")
+            
+            st.markdown("#### Responsável (se menor)")
+            resp = st.text_input("Nome do Responsável")
+            
+            if st.form_submit_button("Cadastrar Aluno"):
+                st.session_state["students"].append({"nome": nome, "matricula": mat, "turma": turma, "email": email, "resp": resp})
+                st.success("Aluno cadastrado com sucesso!")
+        
+        if st.session_state["students"]:
+            st.markdown("### Alunos Cadastrados")
             st.dataframe(pd.DataFrame(st.session_state["students"]), use_container_width=True)
 
-        elif menu_sel == "Professores":
-            with st.form("add_prof"):
-                nome = st.text_input("Nome do Professor")
-                if st.form_submit_button("Cadastrar"):
-                    st.session_state["teachers"].append({"nome": nome})
-                    st.success("Salvo!")
-            st.dataframe(pd.DataFrame(st.session_state["teachers"]), use_container_width=True)
+    elif menu_coord == "Professores":
+        st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
+        with st.form("add_prof"):
+            c1, c2 = st.columns(2)
+            with c1: nome = st.text_input("Nome")
+            with c2: area = st.text_input("Área")
+            if st.form_submit_button("Cadastrar"):
+                st.session_state["teachers"].append({"nome": nome, "area": area})
+                st.success("Salvo!")
+        st.dataframe(pd.DataFrame(st.session_state["teachers"]), use_container_width=True)
 
-        elif menu_sel == "Turmas":
-            with st.form("add_class"):
-                nome = st.text_input("Nome da Turma")
-                if st.form_submit_button("Cadastrar"):
-                    st.session_state["classes"].append({"nome": nome})
-                    st.success("Salvo!")
-            st.dataframe(pd.DataFrame(st.session_state["classes"]), use_container_width=True)
-            
-        elif menu_sel == "Financeiro":
-            st.info("Gestão Financeira Completa (Contas a Pagar/Receber)")
-            if st.session_state["receivables"]: st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
-            else: st.info("Sem lançamentos.")
-                
-        elif menu_sel == "Usuários":
-            with st.form("new_user"):
-                c1, c2, c3 = st.columns(3)
-                with c1: u_user = st.text_input("Usuário")
-                with c2: u_pass = st.text_input("Senha", type="password")
-                with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
-                if st.form_submit_button("Criar Login"):
-                    st.session_state["users"].append({"usuario": u_user, "senha": u_pass, "perfil": u_role})
-                    st.success("Criado!")
-            st.dataframe(pd.DataFrame(st.session_state["users"]), use_container_width=True)
+    elif menu_coord == "Turmas":
+        st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
+        with st.form("add_class"):
+            c1, c2 = st.columns(2)
+            with c1: nome = st.text_input("Nome da Turma")
+            with c2: prof = st.selectbox("Professor", ["Selecione"] + teacher_names())
+            dias = st.text_input("Dias e Horários")
+            if st.form_submit_button("Cadastrar"):
+                st.session_state["classes"].append({"nome": nome, "professor": prof, "dias": dias})
+                st.success("Salvo!")
+        st.dataframe(pd.DataFrame(st.session_state["classes"]), use_container_width=True)
 
-        elif menu_sel == "Conteúdos":
-            st.write("Gestão de Mensagens e Materiais")
+    elif menu_coord == "Financeiro":
+        st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
+        
+        with tab1:
+            with st.form("add_rec"):
+                st.markdown("### Lançar Recebimento")
+                c1, c2 = st.columns(2)
+                with c1: desc = st.text_input("Descrição (Ex: Mensalidade)")
+                with c2: val = st.text_input("Valor (Ex: 150,00)")
+                aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                if st.form_submit_button("Lançar"):
+                    add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
+                    st.success("Lançado!")
+            st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
             
-    elif perfil == "Professor":
-        if menu_sel == "Minhas Turmas":
-            st.info("Seus horários de aula.")
-            st.markdown("""<div class="dash-card"><div><div class="card-title">Próxima Aula</div><div class="card-value">Inglês Teens B1</div><div class="card-sub">14:00 - Sala 01</div></div></div>""", unsafe_allow_html=True)
-        elif menu_sel == "Diário de Classe":
-            st.write("Realizar chamada.")
-        elif menu_sel == "Notas":
-             st.write("Lançamento de notas.")
+        with tab2:
+            with st.form("add_pag"):
+                st.markdown("### Lançar Despesa")
+                c1, c2 = st.columns(2)
+                with c1: desc = st.text_input("Descrição")
+                with c2: val = st.text_input("Valor")
+                forn = st.text_input("Fornecedor")
+                if st.form_submit_button("Lançar"):
+                    st.session_state["payables"].append({"descricao": desc, "valor": val, "fornecedor": forn})
+                    st.success("Lançado!")
+            st.dataframe(pd.DataFrame(st.session_state["payables"]), use_container_width=True)
+
+    elif menu_coord == "Notas":
+        st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
+        pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
+        if pendentes:
+            st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
+            if st.button("Aprovar Todas as Pendentes", type="primary"):
+                for g in st.session_state["grades"]:
+                    if g.get("status") == "Pendente": g["status"] = "Aprovado"
+                st.success("Notas aprovadas!")
+                st.rerun()
+        else:
+            st.info("Nenhuma nota pendente.")
+
+    elif menu_coord == "Usuarios":
+        st.markdown('<div class="main-header">Controle de Usuários</div>', unsafe_allow_html=True)
+        with st.form("new_user"):
+            c1, c2, c3 = st.columns(3)
+            with c1: u_user = st.text_input("Usuário")
+            with c2: u_pass = st.text_input("Senha", type="password")
+            with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+            if st.form_submit_button("Criar Acesso"):
+                st.session_state["users"].append({"usuario": u_user, "senha": u_pass, "perfil": u_role})
+                st.success("Usuário criado!")
+        st.dataframe(pd.DataFrame(st.session_state["users"]), use_container_width=True)
+    
+    elif menu_coord == "Conteudos":
+        st.markdown('<div class="main-header">Conteúdos</div>', unsafe_allow_html=True)
+        st.write("Use esta área para gerenciar mensagens globais e materiais pedagógicos.")
