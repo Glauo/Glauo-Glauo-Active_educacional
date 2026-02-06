@@ -242,8 +242,8 @@ if not st.session_state["logged_in"]:
             flex-direction: column;
             justify-content: center;
         }
-        .logo-area { margin-bottom: 24px; }
-        .logo-img { max-width: 80px; }
+        .logo-area { margin-bottom: 50px; }
+        .logo-img { max-width: 140px; }
         
         .info-title {
             font-family: 'Sora', sans-serif;
