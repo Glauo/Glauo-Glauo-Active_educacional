@@ -436,6 +436,7 @@ elif st.session_state["role"] == "Aluno":
 # ==============================================================================
 # PROFESSOR
 # ==============================================================================
+# --- NOVO TRECHO PARA PROFESSOR ---
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
@@ -449,6 +450,20 @@ elif st.session_state["role"] == "Professor":
 
     menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
+
+    if menu_prof == "Minhas Turmas":
+        st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
+        minhas_turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in str(c.get("professor", ""))]
+        if not minhas_turmas: minhas_turmas = st.session_state["classes"]
+        if not minhas_turmas: st.info("Nenhuma turma encontrada.")
+        else:
+            turma_selecionada_nome = st.selectbox("Selecione a Turma", [t["nome"] for t in minhas_turmas])
+            turma_selecionada = next((t for t in minhas_turmas if t["nome"] == turma_selecionada_nome), None)
+            alunos_minha_turma = [s for s in st.session_state["students"] if s.get("turma") == turma_selecionada_nome]
+            
+            if alunos_minha_turma:
+                st.table(pd.DataFrame(alunos_minha_turma)[["nome", "email", "celular"]]) 
+                st.warning("🔒 O seu perfil permite apenas a visualização dos dados.")
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
@@ -487,7 +502,30 @@ elif st.session_state["role"] == "Professor":
 # COORDENADOR
 # ==============================================================================
 elif st.session_state["role"] == "Coordenador":
+
     with st.sidebar:
+        logo_path = get_logo_path()
+        if logo_path: st.image(str(logo_path), width=120)
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.caption("Perfil: Coordenação")
+        st.markdown("---")
+        menu_coord_label = sidebar_menu("Administração", ["📊 Dashboard", "🔗 Links Ao Vivo", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🔐 Usuários", "🏫 Turmas", "💰 Financeiro", "📝 Aprovação Notas", "📚 Conteúdos"], "menu_coord")
+        st.markdown("---")
+        if st.button("Sair"): logout_user()
+
+    menu_coord_map = {"📊 Dashboard": "Dashboard", "🔗 Links Ao Vivo": "Links", "🧑‍🎓 Alunos": "Alunos", "👩‍🏫 Professores": "Professores", "🔐 Usuários": "Usuarios", "🏫 Turmas": "Turmas", "💰 Financeiro": "Financeiro", "📝 Aprovação Notas": "Notas", "📚 Conteúdos": "Conteudos"}
+    menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
+
+if menu_coord == "Alunos":
+    st.markdown('<div class="main-header">Gestão Geral de Alunos</div>', unsafe_allow_html=True)
+    
+    # Aba de visualização global
+    if st.session_state["students"]:
+        df_completo = pd.DataFrame(st.session_state["students"])
+        st.write("### Todos os Alunos Cadastrados")
+        st.dataframe(df_completo, use_container_width=True) # Coordenador vê tudo 
+    else:
+        st.info("Nenhum aluno encontrado na base de dados.")
         logo_path = get_logo_path()
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### {st.session_state['user_name']}")
