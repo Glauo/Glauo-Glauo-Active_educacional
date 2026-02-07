@@ -231,7 +231,7 @@ def sidebar_menu(title, options, key):
 # CSS DINAMICO
 # ==============================================================================
 
-if not st.session_state["logged_in"]:
+if not st.session_state.get("logged_in", False):
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
@@ -307,7 +307,7 @@ if not st.session_state["users"]:
 # ==============================================================================
 # TELA DE LOGIN
 # ==============================================================================
-if not st.session_state["logged_in"]:
+if not st.session_state.get("logged_in", False):
     col_left, col_right = st.columns([1, 0.8], gap="large")
     with col_left:
         logo_path = get_logo_path()
