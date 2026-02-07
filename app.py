@@ -331,13 +331,14 @@ if not st.session_state.get("logged_in", False):
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
-        .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
+        .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; --hero-height: calc(100vh - 9rem); --hero-min: 620px; }
         header, footer {visibility: hidden;}
         .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; }
-        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; height: calc(100vh - 9rem); min-height: 620px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
         .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
         .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
         .hero-subtitle { font-size: 1rem; color: #64748b; }
+        .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
         .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
         .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
@@ -353,8 +354,13 @@ if not st.session_state.get("logged_in", False):
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; height: calc(100vh - 9rem - 56px); min-height: 564px; max-height: calc(100vh - 9rem - 56px); overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
-        div[data-testid="stTabs"] [data-baseweb="tab-list"] { margin-bottom: 8px; }
+        .auth-panel { height: var(--hero-height); min-height: var(--hero-min); }
+        .auth-panel div[data-testid="stTabs"] { height: 100%; display: flex; flex-direction: column; }
+        .auth-panel div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: center; background: rgba(255,255,255,0.2); padding: 6px; border-radius: 999px; margin-bottom: 14px; gap: 6px; }
+        .auth-panel div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #e2e8f0; background: transparent; }
+        .auth-panel div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #ffffff; color: #1e3a8a; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
+        .auth-panel div[data-testid="stTabs"] [data-baseweb="tab-panel"] { height: calc(100% - 52px); }
+        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; height: 100%; min-height: 100%; max-height: 100%; overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
         div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
@@ -424,13 +430,14 @@ if not st.session_state.get("logged_in", False):
 <div class="hero-card">
   {logo_html}
   <div class="hero-title">Sistema Educacional<br>Ativo</div>
-  <div class="hero-subtitle">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
+  <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
 """, unsafe_allow_html=True)
 
     with col_right:
         st.write("")
         st.write("")
+        st.markdown('<div class="auth-panel">', unsafe_allow_html=True)
         tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
         with tab_login:
             with st.form("login_form"):
@@ -519,6 +526,7 @@ if not st.session_state.get("logged_in", False):
                     )
                     save_users(st.session_state["users"])
                     st.success("Cadastro criado com sucesso! Faça o login.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
 <div class="feature-block">
