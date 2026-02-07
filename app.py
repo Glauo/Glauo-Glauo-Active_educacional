@@ -420,6 +420,7 @@ elif st.session_state["role"] == "Aluno":
 # ==============================================================================
 # PROFESSOR
 # ==============================================================================
+# --- NOVO TRECHO PARA PROFESSOR ---
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
@@ -433,6 +434,20 @@ elif st.session_state["role"] == "Professor":
 
     menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "📝 Diário de Classe": "Diario", "💬 Mensagens": "Mensagens", "📊 Notas": "Notas", "🎥 Aulas Gravadas": "Aulas", "📂 Materiais": "Materiais"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
+
+    if menu_prof == "Minhas Turmas":
+        st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
+        minhas_turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in str(c.get("professor", ""))]
+        if not minhas_turmas: minhas_turmas = st.session_state["classes"]
+        if not minhas_turmas: st.info("Nenhuma turma encontrada.")
+        else:
+            turma_selecionada_nome = st.selectbox("Selecione a Turma", [t["nome"] for t in minhas_turmas])
+            turma_selecionada = next((t for t in minhas_turmas if t["nome"] == turma_selecionada_nome), None)
+            alunos_minha_turma = [s for s in st.session_state["students"] if s.get("turma") == turma_selecionada_nome]
+            
+            if alunos_minha_turma:
+                st.table(pd.DataFrame(alunos_minha_turma)[["nome", "email", "celular"]]) 
+                st.warning("🔒 O seu perfil permite apenas a visualização dos dados.")
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
