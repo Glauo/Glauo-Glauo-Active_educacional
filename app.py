@@ -237,11 +237,11 @@ if not st.session_state.get("logged_in", False):
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
         .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
-        .block-container { padding-top: 5rem; padding-bottom: 5rem; max-width: 1200px; }
-        .info-card { background: rgba(255, 255, 255, 0.96); border-radius: 28px; padding: 44px; height: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.18); color: #1e293b; display: flex; flex-direction: column; justify-content: center; }
+        .block-container { padding-top: 4.5rem; padding-bottom: 5rem; max-width: 1400px; }
+        .info-card { background: rgba(255, 255, 255, 0.96); border-radius: 28px; padding: 48px 56px; height: 100%; min-height: 560px; width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,0.18); color: #1e293b; display: flex; flex-direction: column; justify-content: center; }
         .logo-area { margin-bottom: 24px; }
         .logo-img { max-width: 84px; }
-        .info-title { font-family: 'Sora', sans-serif; font-size: 2.2rem; font-weight: 700; color: #0f172a; line-height: 1.15; margin-bottom: 12px; }
+        .info-title { font-family: 'Sora', sans-serif; font-size: 2.3rem; font-weight: 700; color: #0f172a; line-height: 1.12; margin-bottom: 12px; word-break: normal; }
         .info-subtitle { font-size: 1rem; color: #64748b; margin-bottom: 32px; line-height: 1.6; }
         .feature-item { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
         .feature-icon-box { width: 48px; height: 48px; background: #eff6ff; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #2563eb; }
@@ -249,9 +249,9 @@ if not st.session_state.get("logged_in", False):
         .feature-sub { font-size: 0.82rem; color: #94a3b8; }
         .whatsapp-button { display: flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 20px; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 24px; padding: 40px; border: none; box-shadow: 0 20px 50px rgba(0,0,0,0.22); }
-        .login-header { font-family: 'Sora', sans-serif; font-size: 1.6rem; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
-        .login-sub { font-size: 0.9rem; color: #64748b; margin-bottom: 24px; }
+        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; min-height: 560px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
+        .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+        .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
         div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
         div[data-testid="stForm"] input, div[data-testid="stForm"] select, div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
         div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
@@ -308,7 +308,7 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([1, 2.1, 2.1, 1], gap="large")
+    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.6, 3.2, 3.2, 0.6], gap="large")
     with col_left:
         logo_path = get_logo_path()
         logo_html = ""
