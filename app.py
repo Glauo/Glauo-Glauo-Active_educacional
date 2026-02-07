@@ -338,17 +338,23 @@ if not st.session_state.get("logged_in", False):
         .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
         .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
         .hero-subtitle { font-size: 1rem; color: #64748b; }
-        .feature-block { margin-top: 26px; background: rgba(255, 255, 255, 0.92); border-radius: 24px; padding: 22px 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.14); }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.2rem; font-weight: 700; color: #0f172a; margin-bottom: 14px; }
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-        .feature-card { background: white; border-radius: 18px; padding: 16px 18px; border: 1px solid #e2e8f0; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
-        .feature-icon { font-size: 1.3rem; margin-bottom: 8px; }
-        .feature-text { font-weight: 700; color: #1f2937; font-size: 0.98rem; }
+        .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
+        .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
+        .feature-card { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(226,232,240,0.85); box-shadow: 0 10px 24px rgba(15,23,42,0.08); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-4px); box-shadow: 0 16px 32px rgba(15,23,42,0.12); }
+        .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
+        .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
+        .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
+        .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
+        .feature-text { font-weight: 700; color: #0f172a; font-size: 0.98rem; }
         .feature-sub { font-size: 0.84rem; color: #64748b; margin-top: 4px; }
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; min-height: 620px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
+        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; height: calc(100vh - 9rem - 56px); min-height: 564px; max-height: calc(100vh - 9rem - 56px); overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] { margin-bottom: 8px; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
         div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
@@ -407,28 +413,7 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    if "auth_mode" not in st.session_state:
-        st.session_state["auth_mode"] = "Login"
-
-    col_actions_spacer, col_action_cadastro, col_action_login = st.columns([6, 1, 1])
-    with col_action_cadastro:
-        if st.button(
-            "Cadastro",
-            type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
-            key="auth_cadastro",
-        ):
-            st.session_state["auth_mode"] = "Cadastro"
-            st.rerun()
-    with col_action_login:
-        if st.button(
-            "Login",
-            type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
-            key="auth_login",
-        ):
-            st.session_state["auth_mode"] = "Login"
-            st.rerun()
-
-    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.5, 3.5, 3.0, 0.5], gap="large")
+    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.6, 3.2, 3.2, 0.6], gap="large")
     with col_left:
         logo_path = get_logo_path()
         logo_html = ""
@@ -446,49 +431,8 @@ if not st.session_state.get("logged_in", False):
     with col_right:
         st.write("")
         st.write("")
-        if st.session_state["auth_mode"] == "Cadastro":
-            with st.form("signup_form"):
-                st.markdown("""<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""", unsafe_allow_html=True)
-                nome = st.text_input("Nome completo *")
-                email = st.text_input("E-mail *")
-                celular = st.text_input("Celular/WhatsApp")
-                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                usuario = st.text_input("Usuário *")
-                senha = st.text_input("Senha *", type="password")
-                cadastrar = st.form_submit_button("Criar Cadastro")
-
-            if cadastrar:
-                if not nome or not email or not usuario or not senha:
-                    st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
-                elif find_user(usuario.strip()):
-                    st.error("⚠️ Este usuário já existe.")
-                else:
-                    novo_aluno = {
-                        "nome": nome.strip(),
-                        "email": email.strip(),
-                        "celular": celular.strip(),
-                        "turma": turma,
-                        "usuario": usuario.strip(),
-                        "senha": senha.strip(),
-                        "data_nascimento": "",
-                        "idade": "",
-                        "responsavel": {},
-                    }
-                    st.session_state["students"].append(novo_aluno)
-                    save_list(STUDENTS_FILE, st.session_state["students"])
-                    st.session_state["users"].append(
-                        {
-                            "usuario": usuario.strip(),
-                            "senha": senha.strip(),
-                            "perfil": "Aluno",
-                            "pessoa": nome.strip(),
-                        }
-                    )
-                    save_users(st.session_state["users"])
-                    st.success("Cadastro criado com sucesso! Faça o login.")
-                    st.session_state["auth_mode"] = "Login"
-                    st.rerun()
-        else:
+        tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
+        with tab_login:
             with st.form("login_form"):
                 st.markdown("""<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""", unsafe_allow_html=True)
                 role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
@@ -515,6 +459,66 @@ if not st.session_state.get("logged_in", False):
                     else:
                         display_name = user.get("pessoa") or usuario.strip()
                         login_user(role, display_name, str(unidade).strip(), perfil_conta)
+        with tab_cadastro:
+            with st.form("signup_form"):
+                st.markdown("""<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""", unsafe_allow_html=True)
+                c1, c2 = st.columns(2)
+                with c1: nome = st.text_input("Nome completo *")
+                with c2: cpf = st.text_input("CPF")
+
+                c3, c4 = st.columns(2)
+                with c3: email = st.text_input("E-mail *")
+                with c4: celular = st.text_input("Celular/WhatsApp")
+
+                c5, c6 = st.columns(2)
+                with c5: data_nascimento = st.date_input("Data de Nascimento", value=None)
+                with c6: rg = st.text_input("RG")
+
+                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                usuario = st.text_input("Usuário *")
+                senha = st.text_input("Senha *", type="password")
+                cadastrar = st.form_submit_button("Criar Cadastro")
+
+            if cadastrar:
+                if not nome or not email or not usuario or not senha:
+                    st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
+                elif find_user(usuario.strip()):
+                    st.error("⚠️ Este usuário já existe.")
+                else:
+                    idade = ""
+                    if data_nascimento:
+                        try:
+                            hoje = datetime.date.today()
+                            idade = hoje.year - data_nascimento.year - (
+                                (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
+                            )
+                        except Exception:
+                            idade = ""
+                    novo_aluno = {
+                        "nome": nome.strip(),
+                        "email": email.strip(),
+                        "celular": celular.strip(),
+                        "cpf": cpf.strip(),
+                        "rg": rg.strip(),
+                        "turma": turma,
+                        "usuario": usuario.strip(),
+                        "senha": senha.strip(),
+                        "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
+                        "idade": idade,
+                        "responsavel": {},
+                    }
+                    st.session_state["students"].append(novo_aluno)
+                    save_list(STUDENTS_FILE, st.session_state["students"])
+                    st.session_state["users"].append(
+                        {
+                            "usuario": usuario.strip(),
+                            "senha": senha.strip(),
+                            "perfil": "Aluno",
+                            "pessoa": nome.strip(),
+                        }
+                    )
+                    save_users(st.session_state["users"])
+                    st.success("Cadastro criado com sucesso! Faça o login.")
 
     st.markdown(f"""
 <div class="feature-block">
