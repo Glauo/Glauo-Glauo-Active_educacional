@@ -71,6 +71,7 @@ WHATSAPP_NUMBER = "5516996043314"
 def get_logo_path():
     candidates = [
         Path("image_8fc66d.png"),
+        Path("logo_active.jpg"),
         Path("logo_active2.png"),
         Path("logo_active2.jpg"),
         Path("logo.png"),
@@ -234,8 +235,8 @@ def sidebar_menu(title, options, key):
 if not st.session_state["logged_in"]:
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap');
-        .stApp { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%); font-family: 'Manrope', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
+        .stApp { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
         .block-container { padding-top: 5rem; padding-bottom: 5rem; max-width: 1000px; }
         .info-card { background: rgba(255, 255, 255, 0.95); border-radius: 24px; padding: 40px; height: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.2); color: #1e293b; display: flex; flex-direction: column; justify-content: center; }
@@ -249,14 +250,14 @@ if not st.session_state["logged_in"]:
         .feature-sub { font-size: 0.8rem; color: #94a3b8; }
         .whatsapp-button { display: flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 20px; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stForm"] { background: #ffffff; border-radius: 24px; padding: 40px; border: none; box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
+        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 24px; padding: 40px; border: none; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.5rem; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
         .login-sub { font-size: 0.9rem; color: #64748b; margin-bottom: 24px; }
         div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
         div[data-testid="stForm"] input, div[data-testid="stForm"] select, div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
         div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
-        div[data-testid="stForm"] button { background: linear-gradient(to right, #2563eb, #1d4ed8); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; }
-        div[data-testid="stForm"] button:hover { opacity: 0.9; border: none; }
+        div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
+        div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -328,6 +329,9 @@ if not st.session_state["logged_in"]:
 """, unsafe_allow_html=True)
 
     with col_right:
+        logo_path = get_logo_path()
+        if logo_path:
+            st.image(str(logo_path), use_container_width=True)
         st.write("") 
         st.write("")
         with st.form("login_form"):
