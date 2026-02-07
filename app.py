@@ -120,6 +120,21 @@ def find_user(username):
             return user
     return None
 
+def create_or_update_login(username, password, role, person_name):
+    # Verifica se usuario ja existe
+    existing = next((u for u in st.session_state["users"] if u["usuario"] == username), None)
+    if existing:
+        existing["senha"] = password
+        existing["perfil"] = role
+        existing["pessoa"] = person_name
+    else:
+        st.session_state["users"].append({
+            "usuario": username,
+            "senha": password,
+            "perfil": role,
+            "pessoa": person_name
+        })
+
 def login_user(role, name, unit, account_profile):
     st.session_state["logged_in"] = True
     st.session_state["role"] = role
@@ -520,17 +535,68 @@ elif st.session_state["role"] == "Coordenador":
                         save_list(CLASSES_FILE, st.session_state["classes"])
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
-    # --- ALUNOS (CADASTRO COMPLETO E VALIDAÇÃO MENOR DE IDADE) ---
+    # --- ALUNOS (CADASTRO COMPLETO + LOGIN) ---
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gest?o de Alunos</div>', unsafe_allow_html=True)
-        tab1, tab2, tab3 = st.tabs(["📋 Lista de Alunos", "➕ Cadastro Completo", "✏️ Gerenciar / Excluir"])
-        
+        tab1, tab2, tab3 = st.tabs(["?? Lista de Alunos", "? Cadastro Completo", "?? Gerenciar / Excluir"])
+
         with tab1:
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
-                df_alunos = pd.json_normalize(st.session_state["students"])
-                st.dataframe(df_alunos, use_container_width=True)
+                turmas_opts = ["Todas"] + sorted({s.get("turma", "Sem Turma") for s in st.session_state["students"]})
+                profs_opts = [
+                    "Todos"
+                ] + sorted({
+                    str(c.get("professor", "")).strip()
+                    for c in st.session_state["classes"]
+                    if str(c.get("professor", "")).strip()
+                })
+
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    turma_filtro = st.selectbox("Filtrar por Turma", turmas_opts)
+                with col_f2:
+                    prof_filtro = st.selectbox("Filtrar por Professor", profs_opts if profs_opts else ["Todos"])
+
+                alunos_filtrados = st.session_state["students"]
+                if turma_filtro != "Todas":
+                    alunos_filtrados = [s for s in alunos_filtrados if s.get("turma") == turma_filtro]
+                if prof_filtro != "Todos":
+                    turmas_prof = {
+                        c.get("nome")
+                        for c in st.session_state["classes"]
+                        if str(c.get("professor", "")).strip() == prof_filtro
+                    }
+                    alunos_filtrados = [s for s in alunos_filtrados if s.get("turma") in turmas_prof]
+
+                if not alunos_filtrados:
+                    st.info("Nenhum aluno encontrado com os filtros selecionados.")
+                else:
+                    df_alunos = pd.json_normalize(alunos_filtrados)
+                    if "nascimento" in df_alunos.columns and "data_nascimento" not in df_alunos.columns:
+                        df_alunos = df_alunos.rename(columns={"nascimento": "data_nascimento"})
+
+                    col_default = [
+                        "nome",
+                        "turma",
+                        "email",
+                        "celular",
+                        "data_nascimento",
+                        "idade",
+                        "responsavel.nome",
+                        "responsavel.celular",
+                        "responsavel.email",
+                    ]
+                    colunas = list(df_alunos.columns)
+                    colunas_sel = st.multiselect(
+                        "Colunas vis?veis",
+                        colunas,
+                        default=[c for c in col_default if c in colunas],
+                    )
+                    if colunas_sel:
+                        df_alunos = df_alunos[colunas_sel]
+                    st.dataframe(df_alunos, use_container_width=True)
 
         with tab2:
             with st.form("add_student_full"):
@@ -585,13 +651,13 @@ elif st.session_state["role"] == "Coordenador":
 
                 if st.form_submit_button("Cadastrar Aluno"):
                     if idade < 18 and (not resp_nome or not resp_cpf):
-                        st.error("? ERRO: Aluno menor de idade! ? obrigat?rio preencher Nome e CPF do Respons?vel.")
+                        st.error("?? ERRO: Aluno menor de idade! ? obrigat?rio preencher Nome e CPF do Respons?vel.")
                     elif not nome or not email:
-                        st.error("? ERRO: Nome e E-mail s?o obrigat?rios.")
+                        st.error("?? ERRO: Nome e E-mail s?o obrigat?rios.")
                     elif (login_aluno and not senha_aluno) or (senha_aluno and not login_aluno):
-                        st.error("? ERRO: Para criar o login, informe usu?rio e senha.")
+                        st.error("?? ERRO: Para criar o login, informe usu?rio e senha.")
                     elif login_aluno and find_user(login_aluno):
-                        st.error("? ERRO: Este login j? existe.")
+                        st.error("?? ERRO: Este login j? existe.")
                     else:
                         novo_aluno = {
                             "nome": nome,
@@ -651,11 +717,16 @@ elif st.session_state["role"] == "Coordenador":
                     current_turma = aluno_obj.get("turma", "Sem Turma")
                     if current_turma not in turmas:
                         turmas.append(current_turma)
-                    current_dn = parse_date(aluno_obj.get("data_nascimento", "")) or datetime.date.today()
+
+                    current_dn = parse_date(aluno_obj.get("data_nascimento", "") or aluno_obj.get("nascimento", "")) or datetime.date.today()
+                    try:
+                        current_idade = int(aluno_obj.get("idade") or 1)
+                    except Exception:
+                        current_idade = 1
 
                     with st.form("edit_student"):
                         st.subheader(f"Editando: {aluno_obj['nome']}")
-                        new_nome = st.text_input("Nome", value=aluno_obj["nome"])
+                        new_nome = st.text_input("Nome", value=aluno_obj.get("nome", ""))
 
                         c1, c2 = st.columns(2)
                         with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
@@ -663,7 +734,9 @@ elif st.session_state["role"] == "Coordenador":
 
                         c3, c4 = st.columns(2)
                         with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn)
-                        with c4: new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
+                        with c4: new_idade = st.number_input("Idade", min_value=1, max_value=120, step=1, value=current_idade)
+
+                        new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
 
                         st.markdown("### ?? Acesso do Aluno")
                         c5, c6 = st.columns(2)
@@ -678,7 +751,7 @@ elif st.session_state["role"] == "Coordenador":
                                 senha = new_senha.strip() or aluno_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("? ERRO: Este login j? existe.")
+                                    st.error("?? ERRO: Este login j? existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -703,8 +776,10 @@ elif st.session_state["role"] == "Coordenador":
                                     aluno_obj["turma"] = new_turma
                                     aluno_obj["email"] = new_email
                                     aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
+                                    aluno_obj["idade"] = new_idade
                                     aluno_obj["usuario"] = login
                                     aluno_obj["senha"] = senha
+                                    aluno_obj.pop("nascimento", None)
 
                                     save_list(STUDENTS_FILE, st.session_state["students"])
                                     st.success("Dados atualizados!")
@@ -737,9 +812,9 @@ elif st.session_state["role"] == "Coordenador":
 
                 if st.form_submit_button("Cadastrar"):
                     if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                        st.error("? ERRO: Para criar o login, informe usu?rio e senha.")
+                        st.error("?? ERRO: Para criar o login, informe usu?rio e senha.")
                     elif login_prof and find_user(login_prof):
-                        st.error("? ERRO: Este login j? existe.")
+                        st.error("?? ERRO: Este login j? existe.")
                     else:
                         st.session_state["teachers"].append(
                             {
@@ -785,7 +860,7 @@ elif st.session_state["role"] == "Coordenador":
                                 senha = new_senha.strip() or prof_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("? ERRO: Este login j? existe.")
+                                    st.error("?? ERRO: Este login j? existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -805,7 +880,6 @@ elif st.session_state["role"] == "Coordenador":
                                             )
                                         save_users(st.session_state["users"])
 
-                                    # Atualiza nome do professor em turmas
                                     old_nome = prof_obj["nome"]
                                     for turma in st.session_state["classes"]:
                                         if str(turma.get("professor", "")).strip() == str(old_nome).strip():
@@ -827,6 +901,12 @@ elif st.session_state["role"] == "Coordenador":
                                     if user_obj and user_obj.get("perfil") == "Professor":
                                         st.session_state["users"].remove(user_obj)
                                         save_users(st.session_state["users"])
+
+                                for turma in st.session_state["classes"]:
+                                    if str(turma.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip():
+                                        turma["professor"] = "Sem Professor"
+                                save_list(CLASSES_FILE, st.session_state["classes"])
+
                                 st.session_state["teachers"].remove(prof_obj)
                                 save_list(TEACHERS_FILE, st.session_state["teachers"])
                                 st.error("Professor exclu?do.")
@@ -901,7 +981,6 @@ elif st.session_state["role"] == "Coordenador":
                                 save_list(CLASSES_FILE, st.session_state["classes"])
                                 st.error("Turma exclu?da.")
                                 st.rerun()
-
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
