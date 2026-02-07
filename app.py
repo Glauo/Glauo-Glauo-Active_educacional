@@ -333,19 +333,22 @@ if not st.session_state.get("logged_in", False):
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
         .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
-        .block-container { padding-top: 4.5rem; padding-bottom: 5rem; max-width: 1400px; }
-        .info-card { background: rgba(255, 255, 255, 0.96); border-radius: 28px; padding: 48px 56px; height: 100%; min-height: 560px; width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,0.18); color: #1e293b; display: flex; flex-direction: column; justify-content: center; }
-        .logo-area { margin-bottom: 24px; }
-        .logo-img { max-width: 84px; }
-        .info-title { font-family: 'Sora', sans-serif; font-size: 2.3rem; font-weight: 700; color: #0f172a; line-height: 1.12; margin-bottom: 12px; word-break: normal; }
-        .info-subtitle { font-size: 1rem; color: #64748b; margin-bottom: 32px; line-height: 1.6; }
-        .feature-item { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
-        .feature-icon-box { width: 48px; height: 48px; background: #eff6ff; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #2563eb; }
-        .feature-text { font-weight: 600; color: #334155; font-size: 0.95rem; }
-        .feature-sub { font-size: 0.82rem; color: #94a3b8; }
-        .whatsapp-button { display: flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 20px; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; }
+        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; height: calc(100vh - 9rem); min-height: 620px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+        .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
+        .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
+        .hero-subtitle { font-size: 1rem; color: #64748b; }
+        .feature-block { margin-top: 26px; background: rgba(255, 255, 255, 0.92); border-radius: 24px; padding: 22px 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.14); }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.2rem; font-weight: 700; color: #0f172a; margin-bottom: 14px; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+        .feature-card { background: white; border-radius: 18px; padding: 16px 18px; border: 1px solid #e2e8f0; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+        .feature-icon { font-size: 1.3rem; margin-bottom: 8px; }
+        .feature-text { font-weight: 700; color: #1f2937; font-size: 0.98rem; }
+        .feature-sub { font-size: 0.84rem; color: #64748b; margin-top: 4px; }
+        .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
+        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; min-height: 560px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
+        div[data-testid="stForm"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 44px 48px; border: none; width: 100%; min-height: 620px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); display: flex; flex-direction: column; justify-content: center; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
         div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
@@ -404,49 +407,145 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.6, 3.2, 3.2, 0.6], gap="large")
+    if "auth_mode" not in st.session_state:
+        st.session_state["auth_mode"] = "Login"
+
+    col_actions_spacer, col_action_cadastro, col_action_login = st.columns([6, 1, 1])
+    with col_action_cadastro:
+        if st.button(
+            "Cadastro",
+            type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
+            key="auth_cadastro",
+        ):
+            st.session_state["auth_mode"] = "Cadastro"
+            st.rerun()
+    with col_action_login:
+        if st.button(
+            "Login",
+            type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
+            key="auth_login",
+        ):
+            st.session_state["auth_mode"] = "Login"
+            st.rerun()
+
+    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.5, 3.5, 3.0, 0.5], gap="large")
     with col_left:
         logo_path = get_logo_path()
         logo_html = ""
         if logo_path:
             encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
-            logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='logo-img'>"
+            logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='hero-logo-img'>"
         st.markdown(f"""
-<div class="info-card">
-<div class="logo-area">{logo_html}</div>
-<div class="info-title">Sistema Educacional<br>Ativo</div>
-<div class="info-subtitle">Gestão acadêmica, comunicação e conteúdo pedagógico em um único lugar.</div>
-<div class="feature-item"><div class="feature-icon-box">💬</div><div><div class="feature-text">Mensagens Diretas</div><div class="feature-sub">Comunicação rápida com alunos e turmas.</div></div></div>
-<div class="feature-item"><div class="feature-icon-box">🎥</div><div><div class="feature-text">Aulas Gravadas</div><div class="feature-sub">Conteúdo organizado e acessível 24h.</div></div></div>
-<div class="feature-item"><div class="feature-icon-box">💲</div><div><div class="feature-text">Financeiro Simples</div><div class="feature-sub">Controle de matrículas e pagamentos.</div></div></div>
-<a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+<div class="hero-card">
+  {logo_html}
+  <div class="hero-title">Sistema Educacional<br>Ativo</div>
+  <div class="hero-subtitle">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
 """, unsafe_allow_html=True)
 
     with col_right:
         st.write("")
         st.write("")
-        with st.form("login_form"):
-            st.markdown("""<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""", unsafe_allow_html=True)
-            role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
-            unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
-            unidade_sel = st.selectbox("Unidade", unidades)
-            if unidade_sel == "Outra": unidade = st.text_input("Digite o nome da unidade")
-            else: unidade = unidade_sel
-            usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
-            senha = st.text_input("Senha", type="password", placeholder="Sua senha")
-            entrar = st.form_submit_button("Entrar no Sistema")
-        
-        if entrar:
-            user = find_user(usuario.strip())
-            if not usuario.strip() or not senha.strip(): st.error("⚠️ Informe usuário e senha.")
-            elif not user or user.get("senha") != senha.strip(): st.error("⚠️ Usuário ou senha inválidos.")
-            else:
-                perfil_conta = user.get("perfil", "")
-                if role not in allowed_portals(perfil_conta): st.error(f"⚠️ Este usuário não tem permissão de {role}.")
+        if st.session_state["auth_mode"] == "Cadastro":
+            with st.form("signup_form"):
+                st.markdown("""<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""", unsafe_allow_html=True)
+                nome = st.text_input("Nome completo *")
+                email = st.text_input("E-mail *")
+                celular = st.text_input("Celular/WhatsApp")
+                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                usuario = st.text_input("Usuário *")
+                senha = st.text_input("Senha *", type="password")
+                cadastrar = st.form_submit_button("Criar Cadastro")
+
+            if cadastrar:
+                if not nome or not email or not usuario or not senha:
+                    st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
+                elif find_user(usuario.strip()):
+                    st.error("⚠️ Este usuário já existe.")
                 else:
-                    display_name = user.get("pessoa") or usuario.strip()
-                    login_user(role, display_name, str(unidade).strip(), perfil_conta)
+                    novo_aluno = {
+                        "nome": nome.strip(),
+                        "email": email.strip(),
+                        "celular": celular.strip(),
+                        "turma": turma,
+                        "usuario": usuario.strip(),
+                        "senha": senha.strip(),
+                        "data_nascimento": "",
+                        "idade": "",
+                        "responsavel": {},
+                    }
+                    st.session_state["students"].append(novo_aluno)
+                    save_list(STUDENTS_FILE, st.session_state["students"])
+                    st.session_state["users"].append(
+                        {
+                            "usuario": usuario.strip(),
+                            "senha": senha.strip(),
+                            "perfil": "Aluno",
+                            "pessoa": nome.strip(),
+                        }
+                    )
+                    save_users(st.session_state["users"])
+                    st.success("Cadastro criado com sucesso! Faça o login.")
+                    st.session_state["auth_mode"] = "Login"
+                    st.rerun()
+        else:
+            with st.form("login_form"):
+                st.markdown("""<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""", unsafe_allow_html=True)
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
+                unidade_sel = st.selectbox("Unidade", unidades)
+                if unidade_sel == "Outra":
+                    unidade = st.text_input("Digite o nome da unidade")
+                else:
+                    unidade = unidade_sel
+                usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
+                senha = st.text_input("Senha", type="password", placeholder="Sua senha")
+                entrar = st.form_submit_button("Entrar no Sistema")
+            
+            if entrar:
+                user = find_user(usuario.strip())
+                if not usuario.strip() or not senha.strip():
+                    st.error("⚠️ Informe usuário e senha.")
+                elif not user or user.get("senha") != senha.strip():
+                    st.error("⚠️ Usuário ou senha inválidos.")
+                else:
+                    perfil_conta = user.get("perfil", "")
+                    if role not in allowed_portals(perfil_conta):
+                        st.error(f"⚠️ Este usuário não tem permissão de {role}.")
+                    else:
+                        display_name = user.get("pessoa") or usuario.strip()
+                        login_user(role, display_name, str(unidade).strip(), perfil_conta)
+
+    st.markdown(f"""
+<div class="feature-block">
+  <div class="feature-title">Recursos do Sistema</div>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <div class="feature-text">Mensagens Diretas</div>
+      <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎥</div>
+      <div class="feature-text">Aulas Gravadas</div>
+      <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💲</div>
+      <div class="feature-text">Financeiro Simples</div>
+      <div class="feature-sub">Controle de matrículas e pagamentos.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📚</div>
+      <div class="feature-text">Biblioteca Completa</div>
+      <div class="feature-sub">Materiais, notícias e vídeos por turma.</div>
+    </div>
+  </div>
+  <div class="feature-cta">
+    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
 # ALUNO
