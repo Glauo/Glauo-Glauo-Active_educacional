@@ -14,6 +14,34 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+# --- NOVO LAYOUT PROFISSIONAL ---
+st.markdown("""
+    <style>
+        /* Fonte e Fundo */
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&display=swap');
+        
+        .stApp {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+            font-family: 'Sora', sans-serif;
+        }
+
+        /* Card de Login Centralizado */
+        div[data-testid="stForm"] {
+            background-color: white !important;
+            border-radius: 20px !important;
+            padding: 40px !important;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2) !important;
+        }
+
+        /* Botão Verde Ativo */
+        div.stButton > button {
+            background-color: #22c55e !important;
+            color: white !important;
+            border-radius: 10px !important;
+            width: 100%;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- GERENCIAMENTO DE SESSAO (INICIALIZACAO) ---
 if "logged_in" not in st.session_state:
