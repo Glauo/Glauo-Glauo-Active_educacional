@@ -14,59 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-# --- 1. ESTILO E LAYOUT PROFISSIONAL (Linha 17 em diante) ---
-st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
-        
-        /* Fundo com Gradiente Imersivo */
-        .stApp {
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%) !important;
-            font-family: 'Inter', sans-serif;
-        }
-
-        /* Card de Login Centralizado e Moderno */
-        div[data-testid="stForm"] {
-            background-color: rgba(255, 255, 255, 0.98) !important;
-            border-radius: 24px !important;
-            padding: 40px !important;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.3) !important;
-            border: none !important;
-        }
-
-        /* Botão Verde de Ação Principal */
-        div.stButton > button {
-            background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 12px !important;
-            height: 3em !important;
-            font-weight: 700 !important;
-            width: 100%;
-            transition: 0.3s ease;
-        }
-        
-        div.stButton > button:hover {
-            transform: scale(1.02);
-            box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4);
-        }
-
-        /* Inputs e Seletores */
-        input, div[data-baseweb="select"] {
-            border-radius: 12px !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. LOGOTIPO NO LOGIN ---
-if not st.session_state["logged_in"]:
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        # Tenta carregar o logotipo centralizado
-        st.image("logo_active.jpg", use_container_width=True) 
-
-# --- 3. INICIALIZAÇÃO DE DADOS (O restante do seu código original continua aqui) ---
-
 # --- GERENCIAMENTO DE SESSAO (INICIALIZACAO) ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -489,10 +436,9 @@ elif st.session_state["role"] == "Aluno":
         if meus: st.dataframe(pd.DataFrame(meus), use_container_width=True)
         else: st.info("Financeiro em dia.")
 
-# ==============================================================================
+# =============================================================================
 # PROFESSOR
-# ==============================================================================
-# --- NOVO TRECHO PARA PROFESSOR ---
+# =============================================================================
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
@@ -506,20 +452,6 @@ elif st.session_state["role"] == "Professor":
 
     menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
-
-    if menu_prof == "Minhas Turmas":
-        st.markdown('<div class="main-header">Minhas Turmas</div>', unsafe_allow_html=True)
-        minhas_turmas = [c for c in st.session_state["classes"] if st.session_state["user_name"] in str(c.get("professor", ""))]
-        if not minhas_turmas: minhas_turmas = st.session_state["classes"]
-        if not minhas_turmas: st.info("Nenhuma turma encontrada.")
-        else:
-            turma_selecionada_nome = st.selectbox("Selecione a Turma", [t["nome"] for t in minhas_turmas])
-            turma_selecionada = next((t for t in minhas_turmas if t["nome"] == turma_selecionada_nome), None)
-            alunos_minha_turma = [s for s in st.session_state["students"] if s.get("turma") == turma_selecionada_nome]
-            
-            if alunos_minha_turma:
-                st.table(pd.DataFrame(alunos_minha_turma)[["nome", "email", "celular"]]) 
-                st.warning("🔒 O seu perfil permite apenas a visualização dos dados.")
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
@@ -554,65 +486,67 @@ elif st.session_state["role"] == "Professor":
                     df_alunos = df_alunos[col_order]
                 st.dataframe(df_alunos, use_container_width=True)
 
+
 # ==============================================================================
 # COORDENADOR
 # ==============================================================================
 elif st.session_state["role"] == "Coordenador":
-
     with st.sidebar:
         logo_path = get_logo_path()
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### {st.session_state['user_name']}")
         st.caption("Perfil: Coordenação")
         st.markdown("---")
-        menu_coord_label = sidebar_menu("Administração", ["📊 Dashboard", "🔗 Links Ao Vivo", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🔐 Usuários", "🏫 Turmas", "💰 Financeiro", "📝 Aprovação Notas", "📚 Conteúdos"], "menu_coord")
+        menu_coord_label = sidebar_menu(
+            "Administração",
+            [
+                "Dashboard",
+                "Links Ao Vivo",
+                "Alunos",
+                "Professores",
+                "Usuários",
+                "Turmas",
+                "Financeiro",
+                "Aprovação Notas",
+                "Conteúdos",
+            ],
+            "menu_coord",
+        )
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    menu_coord_map = {"📊 Dashboard": "Dashboard", "🔗 Links Ao Vivo": "Links", "🧑‍🎓 Alunos": "Alunos", "👩‍🏫 Professores": "Professores", "🔐 Usuários": "Usuarios", "🏫 Turmas": "Turmas", "💰 Financeiro": "Financeiro", "📝 Aprovação Notas": "Notas", "📚 Conteúdos": "Conteudos"}
-    menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
-
-if menu_coord == "Alunos":
-    st.markdown('<div class="main-header">Gestão Geral de Alunos</div>', unsafe_allow_html=True)
-    
-    # Aba de visualização global
-    if st.session_state["students"]:
-        df_completo = pd.DataFrame(st.session_state["students"])
-        st.write("### Todos os Alunos Cadastrados")
-        st.dataframe(df_completo, use_container_width=True) # Coordenador vê tudo 
-    else:
-        st.info("Nenhum aluno encontrado na base de dados.")
-        logo_path = get_logo_path()
-        if logo_path: st.image(str(logo_path), width=120)
-        st.markdown(f"### {st.session_state['user_name']}")
-        st.caption("Perfil: Coordenação")
-        st.markdown("---")
-        menu_coord_label = sidebar_menu("Administração", ["📊 Dashboard", "🔗 Links Ao Vivo", "🧑‍🎓 Alunos", "👩‍🏫 Professores", "🔐 Usuários", "🏫 Turmas", "💰 Financeiro", "📝 Aprovação Notas", "📚 Conteúdos"], "menu_coord")
-        st.markdown("---")
-        if st.button("Sair"): logout_user()
-
-    menu_coord_map = {"📊 Dashboard": "Dashboard", "🔗 Links Ao Vivo": "Links", "🧑‍🎓 Alunos": "Alunos", "👩‍🏫 Professores": "Professores", "🔐 Usuários": "Usuarios", "🏫 Turmas": "Turmas", "💰 Financeiro": "Financeiro", "📝 Aprovação Notas": "Notas", "📚 Conteúdos": "Conteudos"}
+    menu_coord_map = {
+        "Dashboard": "Dashboard",
+        "Links Ao Vivo": "Links",
+        "Alunos": "Alunos",
+        "Professores": "Professores",
+        "Usuários": "Usuarios",
+        "Turmas": "Turmas",
+        "Financeiro": "Financeiro",
+        "Aprovação Notas": "Notas",
+        "Conteúdos": "Conteudos",
+    }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
 
     if menu_coord == "Dashboard":
         st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Total de Alunos</div><div class="card-value">{len(st.session_state["students"])}</div></div><div class="card-sub"><span class="trend-up">Ativos</span></div></div>""", unsafe_allow_html=True)
-        with c2: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Professores</div><div class="card-value">{len(st.session_state["teachers"])}</div></div></div>""", unsafe_allow_html=True)
-        with c3: st.markdown(f"""<div class="dash-card"><div><div class="card-title">Turmas</div><div class="card-value">{len(st.session_state["classes"])}</div></div></div>""", unsafe_allow_html=True)
+        with c1: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Total de Alunos</div><div class=\"card-value\">{len(st.session_state['students'])}</div></div><div class=\"card-sub\"><span class=\"trend-up\">Ativos</span></div></div>""", unsafe_allow_html=True)
+        with c2: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Professores</div><div class=\"card-value\">{len(st.session_state['teachers'])}</div></div></div>""", unsafe_allow_html=True)
+        with c3: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Turmas</div><div class=\"card-value\">{len(st.session_state['classes'])}</div></div></div>""", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         total_rec = sum(parse_money(i["valor"]) for i in st.session_state["receivables"])
         total_pag = sum(parse_money(i["valor"]) for i in st.session_state["payables"])
         saldo = total_rec - total_pag
         c4, c5, c6 = st.columns(3)
-        with c4: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Receber</div><div class="card-value" style="color:#2563eb;">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
-        with c5: st.markdown(f"""<div class="dash-card"><div><div class="card-title">A Pagar</div><div class="card-value" style="color:#dc2626;">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
+        with c4: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Receber</div><div class=\"card-value\" style=\"color:#2563eb;\">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
+        with c5: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Pagar</div><div class=\"card-value\" style=\"color:#dc2626;\">{format_money(total_pag)}</div></div></div>""", unsafe_allow_html=True)
         with c6:
              color = "#16a34a" if saldo >= 0 else "#dc2626"
-             st.markdown(f"""<div class="dash-card"><div><div class="card-title">Saldo Atual</div><div class="card-value" style="color:{color};">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
+             st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Saldo Atual</div><div class=\"card-value\" style=\"color:{color};\">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
 
     elif menu_coord == "Links":
-        st.markdown('<div class="main-header">🔗 Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
         st.info("Aqui você define o link da aula ao vivo para cada turma. Esse link aparecerá automaticamente para todos os alunos.")
         turmas_disponiveis = [t["nome"] for t in st.session_state["classes"]]
         if not turmas_disponiveis:
@@ -629,10 +563,9 @@ if menu_coord == "Alunos":
                         save_list(CLASSES_FILE, st.session_state["classes"])
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
-    # --- ALUNOS (CADASTRO COMPLETO + LOGIN) ---
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
-        tab1, tab2, tab3 = st.tabs(["📋 Lista de Alunos", "➕ Cadastro Completo", "✏️ Gerenciar / Excluir"])
+        tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
             if not st.session_state["students"]:
@@ -698,7 +631,7 @@ if menu_coord == "Alunos":
 
         with tab2:
             with st.form("add_student_full"):
-                st.markdown("### 👤 Dados Pessoais")
+                st.markdown("### Dados Pessoais")
                 c1, c2, c3 = st.columns(3)
                 with c1: nome = st.text_input("Nome Completo *")
                 with c2: data_nascimento = st.date_input("Data de Nascimento *")
@@ -715,7 +648,7 @@ if menu_coord == "Alunos":
                 with c9: pais = st.text_input("País de Origem", value="Brasil")
 
                 st.divider()
-                st.markdown("### 📍 Endereço")
+                st.markdown("### Endereço")
                 ce1, ce2, ce3 = st.columns(3)
                 with ce1: cep = st.text_input("CEP")
                 with ce2: cidade = st.text_input("Cidade")
@@ -723,21 +656,21 @@ if menu_coord == "Alunos":
 
                 ce4, ce5 = st.columns([3, 1])
                 with ce4: rua = st.text_input("Rua")
-                with ce5: numero = st.text_input("N?mero")
+                with ce5: numero = st.text_input("Número")
 
                 st.divider()
-                st.markdown("### 🎓 Turma")
-                turma = st.selectbox("Vincular ? Turma", ["Sem Turma"] + class_names())
+                st.markdown("### Turma")
+                turma = st.selectbox("Vincular à Turma", ["Sem Turma"] + class_names())
 
                 st.divider()
-                st.markdown("### 🔐 Acesso do Aluno (opcional)")
+                st.markdown("### Acesso do Aluno (opcional)")
                 ca1, ca2 = st.columns(2)
                 with ca1: login_aluno = st.text_input("Login do Aluno")
                 with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password")
 
                 st.divider()
-                st.markdown("### 👨‍👩‍👦 Responsável Legal / Financeiro")
-                st.caption("Obrigat?rio para menores de 18 anos.")
+                st.markdown("### Responsável Legal / Financeiro")
+                st.caption("Obrigatório para menores de 18 anos.")
 
                 cr1, cr2 = st.columns(2)
                 with cr1: resp_nome = st.text_input("Nome do Responsável")
@@ -749,13 +682,13 @@ if menu_coord == "Alunos":
 
                 if st.form_submit_button("Cadastrar Aluno"):
                     if idade < 18 and (not resp_nome or not resp_cpf):
-                        st.error("⚠️ ERRO: Aluno menor de idade! É obrigatório preencher Nome e CPF do Responsável.")
+                        st.error("ERRO: Aluno menor de idade! É obrigatório preencher Nome e CPF do Responsável.")
                     elif not nome or not email:
-                        st.error("⚠️ ERRO: Nome e E-mail são obrigatórios.")
+                        st.error("ERRO: Nome e E-mail são obrigatórios.")
                     elif (login_aluno and not senha_aluno) or (senha_aluno and not login_aluno):
-                        st.error("⚠️ ERRO: Para criar o login, informe usuário e senha.")
+                        st.error("ERRO: Para criar o login, informe usuário e senha.")
                     elif login_aluno and find_user(login_aluno):
-                        st.error("⚠️ ERRO: Este login já existe.")
+                        st.error("ERRO: Este login já existe.")
                     else:
                         novo_aluno = {
                             "nome": nome,
@@ -797,9 +730,9 @@ if menu_coord == "Alunos":
                             save_users(st.session_state["users"])
 
                         destinatario_email = resp_email if idade < 18 else email
-                        st.toast("✅ Cadastro realizado com sucesso!", icon="🎉")
+                        st.toast("Cadastro realizado com sucesso!")
                         st.success(
-                            f"📧 E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos."
+                            f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos."
                         )
 
         with tab3:
@@ -836,20 +769,20 @@ if menu_coord == "Alunos":
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
 
-                        st.markdown("### 🔐 Acesso do Aluno")
+                        st.markdown("### Acesso do Aluno")
                         c5, c6 = st.columns(2)
                         with c5: new_login = st.text_input("Login do Aluno", value=aluno_obj.get("usuario", ""))
                         with c6: new_senha = st.text_input("Senha do Aluno", value=aluno_obj.get("senha", ""), type="password")
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("💾 Salvar Alterações"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_login = aluno_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or aluno_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("⚠️ ERRO: Este login já existe.")
+                                    st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -883,7 +816,7 @@ if menu_coord == "Alunos":
                                     st.success("Dados atualizados!")
                                     st.rerun()
                         with c_del:
-                            if st.form_submit_button("🗑️ EXCLUIR ALUNO", type="primary"):
+                            if st.form_submit_button("EXCLUIR ALUNO", type="primary"):
                                 login = aluno_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
@@ -892,17 +825,17 @@ if menu_coord == "Alunos":
                                         save_users(st.session_state["users"])
                                 st.session_state["students"].remove(aluno_obj)
                                 save_list(STUDENTS_FILE, st.session_state["students"])
-                                st.error("Aluno exclu?do permanentemente.")
+                                st.error("Aluno excluído permanentemente.")
                                 st.rerun()
 
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Novo Professor", "✏️ Gerenciar / Excluir"])
+        tab1, tab2 = st.tabs(["Novo Professor", "Gerenciar / Excluir"])
         with tab1:
             with st.form("add_prof"):
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome")
-                with c2: area = st.text_input("?rea")
+                with c2: area = st.text_input("Área")
 
                 c3, c4 = st.columns(2)
                 with c3: login_prof = st.text_input("Login do Professor")
@@ -910,9 +843,9 @@ if menu_coord == "Alunos":
 
                 if st.form_submit_button("Cadastrar"):
                     if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                        st.error("⚠️ ERRO: Para criar o login, informe usuário e senha.")
+                        st.error("ERRO: Para criar o login, informe usuário e senha.")
                     elif login_prof and find_user(login_prof):
-                        st.error("⚠️ ERRO: Este login já existe.")
+                        st.error("ERRO: Este login já existe.")
                     else:
                         st.session_state["teachers"].append(
                             {
@@ -944,7 +877,7 @@ if menu_coord == "Alunos":
                 if prof_obj:
                     with st.form("edit_prof"):
                         new_nome = st.text_input("Nome", value=prof_obj["nome"])
-                        new_area = st.text_input("?rea", value=prof_obj.get("area", ""))
+                        new_area = st.text_input("Área", value=prof_obj.get("area", ""))
 
                         c3, c4 = st.columns(2)
                         with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
@@ -952,13 +885,13 @@ if menu_coord == "Alunos":
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("💾 Salvar Alterações"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_login = prof_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or prof_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("⚠️ ERRO: Este login já existe.")
+                                    st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -992,7 +925,7 @@ if menu_coord == "Alunos":
                                     st.success("Professor atualizado!")
                                     st.rerun()
                         with c_del:
-                            if st.form_submit_button("🗑️ EXCLUIR PROFESSOR", type="primary"):
+                            if st.form_submit_button("EXCLUIR PROFESSOR", type="primary"):
                                 login = prof_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
@@ -1007,12 +940,12 @@ if menu_coord == "Alunos":
 
                                 st.session_state["teachers"].remove(prof_obj)
                                 save_list(TEACHERS_FILE, st.session_state["teachers"])
-                                st.error("Professor exclu?do.")
+                                st.error("Professor excluído.")
                                 st.rerun()
 
     elif menu_coord == "Turmas":
         st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Nova Turma", "✏️ Gerenciar / Excluir"])
+        tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
             with st.form("add_class"):
@@ -1020,7 +953,7 @@ if menu_coord == "Alunos":
                 with c1: nome = st.text_input("Nome da Turma")
                 with c2: prof = st.selectbox("Professor", ["Sem Professor"] + teacher_names())
                 c3, c4 = st.columns(2)
-                with c3: dias = st.text_input("Dias e Hor?rios")
+                with c3: dias = st.text_input("Dias e Horários")
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
                 if st.form_submit_button("Cadastrar"):
                     st.session_state["classes"].append(
@@ -1046,12 +979,12 @@ if menu_coord == "Alunos":
                     with st.form("edit_class"):
                         new_nome = st.text_input("Nome da Turma", value=turma_obj.get("nome", ""))
                         new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
-                        new_dias = st.text_input("Dias e Hor?rios", value=turma_obj.get("dias", ""))
+                        new_dias = st.text_input("Dias e Horários", value=turma_obj.get("dias", ""))
                         new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("💾 Salvar Alterações"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_nome = turma_obj.get("nome", "")
                                 turma_obj["nome"] = new_nome
                                 turma_obj["professor"] = new_prof
@@ -1068,7 +1001,7 @@ if menu_coord == "Alunos":
                                 st.success("Turma atualizada!")
                                 st.rerun()
                         with c_del:
-                            if st.form_submit_button("🗑️ EXCLUIR TURMA", type="primary"):
+                            if st.form_submit_button("EXCLUIR TURMA", type="primary"):
                                 nome_turma = turma_obj.get("nome", "")
                                 if nome_turma:
                                     for aluno in st.session_state["students"]:
@@ -1077,8 +1010,9 @@ if menu_coord == "Alunos":
                                     save_list(STUDENTS_FILE, st.session_state["students"])
                                 st.session_state["classes"].remove(turma_obj)
                                 save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.error("Turma exclu?da.")
+                                st.error("Turma excluída.")
                                 st.rerun()
+
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
@@ -1122,7 +1056,7 @@ if menu_coord == "Alunos":
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["➕ Novo Usuário", "✏️ Gerenciar / Excluir"])
+        tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
             with st.form("new_user"):
                 c1, c2, c3 = st.columns(3)
@@ -1146,7 +1080,7 @@ if menu_coord == "Alunos":
                         new_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"], index=["Aluno", "Professor", "Coordenador"].index(user_obj["perfil"]) if user_obj["perfil"] in ["Aluno", "Professor", "Coordenador"] else 0)
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("💾 Salvar Alterações"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 user_obj["usuario"] = new_user
                                 user_obj["senha"] = new_pass
                                 user_obj["perfil"] = new_role
@@ -1154,14 +1088,15 @@ if menu_coord == "Alunos":
                                 st.success("Usuário atualizado!")
                                 st.rerun()
                         with c_del:
-                            if st.form_submit_button("🗑️ EXCLUIR USUÁRIO", type="primary"):
+                            if st.form_submit_button("EXCLUIR USUÁRIO", type="primary"):
                                 if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")
                                 else:
                                     st.session_state["users"].remove(user_obj)
                                     save_users(st.session_state["users"])
                                     st.success("Usuário excluído.")
                                     st.rerun()
-    
+
     elif menu_coord == "Conteudos":
         st.markdown('<div class="main-header">Conteúdos</div>', unsafe_allow_html=True)
         st.write("Use esta área para gerenciar mensagens globais e materiais pedagógicos.")
+
