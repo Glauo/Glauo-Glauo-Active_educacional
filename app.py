@@ -69,7 +69,9 @@ WHATSAPP_NUMBER = "5516996043314"
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
     candidates = [
+        Path("logo_active_novo.png"),
         Path("image_8fc66d.png"),
+        Path("logo_active.png"),
         Path("logo_active.jpg"),
         Path("logo_active2.png"),
         Path("logo_active2.jpg"),
@@ -226,6 +228,100 @@ def sidebar_menu(title, options, key):
             st.session_state[key] = option
             st.rerun()
     return st.session_state[key]
+
+def _normalize_turma(value):
+    return str(value or "").strip()
+
+def filter_items_by_turma(items, turma):
+    if not turma:
+        return items
+    if isinstance(turma, (list, tuple, set)):
+        allowed = {t for t in (str(x).strip() for x in turma) if t}
+        if not allowed:
+            return items
+    else:
+        allowed = {_normalize_turma(turma)}
+    filtered = []
+    for item in items:
+        item_turma = _normalize_turma(item.get("turma"))
+        if not item_turma or item_turma.lower() in ("todas", "todos"):
+            filtered.append(item)
+        elif item_turma in allowed:
+            filtered.append(item)
+    return filtered
+
+def render_library(title="Biblioteca", turma=None, turma_options=None):
+    st.markdown(f'<div class="main-header">{title}</div>', unsafe_allow_html=True)
+    turma_selecionada = None
+    if turma_options:
+        turma_selecionada = st.selectbox("Filtrar por Turma", ["Todas"] + turma_options)
+    tab1, tab2, tab3 = st.tabs(["Materiais", "Noticias", "Videos"])
+
+    with tab1:
+        materiais = st.session_state["materials"]
+        if turma_selecionada and turma_selecionada != "Todas":
+            materiais = filter_items_by_turma(materiais, turma_selecionada)
+        else:
+            materiais = filter_items_by_turma(materiais, turma)
+        if not materiais:
+            st.info("Sem materiais.")
+        else:
+            for m in reversed(materiais):
+                titulo = m.get("titulo", "Material")
+                st.markdown(f"**{titulo}**")
+                if m.get("descricao"):
+                    st.write(m.get("descricao"))
+                meta = []
+                if m.get("turma"):
+                    meta.append(f"Turma: {m.get('turma')}")
+                if m.get("autor"):
+                    meta.append(f"Autor: {m.get('autor')}")
+                if m.get("data"):
+                    meta.append(f"Data: {m.get('data')}")
+                if meta:
+                    st.caption(" | ".join(meta))
+                if m.get("link"):
+                    st.markdown(f"[Baixar/Ver material]({m.get('link')})")
+                st.markdown("---")
+
+    with tab2:
+        noticias = st.session_state["messages"]
+        if not noticias:
+            st.info("Sem noticias.")
+        else:
+            for msg in reversed(noticias):
+                with st.container():
+                    st.markdown(
+                        f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
+                        <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Noticia')}</div>
+                        <div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')}</div>
+                        <div>{msg.get('mensagem','')}</div></div>""",
+                        unsafe_allow_html=True,
+                    )
+
+    with tab3:
+        videos = st.session_state["videos"]
+        if turma_selecionada and turma_selecionada != "Todas":
+            videos = filter_items_by_turma(videos, turma_selecionada)
+        else:
+            videos = filter_items_by_turma(videos, turma)
+        if not videos:
+            st.info("Sem videos.")
+        else:
+            for v in reversed(videos):
+                titulo = v.get("titulo", "Video")
+                data = v.get("data", "")
+                autor = v.get("autor", "")
+                with st.expander(f"{titulo}" + (f" ({data})" if data else "")):
+                    meta = []
+                    if v.get("turma"):
+                        meta.append(f"Turma: {v.get('turma')}")
+                    if autor:
+                        meta.append(f"Autor: {autor}")
+                    if meta:
+                        st.caption(" | ".join(meta))
+                    if v.get("url"):
+                        st.video(v.get("url"))
 
 # ==============================================================================
 # CSS DINAMICO
