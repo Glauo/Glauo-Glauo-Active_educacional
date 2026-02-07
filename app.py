@@ -14,6 +14,58 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+# --- 1. ESTILO E LAYOUT PROFISSIONAL (Linha 17 em diante) ---
+st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
+        
+        /* Fundo com Gradiente Imersivo */
+        .stApp {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%) !important;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Card de Login Centralizado e Moderno */
+        div[data-testid="stForm"] {
+            background-color: rgba(255, 255, 255, 0.98) !important;
+            border-radius: 24px !important;
+            padding: 40px !important;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3) !important;
+            border: none !important;
+        }
+
+        /* Botão Verde de Ação Principal */
+        div.stButton > button {
+            background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            height: 3em !important;
+            font-weight: 700 !important;
+            width: 100%;
+            transition: 0.3s ease;
+        }
+        
+        div.stButton > button:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4);
+        }
+
+        /* Inputs e Seletores */
+        input, div[data-baseweb="select"] {
+            border-radius: 12px !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. LOGOTIPO NO LOGIN ---
+if not st.session_state["logged_in"]:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        # Tenta carregar o logotipo centralizado
+        st.image("logo_active.jpg", use_container_width=True) 
+
+# --- 3. INICIALIZAÇÃO DE DADOS (O restante do seu código original continua aqui) ---
 
 # --- GERENCIAMENTO DE SESSAO (INICIALIZACAO) ---
 if "logged_in" not in st.session_state:
