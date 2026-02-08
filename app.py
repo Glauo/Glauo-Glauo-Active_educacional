@@ -348,8 +348,8 @@ if not st.session_state.get("logged_in", False):
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
         .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
         .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { background: transparent !important; border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(255,255,255,0.22); box-shadow: none !important; transition: transform 0.2s ease, border-color 0.2s ease; }
-        .feature-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.32); }
+        .feature-card { background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(16,185,129,0.16)) !important; border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(34,197,94,0.45); box-shadow: 0 12px 26px rgba(5, 46, 22, 0.35) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); border-color: rgba(34,197,94,0.7); box-shadow: 0 16px 30px rgba(5, 46, 22, 0.45) !important; }
         .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
         .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
         .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
