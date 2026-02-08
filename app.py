@@ -331,10 +331,10 @@ if not st.session_state.get("logged_in", False):
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
-        .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; --hero-height: calc(100vh - 9rem); --hero-min: 620px; }
+        .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
         .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; }
-        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; min-height: 420px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
         .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
         .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
         .hero-subtitle { font-size: 1rem; color: #64748b; }
@@ -354,11 +354,11 @@ if not st.session_state.get("logged_in", False):
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 30px; padding: 26px 30px 30px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
         div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: flex-start; background: #eef2ff; padding: 6px; border-radius: 999px; margin-bottom: 16px; gap: 6px; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
         div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #475569; background: transparent; }
         div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #1e3a8a; color: #ffffff; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
-        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { padding-top: 6px; }
         div[data-testid="stTabs"] div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
@@ -418,23 +418,27 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_left, col_right, col_spacer_right = st.columns([0.6, 3.2, 3.2, 0.6], gap="large")
-    with col_left:
+    col_spacer_left, col_main, col_spacer_right = st.columns([0.6, 6.8, 0.6], gap="large")
+    with col_main:
         logo_path = get_logo_path()
         logo_html = ""
         if logo_path:
-            encoded_logo = base64.b64encode(logo_path.read_bytes()).decode('utf-8')
+            encoded_logo = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
             logo_html = f"<img src='data:image/png;base64,{encoded_logo}' class='hero-logo-img'>"
-        st.markdown(f"""
+        st.markdown(
+            f"""
 <div class="hero-card">
   {logo_html}
   <div class="hero-title">Sistema Educacional<br>Ativo</div>
   <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
-""", unsafe_allow_html=True)
+""",
+            unsafe_allow_html=True,
+        )
 
-    with col_right:
-        st.markdown(f"""
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
 <div class="feature-block">
   <div class="feature-title">Recursos do Sistema</div>
   <div class="feature-grid">
@@ -463,15 +467,18 @@ if not st.session_state.get("logged_in", False):
     <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
   </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    col_login_spacer_l, col_login, col_login_spacer_r = st.columns([0.6, 3.2, 0.6], gap="large")
-    with col_login:
+        st.markdown("<br>", unsafe_allow_html=True)
         tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
         with tab_login:
             with st.form("login_form"):
-                st.markdown("""<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""", unsafe_allow_html=True)
+                st.markdown(
+                    """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
+                    unsafe_allow_html=True,
+                )
                 role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
                 unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
                 unidade_sel = st.selectbox("Unidade", unidades)
@@ -482,7 +489,7 @@ if not st.session_state.get("logged_in", False):
                 usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
                 senha = st.text_input("Senha", type="password", placeholder="Sua senha")
                 entrar = st.form_submit_button("Entrar no Sistema")
-            
+
             if entrar:
                 user = find_user(usuario.strip())
                 if not usuario.strip() or not senha.strip():
@@ -498,18 +505,27 @@ if not st.session_state.get("logged_in", False):
                         login_user(role, display_name, str(unidade).strip(), perfil_conta)
         with tab_cadastro:
             with st.form("signup_form"):
-                st.markdown("""<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""", unsafe_allow_html=True)
+                st.markdown(
+                    """<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""",
+                    unsafe_allow_html=True,
+                )
                 c1, c2 = st.columns(2)
-                with c1: nome = st.text_input("Nome completo *")
-                with c2: cpf = st.text_input("CPF")
+                with c1:
+                    nome = st.text_input("Nome completo *")
+                with c2:
+                    cpf = st.text_input("CPF")
 
                 c3, c4 = st.columns(2)
-                with c3: email = st.text_input("E-mail *")
-                with c4: celular = st.text_input("Celular/WhatsApp")
+                with c3:
+                    email = st.text_input("E-mail *")
+                with c4:
+                    celular = st.text_input("Celular/WhatsApp")
 
                 c5, c6 = st.columns(2)
-                with c5: data_nascimento = st.date_input("Data de Nascimento", value=None)
-                with c6: rg = st.text_input("RG")
+                with c5:
+                    data_nascimento = st.date_input("Data de Nascimento", value=None)
+                with c6:
+                    rg = st.text_input("RG")
 
                 turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
                 usuario = st.text_input("Usuário *")
