@@ -434,6 +434,40 @@ if not st.session_state.get("logged_in", False):
 """, unsafe_allow_html=True)
 
     with col_right:
+        st.markdown(f"""
+<div class="feature-block">
+  <div class="feature-title">Recursos do Sistema</div>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <div class="feature-text">Mensagens Diretas</div>
+      <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎥</div>
+      <div class="feature-text">Aulas Gravadas</div>
+      <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💲</div>
+      <div class="feature-text">Financeiro Simples</div>
+      <div class="feature-sub">Controle de matrículas e pagamentos.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📚</div>
+      <div class="feature-text">Biblioteca Completa</div>
+      <div class="feature-sub">Materiais, notícias e vídeos por turma.</div>
+    </div>
+  </div>
+  <div class="feature-cta">
+    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_login_spacer_l, col_login, col_login_spacer_r = st.columns([0.6, 3.2, 0.6], gap="large")
+    with col_login:
         tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
         with tab_login:
             with st.form("login_form"):
@@ -522,37 +556,6 @@ if not st.session_state.get("logged_in", False):
                     )
                     save_users(st.session_state["users"])
                     st.success("Cadastro criado com sucesso! Faça o login.")
-
-    st.markdown(f"""
-<div class="feature-block">
-  <div class="feature-title">Recursos do Sistema</div>
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="feature-icon">💬</div>
-      <div class="feature-text">Mensagens Diretas</div>
-      <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🎥</div>
-      <div class="feature-text">Aulas Gravadas</div>
-      <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">💲</div>
-      <div class="feature-text">Financeiro Simples</div>
-      <div class="feature-sub">Controle de matrículas e pagamentos.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📚</div>
-      <div class="feature-text">Biblioteca Completa</div>
-      <div class="feature-sub">Materiais, notícias e vídeos por turma.</div>
-    </div>
-  </div>
-  <div class="feature-cta">
-    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
-  </div>
-</div>
-""", unsafe_allow_html=True)
 
 # ==============================================================================
 # ALUNO
