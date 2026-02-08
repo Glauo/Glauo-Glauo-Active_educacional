@@ -418,25 +418,6 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_buttons, col_spacer_right = st.columns(
-        [0.6, 6.8, 0.6], gap="large"
-    )
-    with col_buttons:
-        btn_col1, btn_col2 = st.columns(2)
-        if btn_col1.button(
-            "Login",
-            type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["auth_mode"] = "Login"
-        if btn_col2.button(
-            "Cadastro",
-            type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["auth_mode"] = "Cadastro"
-
-    st.markdown("<br>", unsafe_allow_html=True)
     col_spacer_left, col_left, col_right, col_spacer_right = st.columns(
         [0.6, 3.8, 2.6, 0.6], gap="large"
     )
@@ -459,6 +440,23 @@ if not st.session_state.get("logged_in", False):
         )
 
     with col_right:
+        col_btn_left, col_btn_mid, col_btn_right = st.columns([3, 1.4, 3])
+        with col_btn_mid:
+            btn_col1, btn_col2 = st.columns(2)
+            if btn_col1.button(
+                "Login",
+                type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["auth_mode"] = "Login"
+            if btn_col2.button(
+                "Cadastro",
+                type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["auth_mode"] = "Cadastro"
+
+        st.markdown("<br>", unsafe_allow_html=True)
         with st.container():
             st.markdown('<div class="auth-card-anchor"></div>', unsafe_allow_html=True)
             if st.session_state["auth_mode"] == "Login":
