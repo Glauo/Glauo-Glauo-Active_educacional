@@ -435,8 +435,6 @@ if not st.session_state.get("logged_in", False):
 """, unsafe_allow_html=True)
 
     with col_right:
-        st.write("")
-        st.write("")
         st.markdown('<div class="auth-panel">', unsafe_allow_html=True)
         tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
         with tab_login:
