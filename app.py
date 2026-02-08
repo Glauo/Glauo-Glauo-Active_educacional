@@ -354,20 +354,19 @@ if not st.session_state.get("logged_in", False):
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stVerticalBlock"] { background: rgba(255, 255, 255, 0.98); border-radius: 30px; padding: 26px 30px 30px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); display: flex; flex-direction: column; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stTabs"] { height: 100%; display: flex; flex-direction: column; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: flex-start; background: #eef2ff; padding: 6px; border-radius: 999px; margin-bottom: 16px; gap: 6px; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #475569; background: transparent; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #1e3a8a; color: #ffffff; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stTabs"] [data-baseweb="tab-panel"] { height: calc(100% - 56px); overflow: auto; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
+        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 30px; padding: 26px 30px 30px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); display: flex; flex-direction: column; }
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: flex-start; background: #eef2ff; padding: 6px; border-radius: 999px; margin-bottom: 16px; gap: 6px; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
+        div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #475569; background: transparent; }
+        div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #1e3a8a; color: #ffffff; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
+        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { flex: 1; overflow: auto; }
+        div[data-testid="stTabs"] div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] input, div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] select, div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
-        div[data-testid="stColumn"]:has(.auth-card-anchor) div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
+        div[data-testid="stTabs"] div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
+        div[data-testid="stTabs"] div[data-testid="stForm"] input, div[data-testid="stTabs"] div[data-testid="stForm"] select, div[data-testid="stTabs"] div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
+        div[data-testid="stTabs"] div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
+        div[data-testid="stTabs"] div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
+        div[data-testid="stTabs"] div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -435,7 +434,6 @@ if not st.session_state.get("logged_in", False):
 """, unsafe_allow_html=True)
 
     with col_right:
-        st.markdown('<div class="auth-card-anchor"></div>', unsafe_allow_html=True)
         tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
         with tab_login:
             with st.form("login_form"):
@@ -524,7 +522,6 @@ if not st.session_state.get("logged_in", False):
                     )
                     save_users(st.session_state["users"])
                     st.success("Cadastro criado com sucesso! Faça o login.")
-        st.markdown("", unsafe_allow_html=True)
 
     st.markdown(f"""
 <div class="feature-block">
