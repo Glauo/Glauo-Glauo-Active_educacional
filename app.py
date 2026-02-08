@@ -335,12 +335,14 @@ if not st.session_state.get("logged_in", False):
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
         .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
-        .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; }
-        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 28px; min-height: 420px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+        section[data-testid="stMain"], div[data-testid="stAppViewContainer"] { background: transparent !important; }
+        .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; background: transparent !important; box-shadow: none !important; }
+        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 34px; min-height: 520px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
         .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
         .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
         .hero-subtitle { font-size: 1rem; color: #64748b; }
         .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
+        .hero-meta { font-size: 0.92rem; color: #1e3a8a; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
         .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
         .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
@@ -417,7 +419,7 @@ if not st.session_state["users"]:
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
     col_spacer_left, col_left, col_right, col_spacer_right = st.columns(
-        [0.6, 3.2, 3.2, 0.6], gap="large"
+        [0.6, 3.8, 2.6, 0.6], gap="large"
     )
     with col_left:
         logo_path = get_logo_path()
@@ -430,6 +432,7 @@ if not st.session_state.get("logged_in", False):
 <div class="hero-card">
   {logo_html}
   <div class="hero-title">Sistema Educacional<br>Ativo</div>
+  <div class="hero-meta">Escola de líderes e inglês Mister Wiz</div>
   <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
 """,
@@ -564,10 +567,10 @@ if not st.session_state.get("logged_in", False):
                         st.success("Cadastro criado com sucesso! Faça o login.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    col_spacer_left, col_bottom_left, col_bottom_right, col_spacer_right = st.columns(
-        [0.6, 3.2, 3.2, 0.6], gap="large"
+    col_spacer_left, col_resources, col_spacer_right = st.columns(
+        [0.6, 6.8, 0.6], gap="large"
     )
-    with col_bottom_right:
+    with col_resources:
         st.markdown(
             f"""
 <div class="feature-block">
