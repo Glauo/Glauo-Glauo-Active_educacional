@@ -523,7 +523,7 @@ if not st.session_state.get("logged_in", False):
 
                 c5, c6 = st.columns(2)
                 with c5:
-                    data_nascimento = st.date_input("Data de Nascimento", value=None, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA")
+                    data_nascimento = st.date_input("Data de Nascimento", value=None, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
                 with c6:
                     rg = st.text_input("RG")
 
@@ -852,7 +852,7 @@ elif st.session_state["role"] == "Coordenador":
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3 = st.columns(3)
                 with c1: nome = st.text_input("Nome Completo *")
-                with c2: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA")
+                with c2: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
                 with c3: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
 
                 c4, c5, c6 = st.columns(3)
@@ -982,7 +982,7 @@ elif st.session_state["role"] == "Coordenador":
                         with c2: new_email = st.text_input("Email", value=aluno_obj.get("email", ""))
 
                         c3, c4 = st.columns(2)
-                        with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA")
+                        with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
                         with c4: new_idade = st.number_input("Idade", min_value=1, max_value=120, step=1, value=current_idade)
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
