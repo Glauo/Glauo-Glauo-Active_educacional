@@ -346,16 +346,16 @@ if not st.session_state.get("logged_in", False):
         .hero-meta { font-size: 0.92rem; color: #1e3a8a; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
         .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
         .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(226,232,240,0.85); box-shadow: 0 10px 24px rgba(15,23,42,0.08); transition: transform 0.2s ease, box-shadow 0.2s ease; }
-        .feature-card:hover { transform: translateY(-4px); box-shadow: 0 16px 32px rgba(15,23,42,0.12); }
+        .feature-card { background: transparent !important; border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(255,255,255,0.22); box-shadow: none !important; transition: transform 0.2s ease, border-color 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.32); }
         .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
         .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
         .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
         .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
-        .feature-text { font-weight: 700; color: #0f172a; font-size: 0.98rem; }
-        .feature-sub { font-size: 0.84rem; color: #64748b; margin-top: 4px; }
+        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.98rem; }
+        .feature-sub { font-size: 0.84rem; color: #cbd5e1; margin-top: 4px; }
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
