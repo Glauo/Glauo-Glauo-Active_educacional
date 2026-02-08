@@ -49,6 +49,8 @@ if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
 if "email_log" not in st.session_state:
     st.session_state["email_log"] = []
+if "auth_mode" not in st.session_state:
+    st.session_state["auth_mode"] = "Login"
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
@@ -354,19 +356,15 @@ if not st.session_state.get("logged_in", False):
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
-        div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: flex-start; background: #eef2ff; padding: 6px; border-radius: 999px; margin-bottom: 16px; gap: 6px; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
-        div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #475569; background: transparent; }
-        div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #1e3a8a; color: #ffffff; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
-        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { padding-top: 6px; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] input, div[data-testid="stTabs"] div[data-testid="stForm"] select, div[data-testid="stTabs"] div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
-        div[data-testid="stTabs"] div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] label { font-size: 0.85rem; font-weight: 600; color: #475569; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] input, div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] select, div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] div[data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #334155 !important; height: 48px; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -418,8 +416,10 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_main, col_spacer_right = st.columns([0.6, 6.8, 0.6], gap="large")
-    with col_main:
+    col_spacer_left, col_left, col_right, col_spacer_right = st.columns(
+        [0.6, 3.2, 3.2, 0.6], gap="large"
+    )
+    with col_left:
         logo_path = get_logo_path()
         logo_html = ""
         if logo_path:
@@ -436,7 +436,138 @@ if not st.session_state.get("logged_in", False):
             unsafe_allow_html=True,
         )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+    with col_right:
+        btn_col1, btn_col2 = st.columns(2)
+        if btn_col1.button(
+            "Login",
+            type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["auth_mode"] = "Login"
+        if btn_col2.button(
+            "Cadastro",
+            type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["auth_mode"] = "Cadastro"
+
+        with st.container():
+            st.markdown('<div class="auth-card-anchor"></div>', unsafe_allow_html=True)
+            if st.session_state["auth_mode"] == "Login":
+                with st.form("login_form"):
+                    st.markdown(
+                        """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
+                        unsafe_allow_html=True,
+                    )
+                    role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                    unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
+                    unidade_sel = st.selectbox("Unidade", unidades)
+                    if unidade_sel == "Outra":
+                        unidade = st.text_input("Digite o nome da unidade")
+                    else:
+                        unidade = unidade_sel
+                    usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
+                    senha = st.text_input("Senha", type="password", placeholder="Sua senha")
+                    entrar = st.form_submit_button("Entrar no Sistema")
+
+                if entrar:
+                    user = find_user(usuario.strip())
+                    if not usuario.strip() or not senha.strip():
+                        st.error("⚠️ Informe usuário e senha.")
+                    elif not user or user.get("senha") != senha.strip():
+                        st.error("⚠️ Usuário ou senha inválidos.")
+                    else:
+                        perfil_conta = user.get("perfil", "")
+                        if role not in allowed_portals(perfil_conta):
+                            st.error(f"⚠️ Este usuário não tem permissão de {role}.")
+                        else:
+                            display_name = user.get("pessoa") or usuario.strip()
+                            login_user(role, display_name, str(unidade).strip(), perfil_conta)
+            else:
+                with st.form("signup_form"):
+                    st.markdown(
+                        """<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""",
+                        unsafe_allow_html=True,
+                    )
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        nome = st.text_input("Nome completo *")
+                    with c2:
+                        cpf = st.text_input("CPF")
+
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        email = st.text_input("E-mail *")
+                    with c4:
+                        celular = st.text_input("Celular/WhatsApp")
+
+                    c5, c6 = st.columns(2)
+                    with c5:
+                        data_nascimento = st.date_input(
+                            "Data de Nascimento",
+                            value=None,
+                            format="DD/MM/YYYY",
+                            help="Formato: DD/MM/AAAA",
+                            min_value=datetime.date(1900, 1, 1),
+                            max_value=datetime.date(2036, 12, 31),
+                        )
+                    with c6:
+                        rg = st.text_input("RG")
+
+                    turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                    usuario = st.text_input("Usuário *")
+                    senha = st.text_input("Senha *", type="password")
+                    cadastrar = st.form_submit_button("Criar Cadastro")
+
+                if cadastrar:
+                    if not nome or not email or not usuario or not senha:
+                        st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
+                    elif find_user(usuario.strip()):
+                        st.error("⚠️ Este usuário já existe.")
+                    else:
+                        idade = ""
+                        if data_nascimento:
+                            try:
+                                hoje = datetime.date.today()
+                                idade = hoje.year - data_nascimento.year - (
+                                    (hoje.month, hoje.day)
+                                    < (data_nascimento.month, data_nascimento.day)
+                                )
+                            except Exception:
+                                idade = ""
+                        novo_aluno = {
+                            "nome": nome.strip(),
+                            "email": email.strip(),
+                            "celular": celular.strip(),
+                            "cpf": cpf.strip(),
+                            "rg": rg.strip(),
+                            "turma": turma,
+                            "usuario": usuario.strip(),
+                            "senha": senha.strip(),
+                            "data_nascimento": data_nascimento.strftime("%d/%m/%Y")
+                            if data_nascimento
+                            else "",
+                            "idade": idade,
+                            "responsavel": {},
+                        }
+                        st.session_state["students"].append(novo_aluno)
+                        save_list(STUDENTS_FILE, st.session_state["students"])
+                        st.session_state["users"].append(
+                            {
+                                "usuario": usuario.strip(),
+                                "senha": senha.strip(),
+                                "perfil": "Aluno",
+                                "pessoa": nome.strip(),
+                            }
+                        )
+                        save_users(st.session_state["users"])
+                        st.success("Cadastro criado com sucesso! Faça o login.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_spacer_left, col_bottom_left, col_bottom_right, col_spacer_right = st.columns(
+        [0.6, 3.2, 3.2, 0.6], gap="large"
+    )
+    with col_bottom_right:
         st.markdown(
             f"""
 <div class="feature-block">
@@ -470,108 +601,6 @@ if not st.session_state.get("logged_in", False):
 """,
             unsafe_allow_html=True,
         )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        tab_login, tab_cadastro = st.tabs(["Login", "Cadastro"])
-        with tab_login:
-            with st.form("login_form"):
-                st.markdown(
-                    """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
-                    unsafe_allow_html=True,
-                )
-                role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
-                unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
-                unidade_sel = st.selectbox("Unidade", unidades)
-                if unidade_sel == "Outra":
-                    unidade = st.text_input("Digite o nome da unidade")
-                else:
-                    unidade = unidade_sel
-                usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
-                senha = st.text_input("Senha", type="password", placeholder="Sua senha")
-                entrar = st.form_submit_button("Entrar no Sistema")
-
-            if entrar:
-                user = find_user(usuario.strip())
-                if not usuario.strip() or not senha.strip():
-                    st.error("⚠️ Informe usuário e senha.")
-                elif not user or user.get("senha") != senha.strip():
-                    st.error("⚠️ Usuário ou senha inválidos.")
-                else:
-                    perfil_conta = user.get("perfil", "")
-                    if role not in allowed_portals(perfil_conta):
-                        st.error(f"⚠️ Este usuário não tem permissão de {role}.")
-                    else:
-                        display_name = user.get("pessoa") or usuario.strip()
-                        login_user(role, display_name, str(unidade).strip(), perfil_conta)
-        with tab_cadastro:
-            with st.form("signup_form"):
-                st.markdown(
-                    """<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""",
-                    unsafe_allow_html=True,
-                )
-                c1, c2 = st.columns(2)
-                with c1:
-                    nome = st.text_input("Nome completo *")
-                with c2:
-                    cpf = st.text_input("CPF")
-
-                c3, c4 = st.columns(2)
-                with c3:
-                    email = st.text_input("E-mail *")
-                with c4:
-                    celular = st.text_input("Celular/WhatsApp")
-
-                c5, c6 = st.columns(2)
-                with c5:
-                    data_nascimento = st.date_input("Data de Nascimento", value=None, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
-                with c6:
-                    rg = st.text_input("RG")
-
-                turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                usuario = st.text_input("Usuário *")
-                senha = st.text_input("Senha *", type="password")
-                cadastrar = st.form_submit_button("Criar Cadastro")
-
-            if cadastrar:
-                if not nome or not email or not usuario or not senha:
-                    st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
-                elif find_user(usuario.strip()):
-                    st.error("⚠️ Este usuário já existe.")
-                else:
-                    idade = ""
-                    if data_nascimento:
-                        try:
-                            hoje = datetime.date.today()
-                            idade = hoje.year - data_nascimento.year - (
-                                (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
-                            )
-                        except Exception:
-                            idade = ""
-                    novo_aluno = {
-                        "nome": nome.strip(),
-                        "email": email.strip(),
-                        "celular": celular.strip(),
-                        "cpf": cpf.strip(),
-                        "rg": rg.strip(),
-                        "turma": turma,
-                        "usuario": usuario.strip(),
-                        "senha": senha.strip(),
-                        "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
-                        "idade": idade,
-                        "responsavel": {},
-                    }
-                    st.session_state["students"].append(novo_aluno)
-                    save_list(STUDENTS_FILE, st.session_state["students"])
-                    st.session_state["users"].append(
-                        {
-                            "usuario": usuario.strip(),
-                            "senha": senha.strip(),
-                            "perfil": "Aluno",
-                            "pessoa": nome.strip(),
-                        }
-                    )
-                    save_users(st.session_state["users"])
-                    st.success("Cadastro criado com sucesso! Faça o login.")
 
 # ==============================================================================
 # ALUNO
