@@ -335,7 +335,7 @@ if not st.session_state.get("logged_in", False):
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
         .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
-        section[data-testid="stMain"], div[data-testid="stAppViewContainer"], div[data-testid="stAppViewContainer"] > section { background: transparent !important; }
+        section[data-testid="stMain"], div[data-testid="stAppViewContainer"], div[data-testid="stAppViewContainer"] > section, div[data-testid="stMainBlockContainer"], div[data-testid="stMainBlockContainer"] > div { background: transparent !important; box-shadow: none !important; }
         .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; background: transparent !important; box-shadow: none !important; }
         .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 34px; min-height: 520px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
         .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
@@ -367,6 +367,8 @@ if not st.session_state.get("logged_in", False):
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
+        div[data-testid="stHorizontalBlock"]:has(.auth-toggle-anchor) { width: 100%; max-width: 340px; margin: 0 auto 12px; gap: 10px; }
+        div[data-testid="stHorizontalBlock"]:has(.auth-toggle-anchor) button { padding: 0.4rem 0.6rem !important; font-size: 0.85rem !important; border-radius: 10px !important; }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -443,16 +445,17 @@ if not st.session_state.get("logged_in", False):
         )
 
     with col_right:
-        col_btn_left, col_btn_mid, col_btn_right = st.columns([3, 1.4, 3])
-        with col_btn_mid:
-            btn_col1, btn_col2 = st.columns(2)
-            if btn_col1.button(
+        btn_col1, btn_col2 = st.columns(2, gap="small")
+        with btn_col1:
+            st.markdown('<span class="auth-toggle-anchor"></span>', unsafe_allow_html=True)
+            if st.button(
                 "Login",
                 type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
                 use_container_width=True,
             ):
                 st.session_state["auth_mode"] = "Login"
-            if btn_col2.button(
+        with btn_col2:
+            if st.button(
                 "Cadastro",
                 type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
                 use_container_width=True,
