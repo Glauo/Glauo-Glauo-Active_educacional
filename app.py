@@ -368,8 +368,6 @@ if not st.session_state.get("logged_in", False):
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
-        div[data-testid="stHorizontalBlock"]:has(.auth-toggle-anchor) { width: 100%; max-width: 320px; margin: 0 0 12px; gap: 8px; }
-        div[data-testid="stHorizontalBlock"]:has(.auth-toggle-anchor) button { padding: 0.35rem 0.7rem !important; font-size: 0.85rem !important; border-radius: 10px !important; white-space: nowrap; min-width: 110px; }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -424,9 +422,7 @@ if not st.session_state["users"]:
 # TELA DE LOGIN
 # ==============================================================================
 if not st.session_state.get("logged_in", False):
-    col_spacer_left, col_left, col_right, col_spacer_right = st.columns(
-        [0.6, 3.8, 2.6, 0.6], gap="large"
-    )
+    col_left, col_right = st.columns([1, 1], gap="large")
     with col_left:
         logo_path = get_logo_path()
         logo_html = ""
@@ -446,9 +442,8 @@ if not st.session_state.get("logged_in", False):
         )
 
     with col_right:
-        btn_col1, btn_col2, btn_spacer = st.columns([1, 1, 2.2], gap="small")
+        btn_col1, btn_col2, btn_spacer = st.columns([1, 1, 2], gap="small")
         with btn_col1:
-            st.markdown('<span class="auth-toggle-anchor"></span>', unsafe_allow_html=True)
             if st.button(
                 "Login",
                 type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
@@ -577,43 +572,49 @@ if not st.session_state.get("logged_in", False):
                         st.success("Cadastro criado com sucesso! Faça o login.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    col_spacer_left, col_resources, col_spacer_right = st.columns(
-        [0.6, 6.8, 0.6], gap="large"
-    )
-    with col_resources:
+    st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
+    res_col1, res_col2, res_col3 = st.columns(3, gap="large")
+    with res_col1:
         st.markdown(
-            f"""
-<div class="feature-block">
-  <div class="feature-title">Recursos do Sistema</div>
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="feature-icon">💬</div>
-      <div class="feature-text">Mensagens Diretas</div>
-      <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🎥</div>
-      <div class="feature-text">Aulas Gravadas</div>
-      <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">💲</div>
-      <div class="feature-text">Financeiro Simples</div>
-      <div class="feature-sub">Controle de matrículas e pagamentos.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📚</div>
-      <div class="feature-text">Biblioteca Completa</div>
-      <div class="feature-sub">Materiais, notícias e vídeos por turma.</div>
-    </div>
-  </div>
-  <div class="feature-cta">
-    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
-  </div>
+            """
+<div class="feature-card">
+  <div class="feature-icon">💬</div>
+  <div class="feature-text">Mensagens Diretas</div>
+  <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
 </div>
 """,
             unsafe_allow_html=True,
         )
+    with res_col2:
+        st.markdown(
+            """
+<div class="feature-card">
+  <div class="feature-icon">🎥</div>
+  <div class="feature-text">Aulas Gravadas</div>
+  <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    with res_col3:
+        st.markdown(
+            """
+<div class="feature-card">
+  <div class="feature-icon">💲</div>
+  <div class="feature-text">Financeiro Simples</div>
+  <div class="feature-sub">Controle de matrículas e pagamentos.</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        f"""
+<div class="feature-cta">
+  <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">📱 Falar com Suporte no WhatsApp</a>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 # ==============================================================================
 # ALUNO
