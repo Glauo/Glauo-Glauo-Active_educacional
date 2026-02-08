@@ -376,9 +376,9 @@ else:
         .stApp { background: #f8fafc; font-family: 'Manrope', sans-serif; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); }
-        section[data-testid="stSidebar"] .stButton > button { background-color: transparent; border: none; color: #64748b; text-align: left; font-weight: 600; padding: 0.6rem 1rem; width: 100%; border-radius: 8px; transition: all 0.2s; margin-bottom: 4px; }
-        section[data-testid="stSidebar"] .stButton > button:hover { color: #1e3a8a; background-color: #f1f5f9; transform: translateX(4px); }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #eff6ff 0%, #ffffff 100%); color: #1d4ed8; border-left: 4px solid #1d4ed8; border-radius: 4px 8px 8px 4px; box-shadow: 0 2px 5px rgba(29, 78, 216, 0.05); }
+        section[data-testid="stSidebar"] .stButton > button { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; text-align: left; font-weight: 700; padding: 0.7rem 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); }
+        section[data-testid="stSidebar"] .stButton > button:hover { color: #0f172a; background: linear-gradient(90deg, #f8fafc 0%, #eef2ff 100%); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28); }
         .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
         .dash-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.06); border-color: #cbd5e1; }
         .card-title { font-size: 0.9rem; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
