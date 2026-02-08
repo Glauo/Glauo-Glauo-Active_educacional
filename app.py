@@ -354,11 +354,11 @@ if not st.session_state.get("logged_in", False):
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 30px; padding: 26px 30px 30px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); display: flex; flex-direction: column; }
+        div[data-testid="stTabs"] { background: rgba(255, 255, 255, 0.98); border-radius: 30px; padding: 26px 30px 30px; height: var(--hero-height); min-height: var(--hero-min); width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
         div[data-testid="stTabs"] [data-baseweb="tab-list"] { align-self: flex-start; background: #eef2ff; padding: 6px; border-radius: 999px; margin-bottom: 16px; gap: 6px; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
         div[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 999px; padding: 8px 18px; font-weight: 700; color: #475569; background: transparent; }
         div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] { background: #1e3a8a; color: #ffffff; box-shadow: 0 10px 20px rgba(15,23,42,0.18); }
-        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { flex: 1; overflow: auto; }
+        div[data-testid="stTabs"] [data-baseweb="tab-panel"] { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
         div[data-testid="stTabs"] div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
