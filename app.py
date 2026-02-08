@@ -372,13 +372,16 @@ if not st.session_state.get("logged_in", False):
 else:
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
         .stApp { background: #f8fafc; font-family: 'Manrope', sans-serif; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); }
         section[data-testid="stSidebar"] .stButton > button { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; text-align: left; font-weight: 700; padding: 0.7rem 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); }
         section[data-testid="stSidebar"] .stButton > button:hover { color: #0f172a; background: linear-gradient(90deg, #f8fafc 0%, #eef2ff 100%); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28); }
+        .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
+        .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
+        .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
         .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
         .dash-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.06); border-color: #cbd5e1; }
         .card-title { font-size: 0.9rem; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -617,6 +620,17 @@ elif st.session_state["role"] == "Aluno":
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### Olá, {st.session_state['user_name']}")
         if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
         menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo"], "menu_aluno")
@@ -697,7 +711,17 @@ elif st.session_state["role"] == "Professor":
         logo_path = get_logo_path()
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### {st.session_state['user_name']}")
-        st.caption("Perfil: Docente")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
         st.markdown("---")
         menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas"], "menu_prof")
         st.markdown("---")
@@ -748,7 +772,17 @@ elif st.session_state["role"] == "Coordenador":
         logo_path = get_logo_path()
         if logo_path: st.image(str(logo_path), width=120)
         st.markdown(f"### {st.session_state['user_name']}")
-        st.caption("Perfil: Coordenação")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
         st.markdown("---")
         menu_coord_label = sidebar_menu(
             "Administração",
