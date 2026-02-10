@@ -1,11 +1,13 @@
 import base64
 import datetime
 import json
+import os
 import uuid
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from openai import OpenAI
 
 # --- CONFIGURACAO DA PAGINA ---
 st.set_page_config(
@@ -49,8 +51,16 @@ if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
 if "email_log" not in st.session_state:
     st.session_state["email_log"] = []
+if "chatbot_log" not in st.session_state:
+    st.session_state["chatbot_log"] = []
 if "auth_mode" not in st.session_state:
     st.session_state["auth_mode"] = "Login"
+if "active_chat_histories" not in st.session_state:
+    st.session_state["active_chat_histories"] = {}
+if "active_chat_mode" not in st.session_state:
+    st.session_state["active_chat_mode"] = "Atendimento"
+if "active_chat_temp" not in st.session_state:
+    st.session_state["active_chat_temp"] = 0.3
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
@@ -66,6 +76,7 @@ RECEIVABLES_FILE = Path("receivables.json")
 PAYABLES_FILE = Path("payables.json")
 FEE_TEMPLATES_FILE = Path("fee_templates.json")
 EMAIL_LOG_FILE = Path("email_log.json")
+CHATBOT_LOG_FILE = Path("chatbot_active_log.json")
 WHATSAPP_NUMBER = "5516996043314" 
 
 # --- FUNCOES DE UTILIDADE ---
@@ -325,6 +336,149 @@ def render_library(title="Biblioteca", turma=None, turma_options=None):
                     if v.get("url"):
                         st.video(v.get("url"))
 
+def get_groq_api_key():
+    key = ""
+    try:
+        key = str(st.secrets.get("GROQ_API_KEY", "")).strip()
+    except Exception:
+        key = ""
+    if not key:
+        key = str(os.getenv("GROQ_API_KEY", "")).strip()
+    return key
+
+def get_active_chat_history_key():
+    role = (st.session_state.get("role") or "").strip().lower()
+    user = (st.session_state.get("user_name") or "").strip().lower()
+    return f"{role}:{user}"
+
+def get_active_context_text():
+    role = st.session_state.get("role", "")
+    user_name = st.session_state.get("user_name", "")
+    unit = st.session_state.get("unit", "")
+    lines = [
+        "Contexto do sistema Active Educacional/Mister Wiz:",
+        f"Perfil logado: {role}",
+        f"Usuario: {user_name}",
+    ]
+    if unit:
+        lines.append(f"Unidade: {unit}")
+
+    if role == "Aluno":
+        aluno = next((s for s in st.session_state["students"] if s.get("nome") == user_name), {})
+        turma = aluno.get("turma", "Sem Turma")
+        pendencias = [r for r in st.session_state["receivables"] if r.get("aluno") == user_name and r.get("status") != "Pago"]
+        lines.append(f"Turma do aluno: {turma}")
+        lines.append(f"Pendencias financeiras abertas: {len(pendencias)}")
+    elif role == "Professor":
+        prof = user_name.strip().lower()
+        turmas = [c for c in st.session_state["classes"] if str(c.get("professor", "")).strip().lower() == prof]
+        qtd_alunos = len([s for s in st.session_state["students"] if s.get("turma") in {t.get("nome") for t in turmas}])
+        lines.append(f"Turmas do professor: {len(turmas)}")
+        lines.append(f"Total de alunos nas turmas: {qtd_alunos}")
+    elif role == "Coordenador":
+        lines.append(f"Total de alunos: {len(st.session_state['students'])}")
+        lines.append(f"Total de professores: {len(st.session_state['teachers'])}")
+        lines.append(f"Total de turmas: {len(st.session_state['classes'])}")
+        lines.append(f"Mensagens cadastradas: {len(st.session_state['messages'])}")
+
+    return "\n".join(lines)
+
+def get_active_system_prompt(mode, include_context=True):
+    role = st.session_state.get("role", "")
+    base = [
+        "Voce e o assistente oficial da Active Educacional e da escola de ingles Mister Wiz.",
+        "Nunca mencione DietHealth.",
+        "Responda em portugues do Brasil, com foco pratico e claro.",
+        "Quando faltar contexto, pergunte objetivamente antes de concluir.",
+        "Evite inventar dados. Se nao souber, diga que nao ha dados suficientes.",
+    ]
+
+    mode_map = {
+        "Atendimento": "Atue como atendimento escolar: linguagem acolhedora, objetiva e orientada a solucao.",
+        "Pedagogico": "Atue como consultor pedagogico: planos de aula, atividades, rubricas e reforco escolar.",
+        "Comercial": "Atue como consultor comercial da escola: capte interesse sem promessas irreais.",
+        "Financeiro": "Atue como assistente financeiro educacional: comunicacao de cobranca clara e respeitosa.",
+    }
+    base.append(mode_map.get(mode, mode_map["Atendimento"]))
+    base.append(f"Perfil atual do usuario no sistema: {role}.")
+    if include_context:
+        base.append(get_active_context_text())
+    return "\n".join(base)
+
+def run_active_chatbot():
+    st.markdown('<div class="main-header">Chatbot IA Active</div>', unsafe_allow_html=True)
+    st.caption("Assistente separado do DietHealth e dedicado ao contexto da Active Educacional.")
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o chatbot.")
+        return
+
+    chat_key = get_active_chat_history_key()
+    if chat_key not in st.session_state["active_chat_histories"]:
+        st.session_state["active_chat_histories"][chat_key] = []
+    chat_history = st.session_state["active_chat_histories"][chat_key]
+
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+    with c1:
+        mode = st.selectbox("Modo", ["Atendimento", "Pedagogico", "Comercial", "Financeiro"], key="active_chat_mode")
+    with c2:
+        include_context = st.checkbox("Usar contexto do sistema", value=True)
+    with c3:
+        st.session_state["active_chat_temp"] = st.slider("Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05)
+
+    qa1, qa2, qa3 = st.columns(3)
+    if qa1.button("Sugestao de resposta para responsavel"):
+        chat_history.append({"role": "user", "content": "Crie uma resposta curta e profissional para um responsavel sobre desempenho do aluno."})
+    if qa2.button("Plano de aula de 50 minutos"):
+        chat_history.append({"role": "user", "content": "Monte um plano de aula de ingles de 50 minutos para nivel iniciante, com objetivos e atividade final."})
+    if qa3.button("Follow-up comercial no WhatsApp"):
+        chat_history.append({"role": "user", "content": "Escreva uma mensagem de follow-up comercial para lead de curso de ingles, tom consultivo e direto."})
+
+    for msg in chat_history:
+        with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
+            st.markdown(msg["content"])
+
+    action1, action2 = st.columns([1, 1])
+    if action1.button("Limpar conversa"):
+        st.session_state["active_chat_histories"][chat_key] = []
+        st.rerun()
+    if action2.button("Salvar conversa"):
+        st.session_state["chatbot_log"].append({
+            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "usuario": st.session_state.get("user_name", ""),
+            "perfil": st.session_state.get("role", ""),
+            "mensagens": chat_history,
+        })
+        save_list(CHATBOT_LOG_FILE, st.session_state["chatbot_log"])
+        st.success("Conversa salva no historico do Active.")
+
+    user_text = st.chat_input("Digite sua mensagem para o chatbot")
+    if user_text:
+        chat_history.append({"role": "user", "content": user_text})
+        system_prompt = get_active_system_prompt(mode, include_context)
+        request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-16:]
+
+        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+        model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+        with st.spinner("Gerando resposta..."):
+            try:
+                result = client.chat.completions.create(
+                    model=model_name,
+                    messages=request_messages,
+                    temperature=float(st.session_state["active_chat_temp"]),
+                    max_tokens=1000,
+                )
+                answer = (result.choices[0].message.content or "").strip()
+                if not answer:
+                    answer = "Nao consegui gerar resposta no momento. Tente novamente."
+            except Exception as ex:
+                answer = f"Falha ao consultar IA: {ex}"
+
+        chat_history.append({"role": "assistant", "content": answer})
+        st.session_state["active_chat_histories"][chat_key] = chat_history
+        st.rerun()
+
 # ==============================================================================
 # CSS DINAMICO
 # ==============================================================================
@@ -412,6 +566,7 @@ st.session_state["receivables"] = load_list(RECEIVABLES_FILE)
 st.session_state["payables"] = load_list(PAYABLES_FILE)
 st.session_state["fee_templates"] = load_list(FEE_TEMPLATES_FILE)
 st.session_state["email_log"] = load_list(EMAIL_LOG_FILE)
+st.session_state["chatbot_log"] = load_list(CHATBOT_LOG_FILE)
 
 if not st.session_state["users"]:
     st.session_state["users"] = load_users()
@@ -638,11 +793,11 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo"], "menu_aluno")
+        menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo", "🤖 Tutor IA"], "menu_aluno")
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    menu_aluno_map = {"🏠 Painel": "Dashboard", "📚 Minhas Aulas": "Minhas Aulas", "📊 Boletim e Frequência": "Boletim & Frequencia", "💬 Mensagens": "Mensagens", "🎥 Aulas Gravadas": "Aulas Gravadas", "💰 Financeiro": "Financeiro", "📂 Materiais de Estudo": "Materiais de Estudo"}
+    menu_aluno_map = {"🏠 Painel": "Dashboard", "📚 Minhas Aulas": "Minhas Aulas", "📊 Boletim e Frequência": "Boletim & Frequencia", "💬 Mensagens": "Mensagens", "🎥 Aulas Gravadas": "Aulas Gravadas", "💰 Financeiro": "Financeiro", "📂 Materiais de Estudo": "Materiais de Estudo", "🤖 Tutor IA": "Tutor IA"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -707,6 +862,8 @@ elif st.session_state["role"] == "Aluno":
         meus = [r for r in st.session_state["receivables"] if r.get("aluno") == st.session_state["user_name"]]
         if meus: st.dataframe(pd.DataFrame(meus), use_container_width=True)
         else: st.info("Financeiro em dia.")
+    elif menu_aluno == "Tutor IA":
+        run_active_chatbot()
 
 # =============================================================================
 # PROFESSOR
@@ -728,11 +885,11 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🤖 Assistente IA"], "menu_prof")
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas"}
+    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🤖 Assistente IA": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -767,6 +924,8 @@ elif st.session_state["role"] == "Professor":
                 if col_order:
                     df_alunos = df_alunos[col_order]
                 st.dataframe(df_alunos, use_container_width=True)
+    elif menu_prof == "Assistente IA":
+        run_active_chatbot()
 
 
 # ==============================================================================
@@ -801,6 +960,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Financeiro",
                 "Aprovação Notas",
                 "Conteúdos",
+                "Chatbot IA",
             ],
             "menu_coord",
         )
@@ -817,6 +977,7 @@ elif st.session_state["role"] == "Coordenador":
         "Financeiro": "Financeiro",
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
+        "Chatbot IA": "Chatbot IA",
     }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
 
@@ -1391,4 +1552,6 @@ elif st.session_state["role"] == "Coordenador":
     elif menu_coord == "Conteudos":
         st.markdown('<div class="main-header">Conteúdos</div>', unsafe_allow_html=True)
         st.write("Use esta área para gerenciar mensagens globais e materiais pedagógicos.")
+    elif menu_coord == "Chatbot IA":
+        run_active_chatbot()
 
