@@ -398,6 +398,7 @@ def get_active_system_prompt(mode, include_context=True):
         "Pedagogico": "Atue como consultor pedagogico: planos de aula, atividades, rubricas e reforco escolar.",
         "Comercial": "Atue como consultor comercial da escola: capte interesse sem promessas irreais.",
         "Financeiro": "Atue como assistente financeiro educacional: comunicacao de cobranca clara e respeitosa.",
+        "Secretaria": "Atue como secretaria escolar: matriculas, documentos, calendarios, horarios e orientacoes administrativas.",
     }
     base.append(mode_map.get(mode, mode_map["Atendimento"]))
     base.append(f"Perfil atual do usuario no sistema: {role}.")
@@ -421,7 +422,14 @@ def run_active_chatbot():
 
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
-        mode = st.selectbox("Modo", ["Atendimento", "Pedagogico", "Comercial", "Financeiro"], key="active_chat_mode")
+        role = st.session_state.get("role", "")
+        if role == "Aluno":
+            mode_options = ["Financeiro", "Pedagogico", "Secretaria"]
+        else:
+            mode_options = ["Atendimento", "Pedagogico", "Comercial", "Financeiro"]
+        if st.session_state.get("active_chat_mode") not in mode_options:
+            st.session_state["active_chat_mode"] = mode_options[0]
+        mode = st.selectbox("Modo", mode_options, key="active_chat_mode")
     with c2:
         include_context = st.checkbox("Usar contexto do sistema", value=True)
     with c3:
@@ -478,6 +486,70 @@ def run_active_chatbot():
         chat_history.append({"role": "assistant", "content": answer})
         st.session_state["active_chat_histories"][chat_key] = chat_history
         st.rerun()
+
+def run_student_finance_assistant():
+    st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+    st.caption("Escolha uma opcao abaixo para falar com a IA.")
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o assistente financeiro.")
+        return
+
+    chat_key = f"finance:{get_active_chat_history_key()}"
+    if chat_key not in st.session_state["active_chat_histories"]:
+        st.session_state["active_chat_histories"][chat_key] = []
+    chat_history = st.session_state["active_chat_histories"][chat_key]
+
+    options = [
+        "Historico de pagamentos",
+        "Parcelas a vencer",
+        "Parcelas vencidas",
+        "Segunda via de boletos",
+        "Quitar divida",
+        "Renegociacao",
+        "Abrir chamado",
+    ]
+    choice = st.radio("Opcoes financeiras", options, index=0)
+
+    col1, col2 = st.columns([1, 1])
+    if col1.button("Consultar", type="primary"):
+        chat_history.append({"role": "user", "content": f"Quero ajuda com: {choice}."})
+        system_prompt = get_active_system_prompt("Financeiro", include_context=True)
+        system_prompt += (
+            "\nAtenda somente aos temas: historico de pagamentos, parcelas a vencer, parcelas vencidas, "
+            "segunda via de boletos, quitar divida, renegociacao e abrir chamado."
+            "\nSe o pedido fugir desses temas, oriente o aluno a escolher uma das opcoes."
+        )
+        request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-12:]
+
+        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+        model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+        with st.spinner("Gerando resposta..."):
+            try:
+                result = client.chat.completions.create(
+                    model=model_name,
+                    messages=request_messages,
+                    temperature=float(st.session_state["active_chat_temp"]),
+                    max_tokens=800,
+                )
+                answer = (result.choices[0].message.content or "").strip()
+                if not answer:
+                    answer = "Nao consegui gerar resposta no momento. Tente novamente."
+            except Exception as ex:
+                answer = f"Falha ao consultar IA: {ex}"
+
+        chat_history.append({"role": "assistant", "content": answer})
+        st.session_state["active_chat_histories"][chat_key] = chat_history
+        st.rerun()
+
+    if col2.button("Limpar conversa"):
+        st.session_state["active_chat_histories"][chat_key] = []
+        st.rerun()
+
+    for msg in chat_history:
+        with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
+            st.markdown(msg["content"])
 
 # ==============================================================================
 # CSS DINAMICO
