@@ -63,7 +63,7 @@ if "active_chat_temp" not in st.session_state:
     st.session_state["active_chat_temp"] = 0.3
 
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "123"
+ADMIN_PASSWORD = "2523"
 USERS_FILE = Path("users.json")
 MESSAGES_FILE = Path("messages.json")
 VIDEOS_FILE = Path("videos.json")
