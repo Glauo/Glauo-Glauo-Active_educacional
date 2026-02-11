@@ -418,80 +418,85 @@ def build_certificate_html(data, logo_left_b64="", logo_right_b64=""):
 
 def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None):
     try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.utils import ImageReader
-        from reportlab.pdfgen import canvas
+        from fpdf import FPDF
     except Exception:
         return None
 
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-    margin = 36
-
-    c.setLineWidth(3)
-    c.rect(margin, margin, width - 2 * margin, height - 2 * margin)
-
-    y = height - margin - 40
-    if (logo_left_path and logo_left_path.exists()) or (logo_right_path and logo_right_path.exists()):
+    def _safe(text):
         try:
-            if logo_left_path and logo_left_path.exists():
-                img_left = ImageReader(str(logo_left_path))
-                c.drawImage(img_left, margin + 10, y - 40, width=120, height=40, preserveAspectRatio=True, mask="auto")
-            if logo_right_path and logo_right_path.exists():
-                img_right = ImageReader(str(logo_right_path))
-                c.drawImage(img_right, width - margin - 130, y - 40, width=120, height=40, preserveAspectRatio=True, mask="auto")
-            y -= 60
+            return str(text).encode("latin-1", "ignore").decode("latin-1")
         except Exception:
-            y -= 20
+            return str(text)
 
-    c.setFont("Helvetica-Bold", 26)
-    c.drawCentredString(width / 2, y, "CERTIFICADO")
-    y -= 24
-    c.setFont("Helvetica", 12)
-    c.setFillColorRGB(0.35, 0.37, 0.4)
-    c.drawCentredString(width / 2, y, data.get("instituicao", ""))
-    c.setFillColorRGB(0, 0, 0)
-    y -= 40
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=False)
+    pdf.add_page()
 
-    c.setFont("Helvetica", 14)
-    c.drawCentredString(width / 2, y, "Certificamos que")
-    y -= 30
+    # Border
+    pdf.set_draw_color(15, 23, 42)
+    pdf.set_line_width(1)
+    pdf.rect(8, 8, 194, 281)
 
-    c.setFont("Helvetica-Bold", 22)
-    c.drawCentredString(width / 2, y, data.get("aluno", ""))
-    y -= 34
+    y = 12
+    if logo_left_path and logo_left_path.exists():
+        try:
+            pdf.image(str(logo_left_path), x=12, y=y, w=35)
+        except Exception:
+            pass
+    if logo_right_path and logo_right_path.exists():
+        try:
+            pdf.image(str(logo_right_path), x=163, y=y, w=35)
+        except Exception:
+            pass
 
-    c.setFont("Helvetica", 13)
+    pdf.set_y(35)
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.cell(0, 10, _safe("CERTIFICADO"), ln=1, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 6, _safe(data.get("instituicao", "")), ln=1, align="C")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(8)
+
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, _safe("Certificamos que"), ln=1, align="C")
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 10, _safe(data.get("aluno", "")), ln=1, align="C")
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "", 11)
     texto = (
         f"concluiu o curso {data.get('curso','')}, "
         f"com carga horária de {data.get('carga','')} horas, "
         f"em {data.get('data','')}."
     )
-    c.drawCentredString(width / 2, y, texto)
-    y -= 30
+    pdf.multi_cell(0, 7, _safe(texto), align="C")
+    pdf.ln(4)
 
-    c.setFont("Helvetica", 11)
-    c.drawString(margin + 10, y, f"Turma: {data.get('turma','')}")
-    c.drawRightString(width - margin - 10, y, f"Professor: {data.get('professor','')}")
-    y -= 60
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _safe(f"Turma: {data.get('turma','')}"), align="L")
+    pdf.cell(0, 6, _safe(f"Professor: {data.get('professor','')}"), ln=1, align="R")
+    pdf.ln(20)
 
-    c.line(margin + 40, y, width / 2 - 20, y)
-    c.line(width / 2 + 20, y, width - margin - 40, y)
-    c.setFont("Helvetica", 10)
-    c.drawCentredString(margin + 120, y - 12, data.get("assinatura1", "Coordenação"))
-    c.drawCentredString(width - margin - 120, y - 12, data.get("assinatura2", "Direção"))
+    y_line = pdf.get_y()
+    pdf.line(30, y_line, 90, y_line)
+    pdf.line(120, y_line, 180, y_line)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_y(y_line + 4)
+    pdf.set_x(30)
+    pdf.cell(60, 6, _safe(data.get("assinatura1", "Coordenacao")), align="C")
+    pdf.set_x(120)
+    pdf.cell(60, 6, _safe(data.get("assinatura2", "Direcao")), align="C")
 
-    obs = data.get("observacao", "")
+    obs = _safe(data.get("observacao", ""))
     if obs:
-        c.setFont("Helvetica-Oblique", 9)
-        c.setFillColorRGB(0.35, 0.37, 0.4)
-        c.drawCentredString(width / 2, margin + 12, obs)
-        c.setFillColorRGB(0, 0, 0)
+        pdf.set_text_color(100, 116, 139)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_y(280)
+        pdf.cell(0, 6, obs, align="C")
+        pdf.set_text_color(0, 0, 0)
 
-    c.showPage()
-    c.save()
-    return buffer.getvalue()
+    return pdf.output(dest="S").encode("latin-1", "ignore")
 
 def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
     codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
