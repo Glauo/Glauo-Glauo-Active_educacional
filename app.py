@@ -741,7 +741,6 @@ if not st.session_state.get("logged_in", False):
         )
 
     with col_right:
-        st.markdown("<br>", unsafe_allow_html=True)
         with st.container():
             st.markdown('<div class="auth-card-anchor"></div>', unsafe_allow_html=True)
             with st.form("login_form"):
