@@ -1,8 +1,10 @@
 import base64
 import datetime
+import io
 import json
 import os
 import uuid
+import calendar
 from pathlib import Path
 
 import pandas as pd
@@ -61,6 +63,18 @@ if "inventory_moves" not in st.session_state:
     st.session_state["inventory_moves"] = []
 if "cert_preview_html" not in st.session_state:
     st.session_state["cert_preview_html"] = ""
+if "cert_preview_pdf" not in st.session_state:
+    st.session_state["cert_preview_pdf"] = None
+if "cert_preview_data" not in st.session_state:
+    st.session_state["cert_preview_data"] = {}
+if "certificates" not in st.session_state:
+    st.session_state["certificates"] = []
+if "books" not in st.session_state:
+    st.session_state["books"] = []
+if "material_orders" not in st.session_state:
+    st.session_state["material_orders"] = []
+if "order_ai_summary" not in st.session_state:
+    st.session_state["order_ai_summary"] = ""
 if "auth_mode" not in st.session_state:
     st.session_state["auth_mode"] = "Login"
 if "active_chat_histories" not in st.session_state:
@@ -88,6 +102,9 @@ CHATBOT_LOG_FILE = Path("chatbot_active_log.json")
 AGENDA_FILE = Path("agenda.json")
 INVENTORY_FILE = Path("inventory.json")
 INVENTORY_MOVES_FILE = Path("inventory_moves.json")
+CERTIFICATES_FILE = Path("certificates.json")
+BOOKS_FILE = Path("books.json")
+MATERIAL_ORDERS_FILE = Path("material_orders.json")
 WHATSAPP_NUMBER = "5516996043314" 
 
 # --- FUNCOES DE UTILIDADE ---
@@ -100,6 +117,20 @@ def get_logo_path():
         Path("logo_active2.png"),
         Path("logo_active2.jpg"),
         Path("logo.png"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+def get_mister_wiz_logo_path():
+    candidates = [
+        Path("logo_mister_wiz.png"),
+        Path("logo_misterwiz.png"),
+        Path("mister_wiz.png"),
+        Path("misterwiz.png"),
+        Path("logo_mister.png"),
+        Path("logo_wiz.png"),
     ]
     for path in candidates:
         if path.exists():
@@ -246,11 +277,25 @@ def parse_date(value):
     except Exception:
         return None
 
+def add_months(date_value, months):
+    if not date_value:
+        return None
+    month = date_value.month - 1 + months
+    year = date_value.year + month // 12
+    month = month % 12 + 1
+    day = min(date_value.day, calendar.monthrange(year, month)[1])
+    return datetime.date(year, month, day)
+
 def parse_time(value):
     try:
         return datetime.datetime.strptime(value, "%H:%M").time()
     except Exception:
         return datetime.time(0, 0)
+
+def book_levels():
+    books = st.session_state.get("books", [])
+    levels = [b.get("nivel", "") for b in books if b.get("nivel")]
+    return levels or ["Livro 1", "Livro 2", "Livro 3", "Livro 4"]
 
 def is_overdue(item):
     if item.get("status") == "Pago": return False
@@ -281,10 +326,44 @@ def render_agenda(items, empty_message):
             st.link_button("Entrar na aula", a.get("link"))
         st.markdown("---")
 
-def build_certificate_html(data, logo_b64=""):
+def render_books_section(books, title="Livros Didáticos"):
+    st.markdown(f"### {title}")
+    if not books:
+        st.info("Nenhum livro disponível.")
+        return
+    for b in books:
+        titulo = b.get("titulo") or b.get("nivel") or "Livro"
+        st.markdown(f"**{titulo}**")
+        c1, c2 = st.columns(2)
+        file_path = str(b.get("file_path", "")).strip()
+        url = str(b.get("url", "")).strip()
+        if file_path and Path(file_path).exists():
+            data = Path(file_path).read_bytes()
+            c1.download_button("Baixar livro", data=data, file_name=Path(file_path).name)
+        elif url:
+            c1.link_button("Baixar livro", url)
+        else:
+            c1.button("Baixar livro", disabled=True)
+
+        if url:
+            c2.link_button("Abrir livro", url)
+        else:
+            c2.button("Abrir livro", disabled=True)
+        if not url and not (file_path and Path(file_path).exists()):
+            st.caption("Link/arquivo do livro não configurado.")
+        st.markdown("---")
+
+def build_certificate_html(data, logo_left_b64="", logo_right_b64=""):
     logo_html = ""
-    if logo_b64:
-        logo_html = f"<img src='data:image/png;base64,{logo_b64}' style='height:70px; margin-bottom:16px;'/>"
+    if logo_left_b64 or logo_right_b64:
+        left = f"<img src='data:image/png;base64,{logo_left_b64}' style='height:70px;'/>" if logo_left_b64 else ""
+        right = f"<img src='data:image/png;base64,{logo_right_b64}' style='height:70px;'/>" if logo_right_b64 else ""
+        logo_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:16px;">
+          <div style="flex:1; text-align:left;">{left}</div>
+          <div style="flex:1; text-align:right;">{right}</div>
+        </div>
+        """
     return f"""
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -307,7 +386,7 @@ def build_certificate_html(data, logo_b64=""):
 </head>
 <body>
   <div class="cert">
-    <div style="text-align:center;">{logo_html}</div>
+    {logo_html}
     <div class="title">CERTIFICADO</div>
     <div class="subtitle">{data.get("instituicao","")}</div>
     <div class="text" style="margin-top:24px;">Certificamos que</div>
@@ -336,6 +415,83 @@ def build_certificate_html(data, logo_b64=""):
 </body>
 </html>
 """.strip()
+
+def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfgen import canvas
+    except Exception:
+        return None
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin = 36
+
+    c.setLineWidth(3)
+    c.rect(margin, margin, width - 2 * margin, height - 2 * margin)
+
+    y = height - margin - 40
+    if (logo_left_path and logo_left_path.exists()) or (logo_right_path and logo_right_path.exists()):
+        try:
+            if logo_left_path and logo_left_path.exists():
+                img_left = ImageReader(str(logo_left_path))
+                c.drawImage(img_left, margin + 10, y - 40, width=120, height=40, preserveAspectRatio=True, mask="auto")
+            if logo_right_path and logo_right_path.exists():
+                img_right = ImageReader(str(logo_right_path))
+                c.drawImage(img_right, width - margin - 130, y - 40, width=120, height=40, preserveAspectRatio=True, mask="auto")
+            y -= 60
+        except Exception:
+            y -= 20
+
+    c.setFont("Helvetica-Bold", 26)
+    c.drawCentredString(width / 2, y, "CERTIFICADO")
+    y -= 24
+    c.setFont("Helvetica", 12)
+    c.setFillColorRGB(0.35, 0.37, 0.4)
+    c.drawCentredString(width / 2, y, data.get("instituicao", ""))
+    c.setFillColorRGB(0, 0, 0)
+    y -= 40
+
+    c.setFont("Helvetica", 14)
+    c.drawCentredString(width / 2, y, "Certificamos que")
+    y -= 30
+
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, y, data.get("aluno", ""))
+    y -= 34
+
+    c.setFont("Helvetica", 13)
+    texto = (
+        f"concluiu o curso {data.get('curso','')}, "
+        f"com carga horária de {data.get('carga','')} horas, "
+        f"em {data.get('data','')}."
+    )
+    c.drawCentredString(width / 2, y, texto)
+    y -= 30
+
+    c.setFont("Helvetica", 11)
+    c.drawString(margin + 10, y, f"Turma: {data.get('turma','')}")
+    c.drawRightString(width - margin - 10, y, f"Professor: {data.get('professor','')}")
+    y -= 60
+
+    c.line(margin + 40, y, width / 2 - 20, y)
+    c.line(width / 2 + 20, y, width - margin - 40, y)
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(margin + 120, y - 12, data.get("assinatura1", "Coordenação"))
+    c.drawCentredString(width - margin - 120, y - 12, data.get("assinatura2", "Direção"))
+
+    obs = data.get("observacao", "")
+    if obs:
+        c.setFont("Helvetica-Oblique", 9)
+        c.setFillColorRGB(0.35, 0.37, 0.4)
+        c.drawCentredString(width / 2, margin + 12, obs)
+        c.setFillColorRGB(0, 0, 0)
+
+    c.showPage()
+    c.save()
+    return buffer.getvalue()
 
 def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
     codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
@@ -816,6 +972,18 @@ st.session_state["chatbot_log"] = load_list(CHATBOT_LOG_FILE)
 st.session_state["agenda"] = load_list(AGENDA_FILE)
 st.session_state["inventory"] = load_list(INVENTORY_FILE)
 st.session_state["inventory_moves"] = load_list(INVENTORY_MOVES_FILE)
+st.session_state["certificates"] = load_list(CERTIFICATES_FILE)
+st.session_state["books"] = load_list(BOOKS_FILE)
+st.session_state["material_orders"] = load_list(MATERIAL_ORDERS_FILE)
+
+if not st.session_state["books"]:
+    st.session_state["books"] = [
+        {"nivel": "Livro 1", "titulo": "Livro 1", "url": "", "file_path": ""},
+        {"nivel": "Livro 2", "titulo": "Livro 2", "url": "", "file_path": ""},
+        {"nivel": "Livro 3", "titulo": "Livro 3", "url": "", "file_path": ""},
+        {"nivel": "Livro 4", "titulo": "Livro 4", "url": "", "file_path": ""},
+    ]
+    save_list(BOOKS_FILE, st.session_state["books"])
 
 st.session_state["users"] = load_users()
 st.session_state["users"] = ensure_admin_user(st.session_state["users"])
@@ -1015,6 +1183,15 @@ elif st.session_state["role"] == "Aluno":
             
     elif menu_aluno == "Materiais de Estudo":
         st.markdown('<div class="main-header">Materiais</div>', unsafe_allow_html=True)
+        aluno_obj = next((s for s in st.session_state["students"] if s.get("nome") == st.session_state["user_name"]), {})
+        livro_aluno = aluno_obj.get("livro", "")
+        if not livro_aluno:
+            turma_nome = aluno_obj.get("turma", "")
+            turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma_nome), {})
+            livro_aluno = turma_obj.get("livro", "")
+        livros = st.session_state.get("books", [])
+        livros_filtrados = [b for b in livros if b.get("nivel") == livro_aluno] if livro_aluno else []
+        render_books_section(livros_filtrados, "Livro do Aluno")
         if not st.session_state["materials"]: st.info("Sem materiais.")
         for m in reversed(st.session_state["materials"]):
             with st.container():
@@ -1048,11 +1225,11 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "🤖 Assistente IA"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "📚 Livros", "🤖 Assistente IA"], "menu_prof")
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "🤖 Assistente IA": "Assistente IA"}
+    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "📚 Livros": "Livros", "🤖 Assistente IA": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -1137,6 +1314,9 @@ elif st.session_state["role"] == "Professor":
         else:
             agenda = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
             render_agenda(sort_agenda(agenda), "Nenhuma aula agendada para suas turmas.")
+    elif menu_prof == "Livros":
+        st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
+        render_books_section(st.session_state.get("books", []))
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
 
@@ -1174,6 +1354,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Financeiro",
                 "Estoque",
                 "Certificados",
+                "Livros",
                 "Aprovação Notas",
                 "Conteúdos",
                 "Chatbot IA",
@@ -1194,6 +1375,7 @@ elif st.session_state["role"] == "Coordenador":
         "Financeiro": "Financeiro",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
+        "Livros": "Livros",
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
         "Chatbot IA": "Chatbot IA",
@@ -1275,7 +1457,7 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Estoque":
         st.markdown('<div class="main-header">Controle de Estoque</div>', unsafe_allow_html=True)
-        tab1, tab2, tab3, tab4 = st.tabs(["Itens", "Novo Item", "Movimentar", "Movimentações"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Itens", "Novo Item", "Movimentar", "Movimentações", "Pedidos"])
 
         with tab1:
             c1, c2, c3, c4 = st.columns(4)
@@ -1462,6 +1644,112 @@ elif st.session_state["role"] == "Coordenador":
                 dados = list(reversed(dados))[:200]
                 st.dataframe(pd.DataFrame(dados), use_container_width=True)
 
+        with tab5:
+            st.markdown("### Novo Pedido de Material")
+            with st.form("add_material_order", clear_on_submit=True):
+                solicitante = st.text_input("Solicitante", value=st.session_state.get("user_name", ""))
+                tipo = st.selectbox("Tipo", ["Material", "Livro didático", "Outro"])
+                item_codigo = ""
+                item_desc = ""
+                if tipo == "Material":
+                    codigos = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in st.session_state["inventory"]]
+                    item_sel = st.selectbox("Item", codigos if codigos else [""])
+                    if item_sel:
+                        item_codigo = item_sel.split(" - ")[0].strip()
+                        item_desc = " - ".join(item_sel.split(" - ")[1:]).strip()
+                elif tipo == "Livro didático":
+                    nivel = st.selectbox("Livro/Nível", book_levels())
+                    item_codigo = nivel
+                    item_desc = f"Livro didático {nivel}"
+                else:
+                    item_desc = st.text_input("Descrição do pedido")
+                quantidade = st.number_input("Quantidade", min_value=1, step=1, value=1)
+                observacao = st.text_area("Observações")
+                if st.form_submit_button("Registrar pedido"):
+                    st.session_state["material_orders"].append(
+                        {
+                            "id": uuid.uuid4().hex[:10],
+                            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "solicitante": solicitante.strip(),
+                            "tipo": tipo,
+                            "item_codigo": item_codigo,
+                            "item": item_desc,
+                            "quantidade": int(quantidade),
+                            "status": "Aberto",
+                            "observacao": observacao.strip(),
+                        }
+                    )
+                    save_list(MATERIAL_ORDERS_FILE, st.session_state["material_orders"])
+                    st.success("Pedido registrado com sucesso!")
+
+            st.markdown("### Pedidos Registrados")
+            pedidos = st.session_state["material_orders"]
+            if pedidos:
+                st.dataframe(pd.DataFrame(pedidos), use_container_width=True)
+            else:
+                st.info("Nenhum pedido registrado.")
+
+            st.markdown("### Automatizar Pedido (IA)")
+            itens_baixo = [
+                i for i in st.session_state["inventory"]
+                if parse_int(i.get("saldo", 0)) < parse_int(i.get("minimo", 0)) and bool(i.get("ativo", True))
+            ]
+            if st.button("Gerar pedido automático (IA)"):
+                if not itens_baixo:
+                    st.info("Nenhum item abaixo do mínimo.")
+                else:
+                    for item in itens_baixo:
+                        saldo = parse_int(item.get("saldo", 0))
+                        minimo = parse_int(item.get("minimo", 0))
+                        maximo = parse_int(item.get("maximo", 0))
+                        qtd = (maximo - saldo) if maximo > 0 else (minimo - saldo)
+                        qtd = max(qtd, 1)
+                        st.session_state["material_orders"].append(
+                            {
+                                "id": uuid.uuid4().hex[:10],
+                                "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "solicitante": "Sistema (IA)",
+                                "tipo": "Material",
+                                "item_codigo": str(item.get("codigo", "")),
+                                "item": item.get("descricao", ""),
+                                "quantidade": int(qtd),
+                                "status": "Sugerido",
+                                "observacao": "Pedido automático por estoque abaixo do mínimo.",
+                            }
+                        )
+                    save_list(MATERIAL_ORDERS_FILE, st.session_state["material_orders"])
+
+                    api_key = get_groq_api_key()
+                    if not api_key:
+                        st.warning("Configure GROQ_API_KEY para gerar resumo automático do pedido.")
+                    else:
+                        resumo_itens = [
+                            f"{i.get('codigo','')}: {i.get('descricao','')} (saldo {i.get('saldo','')}, mínimo {i.get('minimo','')})"
+                            for i in itens_baixo
+                        ]
+                        system_prompt = (
+                            "Voce e um assistente de compras. Gere um resumo curto e objetivo para solicitar compra de materiais."
+                        )
+                        user_prompt = "Itens abaixo do minimo:\n" + "\n".join(resumo_itens)
+                        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+                        try:
+                            result = client.chat.completions.create(
+                                model=os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"),
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt},
+                                ],
+                                temperature=0.2,
+                                max_tokens=300,
+                            )
+                            st.session_state["order_ai_summary"] = (result.choices[0].message.content or "").strip()
+                        except Exception as ex:
+                            st.session_state["order_ai_summary"] = f"Falha ao gerar resumo IA: {ex}"
+
+            if st.session_state.get("order_ai_summary"):
+                st.markdown("#### Resumo IA")
+                st.write(st.session_state["order_ai_summary"])
+
     elif menu_coord == "Certificados":
         st.markdown('<div class="main-header">Gerador de Certificados</div>', unsafe_allow_html=True)
         alunos = [s.get("nome", "") for s in st.session_state["students"]]
@@ -1469,52 +1757,133 @@ elif st.session_state["role"] == "Coordenador":
             st.info("Nenhum aluno cadastrado.")
         else:
             logo_path = get_logo_path()
+            mister_logo_path = get_mister_wiz_logo_path()
             logo_b64 = ""
+            mister_b64 = ""
             if logo_path:
                 logo_b64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
+            if mister_logo_path:
+                mister_b64 = base64.b64encode(mister_logo_path.read_bytes()).decode("utf-8")
 
-            with st.form("cert_form"):
-                aluno = st.selectbox("Aluno", alunos)
-                turma = ""
-                prof = ""
-                aluno_obj = next((s for s in st.session_state["students"] if s.get("nome") == aluno), {})
-                turma = aluno_obj.get("turma", "")
-                if turma:
-                    turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
-                    prof = turma_obj.get("professor", "")
+            tab1, tab2 = st.tabs(["Gerar", "Histórico"])
 
-                curso = st.text_input("Curso", value="Inglês - Mister Wiz")
-                carga = st.text_input("Carga horária (horas)", value="60")
-                data_cert = st.date_input("Data de conclusão", value=datetime.date.today(), format="DD/MM/YYYY")
-                assinatura1 = st.text_input("Assinatura 1", value="Coordenação")
-                assinatura2 = st.text_input("Assinatura 2", value="Direção")
-                observacao = st.text_input("Observação", value="Certificado válido em todo território nacional.")
-                gerar = st.form_submit_button("Gerar certificado")
+            with tab1:
+                with st.form("cert_form", clear_on_submit=True):
+                    aluno = st.selectbox("Aluno", alunos)
+                    turma = ""
+                    prof = ""
+                    aluno_obj = next((s for s in st.session_state["students"] if s.get("nome") == aluno), {})
+                    turma = aluno_obj.get("turma", "")
+                    if turma:
+                        turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
+                        prof = turma_obj.get("professor", "")
 
-            if gerar:
-                data = {
-                    "instituicao": "Active Educacional / Mister Wiz",
-                    "aluno": aluno,
-                    "curso": curso,
-                    "carga": carga,
-                    "data": data_cert.strftime("%d/%m/%Y") if data_cert else "",
-                    "turma": turma,
-                    "professor": prof,
-                    "assinatura1": assinatura1,
-                    "assinatura2": assinatura2,
-                    "observacao": observacao,
-                }
-                st.session_state["cert_preview_html"] = build_certificate_html(data, logo_b64)
+                    curso = st.text_input("Curso", value="Inglês - Mister Wiz")
+                    carga = st.text_input("Carga horária (horas)", value="60")
+                    data_cert = st.date_input("Data de conclusão", value=datetime.date.today(), format="DD/MM/YYYY")
+                    assinatura1 = st.text_input("Assinatura 1", value="Coordenação")
+                    assinatura2 = st.text_input("Assinatura 2", value="Direção")
+                    observacao = st.text_input("Observação", value="Certificado válido em todo território nacional.")
+                    gerar = st.form_submit_button("Gerar certificado")
+
+                if gerar:
+                    data = {
+                        "instituicao": "Active Educacional / Mister Wiz",
+                        "aluno": aluno,
+                        "curso": curso,
+                        "carga": carga,
+                        "data": data_cert.strftime("%d/%m/%Y") if data_cert else "",
+                        "turma": turma,
+                        "professor": prof,
+                        "assinatura1": assinatura1,
+                        "assinatura2": assinatura2,
+                        "observacao": observacao,
+                    }
+                    st.session_state["cert_preview_html"] = build_certificate_html(data, logo_b64, mister_b64)
+                    st.session_state["cert_preview_pdf"] = build_certificate_pdf_bytes(data, logo_path, mister_logo_path)
+                    st.session_state["cert_preview_data"] = data
+                    st.session_state["certificates"].append(
+                        {
+                            "id": uuid.uuid4().hex[:10],
+                            "data_emissao": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            **data,
+                        }
+                    )
+                    save_list(CERTIFICATES_FILE, st.session_state["certificates"])
+                    st.success("Certificado gerado com sucesso!")
+
+            with tab2:
+                certs = st.session_state["certificates"]
+                if not certs:
+                    st.info("Nenhum certificado emitido.")
+                else:
+                    filtro_aluno = st.selectbox("Filtrar por aluno", ["Todos"] + sorted({c.get("aluno", "") for c in certs}))
+                    dados = certs
+                    if filtro_aluno != "Todos":
+                        dados = [c for c in certs if c.get("aluno") == filtro_aluno]
+                    if dados:
+                        df = pd.DataFrame(dados)
+                        col_order = ["data_emissao", "aluno", "curso", "data", "carga", "turma", "professor"]
+                        df = df[[c for c in col_order if c in df.columns]]
+                        st.dataframe(df, use_container_width=True)
+
+                        options = [f"{c.get('data_emissao','')} - {c.get('aluno','')} - {c.get('curso','')}" for c in dados]
+                        sel = st.selectbox("Abrir certificado", options)
+                        sel_obj = dados[options.index(sel)]
+                        if st.button("Carregar certificado"):
+                            st.session_state["cert_preview_html"] = build_certificate_html(sel_obj, logo_b64, mister_b64)
+                            st.session_state["cert_preview_pdf"] = build_certificate_pdf_bytes(sel_obj, logo_path, mister_logo_path)
+                            st.session_state["cert_preview_data"] = sel_obj
+                    else:
+                        st.info("Nenhum certificado encontrado.")
 
             if st.session_state.get("cert_preview_html"):
                 st.markdown("### Pré-visualização")
                 st.components.v1.html(st.session_state["cert_preview_html"], height=820, scrolling=True)
+                name_base = st.session_state.get("cert_preview_data", {}).get("aluno", "certificado")
+                name_base = name_base.replace(" ", "_").lower() if name_base else "certificado"
                 st.download_button(
                     "Baixar certificado (HTML)",
                     data=st.session_state["cert_preview_html"],
-                    file_name=f"certificado_{aluno.replace(' ', '_').lower()}.html",
+                    file_name=f"certificado_{name_base}.html",
                     mime="text/html",
                 )
+                if st.session_state.get("cert_preview_pdf"):
+                    st.download_button(
+                        "Baixar certificado (PDF)",
+                        data=st.session_state["cert_preview_pdf"],
+                        file_name=f"certificado_{name_base}.pdf",
+                        mime="application/pdf",
+                    )
+                else:
+                    st.warning("Para gerar PDF, instale a biblioteca reportlab.")
+
+    elif menu_coord == "Livros":
+        st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Biblioteca", "Configurar Links"])
+        with tab1:
+            render_books_section(st.session_state.get("books", []), "Todos os Livros")
+        with tab2:
+            with st.form("edit_books"):
+                updated = []
+                for idx, b in enumerate(st.session_state.get("books", [])):
+                    st.markdown(f"### {b.get('nivel','Livro')}")
+                    titulo = st.text_input("Título", value=b.get("titulo", ""), key=f"book_title_{idx}")
+                    url = st.text_input("Link para download/abrir", value=b.get("url", ""), key=f"book_url_{idx}")
+                    file_path = st.text_input("Arquivo local (opcional)", value=b.get("file_path", ""), key=f"book_file_{idx}")
+                    updated.append(
+                        {
+                            "nivel": b.get("nivel", f"Livro {idx+1}"),
+                            "titulo": titulo.strip(),
+                            "url": url.strip(),
+                            "file_path": file_path.strip(),
+                        }
+                    )
+                    st.markdown("---")
+                if st.form_submit_button("Salvar configurações"):
+                    st.session_state["books"] = updated
+                    save_list(BOOKS_FILE, st.session_state["books"])
+                    st.success("Livros atualizados!")
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
@@ -1614,6 +1983,8 @@ elif st.session_state["role"] == "Coordenador":
                 st.divider()
                 st.markdown("### Turma")
                 turma = st.selectbox("Vincular à Turma", ["Sem Turma"] + class_names())
+                livro_opts = ["Automático (Turma)"] + book_levels()
+                livro_sel = st.selectbox("Livro/Nível", livro_opts)
 
                 st.divider()
                 st.markdown("### Acesso do Aluno (opcional)")
@@ -1643,6 +2014,9 @@ elif st.session_state["role"] == "Coordenador":
                     elif login_aluno and find_user(login_aluno):
                         st.error("ERRO: Este login já existe.")
                     else:
+                        turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
+                        livro_turma = turma_obj.get("livro", "")
+                        livro_final = livro_turma if livro_sel == "Automático (Turma)" else livro_sel
                         novo_aluno = {
                             "nome": nome,
                             "idade": idade,
@@ -1659,6 +2033,7 @@ elif st.session_state["role"] == "Coordenador":
                             "rua": rua,
                             "numero": numero,
                             "turma": turma,
+                            "livro": livro_final,
                             "usuario": login_aluno.strip(),
                             "senha": senha_aluno.strip(),
                             "responsavel": {
@@ -1721,6 +2096,12 @@ elif st.session_state["role"] == "Coordenador":
                         with c4: new_idade = st.number_input("Idade", min_value=1, max_value=120, step=1, value=current_idade)
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
+                        livro_atual = aluno_obj.get("livro", "")
+                        livro_opts = ["Automático (Turma)"] + book_levels()
+                        if livro_atual and livro_atual not in livro_opts:
+                            livro_opts.append(livro_atual)
+                        livro_index = livro_opts.index(livro_atual) if livro_atual in livro_opts else 0
+                        new_livro = st.selectbox("Livro/Nível", livro_opts, index=livro_index)
 
                         st.markdown("### Acesso do Aluno")
                         c5, c6 = st.columns(2)
@@ -1755,12 +2136,17 @@ elif st.session_state["role"] == "Coordenador":
                                             )
                                         save_users(st.session_state["users"])
 
+                                    turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == new_turma), {})
+                                    livro_turma = turma_obj.get("livro", "")
+                                    livro_final = livro_turma if new_livro == "Automático (Turma)" else new_livro
+
                                     aluno_obj["nome"] = new_nome
                                     aluno_obj["celular"] = new_cel
                                     aluno_obj["turma"] = new_turma
                                     aluno_obj["email"] = new_email
                                     aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
                                     aluno_obj["idade"] = new_idade
+                                    aluno_obj["livro"] = livro_final
                                     aluno_obj["usuario"] = login
                                     aluno_obj["senha"] = senha
                                     aluno_obj.pop("nascimento", None)
@@ -1908,9 +2294,10 @@ elif st.session_state["role"] == "Coordenador":
                 c3, c4 = st.columns(2)
                 with c3: dias = st.text_input("Dias e Horários")
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
+                livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
                     st.session_state["classes"].append(
-                        {"nome": nome, "professor": prof, "dias": dias, "link_zoom": link}
+                        {"nome": nome, "professor": prof, "dias": dias, "link_zoom": link, "livro": livro}
                     )
                     save_list(CLASSES_FILE, st.session_state["classes"])
                     st.success("Turma salva!")
@@ -1934,6 +2321,11 @@ elif st.session_state["role"] == "Coordenador":
                         new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
                         new_dias = st.text_input("Dias e Horários", value=turma_obj.get("dias", ""))
                         new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
+                        livro_atual = turma_obj.get("livro", "")
+                        livro_opts = book_levels()
+                        if livro_atual and livro_atual not in livro_opts:
+                            livro_opts.append(livro_atual)
+                        new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
@@ -1943,6 +2335,7 @@ elif st.session_state["role"] == "Coordenador":
                                 turma_obj["professor"] = new_prof
                                 turma_obj["dias"] = new_dias
                                 turma_obj["link_zoom"] = new_link
+                                turma_obj["livro"] = new_livro
 
                                 if old_nome and new_nome and old_nome != new_nome:
                                     for aluno in st.session_state["students"]:
@@ -1972,14 +2365,68 @@ elif st.session_state["role"] == "Coordenador":
         with tab1:
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1: desc = st.text_input("Descrição (Ex: Mensalidade)")
                 with c2: val = st.text_input("Valor (Ex: 150,00)")
+                with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matrícula"])
                 aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                c4, c5 = st.columns(2)
+                with c4: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c5: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"])
+                gerar_12 = st.checkbox("Gerar 12 mensalidades", value=True if categoria == "Mensalidade" else False)
+                qtd_meses = st.number_input("Quantidade de meses", min_value=1, max_value=24, value=12)
                 if st.form_submit_button("Lançar"):
-                    add_receivable(aluno, desc, val, datetime.date.today(), "Boleto", "Mensalidade")
-                    st.success("Lançado!")
+                    if not aluno or not val:
+                        st.error("Informe aluno e valor.")
+                    else:
+                        if categoria == "Mensalidade" and gerar_12:
+                            for i in range(int(qtd_meses)):
+                                data_venc = add_months(venc, i)
+                                add_receivable(aluno, desc, val, data_venc, cobranca, categoria)
+                            st.success("Mensalidades lançadas!")
+                        else:
+                            add_receivable(aluno, desc, val, venc, cobranca, categoria)
+                            st.success("Lançado!")
             st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
+
+            st.markdown("### Baixa de Recebimentos")
+            abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
+            if not abertos:
+                st.info("Nenhum recebimento em aberto.")
+            else:
+                cba1, cba2 = st.columns(2)
+                with cba1:
+                    alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
+                    aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
+                with cba2:
+                    modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
+
+                if modo_baixa == "Manual":
+                    opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
+                    item_sel = st.selectbox("Selecione o lançamento", opcoes)
+                    if st.button("Dar baixa manual"):
+                        item_obj = abertos[opcoes.index(item_sel)]
+                        item_obj["status"] = "Pago"
+                        item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+                        item_obj["baixa_tipo"] = "Manual"
+                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                        st.success("Baixa realizada!")
+                        st.rerun()
+                else:
+                    if st.button("Baixar automaticamente vencidos (Aluno)"):
+                        hoje = datetime.date.today()
+                        count = 0
+                        for r in st.session_state["receivables"]:
+                            if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
+                                vencimento = parse_date(r.get("vencimento", ""))
+                                if vencimento and vencimento <= hoje:
+                                    r["status"] = "Pago"
+                                    r["baixa_data"] = hoje.strftime("%d/%m/%Y")
+                                    r["baixa_tipo"] = "Automática"
+                                    count += 1
+                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                        st.success(f"Baixa automática realizada: {count} lançamento(s).")
+                        st.rerun()
         with tab2:
             with st.form("add_pag"):
                 st.markdown("### Lançar Despesa")
