@@ -326,12 +326,12 @@ def render_agenda(items, empty_message):
             st.link_button("Entrar na aula", a.get("link"))
         st.markdown("---")
 
-def render_books_section(books, title="Livros Didáticos"):
+def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
     st.markdown(f"### {title}")
     if not books:
         st.info("Nenhum livro disponível.")
         return
-    for b in books:
+    for idx, b in enumerate(books):
         titulo = b.get("titulo") or b.get("nivel") or "Livro"
         st.markdown(f"**{titulo}**")
         c1, c2 = st.columns(2)
@@ -339,16 +339,16 @@ def render_books_section(books, title="Livros Didáticos"):
         url = str(b.get("url", "")).strip()
         if file_path and Path(file_path).exists():
             data = Path(file_path).read_bytes()
-            c1.download_button("Baixar livro", data=data, file_name=Path(file_path).name)
+            c1.download_button("Baixar livro", data=data, file_name=Path(file_path).name, key=f"{key_prefix}_download_{idx}")
         elif url:
-            c1.link_button("Baixar livro", url)
+            c1.link_button("Baixar livro", url, key=f"{key_prefix}_link_{idx}")
         else:
-            c1.button("Baixar livro", disabled=True)
+            c1.button("Baixar livro", disabled=True, key=f"{key_prefix}_disabled_{idx}")
 
         if url:
-            c2.link_button("Abrir livro", url)
+            c2.link_button("Abrir livro", url, key=f"{key_prefix}_open_{idx}")
         else:
-            c2.button("Abrir livro", disabled=True)
+            c2.button("Abrir livro", disabled=True, key=f"{key_prefix}_open_disabled_{idx}")
         if not url and not (file_path and Path(file_path).exists()):
             st.caption("Link/arquivo do livro não configurado.")
         st.markdown("---")
@@ -718,8 +718,8 @@ def get_tutor_wiz_prompt():
     )
 
 def run_active_chatbot():
-    st.markdown('<div class="main-header">Chatbot IA Active</div>', unsafe_allow_html=True)
-    st.caption("Assistente separado do DietHealth e dedicado ao contexto da Active Educacional.")
+    st.markdown('<div class="main-header">Professor Wiz</div>', unsafe_allow_html=True)
+    st.caption("Assistente dedicado ao contexto da Active Educacional e Mister Wiz.")
 
     api_key = get_groq_api_key()
     if not api_key:
@@ -924,6 +924,9 @@ if not st.session_state.get("logged_in", False):
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button { background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 12px; font-weight: 700; padding: 0.75rem 1rem; width: 100%; font-size: 1rem; margin-top: 10px; transition: 0.3s ease; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] button:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4); }
+        div[data-testid="stPassword"] button { background: transparent !important; border: none !important; width: 28px !important; height: 28px !important; min-height: 28px !important; padding: 0 !important; box-shadow: none !important; color: #94a3b8 !important; }
+        div[data-testid="stPassword"] button:hover { background: rgba(148, 163, 184, 0.12) !important; }
+        div[data-testid="stPassword"] button svg { width: 14px !important; height: 14px !important; }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -1191,7 +1194,7 @@ elif st.session_state["role"] == "Aluno":
             livro_aluno = turma_obj.get("livro", "")
         livros = st.session_state.get("books", [])
         livros_filtrados = [b for b in livros if b.get("nivel") == livro_aluno] if livro_aluno else []
-        render_books_section(livros_filtrados, "Livro do Aluno")
+        render_books_section(livros_filtrados, "Livro do Aluno", key_prefix="aluno_livro")
         if not st.session_state["materials"]: st.info("Sem materiais.")
         for m in reversed(st.session_state["materials"]):
             with st.container():
@@ -1225,11 +1228,11 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "📚 Livros", "🤖 Assistente IA"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "📚 Livros", "🤖 Professor Wiz"], "menu_prof")
         st.markdown("---")
         if st.button("Sair"): logout_user()
 
-    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "📚 Livros": "Livros", "🤖 Assistente IA": "Assistente IA"}
+    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "📚 Livros": "Livros", "🤖 Professor Wiz": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -1316,7 +1319,7 @@ elif st.session_state["role"] == "Professor":
             render_agenda(sort_agenda(agenda), "Nenhuma aula agendada para suas turmas.")
     elif menu_prof == "Livros":
         st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
-        render_books_section(st.session_state.get("books", []))
+        render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
 
@@ -1357,7 +1360,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Livros",
                 "Aprovação Notas",
                 "Conteúdos",
-                "Chatbot IA",
+                "Professor Wiz",
             ],
             "menu_coord",
         )
@@ -1378,7 +1381,7 @@ elif st.session_state["role"] == "Coordenador":
         "Livros": "Livros",
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
-        "Chatbot IA": "Chatbot IA",
+        "Professor Wiz": "Chatbot IA",
     }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
 
@@ -1862,7 +1865,7 @@ elif st.session_state["role"] == "Coordenador":
         st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Biblioteca", "Configurar Links"])
         with tab1:
-            render_books_section(st.session_state.get("books", []), "Todos os Livros")
+            render_books_section(st.session_state.get("books", []), "Todos os Livros", key_prefix="coord_livros")
         with tab2:
             with st.form("edit_books"):
                 updated = []
