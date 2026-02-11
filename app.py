@@ -130,10 +130,52 @@ def ensure_admin_user(users):
     return users
 
 def find_user(username):
+    target = str(username or "").strip().lower()
+    if not target:
+        return None
     for user in st.session_state["users"]:
-        if user.get("usuario", "").lower() == username.lower():
+        stored = str(user.get("usuario", "")).strip().lower()
+        if stored == target:
             return user
     return None
+
+def sync_users_from_profiles(users):
+    if not isinstance(users, list):
+        users = []
+    by_login = {}
+    for u in users:
+        login = str(u.get("usuario", "")).strip().lower()
+        if login:
+            by_login[login] = u
+
+    def ensure_login(login, senha, perfil, pessoa):
+        login_norm = str(login or "").strip()
+        senha_norm = str(senha or "").strip()
+        if not login_norm or not senha_norm:
+            return
+        key = login_norm.lower()
+        existing = by_login.get(key)
+        if existing:
+            if not existing.get("perfil"):
+                existing["perfil"] = perfil
+            if not existing.get("pessoa") and pessoa:
+                existing["pessoa"] = pessoa
+            return
+        new_user = {
+            "usuario": login_norm,
+            "senha": senha_norm,
+            "perfil": perfil,
+            "pessoa": pessoa or login_norm,
+        }
+        users.append(new_user)
+        by_login[key] = new_user
+
+    for aluno in st.session_state.get("students", []):
+        ensure_login(aluno.get("usuario"), aluno.get("senha"), "Aluno", aluno.get("nome"))
+    for prof in st.session_state.get("teachers", []):
+        ensure_login(prof.get("usuario"), prof.get("senha"), "Professor", prof.get("nome"))
+
+    return users
 
 def create_or_update_login(username, password, role, person_name):
     # Verifica se usuario ja existe
@@ -406,6 +448,17 @@ def get_active_system_prompt(mode, include_context=True):
         base.append(get_active_context_text())
     return "\n".join(base)
 
+def get_tutor_wiz_prompt():
+    return "\n".join(
+        [
+            "Voce e o Tutor IA Wiz da escola de ingles Mister Wiz.",
+            "Ajude o aluno a estudar apenas ingles (gramatica, vocabulario, pronuncia, conversacao e exercicios).",
+            "Se o aluno perguntar algo fora do contexto de ingles, recuse e oriente a perguntar sobre ingles.",
+            "Responda em portugues do Brasil, com exemplos em ingles quando fizer sentido.",
+            "Se nao souber, diga que nao ha dados suficientes.",
+        ]
+    )
+
 def run_active_chatbot():
     st.markdown('<div class="main-header">Chatbot IA Active</div>', unsafe_allow_html=True)
     st.caption("Assistente separado do DietHealth e dedicado ao contexto da Active Educacional.")
@@ -414,11 +467,6 @@ def run_active_chatbot():
     if not api_key:
         st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o chatbot.")
         return
-
-    chat_key = get_active_chat_history_key()
-    if chat_key not in st.session_state["active_chat_histories"]:
-        st.session_state["active_chat_histories"][chat_key] = []
-    chat_history = st.session_state["active_chat_histories"][chat_key]
 
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
@@ -430,18 +478,36 @@ def run_active_chatbot():
         if st.session_state.get("active_chat_mode") not in mode_options:
             st.session_state["active_chat_mode"] = mode_options[0]
         mode = st.selectbox("Modo", mode_options, key="active_chat_mode")
-    with c2:
-        include_context = st.checkbox("Usar contexto do sistema", value=True)
-    with c3:
-        st.session_state["active_chat_temp"] = st.slider("Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05)
+    include_context = True
+    if not (role == "Aluno" and mode == "Secretaria"):
+        with c2:
+            include_context = st.checkbox("Usar contexto do sistema", value=True)
+        with c3:
+            st.session_state["active_chat_temp"] = st.slider("Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05)
 
-    qa1, qa2, qa3 = st.columns(3)
-    if qa1.button("Sugestao de resposta para responsavel"):
-        chat_history.append({"role": "user", "content": "Crie uma resposta curta e profissional para um responsavel sobre desempenho do aluno."})
-    if qa2.button("Plano de aula de 50 minutos"):
-        chat_history.append({"role": "user", "content": "Monte um plano de aula de ingles de 50 minutos para nivel iniciante, com objetivos e atividade final."})
-    if qa3.button("Follow-up comercial no WhatsApp"):
-        chat_history.append({"role": "user", "content": "Escreva uma mensagem de follow-up comercial para lead de curso de ingles, tom consultivo e direto."})
+    if role == "Aluno" and mode == "Secretaria":
+        st.info("Para abrir um chamado na secretaria, clique abaixo.")
+        st.link_button("Abrir chamado no WhatsApp", f"https://wa.me/{WHATSAPP_NUMBER}", type="primary")
+        return
+
+    chat_key = get_active_chat_history_key()
+    if role == "Aluno" and mode == "Pedagogico":
+        chat_key = f"tutor:{chat_key}"
+    if chat_key not in st.session_state["active_chat_histories"]:
+        st.session_state["active_chat_histories"][chat_key] = []
+    chat_history = st.session_state["active_chat_histories"][chat_key]
+
+    if role == "Aluno" and mode == "Pedagogico":
+        st.caption("Tutor IA Wiz: ajuda apenas com ingles.")
+        st.radio("Opcao", ["Estudar"], index=0, key="tutor_option")
+    else:
+        qa1, qa2, qa3 = st.columns(3)
+        if qa1.button("Sugestao de resposta para responsavel"):
+            chat_history.append({"role": "user", "content": "Crie uma resposta curta e profissional para um responsavel sobre desempenho do aluno."})
+        if qa2.button("Plano de aula de 50 minutos"):
+            chat_history.append({"role": "user", "content": "Monte um plano de aula de ingles de 50 minutos para nivel iniciante, com objetivos e atividade final."})
+        if qa3.button("Follow-up comercial no WhatsApp"):
+            chat_history.append({"role": "user", "content": "Escreva uma mensagem de follow-up comercial para lead de curso de ingles, tom consultivo e direto."})
 
     for msg in chat_history:
         with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
@@ -461,10 +527,16 @@ def run_active_chatbot():
         save_list(CHATBOT_LOG_FILE, st.session_state["chatbot_log"])
         st.success("Conversa salva no historico do Active.")
 
-    user_text = st.chat_input("Digite sua mensagem para o chatbot")
+    prompt_label = "Digite sua mensagem para o chatbot"
+    if role == "Aluno" and mode == "Pedagogico":
+        prompt_label = "Pergunte algo de ingles"
+    user_text = st.chat_input(prompt_label)
     if user_text:
         chat_history.append({"role": "user", "content": user_text})
-        system_prompt = get_active_system_prompt(mode, include_context)
+        if role == "Aluno" and mode == "Pedagogico":
+            system_prompt = get_tutor_wiz_prompt()
+        else:
+            system_prompt = get_active_system_prompt(mode, include_context)
         request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-16:]
 
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
@@ -640,10 +712,10 @@ st.session_state["fee_templates"] = load_list(FEE_TEMPLATES_FILE)
 st.session_state["email_log"] = load_list(EMAIL_LOG_FILE)
 st.session_state["chatbot_log"] = load_list(CHATBOT_LOG_FILE)
 
-if not st.session_state["users"]:
-    st.session_state["users"] = load_users()
-    st.session_state["users"] = ensure_admin_user(st.session_state["users"])
-    save_users(st.session_state["users"])
+st.session_state["users"] = load_users()
+st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
+save_users(st.session_state["users"])
 
 # ==============================================================================
 # TELA DE LOGIN
@@ -669,134 +741,42 @@ if not st.session_state.get("logged_in", False):
         )
 
     with col_right:
-        btn_col1, btn_col2, btn_spacer = st.columns([1, 1, 2], gap="small")
-        with btn_col1:
-            if st.button(
-                "Login",
-                type="primary" if st.session_state["auth_mode"] == "Login" else "secondary",
-                use_container_width=True,
-            ):
-                st.session_state["auth_mode"] = "Login"
-        with btn_col2:
-            if st.button(
-                "Cadastro",
-                type="primary" if st.session_state["auth_mode"] == "Cadastro" else "secondary",
-                use_container_width=True,
-            ):
-                st.session_state["auth_mode"] = "Cadastro"
-
         st.markdown("<br>", unsafe_allow_html=True)
         with st.container():
             st.markdown('<div class="auth-card-anchor"></div>', unsafe_allow_html=True)
-            if st.session_state["auth_mode"] == "Login":
-                with st.form("login_form"):
-                    st.markdown(
-                        """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
-                        unsafe_allow_html=True,
-                    )
-                    role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
-                    unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
-                    unidade_sel = st.selectbox("Unidade", unidades)
-                    if unidade_sel == "Outra":
-                        unidade = st.text_input("Digite o nome da unidade")
-                    else:
-                        unidade = unidade_sel
-                    usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
-                    senha = st.text_input("Senha", type="password", placeholder="Sua senha")
-                    entrar = st.form_submit_button("Entrar no Sistema")
+            with st.form("login_form"):
+                st.markdown(
+                    """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
+                    unsafe_allow_html=True,
+                )
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
+                unidade_sel = st.selectbox("Unidade", unidades)
+                if unidade_sel == "Outra":
+                    unidade = st.text_input("Digite o nome da unidade")
+                else:
+                    unidade = unidade_sel
+                usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
+                senha = st.text_input("Senha", type="password", placeholder="Sua senha")
+                entrar = st.form_submit_button("Entrar no Sistema")
 
-                if entrar:
-                    user = find_user(usuario.strip())
-                    if not usuario.strip() or not senha.strip():
-                        st.error("⚠️ Informe usuário e senha.")
-                    elif not user or user.get("senha") != senha.strip():
-                        st.error("⚠️ Usuário ou senha inválidos.")
-                    else:
-                        perfil_conta = user.get("perfil", "")
-                        if role not in allowed_portals(perfil_conta):
-                            st.error(f"⚠️ Este usuário não tem permissão de {role}.")
-                        else:
-                            display_name = user.get("pessoa") or usuario.strip()
-                            login_user(role, display_name, str(unidade).strip(), perfil_conta)
+        if entrar:
+            st.session_state["users"] = load_users()
+            st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+            st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
+            save_users(st.session_state["users"])
+            user = find_user(usuario.strip())
+            if not usuario.strip() or not senha.strip():
+                st.error("⚠️ Informe usuário e senha.")
+            elif not user or str(user.get("senha", "")).strip() != senha.strip():
+                st.error("⚠️ Usuário ou senha inválidos.")
             else:
-                with st.form("signup_form"):
-                    st.markdown(
-                        """<div class="login-header">Cadastro</div><div class="login-sub">Crie seu acesso à plataforma</div>""",
-                        unsafe_allow_html=True,
-                    )
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        nome = st.text_input("Nome completo *")
-                    with c2:
-                        cpf = st.text_input("CPF")
-
-                    c3, c4 = st.columns(2)
-                    with c3:
-                        email = st.text_input("E-mail *")
-                    with c4:
-                        celular = st.text_input("Celular/WhatsApp")
-
-                    c5, c6 = st.columns(2)
-                    with c5:
-                        data_nascimento = st.date_input(
-                            "Data de Nascimento",
-                            value=None,
-                            format="DD/MM/YYYY",
-                            help="Formato: DD/MM/AAAA",
-                            min_value=datetime.date(1900, 1, 1),
-                            max_value=datetime.date(2036, 12, 31),
-                        )
-                    with c6:
-                        rg = st.text_input("RG")
-
-                    turma = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                    usuario = st.text_input("Usuário *")
-                    senha = st.text_input("Senha *", type="password")
-                    cadastrar = st.form_submit_button("Criar Cadastro")
-
-                if cadastrar:
-                    if not nome or not email or not usuario or not senha:
-                        st.error("⚠️ Preencha Nome, E-mail, Usuário e Senha.")
-                    elif find_user(usuario.strip()):
-                        st.error("⚠️ Este usuário já existe.")
-                    else:
-                        idade = ""
-                        if data_nascimento:
-                            try:
-                                hoje = datetime.date.today()
-                                idade = hoje.year - data_nascimento.year - (
-                                    (hoje.month, hoje.day)
-                                    < (data_nascimento.month, data_nascimento.day)
-                                )
-                            except Exception:
-                                idade = ""
-                        novo_aluno = {
-                            "nome": nome.strip(),
-                            "email": email.strip(),
-                            "celular": celular.strip(),
-                            "cpf": cpf.strip(),
-                            "rg": rg.strip(),
-                            "turma": turma,
-                            "usuario": usuario.strip(),
-                            "senha": senha.strip(),
-                            "data_nascimento": data_nascimento.strftime("%d/%m/%Y")
-                            if data_nascimento
-                            else "",
-                            "idade": idade,
-                            "responsavel": {},
-                        }
-                        st.session_state["students"].append(novo_aluno)
-                        save_list(STUDENTS_FILE, st.session_state["students"])
-                        st.session_state["users"].append(
-                            {
-                                "usuario": usuario.strip(),
-                                "senha": senha.strip(),
-                                "perfil": "Aluno",
-                                "pessoa": nome.strip(),
-                            }
-                        )
-                        save_users(st.session_state["users"])
-                        st.success("Cadastro criado com sucesso! Faça o login.")
+                perfil_conta = user.get("perfil", "")
+                if role not in allowed_portals(perfil_conta):
+                    st.error(f"⚠️ Este usuário não tem permissão de {role}.")
+                else:
+                    display_name = user.get("pessoa") or usuario.strip()
+                    login_user(role, display_name, str(unidade).strip(), perfil_conta)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
@@ -930,10 +910,7 @@ elif st.session_state["role"] == "Aluno":
                 st.markdown("---")
 
     elif menu_aluno == "Financeiro":
-        st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
-        meus = [r for r in st.session_state["receivables"] if r.get("aluno") == st.session_state["user_name"]]
-        if meus: st.dataframe(pd.DataFrame(meus), use_container_width=True)
-        else: st.info("Financeiro em dia.")
+        run_student_finance_assistant()
     elif menu_aluno == "Tutor IA":
         run_active_chatbot()
 
@@ -974,7 +951,8 @@ elif st.session_state["role"] == "Professor":
         if not minhas_turmas:
             st.info("Nenhuma turma atribuída a você.")
         else:
-            turma_selecionada = st.selectbox("Selecione a Turma", [t["nome"] for t in minhas_turmas])
+            turma_options = [t["nome"] for t in minhas_turmas]
+            turma_selecionada = st.selectbox("Selecione a Turma", turma_options)
             turma_obj = next(t for t in minhas_turmas if t["nome"] == turma_selecionada)
 
             st.markdown("### Detalhes da Turma")
@@ -982,6 +960,43 @@ elif st.session_state["role"] == "Professor":
             st.write(f"**Professor:** {turma_obj.get('professor', '')}")
             st.write(f"**Dias e Horários:** {turma_obj.get('dias', 'Horário a definir')}")
             st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
+
+            st.markdown("### Aula ao Vivo")
+            with st.form("prof_update_link"):
+                link_live = st.text_input("Link da aula ao vivo", value=turma_obj.get("link_zoom", ""))
+                if st.form_submit_button("Salvar link"):
+                    turma_obj["link_zoom"] = link_live.strip()
+                    save_list(CLASSES_FILE, st.session_state["classes"])
+                    st.success("Link atualizado!")
+                    st.rerun()
+
+            st.markdown("### Material de Estudo")
+            with st.form("prof_add_material"):
+                titulo = st.text_input("Título do material")
+                descricao = st.text_area("Descrição")
+                link_mat = st.text_input("Link do material (Drive, PDF, etc.)")
+                turma_material = st.selectbox(
+                    "Turma",
+                    turma_options,
+                    index=turma_options.index(turma_selecionada) if turma_selecionada in turma_options else 0,
+                )
+                if st.form_submit_button("Publicar material"):
+                    if not titulo.strip():
+                        st.error("Informe o título do material.")
+                    else:
+                        st.session_state["materials"].append(
+                            {
+                                "titulo": titulo.strip(),
+                                "descricao": descricao.strip(),
+                                "link": link_mat.strip(),
+                                "turma": turma_material,
+                                "autor": st.session_state.get("user_name", ""),
+                                "data": datetime.date.today().strftime("%d/%m/%Y"),
+                            }
+                        )
+                        save_list(MATERIALS_FILE, st.session_state["materials"])
+                        st.success("Material publicado!")
+                        st.rerun()
 
             alunos_turma = [
                 s for s in st.session_state["students"]
