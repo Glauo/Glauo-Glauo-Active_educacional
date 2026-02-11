@@ -498,7 +498,7 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
-def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
+def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, data_lancamento=None, valor_parcela=None, parcela=None, numero_pedido="", item_codigo=""):
     codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
     st.session_state["receivables"].append({
         "descricao": descricao.strip() or "Mensalidade",
@@ -507,6 +507,11 @@ def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria):
         "cobranca": cobranca,
         "codigo": codigo,
         "valor": valor.strip(),
+        "data": data_lancamento.strftime("%d/%m/%Y") if data_lancamento else datetime.date.today().strftime("%d/%m/%Y"),
+        "valor_parcela": str(valor_parcela).strip() if valor_parcela is not None else valor.strip(),
+        "parcela": parcela or "",
+        "numero_pedido": str(numero_pedido).strip(),
+        "item_codigo": str(item_codigo).strip(),
         "vencimento": vencimento.strftime("%d/%m/%Y"),
         "status": "Aberto",
     })
@@ -1428,22 +1433,28 @@ elif st.session_state["role"] == "Coordenador":
                     descricao = st.text_area("Descrição")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
                     hora_aula = st.time_input("Horário", value=datetime.time(19, 0))
+                    repetir = st.checkbox("Repetir semanalmente", value=False)
+                    semanas = st.number_input("Número de semanas", min_value=1, max_value=52, value=4)
                     professor = st.text_input("Professor", value=prof_default)
                     link_aula = st.text_input("Link da aula", value=link_default)
                     if st.form_submit_button("Agendar aula"):
-                        st.session_state["agenda"].append(
-                            {
-                                "turma": turma_sel,
-                                "professor": professor.strip(),
-                                "titulo": titulo.strip() or "Aula ao vivo",
-                                "descricao": descricao.strip(),
-                                "data": data_aula.strftime("%d/%m/%Y") if data_aula else "",
-                                "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
-                                "link": link_aula.strip(),
-                            }
-                        )
+                        total = int(semanas) if repetir else 1
+                        for i in range(total):
+                            data_item = data_aula + datetime.timedelta(weeks=i) if data_aula else None
+                            st.session_state["agenda"].append(
+                                {
+                                    "turma": turma_sel,
+                                    "professor": professor.strip(),
+                                    "titulo": titulo.strip() or "Aula ao vivo",
+                                    "descricao": descricao.strip(),
+                                    "data": data_item.strftime("%d/%m/%Y") if data_item else "",
+                                    "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
+                                    "link": link_aula.strip(),
+                                    "recorrencia": "Semanal" if repetir else "",
+                                }
+                            )
                         save_list(AGENDA_FILE, st.session_state["agenda"])
-                        st.success("Aula agendada!")
+                        st.success("Aula(s) agendada(s)!")
                         st.rerun()
 
     elif menu_coord == "Links":
@@ -1505,6 +1516,21 @@ elif st.session_state["role"] == "Coordenador":
                     "empresa",
                     "ativo",
                 ]
+                if "parcelas" in df_itens.columns:
+                    col_order = [
+                        "codigo",
+                        "descricao",
+                        "finalidade",
+                        "unidade",
+                        "saldo",
+                        "custo",
+                        "preco",
+                        "parcelas",
+                        "minimo",
+                        "maximo",
+                        "empresa",
+                        "ativo",
+                    ]
                 df_itens = df_itens[[c for c in col_order if c in df_itens.columns]]
                 st.dataframe(df_itens, use_container_width=True)
             else:
@@ -1523,7 +1549,8 @@ elif st.session_state["role"] == "Coordenador":
                         unidade = st.selectbox("Unidade", ["Unidade", "Kit", "Pacote", "Caixa"], index=["Unidade", "Kit", "Pacote", "Caixa"].index(item_obj.get("unidade", "Unidade")) if item_obj.get("unidade") in ["Unidade", "Kit", "Pacote", "Caixa"] else 0)
                         saldo = st.number_input("Saldo", min_value=0, step=1, value=parse_int(item_obj.get("saldo", 0)))
                         custo = st.text_input("Custo", value=str(item_obj.get("custo", "")))
-                        preco = st.text_input("Preço", value=str(item_obj.get("preco", "")))
+                        preco = st.text_input("Preço (parcela)", value=str(item_obj.get("preco", "")))
+                        parcelas = st.number_input("Parcelas (qtd)", min_value=1, step=1, value=parse_int(item_obj.get("parcelas", 1)))
                         minimo = st.number_input("Mínimo", min_value=0, step=1, value=parse_int(item_obj.get("minimo", 0)))
                         maximo = st.number_input("Máximo", min_value=0, step=1, value=parse_int(item_obj.get("maximo", 0)))
                         empresa = st.text_input("Empresa", value=item_obj.get("empresa", ""))
@@ -1548,6 +1575,7 @@ elif st.session_state["role"] == "Coordenador":
                                             "saldo": int(saldo),
                                             "custo": parse_money(custo),
                                             "preco": parse_money(preco),
+                                            "parcelas": int(parcelas),
                                             "minimo": int(minimo),
                                             "maximo": int(maximo),
                                             "empresa": empresa.strip(),
@@ -1572,7 +1600,8 @@ elif st.session_state["role"] == "Coordenador":
                 unidade = st.selectbox("Unidade", ["Unidade", "Kit", "Pacote", "Caixa"])
                 saldo = st.number_input("Saldo inicial", min_value=0, step=1, value=0)
                 custo = st.text_input("Custo")
-                preco = st.text_input("Preço")
+                preco = st.text_input("Preço (parcela)")
+                parcelas = st.number_input("Parcelas (qtd)", min_value=1, step=1, value=1)
                 minimo = st.number_input("Mínimo", min_value=0, step=1, value=0)
                 maximo = st.number_input("Máximo", min_value=0, step=1, value=0)
                 empresa = st.text_input("Empresa")
@@ -1593,6 +1622,7 @@ elif st.session_state["role"] == "Coordenador":
                                 "saldo": int(saldo),
                                 "custo": parse_money(custo),
                                 "preco": parse_money(preco),
+                                "parcelas": int(parcelas),
                                 "minimo": int(minimo),
                                 "maximo": int(maximo),
                                 "empresa": empresa.strip(),
@@ -1992,6 +2022,14 @@ elif st.session_state["role"] == "Coordenador":
                 st.divider()
                 st.markdown("### Turma")
                 turma = st.selectbox("Vincular à Turma", ["Sem Turma"] + class_names())
+                modulos = [
+                    "Presencial em Turma",
+                    "Turma online",
+                    "Aulas Vip",
+                    "Intensivo vip online",
+                    "Kids e teens completo",
+                ]
+                modulo_sel = st.selectbox("Módulo do curso", modulos)
                 livro_opts = ["Automático (Turma)"] + book_levels()
                 livro_sel = st.selectbox("Livro/Nível", livro_opts)
 
@@ -2042,6 +2080,7 @@ elif st.session_state["role"] == "Coordenador":
                             "rua": rua,
                             "numero": numero,
                             "turma": turma,
+                            "modulo": modulo_sel,
                             "livro": livro_final,
                             "usuario": login_aluno.strip(),
                             "senha": senha_aluno.strip(),
@@ -2105,6 +2144,21 @@ elif st.session_state["role"] == "Coordenador":
                         with c4: new_idade = st.number_input("Idade", min_value=1, max_value=120, step=1, value=current_idade)
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
+                        modulos = [
+                            "Presencial em Turma",
+                            "Turma online",
+                            "Aulas Vip",
+                            "Intensivo vip online",
+                            "Kids e teens completo",
+                        ]
+                        modulo_atual = aluno_obj.get("modulo", modulos[0] if modulos else "")
+                        if modulo_atual not in modulos and modulo_atual:
+                            modulos.append(modulo_atual)
+                        new_modulo = st.selectbox(
+                            "Módulo do curso",
+                            modulos,
+                            index=modulos.index(modulo_atual) if modulo_atual in modulos else 0,
+                        )
                         livro_atual = aluno_obj.get("livro", "")
                         livro_opts = ["Automático (Turma)"] + book_levels()
                         if livro_atual and livro_atual not in livro_opts:
@@ -2155,6 +2209,7 @@ elif st.session_state["role"] == "Coordenador":
                                     aluno_obj["email"] = new_email
                                     aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
                                     aluno_obj["idade"] = new_idade
+                                    aluno_obj["modulo"] = new_modulo
                                     aluno_obj["livro"] = livro_final
                                     aluno_obj["usuario"] = login
                                     aluno_obj["senha"] = senha
@@ -2379,11 +2434,16 @@ elif st.session_state["role"] == "Coordenador":
                 with c2: val = st.text_input("Valor (Ex: 150,00)")
                 with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matrícula"])
                 aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
-                c4, c5 = st.columns(2)
-                with c4: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c5: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"])
-                gerar_12 = st.checkbox("Gerar 12 mensalidades", value=True if categoria == "Mensalidade" else False)
-                qtd_meses = st.number_input("Quantidade de meses", min_value=1, max_value=24, value=12)
+                c4, c5, c6 = st.columns(3)
+                with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c5: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"])
+                c7, c8, c9 = st.columns(3)
+                with c7: valor_parcela = st.text_input("Valor da parcela", value=val)
+                with c8: parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1)
+                with c9: numero_pedido = st.text_input("Número do pedido")
+                gerar_12 = st.checkbox("Gerar mensalidades em série", value=True if categoria == "Mensalidade" else False)
+                qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=12)
                 if st.form_submit_button("Lançar"):
                     if not aluno or not val:
                         st.error("Informe aluno e valor.")
@@ -2391,12 +2451,141 @@ elif st.session_state["role"] == "Coordenador":
                         if categoria == "Mensalidade" and gerar_12:
                             for i in range(int(qtd_meses)):
                                 data_venc = add_months(venc, i)
-                                add_receivable(aluno, desc, val, data_venc, cobranca, categoria)
+                                parcela = f"{parcela_inicial + i}/{qtd_meses}"
+                                add_receivable(
+                                    aluno,
+                                    desc,
+                                    val,
+                                    data_venc,
+                                    cobranca,
+                                    categoria,
+                                    data_lancamento=data_lanc,
+                                    valor_parcela=valor_parcela or val,
+                                    parcela=parcela,
+                                    numero_pedido=numero_pedido,
+                                )
                             st.success("Mensalidades lançadas!")
                         else:
-                            add_receivable(aluno, desc, val, venc, cobranca, categoria)
+                            parcela = f"{parcela_inicial}/{qtd_meses}" if categoria == "Mensalidade" else str(parcela_inicial)
+                            add_receivable(
+                                aluno,
+                                desc,
+                                val,
+                                venc,
+                                cobranca,
+                                categoria,
+                                data_lancamento=data_lanc,
+                                valor_parcela=valor_parcela or val,
+                                parcela=parcela,
+                                numero_pedido=numero_pedido,
+                            )
                             st.success("Lançado!")
-            st.dataframe(pd.DataFrame(st.session_state["receivables"]), use_container_width=True)
+            st.markdown("### Recebimentos")
+            recebimentos = st.session_state["receivables"]
+            c_f1, c_f2, c_f3, c_f4 = st.columns(4)
+            with c_f1:
+                status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
+                status_sel = st.selectbox("Status", status_opts)
+            with c_f2:
+                cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
+                cat_sel = st.selectbox("Categoria", cat_opts)
+            with c_f3:
+                aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
+                aluno_sel = st.selectbox("Aluno", aluno_opts)
+            with c_f4:
+                item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
+                item_sel = st.selectbox("Item (Código)", item_opts)
+            busca = st.text_input("Buscar por descrição")
+
+            recebimentos_filtrados = recebimentos
+            if status_sel != "Todos":
+                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("status") == status_sel]
+            if cat_sel != "Todos":
+                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria") == cat_sel]
+            if aluno_sel != "Todos":
+                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("aluno") == aluno_sel]
+            if item_sel != "Todos":
+                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("item_codigo") == item_sel]
+            if busca:
+                recebimentos_filtrados = [
+                    r for r in recebimentos_filtrados
+                    if busca.lower() in str(r.get("descricao", "")).lower()
+                ]
+
+            if recebimentos_filtrados:
+                df_rec = pd.DataFrame(recebimentos_filtrados)
+                col_order = [
+                    "data",
+                    "aluno",
+                    "descricao",
+                    "categoria",
+                    "item_codigo",
+                    "valor_parcela",
+                    "parcela",
+                    "numero_pedido",
+                    "vencimento",
+                    "status",
+                    "cobranca",
+                ]
+                df_rec = df_rec[[c for c in col_order if c in df_rec.columns]]
+                st.dataframe(df_rec, use_container_width=True)
+            else:
+                st.info("Nenhum recebimento encontrado.")
+
+            st.markdown("### Lançar Material do Estoque")
+            itens_estoque = st.session_state["inventory"]
+            if not itens_estoque:
+                st.info("Nenhum item de estoque cadastrado.")
+            else:
+                with st.form("add_rec_stock", clear_on_submit=True):
+                    opcoes = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in itens_estoque]
+                    item_sel = st.selectbox("Item", opcoes)
+                    modo_destino = st.selectbox("Destino", ["Aluno", "Turma"])
+                    aluno_mat = ""
+                    turma_mat = ""
+                    if modo_destino == "Aluno":
+                        aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                    else:
+                        turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                    data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
+                    cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"], key="cobranca_mat")
+                    numero_pedido = st.text_input("Número do pedido", key="pedido_mat")
+                    if st.form_submit_button("Lançar material"):
+                        item_obj = itens_estoque[opcoes.index(item_sel)]
+                        preco = parse_money(item_obj.get("preco", 0))
+                        parcelas = parse_int(item_obj.get("parcelas", 1)) or 1
+                        descricao = item_obj.get("descricao", "Material")
+                        item_codigo = item_obj.get("codigo", "")
+                        alunos_destino = []
+                        if modo_destino == "Aluno":
+                            alunos_destino = [aluno_mat] if aluno_mat else []
+                        else:
+                            alunos_destino = [
+                                s.get("nome") for s in st.session_state["students"]
+                                if s.get("turma") == turma_mat
+                            ]
+                        count = 0
+                        for aluno_dest in alunos_destino:
+                            for i in range(parcelas):
+                                data_venc = add_months(venc, i)
+                                parcela = f"{1 + i}/{parcelas}"
+                                add_receivable(
+                                    aluno_dest,
+                                    descricao,
+                                    str(preco),
+                                    data_venc,
+                                    cobranca,
+                                    "Material",
+                                    data_lancamento=data_lanc,
+                                    valor_parcela=str(preco),
+                                    parcela=parcela,
+                                    numero_pedido=numero_pedido,
+                                    item_codigo=item_codigo,
+                                )
+                                count += 1
+                        st.success(f"Material lançado no financeiro! ({count} parcelas)")
+                        st.rerun()
 
             st.markdown("### Baixa de Recebimentos")
             abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
