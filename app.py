@@ -948,7 +948,14 @@ else:
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); }
         section[data-testid="stSidebar"] .stButton { width: 100%; }
-        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 46px !important; min-height: 46px !important; max-height: 46px !important; display: flex; align-items: center; box-sizing: border-box; }
+        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; }
+        section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 56px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 56px !important; }
+        .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
+        .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
+        .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
         section[data-testid="stSidebar"] .stButton > button:hover { color: #0f172a; background: linear-gradient(90deg, #f6f9ff 0%, #edf4ff 100%); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28); }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
@@ -1134,7 +1141,9 @@ elif st.session_state["role"] == "Aluno":
         st.markdown("---")
         menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "🗓️ Agenda", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo", "🤖 Tutor IA"], "menu_aluno")
         st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_aluno_map = {"🏠 Painel": "Dashboard", "🗓️ Agenda": "Agenda", "📚 Minhas Aulas": "Minhas Aulas", "📊 Boletim e Frequência": "Boletim & Frequencia", "💬 Mensagens": "Mensagens", "🎥 Aulas Gravadas": "Aulas Gravadas", "💰 Financeiro": "Financeiro", "📂 Materiais de Estudo": "Materiais de Estudo", "🤖 Tutor IA": "Tutor IA"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
@@ -1242,7 +1251,9 @@ elif st.session_state["role"] == "Professor":
         st.markdown("---")
         menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "📚 Livros", "🤖 Professor Wiz"], "menu_prof")
         st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "📚 Livros": "Livros", "🤖 Professor Wiz": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
@@ -1377,7 +1388,9 @@ elif st.session_state["role"] == "Coordenador":
             "menu_coord",
         )
         st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_coord_map = {
         "Dashboard": "Dashboard",
