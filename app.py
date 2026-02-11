@@ -933,11 +933,12 @@ else:
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
-        .stApp { background: #f8fafc; font-family: 'Manrope', sans-serif; }
+        .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
+        section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
-        section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); }
-        section[data-testid="stSidebar"] .stButton > button { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; text-align: left; font-weight: 700; padding: 0.7rem 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); }
-        section[data-testid="stSidebar"] .stButton > button:hover { color: #0f172a; background: linear-gradient(90deg, #f8fafc 0%, #eef2ff 100%); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
+        section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); }
+        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0.7rem 1rem; width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); }
+        section[data-testid="stSidebar"] .stButton > button:hover { color: #0f172a; background: linear-gradient(90deg, #f6f9ff 0%, #edf4ff 100%); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28); }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
