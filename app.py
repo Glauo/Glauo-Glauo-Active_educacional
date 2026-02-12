@@ -402,6 +402,15 @@ def book_levels():
     levels = [b.get("nivel", "") for b in books if b.get("nivel")]
     return levels or ["Livro 1", "Livro 2", "Livro 3", "Livro 4"]
 
+def class_module_options():
+    return [
+        "Presencial em turma",
+        "Online em turma",
+        "Vip",
+        "Intensivo vip online",
+        "Kids completo presencial",
+    ]
+
 def is_overdue(item):
     if item.get("status") == "Pago": return False
     venc = parse_date(item.get("vencimento", ""))
@@ -2603,84 +2612,144 @@ elif st.session_state["role"] == "Coordenador":
                     st.dataframe(df_alunos, use_container_width=True)
 
         with tab2:
-            with st.form("add_student_full", clear_on_submit=True):
+            modulos = [
+                "Presencial em Turma",
+                "Turma online",
+                "Aulas Vip",
+                "Intensivo vip online",
+                "Kids e teens completo",
+            ]
+            student_form_defaults = {
+                "add_student_nome": "",
+                "add_student_data_nascimento": datetime.date.today(),
+                "add_student_celular": "",
+                "add_student_email": "",
+                "add_student_rg": "",
+                "add_student_cpf": "",
+                "add_student_natal": "",
+                "add_student_pais": "Brasil",
+                "add_student_cep": "",
+                "add_student_cidade": "",
+                "add_student_bairro": "",
+                "add_student_rua": "",
+                "add_student_numero": "",
+                "add_student_turma": "Sem Turma",
+                "add_student_modulo": modulos[0],
+                "add_student_livro": "Automatico (Turma)",
+                "add_student_login": "",
+                "add_student_senha": "",
+                "add_student_resp_nome": "",
+                "add_student_resp_cpf": "",
+                "add_student_resp_cel": "",
+                "add_student_resp_email": "",
+            }
+            for key, default_value in student_form_defaults.items():
+                st.session_state.setdefault(key, default_value)
+
+            turma_opts = ["Sem Turma"] + class_names()
+            if st.session_state.get("add_student_turma") not in turma_opts:
+                st.session_state["add_student_turma"] = "Sem Turma"
+
+            if st.session_state.get("add_student_modulo") not in modulos:
+                st.session_state["add_student_modulo"] = modulos[0]
+
+            livro_opts = ["Automatico (Turma)"] + book_levels()
+            if st.session_state.get("add_student_livro") not in livro_opts:
+                st.session_state["add_student_livro"] = "Automatico (Turma)"
+
+            feedback = st.session_state.pop("add_student_feedback", None)
+            if feedback:
+                st.success(feedback.get("success", "Cadastro realizado com sucesso!"))
+                info_msg = feedback.get("info")
+                if info_msg:
+                    st.info(info_msg)
+
+            with st.form("add_student_full", clear_on_submit=False):
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: nome = st.text_input("Nome Completo *")
+                with c1: nome = st.text_input("Nome Completo *", key="add_student_nome")
                 matricula_auto = _next_student_matricula(st.session_state["students"])
-                with c2: st.text_input("Nº da Matrícula", value=matricula_auto, disabled=True)
-                with c3: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
+                with c2: st.text_input("No. da Matricula", value=matricula_auto, disabled=True)
+                with c3:
+                    data_nascimento = st.date_input(
+                        "Data de Nascimento *",
+                        key="add_student_data_nascimento",
+                        format="DD/MM/YYYY",
+                        help="Formato: DD/MM/AAAA",
+                        min_value=datetime.date(1900, 1, 1),
+                        max_value=datetime.date(2036, 12, 31),
+                    )
                 idade_auto = _calc_age_from_date_obj(data_nascimento) or 1
                 with c4: st.number_input("Idade *", min_value=1, max_value=120, step=1, value=idade_auto, disabled=True)
 
                 c4, c5, c6 = st.columns(3)
-                with c4: celular = st.text_input("Celular/WhatsApp *")
-                with c5: email = st.text_input("E-mail do Aluno *")
-                with c6: rg = st.text_input("RG")
+                with c4: celular = st.text_input("Celular/WhatsApp *", key="add_student_celular")
+                with c5: email = st.text_input("E-mail do Aluno *", key="add_student_email")
+                with c6: rg = st.text_input("RG", key="add_student_rg")
 
                 c7, c8, c9 = st.columns(3)
-                with c7: cpf = st.text_input("CPF")
-                with c8: natal = st.text_input("Cidade Natal")
-                with c9: pais = st.text_input("País de Origem", value="Brasil")
+                with c7: cpf = st.text_input("CPF", key="add_student_cpf")
+                with c8: natal = st.text_input("Cidade Natal", key="add_student_natal")
+                with c9: pais = st.text_input("Pais de Origem", key="add_student_pais")
 
                 st.divider()
-                st.markdown("### Endereço")
+                st.markdown("### Endereco")
                 ce1, ce2, ce3 = st.columns(3)
-                with ce1: cep = st.text_input("CEP")
-                with ce2: cidade = st.text_input("Cidade")
-                with ce3: bairro = st.text_input("Bairro")
+                with ce1: cep = st.text_input("CEP", key="add_student_cep")
+                with ce2: cidade = st.text_input("Cidade", key="add_student_cidade")
+                with ce3: bairro = st.text_input("Bairro", key="add_student_bairro")
 
                 ce4, ce5 = st.columns([3, 1])
-                with ce4: rua = st.text_input("Rua")
-                with ce5: numero = st.text_input("Número")
+                with ce4: rua = st.text_input("Rua", key="add_student_rua")
+                with ce5: numero = st.text_input("Numero", key="add_student_numero")
 
                 st.divider()
                 st.markdown("### Turma")
-                turma = st.selectbox("Vincular à Turma", ["Sem Turma"] + class_names())
-                modulos = [
-                    "Presencial em Turma",
-                    "Turma online",
-                    "Aulas Vip",
-                    "Intensivo vip online",
-                    "Kids e teens completo",
-                ]
-                modulo_sel = st.selectbox("Módulo do curso", modulos)
-                livro_opts = ["Automático (Turma)"] + book_levels()
-                livro_sel = st.selectbox("Livro/Nível", livro_opts)
+                turma = st.selectbox("Vincular a Turma", turma_opts, key="add_student_turma")
+                modulo_sel = st.selectbox("Modulo do curso", modulos, key="add_student_modulo")
+                livro_sel = st.selectbox("Livro/Nivel", livro_opts, key="add_student_livro")
 
                 st.divider()
                 st.markdown("### Acesso do Aluno (opcional)")
                 ca1, ca2 = st.columns(2)
-                with ca1: login_aluno = st.text_input("Login do Aluno")
-                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password")
+                with ca1: login_aluno = st.text_input("Login do Aluno", key="add_student_login")
+                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password", key="add_student_senha")
 
                 st.divider()
-                st.markdown("### Responsável Legal / Financeiro")
-                st.caption("Obrigatório para menores de 18 anos.")
+                st.markdown("### Responsavel Legal / Financeiro")
+                st.caption("Obrigatorio para menores de 18 anos.")
 
                 cr1, cr2 = st.columns(2)
-                with cr1: resp_nome = st.text_input("Nome do Responsável")
-                with cr2: resp_cpf = st.text_input("CPF do Responsável")
+                with cr1: resp_nome = st.text_input("Nome do Responsavel", key="add_student_resp_nome")
+                with cr2: resp_cpf = st.text_input("CPF do Responsavel", key="add_student_resp_cpf")
 
                 cr3, cr4 = st.columns(2)
-                with cr3: resp_cel = st.text_input("Celular do Responsável")
-                with cr4: resp_email = st.text_input("E-mail do Responsável")
+                with cr3: resp_cel = st.text_input("Celular do Responsavel", key="add_student_resp_cel")
+                with cr4: resp_email = st.text_input("E-mail do Responsavel", key="add_student_resp_email")
 
                 if st.form_submit_button("Cadastrar Aluno"):
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
                     matricula_final = _next_student_matricula(st.session_state["students"])
+                    nome = nome.strip()
+                    email = email.strip()
+                    login_aluno = login_aluno.strip()
+                    senha_aluno = senha_aluno.strip()
+                    resp_nome = resp_nome.strip()
+                    resp_cpf = resp_cpf.strip()
+                    resp_email = resp_email.strip()
+
                     if idade_final < 18 and (not resp_nome or not resp_cpf):
-                        st.error("ERRO: Aluno menor de idade! É obrigatório preencher Nome e CPF do Responsável.")
+                        st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
                     elif not nome or not email:
-                        st.error("ERRO: Nome e E-mail são obrigatórios.")
+                        st.error("ERRO: Nome e E-mail sao obrigatorios.")
                     elif (login_aluno and not senha_aluno) or (senha_aluno and not login_aluno):
-                        st.error("ERRO: Para criar o login, informe usuário e senha.")
+                        st.error("ERRO: Para criar o login, informe usuario e senha.")
                     elif login_aluno and find_user(login_aluno):
-                        st.error("ERRO: Este login já existe.")
+                        st.error("ERRO: Este login ja existe.")
                     else:
                         turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
                         livro_turma = turma_obj.get("livro", "")
-                        livro_final = livro_turma if livro_sel == "Automático (Turma)" else livro_sel
+                        livro_final = livro_turma if livro_sel == "Automatico (Turma)" else livro_sel
                         novo_aluno = {
                             "nome": nome,
                             "matricula": matricula_final,
@@ -2700,8 +2769,8 @@ elif st.session_state["role"] == "Coordenador":
                             "turma": turma,
                             "modulo": modulo_sel,
                             "livro": livro_final,
-                            "usuario": login_aluno.strip(),
-                            "senha": senha_aluno.strip(),
+                            "usuario": login_aluno,
+                            "senha": senha_aluno,
                             "responsavel": {
                                 "nome": resp_nome,
                                 "cpf": resp_cpf,
@@ -2715,8 +2784,8 @@ elif st.session_state["role"] == "Coordenador":
                         if login_aluno and senha_aluno:
                             st.session_state["users"].append(
                                 {
-                                    "usuario": login_aluno.strip(),
-                                    "senha": senha_aluno.strip(),
+                                    "usuario": login_aluno,
+                                    "senha": senha_aluno,
                                     "perfil": "Aluno",
                                     "pessoa": nome,
                                 }
@@ -2724,10 +2793,13 @@ elif st.session_state["role"] == "Coordenador":
                             save_users(st.session_state["users"])
 
                         destinatario_email = resp_email if idade_final < 18 else email
-                        st.success("Cadastro realizado com sucesso!")
-                        st.info(
-                            f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos."
-                        )
+                        st.session_state["add_student_feedback"] = {
+                            "success": "Cadastro realizado com sucesso!",
+                            "info": f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos.",
+                        }
+                        for key, default_value in student_form_defaults.items():
+                            st.session_state[key] = default_value
+                        st.rerun()
 
         with tab3:
             if not st.session_state["students"]:
@@ -2977,13 +3049,22 @@ elif st.session_state["role"] == "Coordenador":
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome da Turma")
                 with c2: prof = st.selectbox("Professor", ["Sem Professor"] + teacher_names())
+                modulo_opts = class_module_options()
+                modulo = st.selectbox("Modulo da Turma", modulo_opts)
                 c3, c4 = st.columns(2)
                 with c3: dias = st.text_input("Dias e Horários")
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
                 livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
                     st.session_state["classes"].append(
-                        {"nome": nome, "professor": prof, "dias": dias, "link_zoom": link, "livro": livro}
+                        {
+                            "nome": nome,
+                            "professor": prof,
+                            "modulo": modulo,
+                            "dias": dias,
+                            "link_zoom": link,
+                            "livro": livro,
+                        }
                     )
                     save_list(CLASSES_FILE, st.session_state["classes"])
                     st.success("Turma salva!")
@@ -3005,6 +3086,12 @@ elif st.session_state["role"] == "Coordenador":
                     with st.form("edit_class"):
                         new_nome = st.text_input("Nome da Turma", value=turma_obj.get("nome", ""))
                         new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
+                        current_modulo = turma_obj.get("modulo", "")
+                        modulo_opts = class_module_options()
+                        if current_modulo and current_modulo not in modulo_opts:
+                            modulo_opts.append(current_modulo)
+                        modulo_index = modulo_opts.index(current_modulo) if current_modulo in modulo_opts else 0
+                        new_modulo = st.selectbox("Modulo da Turma", modulo_opts, index=modulo_index)
                         new_dias = st.text_input("Dias e Horários", value=turma_obj.get("dias", ""))
                         new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
                         livro_atual = turma_obj.get("livro", "")
@@ -3019,6 +3106,7 @@ elif st.session_state["role"] == "Coordenador":
                                 old_nome = turma_obj.get("nome", "")
                                 turma_obj["nome"] = new_nome
                                 turma_obj["professor"] = new_prof
+                                turma_obj["modulo"] = new_modulo
                                 turma_obj["dias"] = new_dias
                                 turma_obj["link_zoom"] = new_link
                                 turma_obj["livro"] = new_livro
