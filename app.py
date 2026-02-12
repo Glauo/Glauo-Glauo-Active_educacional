@@ -3,11 +3,14 @@ import datetime
 import io
 import json
 import os
+import smtplib
 import shutil
 import threading
 import uuid
 import calendar
+from email.message import EmailMessage
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -359,6 +362,41 @@ def parse_time(value):
     except Exception:
         return datetime.time(0, 0)
 
+def build_google_calendar_event_link(event):
+    data = parse_date(event.get("data", ""))
+    hora = parse_time(event.get("hora", ""))
+    if not data:
+        return ""
+    inicio = datetime.datetime.combine(data, hora)
+    fim = inicio + datetime.timedelta(minutes=60)
+    text = event.get("titulo", "Aula")
+    details_lines = []
+    turma = str(event.get("turma", "")).strip()
+    professor = str(event.get("professor", "")).strip()
+    descricao = str(event.get("descricao", "")).strip()
+    link = str(event.get("link", "")).strip()
+    if turma:
+        details_lines.append(f"Turma: {turma}")
+    if professor:
+        details_lines.append(f"Professor: {professor}")
+    if descricao:
+        details_lines.append(descricao)
+    if link:
+        details_lines.append(f"Link da aula: {link}")
+    details = "\n".join(details_lines).strip()
+    start_str = inicio.strftime("%Y%m%dT%H%M%S")
+    end_str = fim.strftime("%Y%m%dT%H%M%S")
+    params = [
+        "action=TEMPLATE",
+        f"text={quote(text)}",
+        f"dates={start_str}/{end_str}",
+    ]
+    if details:
+        params.append(f"details={quote(details)}")
+    if link:
+        params.append(f"location={quote(link)}")
+    return "https://calendar.google.com/calendar/render?" + "&".join(params)
+
 def book_levels():
     books = st.session_state.get("books", [])
     levels = [b.get("nivel", "") for b in books if b.get("nivel")]
@@ -383,14 +421,17 @@ def render_agenda(items, empty_message):
     if not items:
         st.info(empty_message)
         return
-    for a in items:
+    for idx, a in enumerate(items):
         st.markdown(f"**{a.get('titulo', 'Aula agendada')}**")
         st.caption(f"Turma: {a.get('turma', '')} | Professor: {a.get('professor', '')}")
         st.write(f"Data: {a.get('data', '')} | Horário: {a.get('hora', '')}")
         if a.get("descricao"):
             st.write(a.get("descricao"))
         if a.get("link"):
-            st.link_button("Entrar na aula", a.get("link"))
+            st.link_button("Entrar na aula", a.get("link"), key=f"agenda_live_{idx}_{a.get('data','')}_{a.get('hora','')}")
+        google_url = a.get("google_calendar_link") or build_google_calendar_event_link(a)
+        if google_url:
+            st.link_button("Adicionar no Google Agenda", google_url, key=f"agenda_google_{idx}_{a.get('data','')}_{a.get('hora','')}")
         st.markdown("---")
 
 def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
@@ -592,21 +633,84 @@ def allowed_portals(profile):
     if profile == "Admin": return ["Aluno", "Professor", "Coordenador"]
     return []
 
+def _send_email_smtp(to_email, subject, body):
+    host = os.getenv("ACTIVE_SMTP_HOST", "").strip()
+    if not host:
+        return False, "SMTP nao configurado"
+    port = int(os.getenv("ACTIVE_SMTP_PORT", "587"))
+    user = os.getenv("ACTIVE_SMTP_USER", "").strip()
+    password = os.getenv("ACTIVE_SMTP_PASS", "").strip()
+    use_tls = os.getenv("ACTIVE_SMTP_TLS", "1").strip() not in ("0", "false", "False")
+    sender = os.getenv("ACTIVE_EMAIL_FROM", user or "noreply@active.local").strip()
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = to_email
+        msg.set_content(body)
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            if use_tls:
+                smtp.starttls()
+            if user and password:
+                smtp.login(user, password)
+            smtp.send_message(msg)
+        return True, "enviado"
+    except Exception as exc:
+        return False, f"falha SMTP: {exc}"
+
+def _message_recipients_for_student(student):
+    recipients = set()
+    email_aluno = str(student.get("email", "")).strip().lower()
+    if email_aluno:
+        recipients.add(email_aluno)
+    responsavel = student.get("responsavel", {})
+    if not isinstance(responsavel, dict):
+        responsavel = {}
+    resp_email = str(responsavel.get("email", "")).strip().lower()
+    if resp_email:
+        recipients.add(resp_email)
+    return sorted(recipients)
+
 def email_students_by_turma(turma, assunto, corpo, origem):
-    # Simulacao de envio de email
+    delivered = 0
+    total = 0
     for student in st.session_state["students"]:
         if turma == "Todas" or student.get("turma") == turma:
-            email = student.get("email", "").strip()
-            if email:
+            for email in _message_recipients_for_student(student):
+                ok, status = _send_email_smtp(email, assunto, corpo)
+                total += 1
+                if ok:
+                    delivered += 1
                 st.session_state["email_log"].append({
                     "destinatario": student.get("nome", "Aluno"),
                     "email": email,
                     "assunto": assunto,
                     "mensagem": corpo,
                     "origem": origem,
+                    "status": status,
                     "data": datetime.date.today().strftime("%d/%m/%Y"),
                 })
     save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
+    return {"total": total, "enviados": delivered}
+
+def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mensagens"):
+    mensagem_obj = {
+        "titulo": (titulo or "Aviso").strip(),
+        "mensagem": (mensagem or "").strip(),
+        "data": datetime.date.today().strftime("%d/%m/%Y"),
+        "autor": autor.strip() if autor else "Sistema",
+        "turma": turma or "Todas",
+    }
+    st.session_state["messages"].append(mensagem_obj)
+    save_list(MESSAGES_FILE, st.session_state["messages"])
+    assunto = f"[Active] {mensagem_obj['titulo']}"
+    corpo = (
+        f"Mensagem publicada por {mensagem_obj['autor']}\n"
+        f"Turma: {mensagem_obj['turma']}\n"
+        f"Data: {mensagem_obj['data']}\n\n"
+        f"{mensagem_obj['mensagem']}"
+    )
+    return email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
@@ -1355,53 +1459,41 @@ if not st.session_state.get("logged_in", False):
             save_users(st.session_state["users"])
             user = find_user(usuario.strip())
             if not usuario.strip() or not senha.strip():
-                st.error("⚠️ Informe usuário e senha.")
+                st.error("Informe usuario e senha.")
             elif not user or str(user.get("senha", "")).strip() != senha.strip():
-                st.error("⚠️ Usuário ou senha inválidos.")
+                st.error("Usuario ou senha invalidos.")
             else:
                 perfil_conta = user.get("perfil", "")
                 if role not in allowed_portals(perfil_conta):
-                    st.error(f"⚠️ Este usuário não tem permissão de {role}.")
+                    st.error(f"Este usuario nao tem permissao de {role}.")
                 else:
                     display_name = user.get("pessoa") or usuario.strip()
                     login_user(role, display_name, str(unidade).strip(), perfil_conta)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
-    res_col1, res_col2, res_col3 = st.columns(3, gap="large")
-    with res_col1:
-        st.markdown(
-            """
+    feature_cards = [
+        ("Comunicacao Direta", "Mensagens rapidas para alunos e turmas."),
+        ("Professor Wiz IA", "Estudo assistido por IA com orientacao em tempo real."),
+        ("Aulas Gravadas", "Conteudo organizado e acessivel a qualquer hora."),
+        ("Sistema Automatizado", "Processos de agenda, financeiro e comunicacao integrados."),
+        ("Agenda + Google", "Aulas com link para incluir direto no Google Agenda."),
+        ("Financeiro", "Controle de matriculas, parcelas e recebimentos."),
+    ]
+    for i in range(0, len(feature_cards), 3):
+        cols = st.columns(3, gap="large")
+        for col, card in zip(cols, feature_cards[i:i+3]):
+            title, sub = card
+            with col:
+                st.markdown(
+                    f"""
 <div class="feature-card">
-  <div class="feature-icon">💬</div>
-  <div class="feature-text">Mensagens Diretas</div>
-  <div class="feature-sub">Comunicação rápida com alunos e turmas.</div>
+  <div class="feature-text">{title}</div>
+  <div class="feature-sub">{sub}</div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
-    with res_col2:
-        st.markdown(
-            """
-<div class="feature-card">
-  <div class="feature-icon">🎥</div>
-  <div class="feature-text">Aulas Gravadas</div>
-  <div class="feature-sub">Conteúdo organizado e acessível 24h.</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-    with res_col3:
-        st.markdown(
-            """
-<div class="feature-card">
-  <div class="feature-icon">💲</div>
-  <div class="feature-text">Financeiro Simples</div>
-  <div class="feature-sub">Controle de matrículas e pagamentos.</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+                    unsafe_allow_html=True,
+                )
     st.markdown(
         f"""
 <div class="feature-cta">
@@ -1433,13 +1525,13 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegação", ["🏠 Painel", "🗓️ Agenda", "📚 Minhas Aulas", "📊 Boletim e Frequência", "💬 Mensagens", "🎥 Aulas Gravadas", "💰 Financeiro", "📂 Materiais de Estudo", "🤖 Tutor IA"], "menu_aluno")
+        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Tutor IA"], "menu_aluno")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_aluno_map = {"🏠 Painel": "Dashboard", "🗓️ Agenda": "Agenda", "📚 Minhas Aulas": "Minhas Aulas", "📊 Boletim e Frequência": "Boletim & Frequencia", "💬 Mensagens": "Mensagens", "🎥 Aulas Gravadas": "Aulas Gravadas", "💰 Financeiro": "Financeiro", "📂 Materiais de Estudo": "Materiais de Estudo", "🤖 Tutor IA": "Tutor IA"}
+    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Tutor IA": "Tutor IA"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -1487,10 +1579,16 @@ elif st.session_state["role"] == "Aluno":
 
     elif menu_aluno == "Mensagens":
         st.markdown('<div class="main-header">Mensagens</div>', unsafe_allow_html=True)
-        if not st.session_state["messages"]: st.info("Sem mensagens.")
-        for msg in reversed(st.session_state["messages"]):
+        aluno_nome = st.session_state.get("user_name", "")
+        turma_aluno = next((s.get("turma") for s in st.session_state["students"] if s.get("nome") == aluno_nome), "")
+        mensagens_aluno = [
+            m for m in st.session_state["messages"]
+            if not m.get("turma") or m.get("turma") == "Todas" or m.get("turma") == turma_aluno
+        ]
+        if not mensagens_aluno: st.info("Sem mensagens.")
+        for msg in reversed(mensagens_aluno):
             with st.container():
-                st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg['titulo']}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg['data']} | {msg['autor']}</div><div>{msg['mensagem']}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
 
     elif menu_aluno == "Aulas Gravadas":
         st.markdown('<div class="main-header">Aulas Gravadas</div>', unsafe_allow_html=True)
@@ -1543,13 +1641,13 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestão", ["👥 Minhas Turmas", "🗓️ Agenda", "📚 Livros", "🤖 Professor Wiz"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestao", ["Minhas Turmas", "Agenda", "Mensagens", "Livros", "Professor Wiz"], "menu_prof")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_prof_map = {"👥 Minhas Turmas": "Minhas Turmas", "🗓️ Agenda": "Agenda", "📚 Livros": "Livros", "🤖 Professor Wiz": "Assistente IA"}
+    menu_prof_map = {"Minhas Turmas": "Minhas Turmas", "Agenda": "Agenda", "Mensagens": "Mensagens", "Livros": "Livros", "Professor Wiz": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -1634,6 +1732,48 @@ elif st.session_state["role"] == "Professor":
         else:
             agenda = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
             render_agenda(sort_agenda(agenda), "Nenhuma aula agendada para suas turmas.")
+    elif menu_prof == "Mensagens":
+        st.markdown('<div class="main-header">Mensagens da Turma</div>', unsafe_allow_html=True)
+        prof_nome = st.session_state["user_name"].strip().lower()
+        turmas_prof = [
+            c.get("nome") for c in st.session_state["classes"]
+            if str(c.get("professor", "")).strip().lower() == prof_nome
+        ]
+        if not turmas_prof:
+            st.info("Nenhuma turma atribuída a você.")
+        else:
+            with st.form("prof_publish_message", clear_on_submit=True):
+                turma_msg = st.selectbox("Turma", turmas_prof)
+                titulo_msg = st.text_input("Titulo da mensagem")
+                corpo_msg = st.text_area("Mensagem")
+                if st.form_submit_button("Publicar mensagem"):
+                    if not titulo_msg.strip() or not corpo_msg.strip():
+                        st.error("Preencha titulo e mensagem.")
+                    else:
+                        stats = post_message_and_notify(
+                            autor=st.session_state.get("user_name", "Professor"),
+                            titulo=titulo_msg,
+                            mensagem=corpo_msg,
+                            turma=turma_msg,
+                            origem="Mensagens Professor",
+                        )
+                        st.success(f"Mensagem publicada. E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.rerun()
+            st.markdown("### Historico")
+            historico = [
+                m for m in reversed(st.session_state["messages"])
+                if m.get("turma") in turmas_prof or not m.get("turma") or m.get("turma") == "Todas"
+            ]
+            if not historico:
+                st.info("Sem mensagens.")
+            for msg in historico:
+                st.markdown(
+                    f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
+<div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div>
+<div>{msg.get('mensagem','')}</div></div>""",
+                    unsafe_allow_html=True,
+                )
     elif menu_prof == "Livros":
         st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
@@ -1745,23 +1885,43 @@ elif st.session_state["role"] == "Coordenador":
                     semanas = st.number_input("Número de semanas", min_value=1, max_value=52, value=4)
                     professor = st.text_input("Professor", value=prof_default)
                     link_aula = st.text_input("Link da aula", value=link_default)
+                    enviar_email_convite = st.checkbox("Enviar email automatico para alunos da turma", value=True)
                     if st.form_submit_button("Agendar aula"):
                         total = int(semanas) if repetir else 1
+                        novos_itens = []
                         for i in range(total):
                             data_item = data_aula + datetime.timedelta(weeks=i) if data_aula else None
-                            st.session_state["agenda"].append(
-                                {
-                                    "turma": turma_sel,
-                                    "professor": professor.strip(),
-                                    "titulo": titulo.strip() or "Aula ao vivo",
-                                    "descricao": descricao.strip(),
-                                    "data": data_item.strftime("%d/%m/%Y") if data_item else "",
-                                    "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
-                                    "link": link_aula.strip(),
-                                    "recorrencia": "Semanal" if repetir else "",
-                                }
-                            )
+                            agenda_item = {
+                                "turma": turma_sel,
+                                "professor": professor.strip(),
+                                "titulo": titulo.strip() or "Aula ao vivo",
+                                "descricao": descricao.strip(),
+                                "data": data_item.strftime("%d/%m/%Y") if data_item else "",
+                                "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
+                                "link": link_aula.strip(),
+                                "recorrencia": "Semanal" if repetir else "",
+                            }
+                            agenda_item["google_calendar_link"] = build_google_calendar_event_link(agenda_item)
+                            st.session_state["agenda"].append(agenda_item)
+                            novos_itens.append(agenda_item)
                         save_list(AGENDA_FILE, st.session_state["agenda"])
+                        if enviar_email_convite and novos_itens:
+                            resumo = []
+                            for item in novos_itens:
+                                linha = f"- {item.get('data','')} {item.get('hora','')} | {item.get('titulo','Aula')}"
+                                gcal = item.get("google_calendar_link", "")
+                                if gcal:
+                                    linha += f"\n  Google Agenda: {gcal}"
+                                if item.get("link"):
+                                    linha += f"\n  Link da aula: {item.get('link')}"
+                                resumo.append(linha)
+                            assunto = f"[Active] Aula agendada - Turma {turma_sel}"
+                            corpo = (
+                                f"Novas aulas foram agendadas para a turma {turma_sel}.\n\n"
+                                + "\n".join(resumo)
+                            )
+                            stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
+                            st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
                         st.success("Aula(s) agendada(s)!")
                         st.rerun()
 
@@ -1807,7 +1967,7 @@ elif st.session_state["role"] == "Coordenador":
 
             itens_criticos = [i for i in itens if parse_int(i.get("saldo", 0)) < parse_int(i.get("minimo", 0))]
             if itens_criticos:
-                st.warning(f"⚠️ Itens abaixo do mínimo: {len(itens_criticos)}")
+                st.warning(f"Itens abaixo do minimo: {len(itens_criticos)}")
 
             if itens:
                 df_itens = pd.DataFrame(itens)
@@ -2700,7 +2860,7 @@ elif st.session_state["role"] == "Coordenador":
             with st.form("add_prof", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome")
-                with c2: area = st.text_input("Área")
+                with c2: area = st.text_input("Area")
 
                 c3, c4 = st.columns(2)
                 with c3: login_prof = st.text_input("Login do Professor")
@@ -2742,7 +2902,7 @@ elif st.session_state["role"] == "Coordenador":
                 if prof_obj:
                     with st.form("edit_prof"):
                         new_nome = st.text_input("Nome", value=prof_obj["nome"])
-                        new_area = st.text_input("Área", value=prof_obj.get("area", ""))
+                        new_area = st.text_input("Area", value=prof_obj.get("area", ""))
 
                         c3, c4 = st.columns(2)
                         with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
@@ -3148,7 +3308,7 @@ elif st.session_state["role"] == "Coordenador":
                                 st.success("Usuário atualizado!")
                                 st.rerun()
                         with c_del:
-                            if st.form_submit_button("EXCLUIR USUÁRIO", type="primary"):
+                            if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
                                 if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")
                                 else:
                                     st.session_state["users"].remove(user_obj)
@@ -3157,8 +3317,39 @@ elif st.session_state["role"] == "Coordenador":
                                     st.rerun()
 
     elif menu_coord == "Conteudos":
-        st.markdown('<div class="main-header">Conteúdos</div>', unsafe_allow_html=True)
-        st.write("Use esta área para gerenciar mensagens globais e materiais pedagógicos.")
+        st.markdown('<div class="main-header">Conteudos</div>', unsafe_allow_html=True)
+        tab_msg, tab_hist = st.tabs(["Publicar Mensagem", "Historico"])
+        with tab_msg:
+            turmas_msg = ["Todas"] + class_names()
+            with st.form("coord_publish_message", clear_on_submit=True):
+                turma_msg = st.selectbox("Turma de destino", turmas_msg)
+                titulo_msg = st.text_input("Titulo da mensagem")
+                corpo_msg = st.text_area("Mensagem")
+                if st.form_submit_button("Publicar e enviar email"):
+                    if not titulo_msg.strip() or not corpo_msg.strip():
+                        st.error("Preencha titulo e mensagem.")
+                    else:
+                        stats = post_message_and_notify(
+                            autor=st.session_state.get("user_name", "Coordenacao"),
+                            titulo=titulo_msg,
+                            mensagem=corpo_msg,
+                            turma=turma_msg,
+                            origem="Mensagens Coordenacao",
+                        )
+                        st.success(f"Mensagem publicada. E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.rerun()
+        with tab_hist:
+            if not st.session_state["messages"]:
+                st.info("Sem mensagens.")
+            else:
+                for msg in reversed(st.session_state["messages"]):
+                    st.markdown(
+                        f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
+<div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div>
+<div>{msg.get('mensagem','')}</div></div>""",
+                        unsafe_allow_html=True,
+                    )
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
 
