@@ -552,6 +552,195 @@ def sidebar_menu(title, options, key):
             st.rerun()
     return st.session_state[key]
 
+STUDENT_IMPORT_COLUMNS = [
+    "nome",
+    "turma",
+    "email",
+    "celular",
+    "data_nascimento",
+    "idade",
+    "rg",
+    "cpf",
+    "cidade",
+    "bairro",
+    "cidade_natal",
+    "pais",
+    "cep",
+    "rua",
+    "numero",
+    "modulo",
+    "livro",
+    "usuario",
+    "senha",
+    "responsavel_nome",
+    "responsavel_cpf",
+    "responsavel_celular",
+    "responsavel_email",
+]
+
+def _normalize_excel_column(value):
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace(".", "_")
+    )
+
+def _safe_str(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    return str(value).strip()
+
+def _safe_int(value):
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    try:
+        return int(float(value))
+    except Exception:
+        return None
+
+def _date_to_str(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, datetime.datetime):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, datetime.date):
+        return value.strftime("%d/%m/%Y")
+    try:
+        parsed = pd.to_datetime(value, dayfirst=True, errors="coerce")
+        if pd.isna(parsed):
+            return _safe_str(value)
+        return parsed.strftime("%d/%m/%Y")
+    except Exception:
+        return _safe_str(value)
+
+def _calc_age_from_date(date_str):
+    if not date_str:
+        return None
+    try:
+        dt = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+    except Exception:
+        return None
+    today = datetime.date.today()
+    age = today.year - dt.year - ((today.month, today.day) < (dt.month, dt.day))
+    return age if age >= 0 else None
+
+def _build_students_export_df(students):
+    df = pd.json_normalize(students) if students else pd.DataFrame()
+    if not df.empty:
+        df = df.rename(
+            columns={
+                "responsavel.nome": "responsavel_nome",
+                "responsavel.cpf": "responsavel_cpf",
+                "responsavel.celular": "responsavel_celular",
+                "responsavel.email": "responsavel_email",
+                "nascimento": "data_nascimento",
+            }
+        )
+    for col in STUDENT_IMPORT_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[STUDENT_IMPORT_COLUMNS]
+    return df
+
+def _normalize_import_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=STUDENT_IMPORT_COLUMNS)
+    aliases = {
+        "nome": "nome",
+        "aluno": "nome",
+        "turma": "turma",
+        "email": "email",
+        "e_mail": "email",
+        "celular": "celular",
+        "telefone": "celular",
+        "data_nascimento": "data_nascimento",
+        "nascimento": "data_nascimento",
+        "idade": "idade",
+        "rg": "rg",
+        "cpf": "cpf",
+        "cidade": "cidade",
+        "bairro": "bairro",
+        "cidade_natal": "cidade_natal",
+        "pais": "pais",
+        "cep": "cep",
+        "rua": "rua",
+        "numero": "numero",
+        "modulo": "modulo",
+        "livro": "livro",
+        "usuario": "usuario",
+        "login": "usuario",
+        "senha": "senha",
+        "responsavel_nome": "responsavel_nome",
+        "responsavel_cpf": "responsavel_cpf",
+        "responsavel_celular": "responsavel_celular",
+        "responsavel_email": "responsavel_email",
+        "responsavel_cel": "responsavel_celular",
+        "responsavel_telefone": "responsavel_celular",
+    }
+    rename_map = {}
+    for col in df.columns:
+        norm = _normalize_excel_column(col)
+        mapped = aliases.get(norm)
+        if mapped:
+            rename_map[col] = mapped
+    df = df.rename(columns=rename_map)
+    for col in STUDENT_IMPORT_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[STUDENT_IMPORT_COLUMNS]
+
+def _student_from_row(row):
+    nome = _safe_str(row.get("nome"))
+    email = _safe_str(row.get("email"))
+    if not nome or not email:
+        return None
+
+    turma = _safe_str(row.get("turma")) or "Sem Turma"
+    data_nascimento = _date_to_str(row.get("data_nascimento"))
+    idade = _safe_int(row.get("idade"))
+    if idade is None:
+        idade = _calc_age_from_date(data_nascimento) or ""
+
+    responsavel = {
+        "nome": _safe_str(row.get("responsavel_nome")),
+        "cpf": _safe_str(row.get("responsavel_cpf")),
+        "celular": _safe_str(row.get("responsavel_celular")),
+        "email": _safe_str(row.get("responsavel_email")),
+    }
+
+    return {
+        "nome": nome,
+        "turma": turma,
+        "email": email,
+        "celular": _safe_str(row.get("celular")),
+        "data_nascimento": data_nascimento,
+        "idade": idade,
+        "rg": _safe_str(row.get("rg")),
+        "cpf": _safe_str(row.get("cpf")),
+        "cidade": _safe_str(row.get("cidade")),
+        "bairro": _safe_str(row.get("bairro")),
+        "cidade_natal": _safe_str(row.get("cidade_natal")),
+        "pais": _safe_str(row.get("pais")),
+        "cep": _safe_str(row.get("cep")),
+        "rua": _safe_str(row.get("rua")),
+        "numero": _safe_str(row.get("numero")),
+        "modulo": _safe_str(row.get("modulo")),
+        "livro": _safe_str(row.get("livro")),
+        "usuario": _safe_str(row.get("usuario")),
+        "senha": _safe_str(row.get("senha")),
+        "responsavel": responsavel,
+    }
+
 def _normalize_turma(value):
     return str(value or "").strip()
 
@@ -1944,6 +2133,144 @@ elif st.session_state["role"] == "Coordenador":
         tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
+            st.markdown("### Importar / Exportar Excel")
+            with st.expander("Importar / Exportar Excel", expanded=False):
+                col_exp, col_imp = st.columns(2)
+                with col_exp:
+                    st.caption("Exporta todos os alunos ou apenas os filtrados.")
+                    export_scope = st.selectbox(
+                        "Exportar",
+                        ["Todos os alunos", "Apenas filtrados"],
+                        key="students_export_scope",
+                    )
+                    export_students = st.session_state["students"]
+                    if export_scope == "Apenas filtrados":
+                        export_students = st.session_state.get("students_filtered", export_students)
+                    df_export = _build_students_export_df(export_students)
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                        df_export.to_excel(writer, index=False, sheet_name="alunos")
+                    buffer.seek(0)
+                    st.download_button(
+                        "Exportar Excel",
+                        data=buffer,
+                        file_name="alunos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                    template_buffer = io.BytesIO()
+                    with pd.ExcelWriter(template_buffer, engine="openpyxl") as writer:
+                        pd.DataFrame(columns=STUDENT_IMPORT_COLUMNS).to_excel(
+                            writer, index=False, sheet_name="alunos"
+                        )
+                    template_buffer.seek(0)
+                    st.download_button(
+                        "Baixar modelo",
+                        data=template_buffer,
+                        file_name="modelo_alunos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                with col_imp:
+                    st.caption("Importa um Excel no padrÃ£o do modelo.")
+                    upload = st.file_uploader(
+                        "Arquivo Excel",
+                        type=["xlsx", "xls"],
+                        key="students_import_file",
+                    )
+                    atualizar = st.checkbox(
+                        "Atualizar alunos existentes (por e-mail ou nome)",
+                        value=True,
+                        key="students_import_update",
+                    )
+                    if upload:
+                        try:
+                            df_raw = pd.read_excel(upload)
+                        except Exception as exc:
+                            st.error(f"Erro ao ler o Excel: {exc}")
+                        else:
+                            df_import = _normalize_import_df(df_raw)
+                            st.dataframe(df_import.head(50), use_container_width=True)
+                            if st.button("Importar alunos", key="students_import_btn"):
+                                alunos = st.session_state["students"]
+                                index_by_email = {
+                                    str(s.get("email", "")).strip().lower(): i
+                                    for i, s in enumerate(alunos)
+                                    if str(s.get("email", "")).strip()
+                                }
+                                index_by_name = {
+                                    str(s.get("nome", "")).strip().lower(): i
+                                    for i, s in enumerate(alunos)
+                                    if str(s.get("nome", "")).strip()
+                                }
+                                added = 0
+                                updated = 0
+                                skipped = 0
+                                new_users = 0
+
+                                for _, row in df_import.iterrows():
+                                    student = _student_from_row(row)
+                                    if not student:
+                                        skipped += 1
+                                        continue
+                                    email_key = student.get("email", "").strip().lower()
+                                    name_key = student.get("nome", "").strip().lower()
+                                    idx = index_by_email.get(email_key) if email_key else None
+                                    if idx is None and name_key:
+                                        idx = index_by_name.get(name_key)
+
+                                    if idx is not None:
+                                        if atualizar:
+                                            existing = alunos[idx]
+                                            for key, value in student.items():
+                                                if key == "responsavel":
+                                                    if value:
+                                                        resp = existing.get("responsavel", {})
+                                                        for rkey, rvalue in value.items():
+                                                            if rvalue:
+                                                                resp[rkey] = rvalue
+                                                        existing["responsavel"] = resp
+                                                else:
+                                                    if value not in ("", None):
+                                                        existing[key] = value
+                                            updated += 1
+                                        else:
+                                            skipped += 1
+                                    else:
+                                        alunos.append(student)
+                                        idx_new = len(alunos) - 1
+                                        if email_key:
+                                            index_by_email[email_key] = idx_new
+                                        if name_key:
+                                            index_by_name[name_key] = idx_new
+                                        added += 1
+
+                                    login = student.get("usuario", "").strip()
+                                    senha = student.get("senha", "").strip()
+                                    if login and senha and not find_user(login):
+                                        st.session_state["users"].append(
+                                            {
+                                                "usuario": login,
+                                                "senha": senha,
+                                                "perfil": "Aluno",
+                                                "pessoa": student.get("nome", ""),
+                                            }
+                                        )
+                                        new_users += 1
+
+                                if added or updated:
+                                    save_list(STUDENTS_FILE, alunos)
+                                    if new_users:
+                                        save_users(st.session_state["users"])
+                                    st.success(
+                                        f"ImportaÃ§Ã£o concluÃ­da: {added} adicionados, {updated} atualizados, {skipped} ignorados."
+                                    )
+                                    st.rerun()
+                                else:
+                                    st.warning(
+                                        f"Nenhum aluno importado. Ignorados: {skipped}."
+                                    )
+                    else:
+                        st.info("Envie um arquivo Excel para importar alunos.")
+
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -1972,6 +2299,7 @@ elif st.session_state["role"] == "Coordenador":
                         if str(c.get("professor", "")).strip() == prof_filtro
                     }
                     alunos_filtrados = [s for s in alunos_filtrados if s.get("turma") in turmas_prof]
+                st.session_state["students_filtered"] = alunos_filtrados
 
                 if not alunos_filtrados:
                     st.info("Nenhum aluno encontrado com os filtros selecionados.")
