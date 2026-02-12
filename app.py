@@ -1133,12 +1133,12 @@ else:
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
         .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
-        :root { --sidebar-menu-btn-width: 260px; }
+        :root { --sidebar-menu-btn-width: 300px; }
         section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); }
-        section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width); max-width: 100%; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width); max-width: 100%; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
+        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 56px !important; }
