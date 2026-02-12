@@ -561,6 +561,7 @@ def sidebar_menu(title, options, key):
 
 STUDENT_IMPORT_COLUMNS = [
     "nome",
+    "matricula",
     "turma",
     "email",
     "celular",
@@ -665,6 +666,10 @@ def _normalize_import_df(df):
     aliases = {
         "nome": "nome",
         "aluno": "nome",
+        "matricula": "matricula",
+        "numero_matricula": "matricula",
+        "numero_da_matricula": "matricula",
+        "n_matricula": "matricula",
         "turma": "turma",
         "email": "email",
         "e_mail": "email",
@@ -727,6 +732,7 @@ def _student_from_row(row):
 
     return {
         "nome": nome,
+        "matricula": _safe_str(row.get("matricula")),
         "turma": turma,
         "email": email,
         "celular": _safe_str(row.get("celular")),
@@ -2320,6 +2326,7 @@ elif st.session_state["role"] == "Coordenador":
 
                     col_default = [
                         "nome",
+                        "matricula",
                         "turma",
                         "email",
                         "celular",
@@ -2346,10 +2353,11 @@ elif st.session_state["role"] == "Coordenador":
         with tab2:
             with st.form("add_student_full", clear_on_submit=True):
                 st.markdown("### Dados Pessoais")
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 with c1: nome = st.text_input("Nome Completo *")
-                with c2: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
-                with c3: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
+                with c2: matricula = st.text_input("Nº da Matrícula")
+                with c3: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
+                with c4: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
 
                 c4, c5, c6 = st.columns(3)
                 with c4: celular = st.text_input("Celular/WhatsApp *")
@@ -2419,6 +2427,7 @@ elif st.session_state["role"] == "Coordenador":
                         livro_final = livro_turma if livro_sel == "Automático (Turma)" else livro_sel
                         novo_aluno = {
                             "nome": nome,
+                            "matricula": matricula.strip(),
                             "idade": idade,
                             "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
                             "celular": celular,
@@ -2487,6 +2496,7 @@ elif st.session_state["role"] == "Coordenador":
                     with st.form("edit_student"):
                         st.subheader(f"Editando: {aluno_obj['nome']}")
                         new_nome = st.text_input("Nome", value=aluno_obj.get("nome", ""))
+                        new_matricula = st.text_input("Nº da Matrícula", value=aluno_obj.get("matricula", ""))
 
                         c1, c2 = st.columns(2)
                         with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
@@ -2557,6 +2567,7 @@ elif st.session_state["role"] == "Coordenador":
                                     livro_final = livro_turma if new_livro == "Automático (Turma)" else new_livro
 
                                     aluno_obj["nome"] = new_nome
+                                    aluno_obj["matricula"] = new_matricula.strip()
                                     aluno_obj["celular"] = new_cel
                                     aluno_obj["turma"] = new_turma
                                     aluno_obj["email"] = new_email
