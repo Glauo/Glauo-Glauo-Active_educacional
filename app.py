@@ -3,6 +3,8 @@ import datetime
 import io
 import json
 import os
+import shutil
+import threading
 import uuid
 import calendar
 from pathlib import Path
@@ -86,25 +88,31 @@ if "active_chat_temp" not in st.session_state:
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "2523"
-USERS_FILE = Path("users.json")
-MESSAGES_FILE = Path("messages.json")
-VIDEOS_FILE = Path("videos.json")
-MATERIALS_FILE = Path("materials.json")
-GRADES_FILE = Path("grades.json")
-STUDENTS_FILE = Path("students.json")
-TEACHERS_FILE = Path("teachers.json")
-CLASSES_FILE = Path("classes.json")
-RECEIVABLES_FILE = Path("receivables.json")
-PAYABLES_FILE = Path("payables.json")
-FEE_TEMPLATES_FILE = Path("fee_templates.json")
-EMAIL_LOG_FILE = Path("email_log.json")
-CHATBOT_LOG_FILE = Path("chatbot_active_log.json")
-AGENDA_FILE = Path("agenda.json")
-INVENTORY_FILE = Path("inventory.json")
-INVENTORY_MOVES_FILE = Path("inventory_moves.json")
-CERTIFICATES_FILE = Path("certificates.json")
-BOOKS_FILE = Path("books.json")
-MATERIAL_ORDERS_FILE = Path("material_orders.json")
+DATA_DIR = Path(os.getenv("ACTIVE_DATA_DIR", ".")).expanduser()
+BACKUP_DIR = DATA_DIR / "_data_backups"
+DATA_IO_LOCK = threading.Lock()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+USERS_FILE = DATA_DIR / "users.json"
+MESSAGES_FILE = DATA_DIR / "messages.json"
+VIDEOS_FILE = DATA_DIR / "videos.json"
+MATERIALS_FILE = DATA_DIR / "materials.json"
+GRADES_FILE = DATA_DIR / "grades.json"
+STUDENTS_FILE = DATA_DIR / "students.json"
+TEACHERS_FILE = DATA_DIR / "teachers.json"
+CLASSES_FILE = DATA_DIR / "classes.json"
+RECEIVABLES_FILE = DATA_DIR / "receivables.json"
+PAYABLES_FILE = DATA_DIR / "payables.json"
+FEE_TEMPLATES_FILE = DATA_DIR / "fee_templates.json"
+EMAIL_LOG_FILE = DATA_DIR / "email_log.json"
+CHATBOT_LOG_FILE = DATA_DIR / "chatbot_active_log.json"
+AGENDA_FILE = DATA_DIR / "agenda.json"
+INVENTORY_FILE = DATA_DIR / "inventory.json"
+INVENTORY_MOVES_FILE = DATA_DIR / "inventory_moves.json"
+CERTIFICATES_FILE = DATA_DIR / "certificates.json"
+BOOKS_FILE = DATA_DIR / "books.json"
+MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
 WHATSAPP_NUMBER = "5516996043314" 
 
 # --- FUNCOES DE UTILIDADE ---
@@ -144,29 +152,81 @@ def get_mister_wiz_logo_path():
             return path
     return None
 
-def load_users():
-    if USERS_FILE.exists():
+def _atomic_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(payload, encoding="utf-8")
+    tmp_path.replace(path)
+
+def _backup_path(path):
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    return BACKUP_DIR / f"{path.stem}_{stamp}{path.suffix}.bak"
+
+def _rotate_backups(path, keep=30):
+    backups = sorted(
+        BACKUP_DIR.glob(f"{path.stem}_*{path.suffix}.bak"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in backups[keep:]:
         try:
-            data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
+            old.unlink(missing_ok=True)
         except Exception:
+            pass
+
+def _load_latest_backup_list(path):
+    backups = sorted(
+        BACKUP_DIR.glob(f"{path.stem}_*{path.suffix}.bak"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for backup in backups:
+        try:
+            data = json.loads(backup.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data
+        except Exception:
+            continue
+    return None
+
+def _load_json_list(path):
+    with DATA_IO_LOCK:
+        if not path.exists():
+            _atomic_write_json(path, [])
             return []
-    return []
-
-def save_users(users):
-    USERS_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
-
-def load_list(path):
-    if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
         except Exception:
+            restored = _load_latest_backup_list(path)
+            if restored is not None:
+                _atomic_write_json(path, restored)
+                return restored
             return []
-    return []
+
+def _save_json_list(path, data):
+    safe_data = data if isinstance(data, list) else []
+    with DATA_IO_LOCK:
+        if path.exists():
+            try:
+                shutil.copy2(path, _backup_path(path))
+                _rotate_backups(path)
+            except Exception:
+                pass
+        _atomic_write_json(path, safe_data)
+
+def load_users():
+    return _load_json_list(USERS_FILE)
+
+def save_users(users):
+    _save_json_list(USERS_FILE, users)
+
+def load_list(path):
+    return _load_json_list(path)
 
 def save_list(path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _save_json_list(path, data)
 
 def ensure_admin_user(users):
     if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
