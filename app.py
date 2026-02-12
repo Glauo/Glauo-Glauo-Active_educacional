@@ -702,6 +702,34 @@ def _calc_age_from_date(date_str):
     age = today.year - dt.year - ((today.month, today.day) < (dt.month, dt.day))
     return age if age >= 0 else None
 
+def _calc_age_from_date_obj(date_value):
+    if not isinstance(date_value, datetime.date):
+        return None
+    today = datetime.date.today()
+    age = today.year - date_value.year - ((today.month, today.day) < (date_value.month, date_value.day))
+    return age if age >= 0 else None
+
+def _next_student_matricula(students):
+    used = set()
+    max_num = 0
+    for student in students or []:
+        raw = str(student.get("matricula", "")).strip()
+        if not raw:
+            continue
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if not digits:
+            continue
+        num = int(digits)
+        used.add(str(num))
+        if num > max_num:
+            max_num = num
+    candidate = max_num + 1 if max_num > 0 else len(students or []) + 1
+    if candidate < 1:
+        candidate = 1
+    while str(candidate) in used:
+        candidate += 1
+    return str(candidate)
+
 def _build_students_export_df(students):
     df = pd.json_normalize(students) if students else pd.DataFrame()
     if not df.empty:
@@ -2307,10 +2335,14 @@ elif st.session_state["role"] == "Coordenador":
                                                 else:
                                                     if value not in ("", None):
                                                         existing[key] = value
+                                            if not str(existing.get("matricula", "")).strip():
+                                                existing["matricula"] = _next_student_matricula(alunos)
                                             updated += 1
                                         else:
                                             skipped += 1
                                     else:
+                                        if not str(student.get("matricula", "")).strip():
+                                            student["matricula"] = _next_student_matricula(alunos)
                                         alunos.append(student)
                                         idx_new = len(alunos) - 1
                                         if email_key:
@@ -2415,9 +2447,11 @@ elif st.session_state["role"] == "Coordenador":
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: nome = st.text_input("Nome Completo *")
-                with c2: matricula = st.text_input("Nº da Matrícula")
+                matricula_auto = _next_student_matricula(st.session_state["students"])
+                with c2: st.text_input("Nº da Matrícula", value=matricula_auto, disabled=True)
                 with c3: data_nascimento = st.date_input("Data de Nascimento *", format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
-                with c4: idade = st.number_input("Idade *", min_value=1, max_value=120, step=1)
+                idade_auto = _calc_age_from_date_obj(data_nascimento) or 1
+                with c4: st.number_input("Idade *", min_value=1, max_value=120, step=1, value=idade_auto, disabled=True)
 
                 c4, c5, c6 = st.columns(3)
                 with c4: celular = st.text_input("Celular/WhatsApp *")
@@ -2473,7 +2507,9 @@ elif st.session_state["role"] == "Coordenador":
                 with cr4: resp_email = st.text_input("E-mail do Responsável")
 
                 if st.form_submit_button("Cadastrar Aluno"):
-                    if idade < 18 and (not resp_nome or not resp_cpf):
+                    idade_final = _calc_age_from_date_obj(data_nascimento) or 1
+                    matricula_final = _next_student_matricula(st.session_state["students"])
+                    if idade_final < 18 and (not resp_nome or not resp_cpf):
                         st.error("ERRO: Aluno menor de idade! É obrigatório preencher Nome e CPF do Responsável.")
                     elif not nome or not email:
                         st.error("ERRO: Nome e E-mail são obrigatórios.")
@@ -2487,8 +2523,8 @@ elif st.session_state["role"] == "Coordenador":
                         livro_final = livro_turma if livro_sel == "Automático (Turma)" else livro_sel
                         novo_aluno = {
                             "nome": nome,
-                            "matricula": matricula.strip(),
-                            "idade": idade,
+                            "matricula": matricula_final,
+                            "idade": idade_final,
                             "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
                             "celular": celular,
                             "email": email,
@@ -2527,7 +2563,7 @@ elif st.session_state["role"] == "Coordenador":
                             )
                             save_users(st.session_state["users"])
 
-                        destinatario_email = resp_email if idade < 18 else email
+                        destinatario_email = resp_email if idade_final < 18 else email
                         st.success("Cadastro realizado com sucesso!")
                         st.info(
                             f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos."
@@ -2556,7 +2592,8 @@ elif st.session_state["role"] == "Coordenador":
                     with st.form("edit_student"):
                         st.subheader(f"Editando: {aluno_obj['nome']}")
                         new_nome = st.text_input("Nome", value=aluno_obj.get("nome", ""))
-                        new_matricula = st.text_input("Nº da Matrícula", value=aluno_obj.get("matricula", ""))
+                        matricula_atual = aluno_obj.get("matricula", "") or _next_student_matricula(st.session_state["students"])
+                        st.text_input("Nº da Matrícula", value=matricula_atual, disabled=True)
 
                         c1, c2 = st.columns(2)
                         with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
@@ -2564,7 +2601,8 @@ elif st.session_state["role"] == "Coordenador":
 
                         c3, c4 = st.columns(2)
                         with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
-                        with c4: new_idade = st.number_input("Idade", min_value=1, max_value=120, step=1, value=current_idade)
+                        idade_edit_auto = _calc_age_from_date_obj(new_dn) or current_idade
+                        with c4: st.number_input("Idade", min_value=1, max_value=120, step=1, value=idade_edit_auto, disabled=True)
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
                         modulos = [
@@ -2627,12 +2665,12 @@ elif st.session_state["role"] == "Coordenador":
                                     livro_final = livro_turma if new_livro == "Automático (Turma)" else new_livro
 
                                     aluno_obj["nome"] = new_nome
-                                    aluno_obj["matricula"] = new_matricula.strip()
+                                    aluno_obj["matricula"] = matricula_atual
                                     aluno_obj["celular"] = new_cel
                                     aluno_obj["turma"] = new_turma
                                     aluno_obj["email"] = new_email
                                     aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
-                                    aluno_obj["idade"] = new_idade
+                                    aluno_obj["idade"] = _calc_age_from_date_obj(new_dn) or current_idade
                                     aluno_obj["modulo"] = new_modulo
                                     aluno_obj["livro"] = livro_final
                                     aluno_obj["usuario"] = login
