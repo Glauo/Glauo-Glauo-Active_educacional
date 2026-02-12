@@ -123,6 +123,13 @@ def get_logo_path():
             return path
     return None
 
+def render_sidebar_logo(logo_path):
+    if not logo_path:
+        return
+    col_left, col_logo, col_right = st.columns([1, 5, 1])
+    with col_logo:
+        st.image(str(logo_path), width=190)
+
 def get_mister_wiz_logo_path():
     candidates = [
         Path("logo_mister_wiz.png"),
@@ -1316,7 +1323,7 @@ if not st.session_state.get("logged_in", False):
 elif st.session_state["role"] == "Aluno":
     with st.sidebar:
         logo_path = get_logo_path()
-        if logo_path: st.image(str(logo_path), width=120)
+        render_sidebar_logo(logo_path)
         st.markdown(f"### Olá, {st.session_state['user_name']}")
         if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
         st.markdown(
@@ -1428,7 +1435,7 @@ elif st.session_state["role"] == "Aluno":
 elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
-        if logo_path: st.image(str(logo_path), width=120)
+        render_sidebar_logo(logo_path)
         st.markdown(f"### {st.session_state['user_name']}")
         st.markdown(
             f"""
@@ -1546,7 +1553,7 @@ elif st.session_state["role"] == "Professor":
 elif st.session_state["role"] == "Coordenador":
     with st.sidebar:
         logo_path = get_logo_path()
-        if logo_path: st.image(str(logo_path), width=120)
+        render_sidebar_logo(logo_path)
         st.markdown(f"### {st.session_state['user_name']}")
         st.markdown(
             f"""
