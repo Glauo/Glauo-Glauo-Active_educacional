@@ -66,6 +66,10 @@ if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
 if "email_log" not in st.session_state:
     st.session_state["email_log"] = []
+if "challenges" not in st.session_state:
+    st.session_state["challenges"] = []
+if "challenge_completions" not in st.session_state:
+    st.session_state["challenge_completions"] = []
 if "chatbot_log" not in st.session_state:
     st.session_state["chatbot_log"] = []
 if "agenda" not in st.session_state:
@@ -124,6 +128,8 @@ INVENTORY_MOVES_FILE = DATA_DIR / "inventory_moves.json"
 CERTIFICATES_FILE = DATA_DIR / "certificates.json"
 BOOKS_FILE = DATA_DIR / "books.json"
 MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
+CHALLENGES_FILE = DATA_DIR / "challenges.json"
+CHALLENGE_COMPLETIONS_FILE = DATA_DIR / "challenge_completions.json"
 WHATSAPP_NUMBER = "5516996043314" 
 
 def _get_config_value(name, default=""):
@@ -520,6 +526,127 @@ def class_module_options():
         "Intensivo vip online",
         "Kids completo presencial",
     ]
+
+def current_week_key(date_obj=None):
+    d = date_obj or datetime.date.today()
+    iso = d.isocalendar()
+    return f"{iso.year}-W{int(iso.week):02d}"
+
+def _norm_book_level(level):
+    level = str(level or "").strip()
+    if not level:
+        return ""
+    # Accept "Livro 1".."Livro 4" (and minor variations).
+    for i in range(1, 5):
+        if str(i) in level:
+            return f"Livro {i}"
+    if level.lower().startswith("livro"):
+        return level
+    return level
+
+def student_book_level(student_obj):
+    if not isinstance(student_obj, dict):
+        return ""
+    livro = str(student_obj.get("livro", "")).strip()
+    if livro:
+        return _norm_book_level(livro)
+    turma_nome = str(student_obj.get("turma", "")).strip()
+    turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
+    return _norm_book_level(turma_obj.get("livro", ""))
+
+def _ensure_challenge_id(ch):
+    if not isinstance(ch, dict):
+        return False
+    if ch.get("id"):
+        return False
+    ch["id"] = uuid.uuid4().hex
+    return True
+
+def _ensure_challenge_store_ids():
+    changed = False
+    for ch in st.session_state.get("challenges", []):
+        changed = _ensure_challenge_id(ch) or changed
+    if changed:
+        save_list(CHALLENGES_FILE, st.session_state["challenges"])
+
+def get_weekly_challenge(level, week_key):
+    level = _norm_book_level(level)
+    week_key = str(week_key or "").strip()
+    for ch in st.session_state.get("challenges", []):
+        if _norm_book_level(ch.get("nivel", "")) == level and str(ch.get("semana", "")).strip() == week_key:
+            return ch
+    return None
+
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None):
+    level = _norm_book_level(level)
+    week_key = str(week_key or "").strip()
+    titulo = str(titulo or "").strip()
+    descricao = str(descricao or "").strip()
+    pontos = int(pontos or 0)
+    autor = str(autor or "").strip()
+    due_str = due_date.strftime("%d/%m/%Y") if isinstance(due_date, datetime.date) else str(due_date or "").strip()
+    existing = get_weekly_challenge(level, week_key)
+    if existing:
+        existing["nivel"] = level
+        existing["semana"] = week_key
+        existing["titulo"] = titulo
+        existing["descricao"] = descricao
+        existing["pontos"] = pontos
+        existing["autor"] = autor
+        existing["due_date"] = due_str
+        existing["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    else:
+        ch = {
+            "id": uuid.uuid4().hex,
+            "nivel": level,
+            "semana": week_key,
+            "titulo": titulo,
+            "descricao": descricao,
+            "pontos": pontos,
+            "autor": autor,
+            "due_date": due_str,
+            "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "updated_at": "",
+        }
+        st.session_state["challenges"].append(ch)
+    save_list(CHALLENGES_FILE, st.session_state["challenges"])
+
+def has_completed_challenge(challenge_id, aluno_nome):
+    cid = str(challenge_id or "").strip()
+    aluno_nome = str(aluno_nome or "").strip()
+    for c in st.session_state.get("challenge_completions", []):
+        if str(c.get("challenge_id", "")).strip() == cid and str(c.get("aluno", "")).strip() == aluno_nome:
+            return True
+    return False
+
+def complete_challenge(challenge_obj, aluno_nome):
+    if not isinstance(challenge_obj, dict):
+        return False, "Desafio invalido."
+    cid = str(challenge_obj.get("id", "")).strip()
+    if not cid:
+        return False, "Desafio sem ID."
+    aluno_nome = str(aluno_nome or "").strip()
+    if not aluno_nome:
+        return False, "Aluno invalido."
+    if has_completed_challenge(cid, aluno_nome):
+        return False, "Desafio ja concluido."
+    pontos = int(challenge_obj.get("pontos") or 0)
+    rec = {
+        "id": uuid.uuid4().hex,
+        "challenge_id": cid,
+        "aluno": aluno_nome,
+        "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
+        "semana": str(challenge_obj.get("semana", "")).strip(),
+        "pontos": pontos,
+        "done_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+    }
+    st.session_state["challenge_completions"].append(rec)
+    save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state["challenge_completions"])
+    return True, "Concluido."
+
+def student_points(aluno_nome):
+    aluno_nome = str(aluno_nome or "").strip()
+    return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
 
 def material_payment_options():
     return [
@@ -1533,6 +1660,10 @@ st.session_state["inventory_moves"] = load_list(INVENTORY_MOVES_FILE)
 st.session_state["certificates"] = load_list(CERTIFICATES_FILE)
 st.session_state["books"] = load_list(BOOKS_FILE)
 st.session_state["material_orders"] = load_list(MATERIAL_ORDERS_FILE)
+st.session_state["challenges"] = load_list(CHALLENGES_FILE)
+st.session_state["challenge_completions"] = load_list(CHALLENGE_COMPLETIONS_FILE)
+
+_ensure_challenge_store_ids()
 
 if not st.session_state["books"]:
     st.session_state["books"] = [
@@ -1663,13 +1794,13 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Tutor IA"], "menu_aluno")
+        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Tutor IA"], "menu_aluno")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Tutor IA": "Tutor IA"}
+    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Tutor IA": "Tutor IA"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -1727,6 +1858,47 @@ elif st.session_state["role"] == "Aluno":
         for msg in reversed(mensagens_aluno):
             with st.container():
                 st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
+
+    elif menu_aluno == "Desafios":
+        st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        aluno_nome = st.session_state.get("user_name", "")
+        aluno_obj = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
+        nivel = student_book_level(aluno_obj) or "Livro 1"
+        semana = current_week_key()
+        st.caption(f"Nivel: {nivel} | Semana: {semana}")
+
+        total_pts = student_points(aluno_nome)
+        st.markdown(f"**Pontuacao total:** {total_pts} ponto(s)")
+
+        ch = get_weekly_challenge(nivel, semana)
+        if not ch:
+            st.info("Ainda nao foi publicado um desafio para sua semana/nivel.")
+        else:
+            st.markdown(f"### {ch.get('titulo','Desafio')}")
+            st.write(ch.get("descricao", ""))
+            st.caption(f"Pontos: {ch.get('pontos', 0)} | Publicado por: {ch.get('autor','')} | Prazo: {ch.get('due_date','') or 'sem prazo'}")
+            done = has_completed_challenge(ch.get("id", ""), aluno_nome)
+            if done:
+                st.success("Voce ja concluiu este desafio.")
+            else:
+                if st.button("Concluir desafio", type="primary"):
+                    ok, msg = complete_challenge(ch, aluno_nome)
+                    if ok:
+                        st.success("Desafio concluido! Pontos adicionados.")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+        st.markdown("### Historico de concluidos")
+        concluidos = [c for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome]
+        if not concluidos:
+            st.info("Nenhum desafio concluido ainda.")
+        else:
+            df = pd.DataFrame(concluidos)
+            col_order = [c for c in ["done_at", "semana", "nivel", "pontos", "challenge_id"] if c in df.columns]
+            if col_order:
+                df = df[col_order]
+            st.dataframe(df, use_container_width=True)
 
     elif menu_aluno == "Aulas Gravadas":
         st.markdown('<div class="main-header">Aulas Gravadas</div>', unsafe_allow_html=True)
@@ -1955,6 +2127,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Livros",
                 "Aprovação Notas",
                 "Conteúdos",
+                "Desafios",
                 "Backup",
                 "Professor Wiz",
             ],
@@ -1979,6 +2152,7 @@ elif st.session_state["role"] == "Coordenador":
         "Livros": "Livros",
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
+        "Desafios": "Desafios",
         "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
     }
@@ -3642,6 +3816,101 @@ elif st.session_state["role"] == "Coordenador":
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
+    elif menu_coord == "Desafios":
+        st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        c_pub, c_stats = st.columns([1, 1])
+
+        with c_pub:
+            st.markdown("### Publicar / editar")
+            nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
+            base_date = st.date_input(
+                "Semana (escolha uma data)",
+                value=datetime.date.today(),
+                format="DD/MM/YYYY",
+                key="coord_ch_date",
+            )
+            semana = current_week_key(base_date)
+            st.caption(f"Chave da semana: {semana}")
+
+            existing = get_weekly_challenge(nivel, semana) or {}
+            key_prefix = f"coord_ch_{str(nivel).replace(' ', '_')}_{str(semana).replace('-', '_')}"
+
+            titulo = st.text_input("Titulo", value=str(existing.get("titulo", "")), key=f"{key_prefix}_titulo")
+            descricao = st.text_area(
+                "Descricao",
+                value=str(existing.get("descricao", "")),
+                height=160,
+                key=f"{key_prefix}_descricao",
+            )
+            pontos_default = int(existing.get("pontos") or 10)
+            pontos = st.number_input(
+                "Pontos",
+                min_value=0,
+                max_value=100,
+                value=pontos_default,
+                step=1,
+                key=f"{key_prefix}_pontos",
+            )
+            sem_prazo_default = not bool(str(existing.get("due_date", "")).strip())
+            sem_prazo = st.checkbox("Sem prazo", value=sem_prazo_default, key=f"{key_prefix}_sem_prazo")
+            due_date = None
+            if not sem_prazo:
+                due_default = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
+                due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
+
+            autor = st.session_state.get("user_name", "Coordenacao")
+            if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
+                if not str(titulo).strip() or not str(descricao).strip():
+                    st.error("Preencha titulo e descricao.")
+                else:
+                    upsert_weekly_challenge(
+                        level=nivel,
+                        week_key=semana,
+                        titulo=titulo,
+                        descricao=descricao,
+                        pontos=int(pontos),
+                        autor=autor,
+                        due_date=due_date,
+                    )
+                    st.success(f"Desafio salvo para {nivel} - {semana}.")
+                    st.rerun()
+
+            if existing:
+                st.caption(f"Criado em: {existing.get('created_at','')} | Atualizado em: {existing.get('updated_at','')}")
+
+        with c_stats:
+            st.markdown("### Acompanhamento")
+            comps = st.session_state.get("challenge_completions", []) or []
+            if not comps:
+                st.info("Sem desafios concluidos ainda.")
+            else:
+                dfc = pd.DataFrame(comps)
+                if dfc.empty:
+                    st.info("Sem desafios concluidos ainda.")
+                else:
+                    st.markdown("#### Ranking (pontos)")
+                    rank = dfc.groupby("aluno", as_index=False)["pontos"].sum().sort_values("pontos", ascending=False)
+                    st.dataframe(rank, use_container_width=True)
+                    st.markdown("#### Concluidos (recentes)")
+                    recent = dfc.sort_values("done_at", ascending=False).head(50)
+                    st.dataframe(recent, use_container_width=True)
+
+        st.markdown("### Desafios publicados")
+        chs = list(st.session_state.get("challenges", []) or [])
+        if not chs:
+            st.info("Nenhum desafio publicado ainda.")
+        else:
+            df = pd.DataFrame(chs)
+            if df.empty:
+                st.info("Nenhum desafio publicado ainda.")
+            else:
+                col_order = [c for c in ["semana", "nivel", "titulo", "pontos", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                if col_order:
+                    df = df[col_order]
+                if "semana" in df.columns and "nivel" in df.columns:
+                    df = df.sort_values(["semana", "nivel"], ascending=[False, True])
+                st.dataframe(df, use_container_width=True)
+
     elif menu_coord == "Backup":
         st.markdown('<div class="main-header">Backup</div>', unsafe_allow_html=True)
         storage_mode = "Banco de Dados (persistente)" if _db_enabled() else "Arquivos locais (pode apagar em hospedagens temporarias)"
@@ -3659,6 +3928,8 @@ elif st.session_state["role"] == "Coordenador":
             ("teachers.json", "teachers", TEACHERS_FILE),
             ("agenda.json", "agenda", AGENDA_FILE),
             ("messages.json", "messages", MESSAGES_FILE),
+            ("challenges.json", "challenges", CHALLENGES_FILE),
+            ("challenge_completions.json", "challenge_completions", CHALLENGE_COMPLETIONS_FILE),
             ("receivables.json", "receivables", RECEIVABLES_FILE),
             ("payables.json", "payables", PAYABLES_FILE),
             ("inventory.json", "inventory", INVENTORY_FILE),
