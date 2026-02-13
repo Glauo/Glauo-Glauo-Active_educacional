@@ -2750,43 +2750,55 @@ elif st.session_state["role"] == "Coordenador":
                 "Intensivo vip online",
                 "Kids e teens completo",
             ]
+            # Nao podemos "resetar" valores de widgets diretamente apos o submit (StreamlitAPIException).
+            # Em vez disso, usamos chaves versionadas e incrementamos a versao apenas quando o cadastro
+            # for concluido com sucesso, o que faz o formulario "limpar" sem mexer nos widgets atuais.
+            st.session_state.setdefault("add_student_form_version", 0)
+            form_ver = int(st.session_state["add_student_form_version"])
+
+            def _sfk(name: str) -> str:
+                return f"{name}__v{form_ver}"
+
             student_form_defaults = {
-                "add_student_nome": "",
-                "add_student_data_nascimento": datetime.date.today(),
-                "add_student_celular": "",
-                "add_student_email": "",
-                "add_student_rg": "",
-                "add_student_cpf": "",
-                "add_student_natal": "",
-                "add_student_pais": "Brasil",
-                "add_student_cep": "",
-                "add_student_cidade": "",
-                "add_student_bairro": "",
-                "add_student_rua": "",
-                "add_student_numero": "",
-                "add_student_turma": "Sem Turma",
-                "add_student_modulo": modulos[0],
-                "add_student_livro": "Automatico (Turma)",
-                "add_student_login": "",
-                "add_student_senha": "",
-                "add_student_resp_nome": "",
-                "add_student_resp_cpf": "",
-                "add_student_resp_cel": "",
-                "add_student_resp_email": "",
+                _sfk("add_student_nome"): "",
+                _sfk("add_student_data_nascimento"): datetime.date.today(),
+                _sfk("add_student_celular"): "",
+                _sfk("add_student_email"): "",
+                _sfk("add_student_rg"): "",
+                _sfk("add_student_cpf"): "",
+                _sfk("add_student_natal"): "",
+                _sfk("add_student_pais"): "Brasil",
+                _sfk("add_student_cep"): "",
+                _sfk("add_student_cidade"): "",
+                _sfk("add_student_bairro"): "",
+                _sfk("add_student_rua"): "",
+                _sfk("add_student_numero"): "",
+                _sfk("add_student_turma"): "Sem Turma",
+                _sfk("add_student_modulo"): modulos[0],
+                _sfk("add_student_livro"): "Automatico (Turma)",
+                _sfk("add_student_login"): "",
+                _sfk("add_student_senha"): "",
+                _sfk("add_student_resp_nome"): "",
+                _sfk("add_student_resp_cpf"): "",
+                _sfk("add_student_resp_cel"): "",
+                _sfk("add_student_resp_email"): "",
             }
             for key, default_value in student_form_defaults.items():
                 st.session_state.setdefault(key, default_value)
 
             turma_opts = ["Sem Turma"] + class_names()
-            if st.session_state.get("add_student_turma") not in turma_opts:
-                st.session_state["add_student_turma"] = "Sem Turma"
+            turma_key = _sfk("add_student_turma")
+            if st.session_state.get(turma_key) not in turma_opts:
+                st.session_state[turma_key] = "Sem Turma"
 
-            if st.session_state.get("add_student_modulo") not in modulos:
-                st.session_state["add_student_modulo"] = modulos[0]
+            modulo_key = _sfk("add_student_modulo")
+            if st.session_state.get(modulo_key) not in modulos:
+                st.session_state[modulo_key] = modulos[0]
 
             livro_opts = ["Automatico (Turma)"] + book_levels()
-            if st.session_state.get("add_student_livro") not in livro_opts:
-                st.session_state["add_student_livro"] = "Automatico (Turma)"
+            livro_key = _sfk("add_student_livro")
+            if st.session_state.get(livro_key) not in livro_opts:
+                st.session_state[livro_key] = "Automatico (Turma)"
 
             feedback = st.session_state.pop("add_student_feedback", None)
             if feedback:
@@ -2798,13 +2810,13 @@ elif st.session_state["role"] == "Coordenador":
             with st.form("add_student_full", clear_on_submit=False):
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: nome = st.text_input("Nome Completo *", key="add_student_nome")
+                with c1: nome = st.text_input("Nome Completo *", key=_sfk("add_student_nome"))
                 matricula_auto = _next_student_matricula(st.session_state["students"])
                 with c2: st.text_input("No. da Matricula", value=matricula_auto, disabled=True)
                 with c3:
                     data_nascimento = st.date_input(
                         "Data de Nascimento *",
-                        key="add_student_data_nascimento",
+                        key=_sfk("add_student_data_nascimento"),
                         format="DD/MM/YYYY",
                         help="Formato: DD/MM/AAAA",
                         min_value=datetime.date(1900, 1, 1),
@@ -2814,49 +2826,49 @@ elif st.session_state["role"] == "Coordenador":
                 with c4: st.number_input("Idade *", min_value=1, max_value=120, step=1, value=idade_auto, disabled=True)
 
                 c4, c5, c6 = st.columns(3)
-                with c4: celular = st.text_input("Celular/WhatsApp *", key="add_student_celular")
-                with c5: email = st.text_input("E-mail do Aluno *", key="add_student_email")
-                with c6: rg = st.text_input("RG", key="add_student_rg")
+                with c4: celular = st.text_input("Celular/WhatsApp *", key=_sfk("add_student_celular"))
+                with c5: email = st.text_input("E-mail do Aluno *", key=_sfk("add_student_email"))
+                with c6: rg = st.text_input("RG", key=_sfk("add_student_rg"))
 
                 c7, c8, c9 = st.columns(3)
-                with c7: cpf = st.text_input("CPF", key="add_student_cpf")
-                with c8: natal = st.text_input("Cidade Natal", key="add_student_natal")
-                with c9: pais = st.text_input("Pais de Origem", key="add_student_pais")
+                with c7: cpf = st.text_input("CPF", key=_sfk("add_student_cpf"))
+                with c8: natal = st.text_input("Cidade Natal", key=_sfk("add_student_natal"))
+                with c9: pais = st.text_input("Pais de Origem", key=_sfk("add_student_pais"))
 
                 st.divider()
                 st.markdown("### Endereco")
                 ce1, ce2, ce3 = st.columns(3)
-                with ce1: cep = st.text_input("CEP", key="add_student_cep")
-                with ce2: cidade = st.text_input("Cidade", key="add_student_cidade")
-                with ce3: bairro = st.text_input("Bairro", key="add_student_bairro")
+                with ce1: cep = st.text_input("CEP", key=_sfk("add_student_cep"))
+                with ce2: cidade = st.text_input("Cidade", key=_sfk("add_student_cidade"))
+                with ce3: bairro = st.text_input("Bairro", key=_sfk("add_student_bairro"))
 
                 ce4, ce5 = st.columns([3, 1])
-                with ce4: rua = st.text_input("Rua", key="add_student_rua")
-                with ce5: numero = st.text_input("Numero", key="add_student_numero")
+                with ce4: rua = st.text_input("Rua", key=_sfk("add_student_rua"))
+                with ce5: numero = st.text_input("Numero", key=_sfk("add_student_numero"))
 
                 st.divider()
                 st.markdown("### Turma")
-                turma = st.selectbox("Vincular a Turma", turma_opts, key="add_student_turma")
-                modulo_sel = st.selectbox("Modulo do curso", modulos, key="add_student_modulo")
-                livro_sel = st.selectbox("Livro/Nivel", livro_opts, key="add_student_livro")
+                turma = st.selectbox("Vincular a Turma", turma_opts, key=turma_key)
+                modulo_sel = st.selectbox("Modulo do curso", modulos, key=modulo_key)
+                livro_sel = st.selectbox("Livro/Nivel", livro_opts, key=livro_key)
 
                 st.divider()
                 st.markdown("### Acesso do Aluno (opcional)")
                 ca1, ca2 = st.columns(2)
-                with ca1: login_aluno = st.text_input("Login do Aluno", key="add_student_login")
-                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password", key="add_student_senha")
+                with ca1: login_aluno = st.text_input("Login do Aluno", key=_sfk("add_student_login"))
+                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password", key=_sfk("add_student_senha"))
 
                 st.divider()
                 st.markdown("### Responsavel Legal / Financeiro")
                 st.caption("Obrigatorio para menores de 18 anos.")
 
                 cr1, cr2 = st.columns(2)
-                with cr1: resp_nome = st.text_input("Nome do Responsavel", key="add_student_resp_nome")
-                with cr2: resp_cpf = st.text_input("CPF do Responsavel", key="add_student_resp_cpf")
+                with cr1: resp_nome = st.text_input("Nome do Responsavel", key=_sfk("add_student_resp_nome"))
+                with cr2: resp_cpf = st.text_input("CPF do Responsavel", key=_sfk("add_student_resp_cpf"))
 
                 cr3, cr4 = st.columns(2)
-                with cr3: resp_cel = st.text_input("Celular do Responsavel", key="add_student_resp_cel")
-                with cr4: resp_email = st.text_input("E-mail do Responsavel", key="add_student_resp_email")
+                with cr3: resp_cel = st.text_input("Celular do Responsavel", key=_sfk("add_student_resp_cel"))
+                with cr4: resp_email = st.text_input("E-mail do Responsavel", key=_sfk("add_student_resp_email"))
 
                 if st.form_submit_button("Cadastrar Aluno"):
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
@@ -2928,8 +2940,7 @@ elif st.session_state["role"] == "Coordenador":
                             "success": "Cadastro realizado com sucesso!",
                             "info": f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos.",
                         }
-                        for key, default_value in student_form_defaults.items():
-                            st.session_state[key] = default_value
+                        st.session_state["add_student_form_version"] = form_ver + 1
                         st.rerun()
 
         with tab3:
