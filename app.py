@@ -3,6 +3,7 @@ import datetime
 import io
 import json
 import os
+import re
 import smtplib
 import shutil
 import threading
@@ -411,6 +412,24 @@ def class_module_options():
         "Kids completo presencial",
     ]
 
+def material_payment_options():
+    return [
+        "A vista",
+        "Parcelado no Cartao",
+        "Parcelado no Boleto",
+        "Pix",
+        "Dinheiro",
+    ]
+
+def material_payment_to_cobranca(payment_type):
+    if payment_type == "Parcelado no Cartao":
+        return "Cartao"
+    if payment_type == "Parcelado no Boleto":
+        return "Boleto"
+    if payment_type == "A vista":
+        return "A vista"
+    return payment_type
+
 def is_overdue(item):
     if item.get("status") == "Pago": return False
     venc = parse_date(item.get("vencimento", ""))
@@ -616,7 +635,8 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
 def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, data_lancamento=None, valor_parcela=None, parcela=None, numero_pedido="", item_codigo=""):
-    codigo = f"{cobranca.upper()}-{uuid.uuid4().hex[:8].upper()}"
+    prefix = re.sub(r"[^A-Z0-9]+", "", str(cobranca).upper()) or "REC"
+    codigo = f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
     st.session_state["receivables"].append({
         "descricao": descricao.strip() or "Mensalidade",
         "aluno": aluno.strip(),
@@ -2027,7 +2047,7 @@ elif st.session_state["role"] == "Coordenador":
                         saldo = st.number_input("Saldo", min_value=0, step=1, value=parse_int(item_obj.get("saldo", 0)))
                         custo = st.text_input("Custo", value=str(item_obj.get("custo", "")))
                         preco = st.text_input("Preço (parcela)", value=str(item_obj.get("preco", "")))
-                        parcelas = st.number_input("Parcelas (qtd)", min_value=1, step=1, value=parse_int(item_obj.get("parcelas", 1)))
+                        parcelas = st.number_input("Parcelas (qtd)", min_value=1, max_value=6, step=1, value=min(6, max(1, parse_int(item_obj.get("parcelas", 1)))))
                         minimo = st.number_input("Mínimo", min_value=0, step=1, value=parse_int(item_obj.get("minimo", 0)))
                         maximo = st.number_input("Máximo", min_value=0, step=1, value=parse_int(item_obj.get("maximo", 0)))
                         empresa = st.text_input("Empresa", value=item_obj.get("empresa", ""))
@@ -2078,7 +2098,7 @@ elif st.session_state["role"] == "Coordenador":
                 saldo = st.number_input("Saldo inicial", min_value=0, step=1, value=0)
                 custo = st.text_input("Custo")
                 preco = st.text_input("Preço (parcela)")
-                parcelas = st.number_input("Parcelas (qtd)", min_value=1, step=1, value=1)
+                parcelas = st.number_input("Parcelas (qtd)", min_value=1, max_value=6, step=1, value=1)
                 minimo = st.number_input("Mínimo", min_value=0, step=1, value=0)
                 maximo = st.number_input("Máximo", min_value=0, step=1, value=0)
                 empresa = st.text_input("Empresa")
@@ -3147,13 +3167,37 @@ elif st.session_state["role"] == "Coordenador":
                 c4, c5, c6 = st.columns(3)
                 with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                 with c5: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"])
+                material_payment = "A vista"
+                if categoria == "Material":
+                    with c6:
+                        material_payment = st.selectbox(
+                            "Pagamento do Material",
+                            material_payment_options(),
+                        )
+                    cobranca = material_payment
+                else:
+                    with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
                 c7, c8, c9 = st.columns(3)
-                with c7: valor_parcela = st.text_input("Valor da parcela", value=val)
-                with c8: parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1)
+                is_material = categoria == "Material"
+                with c7: valor_parcela = st.text_input("Valor da parcela", value=val, disabled=is_material)
+                with c8: parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
                 with c9: numero_pedido = st.text_input("Número do pedido")
-                gerar_12 = st.checkbox("Gerar mensalidades em série", value=True if categoria == "Mensalidade" else False)
-                qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=12)
+                material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                if categoria == "Mensalidade":
+                    gerar_12 = st.checkbox("Gerar mensalidades em série", value=True)
+                    qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=12)
+                elif categoria == "Material":
+                    gerar_12 = False
+                    qtd_meses = st.number_input(
+                        "Parcelamento do material (maximo 6x)",
+                        min_value=1,
+                        max_value=6,
+                        value=2 if material_parcelado else 1,
+                        disabled=not material_parcelado,
+                    )
+                else:
+                    gerar_12 = False
+                    qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1)
                 if st.form_submit_button("Lançar"):
                     if not aluno or not val:
                         st.error("Informe aluno e valor.")
@@ -3175,6 +3219,29 @@ elif st.session_state["role"] == "Coordenador":
                                     numero_pedido=numero_pedido,
                                 )
                             st.success("Mensalidades lançadas!")
+                        elif categoria == "Material":
+                            total_material = parse_money(val)
+                            if total_material <= 0:
+                                st.error("Informe um valor válido para o material.")
+                            else:
+                                qtd_material = int(qtd_meses) if material_parcelado else 1
+                                valor_parcela_material = total_material / qtd_material
+                                for i in range(qtd_material):
+                                    data_venc = add_months(venc, i)
+                                    parcela = f"{1 + i}/{qtd_material}"
+                                    add_receivable(
+                                        aluno,
+                                        desc or "Material",
+                                        val,
+                                        data_venc,
+                                        cobranca,
+                                        categoria,
+                                        data_lancamento=data_lanc,
+                                        valor_parcela=f"{valor_parcela_material:.2f}".replace(".", ","),
+                                        parcela=parcela,
+                                        numero_pedido=numero_pedido,
+                                    )
+                                st.success(f"Material lançado com parcelamento em {qtd_material}x.")
                         else:
                             parcela = f"{parcela_inicial}/{qtd_meses}" if categoria == "Mensalidade" else str(parcela_inicial)
                             add_receivable(
@@ -3259,12 +3326,27 @@ elif st.session_state["role"] == "Coordenador":
                         turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
                     data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                     venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
-                    cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartão"], key="cobranca_mat")
+                    material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
+                    material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                    parcelas_material = st.number_input(
+                        "Parcelamento do material (maximo 6x)",
+                        min_value=1,
+                        max_value=6,
+                        value=2 if material_parcelado else 1,
+                        disabled=not material_parcelado,
+                        key="parcelas_mat_fin",
+                    )
                     numero_pedido = st.text_input("Número do pedido", key="pedido_mat")
                     if st.form_submit_button("Lançar material"):
                         item_obj = itens_estoque[opcoes.index(item_sel)]
                         preco = parse_money(item_obj.get("preco", 0))
-                        parcelas = parse_int(item_obj.get("parcelas", 1)) or 1
+                        parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
+                        parcelas = min(6, parcelas_item)
+                        if material_parcelado:
+                            parcelas = int(parcelas_material)
+                        else:
+                            parcelas = 1
+                        cobranca = material_payment
                         descricao = item_obj.get("descricao", "Material")
                         item_codigo = item_obj.get("codigo", "")
                         alunos_destino = []
