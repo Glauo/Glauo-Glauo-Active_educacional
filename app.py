@@ -577,7 +577,7 @@ def get_weekly_challenge(level, week_key):
             return ch
     return None
 
-def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None):
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica=""):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     titulo = str(titulo or "").strip()
@@ -585,6 +585,8 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
     pontos = int(pontos or 0)
     autor = str(autor or "").strip()
     due_str = due_date.strftime("%d/%m/%Y") if isinstance(due_date, datetime.date) else str(due_date or "").strip()
+    rubrica = str(rubrica or "").strip()
+    dica = str(dica or "").strip()
     existing = get_weekly_challenge(level, week_key)
     if existing:
         existing["nivel"] = level
@@ -594,6 +596,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
         existing["pontos"] = pontos
         existing["autor"] = autor
         existing["due_date"] = due_str
+        if rubrica or "rubrica" in existing:
+            existing["rubrica"] = rubrica
+        if dica or "dica" in existing:
+            existing["dica"] = dica
         existing["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     else:
         ch = {
@@ -605,6 +611,8 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             "pontos": pontos,
             "autor": autor,
             "due_date": due_str,
+            "rubrica": rubrica,
+            "dica": dica,
             "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
             "updated_at": "",
         }
@@ -616,10 +624,22 @@ def has_completed_challenge(challenge_id, aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     for c in st.session_state.get("challenge_completions", []):
         if str(c.get("challenge_id", "")).strip() == cid and str(c.get("aluno", "")).strip() == aluno_nome:
-            return True
+            status = str(c.get("status", "")).strip().lower()
+            if not status:
+                # Backward-compatible: old records had no status field.
+                return True
+            return status in ("aprovado", "concluido", "concluído", "ok", "done", "true", "1")
     return False
 
-def complete_challenge(challenge_obj, aluno_nome):
+def get_challenge_submission(challenge_id, aluno_nome):
+    cid = str(challenge_id or "").strip()
+    aluno_nome = str(aluno_nome or "").strip()
+    for c in st.session_state.get("challenge_completions", []):
+        if str(c.get("challenge_id", "")).strip() == cid and str(c.get("aluno", "")).strip() == aluno_nome:
+            return c
+    return None
+
+def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, feedback=None, status=None, pontos_awarded=None):
     if not isinstance(challenge_obj, dict):
         return False, "Desafio invalido."
     cid = str(challenge_obj.get("id", "")).strip()
@@ -628,25 +648,163 @@ def complete_challenge(challenge_obj, aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     if not aluno_nome:
         return False, "Aluno invalido."
-    if has_completed_challenge(cid, aluno_nome):
+    existing = get_challenge_submission(cid, aluno_nome)
+    existing_status = str((existing or {}).get("status", "")).strip().lower()
+    if existing and (not existing_status or existing_status in ("aprovado", "concluido", "concluído", "ok", "done", "true", "1")):
         return False, "Desafio ja concluido."
-    pontos = int(challenge_obj.get("pontos") or 0)
-    rec = {
-        "id": uuid.uuid4().hex,
-        "challenge_id": cid,
-        "aluno": aluno_nome,
-        "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
-        "semana": str(challenge_obj.get("semana", "")).strip(),
-        "pontos": pontos,
-        "done_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-    }
-    st.session_state["challenge_completions"].append(rec)
+
+    pontos_base = int(challenge_obj.get("pontos") or 0)
+    pontos_final = pontos_base if pontos_awarded is None else int(pontos_awarded or 0)
+    status_final = str(status or ("Aprovado" if pontos_final > 0 else "Reprovado")).strip() or "Reprovado"
+    now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    rec = existing if existing else {"id": uuid.uuid4().hex}
+    rec.update(
+        {
+            "challenge_id": cid,
+            "aluno": aluno_nome,
+            "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
+            "semana": str(challenge_obj.get("semana", "")).strip(),
+            "pontos": int(pontos_final),
+            "status": status_final,
+            "done_at": now,
+        }
+    )
+    if resposta is not None:
+        rec["resposta"] = str(resposta)
+    if score is not None:
+        rec["score"] = int(score)
+    if feedback is not None:
+        rec["feedback"] = str(feedback)
+
+    if existing:
+        # updated in-place
+        pass
+    else:
+        st.session_state["challenge_completions"].append(rec)
     save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state["challenge_completions"])
-    return True, "Concluido."
+    return True, "Registrado."
 
 def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
+
+def _strip_code_fences(text):
+    t = str(text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z0-9_-]*\\s*", "", t)
+        t = re.sub(r"\\s*```\\s*$", "", t)
+    return t.strip()
+
+def _extract_json_object(text):
+    t = _strip_code_fences(text)
+    start = t.find("{")
+    end = t.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        t = t[start : end + 1]
+    return json.loads(t)
+
+def _groq_chat_text(messages, temperature=0.2, max_tokens=900):
+    api_key = get_groq_api_key()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY nao configurado.")
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+    model_name = os.getenv("ACTIVE_CHALLENGE_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+    result = client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        temperature=float(temperature),
+        max_tokens=int(max_tokens),
+    )
+    return (result.choices[0].message.content or "").strip()
+
+def generate_weekly_challenge_ai(level, week_key):
+    level = _norm_book_level(level)
+    week_key = str(week_key or "").strip()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Voce e o Professor Wiz (IA) e cria desafios semanais de ingles.\n"
+                "Gere UM desafio adequado ao nivel do aluno (Livro 1..4) e que possa ser respondido no portal.\n"
+                "Responda SOMENTE em JSON valido, sem markdown."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Nivel: {level}\n"
+                f"Semana: {week_key}\n\n"
+                "Crie um desafio de 10 a 20 minutos com foco em ingles.\n"
+                "Formato: resposta escrita curta (texto).\n\n"
+                "Campos obrigatorios no JSON:\n"
+                "titulo (string), descricao (string), pontos (int 5..50), rubrica (string curta), dica (string opcional).\n"
+                "Nao use caracteres especiais no JSON alem de acentos normais."
+            ),
+        },
+    ]
+    raw = _groq_chat_text(messages, temperature=0.35, max_tokens=700)
+    obj = _extract_json_object(raw)
+    titulo = str(obj.get("titulo", "")).strip()
+    descricao = str(obj.get("descricao", "")).strip()
+    rubrica = str(obj.get("rubrica", "")).strip()
+    dica = str(obj.get("dica", "")).strip()
+    pontos = int(obj.get("pontos") or 10)
+    pontos = max(5, min(50, pontos))
+    if not titulo or not descricao:
+        raise RuntimeError("IA nao retornou titulo/descricao.")
+    return {
+        "nivel": level,
+        "semana": week_key,
+        "titulo": titulo,
+        "descricao": descricao,
+        "pontos": pontos,
+        "rubrica": rubrica,
+        "dica": dica,
+    }
+
+def evaluate_challenge_answer_ai(challenge_obj, level, answer_text):
+    level = _norm_book_level(level)
+    titulo = str((challenge_obj or {}).get("titulo", "")).strip()
+    descricao = str((challenge_obj or {}).get("descricao", "")).strip()
+    rubrica = str((challenge_obj or {}).get("rubrica", "")).strip()
+    answer_text = str(answer_text or "").strip()
+    if not answer_text:
+        return {"score": 0, "passed": False, "feedback": "Resposta vazia."}
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Voce e o Professor Wiz (IA) e avalia respostas de desafios de ingles.\n"
+                "Avalie com rigor justo e devolva um feedback curto e pratico.\n"
+                "Responda SOMENTE em JSON valido, sem markdown."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Nivel: {level}\n"
+                f"Desafio (titulo): {titulo}\n"
+                f"Desafio (descricao): {descricao}\n"
+                f"Rubrica: {rubrica}\n\n"
+                f"Resposta do aluno:\n{answer_text}\n\n"
+                "Retorne JSON com:\n"
+                "score (int 0..100), passed (bool), feedback (string curta em portugues).\n"
+                "Regra: passed = true se score >= 70."
+            ),
+        },
+    ]
+    raw = _groq_chat_text(messages, temperature=0.15, max_tokens=450)
+    obj = _extract_json_object(raw)
+    score = int(obj.get("score") or 0)
+    score = max(0, min(100, score))
+    passed = bool(obj.get("passed")) if "passed" in obj else (score >= 70)
+    feedback = str(obj.get("feedback", "")).strip() or "Feedback indisponivel."
+    if score >= 70:
+        passed = True
+    else:
+        passed = False
+    return {"score": score, "passed": passed, "feedback": feedback}
 
 def material_payment_options():
     return [
@@ -958,6 +1116,32 @@ def email_students_by_turma(turma, assunto, corpo, origem):
     save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
     return {"total": total, "enviados": delivered}
 
+def email_students_by_level(level, assunto, corpo, origem):
+    level = _norm_book_level(level)
+    delivered = 0
+    total = 0
+    for student in st.session_state.get("students", []):
+        if student_book_level(student) != level:
+            continue
+        for email in _message_recipients_for_student(student):
+            ok, status = _send_email_smtp(email, assunto, corpo)
+            total += 1
+            if ok:
+                delivered += 1
+            st.session_state["email_log"].append(
+                {
+                    "destinatario": student.get("nome", "Aluno"),
+                    "email": email,
+                    "assunto": assunto,
+                    "mensagem": corpo,
+                    "origem": origem,
+                    "status": status,
+                    "data": datetime.date.today().strftime("%d/%m/%Y"),
+                }
+            )
+    save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
+    return {"total": total, "enviados": delivered}
+
 def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mensagens"):
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
@@ -979,7 +1163,7 @@ def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mens
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
-    if key not in st.session_state:
+    if key not in st.session_state or st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
     for option in options:
         active = st.session_state[key] == option
@@ -1378,7 +1562,7 @@ def get_active_system_prompt(mode, include_context=True):
 def get_tutor_wiz_prompt():
     return "\n".join(
         [
-            "Voce e o Tutor IA Wiz da escola de ingles Mister Wiz.",
+            "Voce e o Professor Wiz (IA) da escola de ingles Mister Wiz.",
             "Ajude o aluno a estudar apenas ingles (gramatica, vocabulario, pronuncia, conversacao e exercicios).",
             "Se o aluno perguntar algo fora do contexto de ingles, recuse e oriente a perguntar sobre ingles.",
             "Responda em portugues do Brasil, com exemplos em ingles quando fizer sentido.",
@@ -1425,7 +1609,7 @@ def run_active_chatbot():
     chat_history = st.session_state["active_chat_histories"][chat_key]
 
     if role == "Aluno" and mode == "Pedagogico":
-        st.caption("Tutor IA Wiz: ajuda apenas com ingles.")
+        st.caption("Professor Wiz (IA): ajuda apenas com ingles.")
         st.radio("Opcao", ["Estudar"], index=0, key="tutor_option")
     else:
         qa1, qa2, qa3 = st.columns(3)
@@ -1509,7 +1693,7 @@ def run_student_finance_assistant():
         "Renegociacao",
         "Abrir chamado",
     ]
-    choice = st.radio("Opcoes financeiras", options, index=0)
+    choice = st.selectbox("Opcoes financeiras", options, index=0, key="finance_choice")
 
     col1, col2 = st.columns([1, 1])
     if col1.button("Consultar", type="primary"):
@@ -1794,13 +1978,13 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Tutor IA"], "menu_aluno")
+        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Professor Wiz"], "menu_aluno")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Tutor IA": "Tutor IA"}
+    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Professor Wiz": "Professor Wiz"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -1876,18 +2060,64 @@ elif st.session_state["role"] == "Aluno":
         else:
             st.markdown(f"### {ch.get('titulo','Desafio')}")
             st.write(ch.get("descricao", ""))
+            if str(ch.get("dica", "")).strip():
+                st.info(f"Dica: {str(ch.get('dica','')).strip()}")
             st.caption(f"Pontos: {ch.get('pontos', 0)} | Publicado por: {ch.get('autor','')} | Prazo: {ch.get('due_date','') or 'sem prazo'}")
-            done = has_completed_challenge(ch.get("id", ""), aluno_nome)
+            cid = ch.get("id", "")
+            sub = get_challenge_submission(cid, aluno_nome) or {}
+            done = has_completed_challenge(cid, aluno_nome)
+
+            if sub:
+                st.markdown("#### Sua avaliacao")
+                cols = st.columns([1, 1, 1])
+                cols[0].metric("Status", str(sub.get("status", "") or "Concluido"))
+                if "score" in sub:
+                    try:
+                        cols[1].metric("Nota", int(sub.get("score") or 0))
+                    except Exception:
+                        cols[1].metric("Nota", str(sub.get("score", "")))
+                cols[2].metric("Pontos", int(sub.get("pontos") or 0))
+                if str(sub.get("feedback", "")).strip():
+                    st.write(sub.get("feedback", ""))
+                if str(sub.get("resposta", "")).strip():
+                    with st.expander("Ver minha resposta"):
+                        st.write(sub.get("resposta", ""))
+
             if done:
-                st.success("Voce ja concluiu este desafio.")
+                st.success("Voce ja concluiu este desafio (aprovado).")
             else:
-                if st.button("Concluir desafio", type="primary"):
-                    ok, msg = complete_challenge(ch, aluno_nome)
-                    if ok:
-                        st.success("Desafio concluido! Pontos adicionados.")
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                api_key = get_groq_api_key()
+                if not api_key:
+                    st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY em secrets/variavel de ambiente.")
+                else:
+                    default_answer = str(sub.get("resposta", "") or "")
+                    resp_key = f"challenge_answer_{cid}_{aluno_nome}".replace(" ", "_")
+                    resposta = st.text_area("Sua resposta (escreva aqui)", value=default_answer, height=180, key=resp_key)
+                    if st.button("Enviar resposta para avaliacao", type="primary", key=f"send_ch_{cid}"):
+                        try:
+                            ev = evaluate_challenge_answer_ai(ch, nivel, resposta)
+                        except Exception as exc:
+                            st.error(f"Falha ao avaliar com IA: {exc}")
+                        else:
+                            pontos_awarded = int(ch.get("pontos") or 0) if ev.get("passed") else 0
+                            status = "Aprovado" if ev.get("passed") else "Reprovado"
+                            ok, msg = complete_challenge(
+                                ch,
+                                aluno_nome,
+                                resposta=resposta,
+                                score=ev.get("score"),
+                                feedback=ev.get("feedback"),
+                                status=status,
+                                pontos_awarded=pontos_awarded,
+                            )
+                            if ok:
+                                if pontos_awarded > 0:
+                                    st.success("Resposta enviada e aprovada! Pontos adicionados.")
+                                else:
+                                    st.warning("Resposta enviada, mas ainda nao atingiu a nota minima. Voce pode melhorar e reenviar.")
+                                st.rerun()
+                            else:
+                                st.error(msg)
 
         st.markdown("### Historico de concluidos")
         concluidos = [c for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome]
@@ -1895,7 +2125,7 @@ elif st.session_state["role"] == "Aluno":
             st.info("Nenhum desafio concluido ainda.")
         else:
             df = pd.DataFrame(concluidos)
-            col_order = [c for c in ["done_at", "semana", "nivel", "pontos", "challenge_id"] if c in df.columns]
+            col_order = [c for c in ["done_at", "semana", "nivel", "status", "score", "pontos", "challenge_id"] if c in df.columns]
             if col_order:
                 df = df[col_order]
             st.dataframe(df, use_container_width=True)
@@ -1928,7 +2158,7 @@ elif st.session_state["role"] == "Aluno":
 
     elif menu_aluno == "Financeiro":
         run_student_finance_assistant()
-    elif menu_aluno == "Tutor IA":
+    elif menu_aluno == "Professor Wiz":
         run_active_chatbot()
 
 # =============================================================================
@@ -3818,6 +4048,37 @@ elif st.session_state["role"] == "Coordenador":
                     )
     elif menu_coord == "Desafios":
         st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        auto_enabled = str(os.getenv("ACTIVE_AUTO_CHALLENGES", "")).strip().lower() in ("1", "true", "yes", "on")
+        if auto_enabled:
+            api_key = get_groq_api_key()
+            if api_key:
+                week_now = current_week_key(datetime.date.today())
+                missing = [lv for lv in book_levels() if not get_weekly_challenge(lv, week_now)]
+                if missing:
+                    with st.spinner(f"Gerando desafios automaticamente para {week_now}..."):
+                        autor_auto = st.session_state.get("user_name", "Coordenacao")
+                        created = 0
+                        for lv in missing:
+                            try:
+                                gen = generate_weekly_challenge_ai(lv, week_now)
+                                upsert_weekly_challenge(
+                                    level=lv,
+                                    week_key=week_now,
+                                    titulo=gen.get("titulo", ""),
+                                    descricao=gen.get("descricao", ""),
+                                    pontos=int(gen.get("pontos") or 10),
+                                    autor=autor_auto,
+                                    due_date=None,
+                                    rubrica=gen.get("rubrica", ""),
+                                    dica=gen.get("dica", ""),
+                                )
+                                created += 1
+                            except Exception:
+                                continue
+                        if created:
+                            st.info(f"Auto-geracao: {created} desafio(s) criados para {week_now}.")
+            else:
+                st.warning("Auto-geracao ativa (ACTIVE_AUTO_CHALLENGES=1), mas GROQ_API_KEY nao esta configurado.")
         c_pub, c_stats = st.columns([1, 1])
 
         with c_pub:
@@ -3842,6 +4103,16 @@ elif st.session_state["role"] == "Coordenador":
                 height=160,
                 key=f"{key_prefix}_descricao",
             )
+            rubrica = st.text_input(
+                "Rubrica (como sera avaliado)",
+                value=str(existing.get("rubrica", "")),
+                key=f"{key_prefix}_rubrica",
+            )
+            dica = st.text_input(
+                "Dica (opcional)",
+                value=str(existing.get("dica", "")),
+                key=f"{key_prefix}_dica",
+            )
             pontos_default = int(existing.get("pontos") or 10)
             pontos = st.number_input(
                 "Pontos",
@@ -3859,6 +4130,79 @@ elif st.session_state["role"] == "Coordenador":
                 due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
 
             autor = st.session_state.get("user_name", "Coordenacao")
+            enviar_email = st.checkbox(
+                "Enviar email para alunos deste livro",
+                value=False,
+                key=f"{key_prefix}_notify_level",
+            )
+
+            ai_col1, ai_col2 = st.columns([1, 1])
+            if ai_col1.button("Gerar e salvar com IA", key=f"{key_prefix}_gen_ai"):
+                api_key = get_groq_api_key()
+                if not api_key:
+                    st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
+                else:
+                    try:
+                        gen = generate_weekly_challenge_ai(nivel, semana)
+                        upsert_weekly_challenge(
+                            level=nivel,
+                            week_key=semana,
+                            titulo=gen.get("titulo", ""),
+                            descricao=gen.get("descricao", ""),
+                            pontos=int(gen.get("pontos") or 10),
+                            autor=autor,
+                            due_date=due_date,
+                            rubrica=gen.get("rubrica", ""),
+                            dica=gen.get("dica", ""),
+                        )
+                        if enviar_email:
+                            assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
+                            corpo = (
+                                f"Novo desafio semanal publicado.\n"
+                                f"Nivel: {nivel}\nSemana: {semana}\n\n"
+                                f"{gen.get('titulo','Desafio')}\n\n{gen.get('descricao','')}\n\n"
+                                "Acesse o portal do aluno > Desafios para responder e ser avaliado."
+                            )
+                            stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
+                            st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.success(f"Desafio gerado e salvo para {nivel} - {semana}.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Falha ao gerar desafio com IA: {exc}")
+
+            if ai_col2.button("Gerar com IA para todos livros (semana atual)", key=f"{key_prefix}_gen_ai_all"):
+                api_key = get_groq_api_key()
+                if not api_key:
+                    st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
+                else:
+                    week_now = current_week_key(datetime.date.today())
+                    levels = book_levels()
+                    created = 0
+                    failed = 0
+                    for lv in levels:
+                        if get_weekly_challenge(lv, week_now):
+                            continue
+                        try:
+                            gen = generate_weekly_challenge_ai(lv, week_now)
+                            upsert_weekly_challenge(
+                                level=lv,
+                                week_key=week_now,
+                                titulo=gen.get("titulo", ""),
+                                descricao=gen.get("descricao", ""),
+                                pontos=int(gen.get("pontos") or 10),
+                                autor=autor,
+                                due_date=None,
+                                rubrica=gen.get("rubrica", ""),
+                                dica=gen.get("dica", ""),
+                            )
+                            created += 1
+                        except Exception:
+                            failed += 1
+                    if created:
+                        st.success(f"Gerados {created} desafio(s) para a semana {week_now}.")
+                        st.rerun()
+                    if not created and not failed:
+                        st.info(f"Ja existem desafios publicados para a semana {week_now}.")
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 if not str(titulo).strip() or not str(descricao).strip():
                     st.error("Preencha titulo e descricao.")
@@ -3871,7 +4215,19 @@ elif st.session_state["role"] == "Coordenador":
                         pontos=int(pontos),
                         autor=autor,
                         due_date=due_date,
+                        rubrica=rubrica,
+                        dica=dica,
                     )
+                    if enviar_email:
+                        assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
+                        corpo = (
+                            f"Novo desafio semanal publicado.\n"
+                            f"Nivel: {nivel}\nSemana: {semana}\n\n"
+                            f"{titulo}\n\n{descricao}\n\n"
+                            "Acesse o portal do aluno > Desafios para responder e ser avaliado."
+                        )
+                        stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
+                        st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
                     st.success(f"Desafio salvo para {nivel} - {semana}.")
                     st.rerun()
 
@@ -3904,7 +4260,7 @@ elif st.session_state["role"] == "Coordenador":
             if df.empty:
                 st.info("Nenhum desafio publicado ainda.")
             else:
-                col_order = [c for c in ["semana", "nivel", "titulo", "pontos", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                col_order = [c for c in ["semana", "nivel", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
