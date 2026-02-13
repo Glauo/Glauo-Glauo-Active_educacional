@@ -9,6 +9,7 @@ import shutil
 import threading
 import uuid
 import calendar
+import zipfile
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote
@@ -16,6 +17,12 @@ from urllib.parse import quote
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except Exception:
+    psycopg2 = None
 
 # --- CONFIGURACAO DA PAGINA ---
 st.set_page_config(
@@ -119,6 +126,18 @@ BOOKS_FILE = DATA_DIR / "books.json"
 MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
 WHATSAPP_NUMBER = "5516996043314" 
 
+def _get_config_value(name, default=""):
+    env_val = os.getenv(name, None)
+    if env_val is not None and str(env_val).strip():
+        return str(env_val).strip()
+    try:
+        sec_val = st.secrets.get(name, None)
+        if sec_val is not None and str(sec_val).strip():
+            return str(sec_val).strip()
+    except Exception:
+        pass
+    return default
+
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
     candidates = [
@@ -179,6 +198,64 @@ def _rotate_backups(path, keep=30):
         except Exception:
             pass
 
+def _db_url():
+    return _get_config_value("ACTIVE_DATABASE_URL", "") or _get_config_value("DATABASE_URL", "")
+
+def _db_enabled():
+    return bool(_db_url()) and psycopg2 is not None
+
+def _db_connect():
+    # New connection per operation keeps behavior predictable across Streamlit reruns.
+    url = _db_url()
+    conn = psycopg2.connect(url, connect_timeout=8)
+    try:
+        psycopg2.extras.register_default_json(conn, loads=json.loads)
+        psycopg2.extras.register_default_jsonb(conn, loads=json.loads)
+    except Exception:
+        pass
+    return conn
+
+def _db_init(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS active_kv (
+              key TEXT PRIMARY KEY,
+              value JSONB NOT NULL,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """
+        )
+
+def _db_get(key):
+    try:
+        with _db_connect() as conn:
+            _db_init(conn)
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM active_kv WHERE key = %s", (key,))
+                row = cur.fetchone()
+                return row[0] if row else None
+    except Exception:
+        return None
+
+def _db_set(key, value):
+    try:
+        with _db_connect() as conn:
+            _db_init(conn)
+            with conn.cursor() as cur:
+                payload = psycopg2.extras.Json(value, dumps=lambda v: json.dumps(v, ensure_ascii=False))
+                cur.execute(
+                    """
+                    INSERT INTO active_kv (key, value, updated_at)
+                    VALUES (%s, %s, now())
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+                    """,
+                    (key, payload),
+                )
+        return True
+    except Exception:
+        return False
+
 def _load_latest_backup_list(path):
     backups = sorted(
         BACKUP_DIR.glob(f"{path.stem}_*{path.suffix}.bak"),
@@ -194,14 +271,21 @@ def _load_latest_backup_list(path):
             continue
     return None
 
-def _load_json_list(path):
+def _load_json_list_file(path):
     with DATA_IO_LOCK:
         if not path.exists():
             _atomic_write_json(path, [])
             return []
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
+            data = data if isinstance(data, list) else []
+            auto_restore = os.getenv("ACTIVE_AUTO_RESTORE_EMPTY", "1").strip().lower() not in ("0", "false", "no")
+            if auto_restore and path in (STUDENTS_FILE, CLASSES_FILE) and not data:
+                restored = _load_latest_backup_list(path)
+                if restored:
+                    _atomic_write_json(path, restored)
+                    return restored
+            return data
         except Exception:
             restored = _load_latest_backup_list(path)
             if restored is not None:
@@ -209,7 +293,7 @@ def _load_json_list(path):
                 return restored
             return []
 
-def _save_json_list(path, data):
+def _save_json_list_file(path, data):
     safe_data = data if isinstance(data, list) else []
     with DATA_IO_LOCK:
         if path.exists():
@@ -219,6 +303,31 @@ def _save_json_list(path, data):
             except Exception:
                 pass
         _atomic_write_json(path, safe_data)
+
+def _load_json_list(path):
+    key = str(getattr(path, "stem", path)).strip()
+    if _db_enabled():
+        data = _db_get(key)
+        if isinstance(data, list):
+            return data
+        if data is None:
+            # First run with DB: seed from local file if exists.
+            seeded = _load_json_list_file(path)
+            _db_set(key, seeded)
+            return seeded
+        return []
+    return _load_json_list_file(path)
+
+def _save_json_list(path, data):
+    key = str(getattr(path, "stem", path)).strip()
+    if _db_enabled():
+        ok = _db_set(key, data if isinstance(data, list) else [])
+        mirror = os.getenv("ACTIVE_MIRROR_FILES", "0").strip().lower() in ("1", "true", "yes")
+        if mirror:
+            _save_json_list_file(path, data)
+        return ok
+    _save_json_list_file(path, data)
+    return True
 
 def load_users():
     return _load_json_list(USERS_FILE)
@@ -1846,6 +1955,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Livros",
                 "Aprovação Notas",
                 "Conteúdos",
+                "Backup",
                 "Professor Wiz",
             ],
             "menu_coord",
@@ -1869,6 +1979,7 @@ elif st.session_state["role"] == "Coordenador":
         "Livros": "Livros",
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
+        "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
     }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
@@ -3520,6 +3631,104 @@ elif st.session_state["role"] == "Coordenador":
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
+    elif menu_coord == "Backup":
+        st.markdown('<div class="main-header">Backup</div>', unsafe_allow_html=True)
+        storage_mode = "Banco de Dados (persistente)" if _db_enabled() else "Arquivos locais (pode apagar em hospedagens temporarias)"
+        st.write(f"**Armazenamento atual:** {storage_mode}")
+        if not _db_enabled():
+            st.warning(
+                "Se voce usa Streamlit Cloud, os arquivos locais podem ser apagados quando o app reinicia/atualiza. "
+                "Para nao perder dados, configure um banco Postgres e defina `ACTIVE_DATABASE_URL` (ou `DATABASE_URL`)."
+            )
+
+        datasets = [
+            ("users.json", "users", USERS_FILE),
+            ("students.json", "students", STUDENTS_FILE),
+            ("classes.json", "classes", CLASSES_FILE),
+            ("teachers.json", "teachers", TEACHERS_FILE),
+            ("agenda.json", "agenda", AGENDA_FILE),
+            ("messages.json", "messages", MESSAGES_FILE),
+            ("receivables.json", "receivables", RECEIVABLES_FILE),
+            ("payables.json", "payables", PAYABLES_FILE),
+            ("inventory.json", "inventory", INVENTORY_FILE),
+            ("inventory_moves.json", "inventory_moves", INVENTORY_MOVES_FILE),
+            ("certificates.json", "certificates", CERTIFICATES_FILE),
+            ("books.json", "books", BOOKS_FILE),
+            ("materials.json", "materials", MATERIALS_FILE),
+            ("material_orders.json", "material_orders", MATERIAL_ORDERS_FILE),
+            ("grades.json", "grades", GRADES_FILE),
+            ("fee_templates.json", "fee_templates", FEE_TEMPLATES_FILE),
+            ("email_log.json", "email_log", EMAIL_LOG_FILE),
+        ]
+
+        st.markdown("### Exportar backup")
+        snapshot_meta = {
+            "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "counts": {name: len(st.session_state.get(key, []) or []) for name, key, _ in datasets if isinstance(st.session_state.get(key, []), list)},
+        }
+        bio = io.BytesIO()
+        with zipfile.ZipFile(bio, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("meta.json", json.dumps(snapshot_meta, ensure_ascii=False, indent=2).encode("utf-8"))
+            for file_name, session_key, _ in datasets:
+                data = st.session_state.get(session_key, [])
+                if session_key == "users":
+                    data = st.session_state.get("users", [])
+                if not isinstance(data, list):
+                    data = []
+                zf.writestr(file_name, json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
+        st.download_button(
+            "Baixar backup (.zip)",
+            data=bio.getvalue(),
+            file_name=f"active_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            mime="application/zip",
+        )
+
+        st.markdown("### Restaurar backup")
+        up = st.file_uploader("Envie um arquivo .zip gerado pelo backup", type=["zip"])
+        confirm = st.checkbox("Confirmo que quero restaurar (isso vai substituir os dados atuais).", value=False)
+        if up and confirm and st.button("Restaurar agora", type="primary"):
+            try:
+                restored_any = False
+                with zipfile.ZipFile(up, "r") as zf:
+                    names = set(zf.namelist())
+                    for file_name, session_key, file_path in datasets:
+                        if file_name not in names:
+                            continue
+                        raw = zf.read(file_name).decode("utf-8", errors="replace")
+                        data = json.loads(raw)
+                        if not isinstance(data, list):
+                            continue
+                        if session_key == "users":
+                            st.session_state["users"] = data
+                            save_users(st.session_state["users"])
+                        else:
+                            st.session_state[session_key] = data
+                            save_list(file_path, data)
+                        restored_any = True
+                if restored_any:
+                    st.success("Backup restaurado com sucesso.")
+                    st.rerun()
+                else:
+                    st.warning("Nenhum dado valido encontrado no backup.")
+            except Exception as exc:
+                st.error(f"Falha ao restaurar backup: {exc}")
+
+        st.markdown("### Recuperacao rapida (backups locais)")
+        st.caption("Tenta recuperar apenas Alunos e Turmas a partir dos ultimos arquivos em `_data_backups` (se existirem no servidor).")
+        if st.button("Restaurar ultimo backup local de Alunos e Turmas"):
+            restored_students = _load_latest_backup_list(STUDENTS_FILE) or []
+            restored_classes = _load_latest_backup_list(CLASSES_FILE) or []
+            if restored_students:
+                st.session_state["students"] = restored_students
+                save_list(STUDENTS_FILE, restored_students)
+            if restored_classes:
+                st.session_state["classes"] = restored_classes
+                save_list(CLASSES_FILE, restored_classes)
+            if restored_students or restored_classes:
+                st.success("Recuperacao executada. Verifique os dados.")
+                st.rerun()
+            else:
+                st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
 
