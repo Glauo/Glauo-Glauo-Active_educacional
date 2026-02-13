@@ -850,10 +850,10 @@ def render_agenda(items, empty_message):
         if a.get("descricao"):
             st.write(a.get("descricao"))
         if a.get("link"):
-            st.link_button("Entrar na aula", a.get("link"), key=f"agenda_live_{idx}_{a.get('data','')}_{a.get('hora','')}")
+            st.link_button("Entrar na aula", a.get("link"))
         google_url = a.get("google_calendar_link") or build_google_calendar_event_link(a)
         if google_url:
-            st.link_button("Adicionar no Google Agenda", google_url, key=f"agenda_google_{idx}_{a.get('data','')}_{a.get('hora','')}")
+            st.link_button("Adicionar no Google Agenda", google_url)
         st.markdown("---")
 
 def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
@@ -871,12 +871,12 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
             data = Path(file_path).read_bytes()
             c1.download_button("Baixar livro", data=data, file_name=Path(file_path).name, key=f"{key_prefix}_download_{idx}")
         elif url:
-            c1.link_button("Baixar livro", url, key=f"{key_prefix}_link_{idx}")
+            c1.link_button("Baixar livro", url)
         else:
             c1.button("Baixar livro", disabled=True, key=f"{key_prefix}_disabled_{idx}")
 
         if url:
-            c2.link_button("Abrir livro", url, key=f"{key_prefix}_open_{idx}")
+            c2.link_button("Abrir livro", url)
         else:
             c2.button("Abrir livro", disabled=True, key=f"{key_prefix}_open_disabled_{idx}")
         if not url and not (file_path and Path(file_path).exists()):
