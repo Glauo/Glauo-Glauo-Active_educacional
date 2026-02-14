@@ -4542,6 +4542,28 @@ elif st.session_state["role"] == "Coordenador":
             else:
                 headers["apikey"] = api_key
 
+        with st.expander("Testar API (opcional)", expanded=False):
+            if st.button("Testar / (raiz)", key="evo_test_root"):
+                if not base_url:
+                    st.error("Informe EVOLUTION_API_URL.")
+                else:
+                    url = base_url.rstrip("/") + "/"
+                    status, ct, body, err = _http_request("GET", url, headers=headers, timeout=int(timeout_s))
+                    parsed, text = _try_parse_json(ct, body)
+                    st.write(f"HTTP {status} | {ct or 'sem content-type'} | {err or 'ok'}")
+                    if isinstance(parsed, dict):
+                        st.json(_sanitize_for_debug(parsed))
+                        mgr = str(parsed.get("manager", "") or "").strip()
+                        if mgr:
+                            st.caption(f"manager: {mgr}")
+                            if mgr.startswith("http://") and base_url.lower().startswith("https://"):
+                                st.warning(
+                                    "O campo `manager` esta vindo em http:// enquanto voce acessa por https://. "
+                                    "Isso costuma quebrar o QR no navegador (mixed content)."
+                                )
+                    else:
+                        st.code((text or "")[:4000], language="text")
+
         selected_instance = None
         with st.expander("Encontrar instancia (opcional)", expanded=False):
             if st.button("Buscar instancias", key="evo_list_instances"):
