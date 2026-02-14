@@ -102,6 +102,10 @@ if "active_chat_mode" not in st.session_state:
     st.session_state["active_chat_mode"] = "Atendimento"
 if "active_chat_temp" not in st.session_state:
     st.session_state["active_chat_temp"] = 0.3
+if "evo_instances_cache" not in st.session_state:
+    st.session_state["evo_instances_cache"] = []
+if "evo_instances_cache_error" not in st.session_state:
+    st.session_state["evo_instances_cache_error"] = ""
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "2523"
@@ -295,6 +299,35 @@ def _extract_qr_candidate(value):
         if _looks_like_base64(s):
             return s
         return s if len(s) > 50 else ""
+    return ""
+
+def _extract_pairing_code(value):
+    if isinstance(value, dict):
+        for k in ("pairingCode", "pairing_code", "pairingcode"):
+            v = value.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        for k in ("data", "result", "instance", "response"):
+            if k in value:
+                found = _extract_pairing_code(value.get(k))
+                if found:
+                    return found
+        for v in value.values():
+            found = _extract_pairing_code(v)
+            if found:
+                return found
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            found = _extract_pairing_code(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, str) and value.strip():
+        s = value.strip()
+        # Very loose heuristic to catch formatted pairing codes (e.g. "ABCD-EFGH").
+        if 6 <= len(s) <= 32 and any(ch.isdigit() for ch in s) and any(ch.isalpha() for ch in s):
+            return s
     return ""
 
 def _qr_content_to_png_bytes(content):
@@ -4464,6 +4497,12 @@ elif st.session_state["role"] == "Coordenador":
             placeholder="nome-da-instancia",
             key="evo_instance",
         ).strip()
+        pair_number = st.text_input(
+            "Numero para parear (opcional)",
+            value="",
+            placeholder="Ex: 5516999999999 (somente digitos, com DDI)",
+            key="evo_pair_number",
+        ).strip()
 
         auth_mode = st.selectbox(
             "Header de autenticacao",
@@ -4493,6 +4532,75 @@ elif st.session_state["role"] == "Coordenador":
             key="evo_timeout_s",
         )
 
+        headers = {"Accept": "application/json", "User-Agent": "Active-Educacional/streamlit"}
+        if api_key:
+            if auth_mode.startswith("Authorization"):
+                if api_key.lower().startswith("bearer "):
+                    headers["Authorization"] = api_key
+                else:
+                    headers["Authorization"] = f"Bearer {api_key}"
+            else:
+                headers["apikey"] = api_key
+
+        selected_instance = None
+        with st.expander("Encontrar instancia (opcional)", expanded=False):
+            if st.button("Buscar instancias", key="evo_list_instances"):
+                if not base_url:
+                    st.session_state["evo_instances_cache"] = []
+                    st.session_state["evo_instances_cache_error"] = "Informe EVOLUTION_API_URL."
+                else:
+                    list_candidates = [
+                        "/instance/fetchInstances",
+                        "/api/instance/fetchInstances",
+                        "/instance",
+                        "/api/instance",
+                    ]
+                    found = None
+                    last_err = ""
+                    for path in list_candidates:
+                        url = base_url.rstrip("/") + path
+                        status, ct, body, err = _http_request("GET", url, headers=headers, timeout=int(timeout_s))
+                        parsed, text = _try_parse_json(ct, body)
+                        if isinstance(parsed, list) and parsed:
+                            found = parsed
+                            last_err = ""
+                            break
+                        last_err = f"{path} -> HTTP {status} ({err or 'ok'})"
+                    if found is not None:
+                        st.session_state["evo_instances_cache"] = found
+                        st.session_state["evo_instances_cache_error"] = ""
+                    else:
+                        st.session_state["evo_instances_cache"] = []
+                        st.session_state["evo_instances_cache_error"] = last_err or "Nao foi possivel listar instancias."
+
+            if st.session_state.get("evo_instances_cache_error"):
+                st.warning(st.session_state["evo_instances_cache_error"])
+
+            raw_list = st.session_state.get("evo_instances_cache") or []
+            normalized = []
+            if isinstance(raw_list, list):
+                for item in raw_list:
+                    if not isinstance(item, dict):
+                        continue
+                    inst = item.get("instance") if isinstance(item.get("instance"), dict) else item
+                    name = str(inst.get("instanceName", "") or "").strip()
+                    iid = str(inst.get("instanceId", "") or "").strip()
+                    status = str(inst.get("status", "") or inst.get("connectionStatus", "") or "").strip()
+                    if not (name or iid):
+                        continue
+                    label = f"{name or '(sem nome)'} ({status or 'sem status'}) - {iid or 'sem id'}"
+                    normalized.append({"label": label, "instanceName": name, "instanceId": iid, "status": status})
+
+            if normalized:
+                st.dataframe(pd.DataFrame(normalized), use_container_width=True)
+                labels = [i["label"] for i in normalized]
+                chosen = st.selectbox("Selecionar", labels, key="evo_instance_pick_label")
+                selected_instance = next((i for i in normalized if i["label"] == chosen), None)
+                st.checkbox("Usar instancia selecionada", value=True, key="evo_use_picked_instance")
+                st.checkbox("Usar instanceId (em vez do instanceName)", value=False, key="evo_use_instance_id")
+            else:
+                st.caption("Clique em 'Buscar instancias' para listar (requer URL e, em geral, chave).")
+
         c1, c2 = st.columns([1, 1])
         fetch = c1.button("Gerar / Atualizar QR", type="primary", key="evo_fetch_qr")
         show_debug = c2.checkbox("Mostrar debug", value=True, key="evo_show_debug")
@@ -4500,42 +4608,68 @@ elif st.session_state["role"] == "Coordenador":
         if fetch:
             if not base_url:
                 st.error("Informe EVOLUTION_API_URL.")
-            elif not instance_name:
-                st.error("Informe EVOLUTION_INSTANCE.")
             else:
-                headers = {"Accept": "application/json", "User-Agent": "Active-Educacional/streamlit"}
-                if api_key:
-                    if auth_mode.startswith("Authorization"):
-                        if api_key.lower().startswith("bearer "):
-                            headers["Authorization"] = api_key
-                        else:
-                            headers["Authorization"] = f"Bearer {api_key}"
+                instance_value = instance_name
+                if st.session_state.get("evo_use_picked_instance") and isinstance(selected_instance, dict):
+                    if st.session_state.get("evo_use_instance_id"):
+                        instance_value = selected_instance.get("instanceId") or instance_value
                     else:
-                        headers["apikey"] = api_key
+                        instance_value = selected_instance.get("instanceName") or instance_value
+                instance_value = str(instance_value or "").strip()
+                if not instance_value:
+                    st.error("Informe EVOLUTION_INSTANCE (ou selecione uma instancia).")
+                    st.stop()
 
-                inst = quote(instance_name, safe="")
+                inst = quote(instance_value, safe="")
+                pair_digits = re.sub(r"\D+", "", str(pair_number or ""))
+                qs = f"?number={quote(pair_digits, safe='')}" if pair_digits else ""
                 candidates = []
                 if qr_endpoint.startswith("Auto"):
-                    candidates = [
-                        ("GET", f"/instance/connect/{inst}"),
-                        ("POST", f"/instance/connect/{inst}"),
+                    base_paths = [
+                        ("GET", f"/instance/connect/{inst}{qs}"),
+                        ("POST", f"/instance/connect/{inst}{qs}"),
                         ("GET", f"/instance/qrcode/{inst}"),
                         ("GET", f"/instance/qr/{inst}"),
+                        ("GET", f"/instance/{inst}/qrcode"),
+                        ("GET", f"/instance/{inst}/qr"),
+                        ("GET", f"/manager/instance/{inst}/qrcode"),
+                        ("GET", f"/manager/instance/{inst}/qr"),
+                        ("GET", f"/manager/api/instance/{inst}/qrcode"),
+                        ("GET", f"/manager/api/v1/instance/{inst}/qrcode"),
                     ]
+                    prefixes = ["", "/api", "/api/v1", "/v1"]
+                    seen = set()
+                    for method, path in base_paths:
+                        if path.startswith("/instance/"):
+                            for pfx in prefixes:
+                                key = (method, pfx + path)
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                candidates.append(key)
+                        else:
+                            key = (method, path)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            candidates.append(key)
                 else:
                     try:
                         method, path = qr_endpoint.split(" ", 1)
-                        candidates = [(method.strip().upper(), path.strip().replace("{instance}", inst))]
+                        candidates = [(method.strip().upper(), path.strip().replace("{instance}", inst) + qs)]
                     except Exception:
-                        candidates = [("GET", f"/instance/connect/{inst}")]
+                        candidates = [("GET", f"/instance/connect/{inst}{qs}")]
 
                 attempts = []
                 found_img = None
                 found_meta = None
+                found_pairing_code = ""
                 for method, path in candidates:
                     url = base_url.rstrip("/") + path
                     status, ct, body, err = _http_request(method, url, headers=headers, timeout=int(timeout_s))
                     parsed, text = _try_parse_json(ct, body)
+                    if not found_pairing_code and isinstance(parsed, (dict, list)):
+                        found_pairing_code = _extract_pairing_code(parsed)
 
                     img_bytes = None
                     qr_candidate = ""
@@ -4576,6 +4710,8 @@ elif st.session_state["role"] == "Coordenador":
 
                 if found_img:
                     st.success(f"QR obtido: {found_meta['method']} {found_meta['path']} (HTTP {found_meta['status']})")
+                    if found_pairing_code:
+                        st.info(f"Pairing code (se seu WhatsApp pedir): {found_pairing_code}")
                     try:
                         sniff = found_img.lstrip()[:16]
                         if sniff.startswith(b"<svg") or sniff.startswith(b"<?xml"):
