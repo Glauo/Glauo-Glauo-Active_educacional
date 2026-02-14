@@ -13,6 +13,8 @@ import zipfile
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote
+import urllib.error
+import urllib.request
 
 import pandas as pd
 import streamlit as st
@@ -143,6 +145,173 @@ def _get_config_value(name, default=""):
     except Exception:
         pass
     return default
+
+def _evolution_base_url():
+    url = _get_config_value("EVOLUTION_API_URL", "") or _get_config_value("EVOLUTION_URL", "")
+    return str(url).strip().rstrip("/")
+
+def _evolution_api_key():
+    return (
+        _get_config_value("EVOLUTION_API_KEY", "")
+        or _get_config_value("EVOLUTION_APIKEY", "")
+        or _get_config_value("EVOLUTION_KEY", "")
+    )
+
+def _evolution_instance_name():
+    return (
+        _get_config_value("EVOLUTION_INSTANCE", "")
+        or _get_config_value("EVOLUTION_INSTANCE_NAME", "")
+        or _get_config_value("EVOLUTION_INSTANCE_ID", "")
+    )
+
+def _http_request(method, url, headers=None, json_payload=None, timeout=15):
+    headers = dict(headers or {})
+    data = None
+    if json_payload is not None:
+        data = json.dumps(json_payload).encode("utf-8")
+        headers.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(url, data=data, method=method)
+    for k, v in headers.items():
+        if v is None:
+            continue
+        req.add_header(str(k), str(v))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            ct = resp.headers.get("Content-Type", "") or ""
+            body = resp.read() or b""
+            return resp.status, ct, body, None
+    except urllib.error.HTTPError as e:
+        ct = ""
+        try:
+            ct = e.headers.get("Content-Type", "") if getattr(e, "headers", None) else ""
+        except Exception:
+            ct = ""
+        try:
+            body = e.read() or b""
+        except Exception:
+            body = b""
+        return int(getattr(e, "code", 0) or 0), ct, body, str(e)
+    except Exception as exc:
+        return None, "", b"", str(exc)
+
+def _try_parse_json(content_type, body_bytes):
+    if not isinstance(body_bytes, (bytes, bytearray)):
+        return None, str(body_bytes)
+    text = body_bytes.decode("utf-8", errors="replace")
+    ct = str(content_type or "").lower()
+    if "application/json" in ct or text.lstrip().startswith("{") or text.lstrip().startswith("["):
+        try:
+            return json.loads(text), text
+        except Exception:
+            return None, text
+    return None, text
+
+def _sanitize_for_debug(value, max_str=800, max_items=50, depth=3):
+    if depth <= 0:
+        return "(...)"
+    if isinstance(value, dict):
+        out = {}
+        for i, (k, v) in enumerate(value.items()):
+            if i >= max_items:
+                out["..."] = f"+{max(0, len(value) - max_items)} more keys"
+                break
+            out[str(k)] = _sanitize_for_debug(v, max_str=max_str, max_items=max_items, depth=depth - 1)
+        return out
+    if isinstance(value, list):
+        out = []
+        for i, item in enumerate(value):
+            if i >= max_items:
+                out.append(f"... (+{max(0, len(value) - max_items)} more)")
+                break
+            out.append(_sanitize_for_debug(item, max_str=max_str, max_items=max_items, depth=depth - 1))
+        return out
+    if isinstance(value, str):
+        s = value.strip()
+        if len(s) > max_str:
+            return s[:max_str] + f"... (len={len(s)})"
+        return s
+    return value
+
+def _looks_like_base64(value):
+    s = str(value or "").strip()
+    if not s:
+        return False
+    if s.startswith("data:image/") and "," in s:
+        return True
+    if len(s) < 120:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9+/=\s]+", s))
+
+def _maybe_decode_qr_image_bytes(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+    if s.startswith("data:image/") and "," in s:
+        s = s.split(",", 1)[1].strip()
+    if not _looks_like_base64(s):
+        return None
+    try:
+        raw = base64.b64decode(s, validate=False)
+    except Exception:
+        return None
+    sniff = raw.lstrip()[:32]
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return raw
+    if raw.startswith(b"\xff\xd8\xff"):
+        return raw
+    if raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
+        return raw
+    if sniff.startswith(b"<svg") or sniff.startswith(b"<?xml"):
+        return raw
+    return None
+
+def _extract_qr_candidate(value):
+    if isinstance(value, dict):
+        # Common keys used by different Evolution API versions.
+        for k in ("qrcode", "qrCode", "qr_code", "qrcodeBase64", "base64", "qr", "code"):
+            v = value.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        for k in ("data", "result", "instance", "response"):
+            if k in value:
+                found = _extract_qr_candidate(value.get(k))
+                if found:
+                    return found
+        for v in value.values():
+            found = _extract_qr_candidate(v)
+            if found:
+                return found
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            found = _extract_qr_candidate(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, str) and value.strip():
+        s = value.strip()
+        if s.startswith("data:image/"):
+            return s
+        if _looks_like_base64(s):
+            return s
+        return s if len(s) > 50 else ""
+    return ""
+
+def _qr_content_to_png_bytes(content):
+    content = str(content or "").strip()
+    if not content:
+        return None
+    try:
+        import qrcode  # type: ignore
+    except Exception:
+        return None
+    try:
+        img = qrcode.make(content)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
 
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
@@ -2358,6 +2527,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Aprovação Notas",
                 "Conteúdos",
                 "Desafios",
+                "WhatsApp (Evolution)",
                 "Backup",
                 "Professor Wiz",
             ],
@@ -2383,6 +2553,7 @@ elif st.session_state["role"] == "Coordenador":
         "Aprovação Notas": "Notas",
         "Conteúdos": "Conteudos",
         "Desafios": "Desafios",
+        "WhatsApp (Evolution)": "WhatsApp",
         "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
     }
@@ -4266,6 +4437,164 @@ elif st.session_state["role"] == "Coordenador":
                 if "semana" in df.columns and "nivel" in df.columns:
                     df = df.sort_values(["semana", "nivel"], ascending=[False, True])
                 st.dataframe(df, use_container_width=True)
+
+    elif menu_coord == "WhatsApp":
+        st.markdown('<div class="main-header">WhatsApp (Evolution)</div>', unsafe_allow_html=True)
+        st.caption("Tenta obter o QR code da sua instancia do WhatsApp via Evolution API.")
+
+        base_default = _evolution_base_url()
+        key_default = _evolution_api_key()
+        inst_default = _evolution_instance_name()
+
+        base_url = st.text_input(
+            "EVOLUTION_API_URL",
+            value=base_default,
+            placeholder="https://seu-evolution-api.exemplo",
+            key="evo_url",
+        ).strip()
+        api_key = st.text_input(
+            "EVOLUTION_API_KEY",
+            value=key_default,
+            type="password",
+            key="evo_key",
+        ).strip()
+        instance_name = st.text_input(
+            "EVOLUTION_INSTANCE",
+            value=inst_default,
+            placeholder="nome-da-instancia",
+            key="evo_instance",
+        ).strip()
+
+        auth_mode = st.selectbox(
+            "Header de autenticacao",
+            ["apikey", "Authorization: Bearer"],
+            index=0,
+            help="A maioria das instalacoes usa header 'apikey'.",
+            key="evo_auth_mode",
+        )
+        qr_endpoint = st.selectbox(
+            "Endpoint do QR",
+            [
+                "Auto (tentar comuns)",
+                "GET /instance/connect/{instance}",
+                "POST /instance/connect/{instance}",
+                "GET /instance/qrcode/{instance}",
+                "GET /instance/qr/{instance}",
+            ],
+            index=0,
+            key="evo_qr_endpoint",
+        )
+        timeout_s = st.number_input(
+            "Timeout (segundos)",
+            min_value=3,
+            max_value=60,
+            value=15,
+            step=1,
+            key="evo_timeout_s",
+        )
+
+        c1, c2 = st.columns([1, 1])
+        fetch = c1.button("Gerar / Atualizar QR", type="primary", key="evo_fetch_qr")
+        show_debug = c2.checkbox("Mostrar debug", value=True, key="evo_show_debug")
+
+        if fetch:
+            if not base_url:
+                st.error("Informe EVOLUTION_API_URL.")
+            elif not instance_name:
+                st.error("Informe EVOLUTION_INSTANCE.")
+            else:
+                headers = {"Accept": "application/json", "User-Agent": "Active-Educacional/streamlit"}
+                if api_key:
+                    if auth_mode.startswith("Authorization"):
+                        if api_key.lower().startswith("bearer "):
+                            headers["Authorization"] = api_key
+                        else:
+                            headers["Authorization"] = f"Bearer {api_key}"
+                    else:
+                        headers["apikey"] = api_key
+
+                inst = quote(instance_name, safe="")
+                candidates = []
+                if qr_endpoint.startswith("Auto"):
+                    candidates = [
+                        ("GET", f"/instance/connect/{inst}"),
+                        ("POST", f"/instance/connect/{inst}"),
+                        ("GET", f"/instance/qrcode/{inst}"),
+                        ("GET", f"/instance/qr/{inst}"),
+                    ]
+                else:
+                    try:
+                        method, path = qr_endpoint.split(" ", 1)
+                        candidates = [(method.strip().upper(), path.strip().replace("{instance}", inst))]
+                    except Exception:
+                        candidates = [("GET", f"/instance/connect/{inst}")]
+
+                attempts = []
+                found_img = None
+                found_meta = None
+                for method, path in candidates:
+                    url = base_url.rstrip("/") + path
+                    status, ct, body, err = _http_request(method, url, headers=headers, timeout=int(timeout_s))
+                    parsed, text = _try_parse_json(ct, body)
+
+                    img_bytes = None
+                    qr_candidate = ""
+                    if str(ct).lower().startswith("image/") and isinstance(body, (bytes, bytearray)) and body:
+                        img_bytes = bytes(body)
+                    else:
+                        if parsed is not None:
+                            qr_candidate = _extract_qr_candidate(parsed)
+                        if not qr_candidate:
+                            qr_candidate = str(text or "").strip()
+                        img_bytes = _maybe_decode_qr_image_bytes(qr_candidate)
+                        if img_bytes is None and qr_candidate:
+                            gen = _qr_content_to_png_bytes(qr_candidate)
+                            if gen:
+                                img_bytes = gen
+
+                    if str(ct).lower().startswith("image/"):
+                        body_preview = f"(binary image, {len(body or b'')} bytes)"
+                    else:
+                        body_preview = (str(text or "")[:2000]).strip()
+
+                    attempts.append(
+                        {
+                            "method": method,
+                            "path": path,
+                            "status": status,
+                            "content_type": ct,
+                            "error": err,
+                            "body_preview": body_preview,
+                            "json": _sanitize_for_debug(parsed) if isinstance(parsed, (dict, list)) else None,
+                        }
+                    )
+
+                    if img_bytes:
+                        found_img = img_bytes
+                        found_meta = {"method": method, "path": path, "status": status}
+                        break
+
+                if found_img:
+                    st.success(f"QR obtido: {found_meta['method']} {found_meta['path']} (HTTP {found_meta['status']})")
+                    try:
+                        sniff = found_img.lstrip()[:16]
+                        if sniff.startswith(b"<svg") or sniff.startswith(b"<?xml"):
+                            b64 = base64.b64encode(found_img).decode("ascii")
+                            st.markdown(
+                                f"<img src='data:image/svg+xml;base64,{b64}' style='max-width:340px; width:100%;' />",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.image(found_img, caption=f"Instance: {instance_name}")
+                    except Exception as exc:
+                        st.error(f"QR obtido, mas falhou ao renderizar imagem: {exc}")
+                else:
+                    st.error("Nao consegui obter o QR code. Veja o debug abaixo.")
+
+                if show_debug:
+                    with st.expander("Debug (Evolution API)", expanded=not bool(found_img)):
+                        st.json(attempts)
+                        st.caption("Dicas: 401=chave errada. 404=URL/prefixo errado. Se ja estiver conectado, pode nao haver QR.")
 
     elif menu_coord == "Backup":
         st.markdown('<div class="main-header">Backup</div>', unsafe_allow_html=True)
