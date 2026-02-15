@@ -1,0 +1,105 @@
+# ========================================
+# CONFIGURAÇÃO DE VARIÁVEIS DE AMBIENTE
+# Evolution API - Railway
+# ========================================
+
+# IMPORTANTE: Copie e cole estas variáveis no Railway
+# Acesse: https://railway.app/dashboard > seu projeto > Variables
+
+# ========================================
+# AUTENTICAÇÃO (OBRIGATÓRIO)
+# ========================================
+AUTHENTICATION_API_KEY=Active2024SecureKey!@#
+# Esta é a chave que você usará para fazer login no Manager e nas chamadas da API
+# IMPORTANTE: Guarde esta chave em local seguro!
+
+# ========================================
+# CONFIGURAÇÃO DO SERVIDOR
+# ========================================
+SERVER_URL=https://evolution-api.up.railway.app
+SERVER_PORT=8080
+
+# ========================================
+# CORS (Permitir acesso de outros domínios)
+# ========================================
+CORS_ORIGIN=*
+CORS_CREDENTIALS=true
+
+# ========================================
+# BANCO DE DADOS (Recomendado para produção)
+# ========================================
+DATABASE_ENABLED=true
+DATABASE_PROVIDER=postgresql
+DATABASE_CONNECTION_URI=postgresql://usuario:senha@host:5432/evolution
+# NOTA: Você precisa criar um banco PostgreSQL no Railway e substituir a URI acima
+# Ou use: DATABASE_PROVIDER=sqlite para desenvolvimento (não recomendado para produção)
+
+# ========================================
+# CONFIGURAÇÃO DO WHATSAPP
+# ========================================
+QRCODE_COLOR=#198754
+# Cor do QR Code (verde)
+
+# ========================================
+# LOGS E DEBUG
+# ========================================
+LOG_LEVEL=ERROR
+LOG_COLOR=true
+LOG_BAILEYS=error
+
+# ========================================
+# WEBHOOK (Opcional - para receber eventos)
+# ========================================
+WEBHOOK_GLOBAL_ENABLED=false
+WEBHOOK_GLOBAL_URL=
+# Se quiser receber notificações de mensagens, configure um webhook
+
+# ========================================
+# ARMAZENAMENTO (Opcional)
+# ========================================
+STORE_MESSAGES=true
+STORE_MESSAGE_UP=true
+STORE_CONTACTS=true
+STORE_CHATS=true
+
+# ========================================
+# LIMPEZA AUTOMÁTICA
+# ========================================
+CLEAN_STORE_CLEANING_INTERVAL=7200
+CLEAN_STORE_MESSAGES=true
+CLEAN_STORE_MESSAGE_UP=true
+CLEAN_STORE_CONTACTS=true
+CLEAN_STORE_CHATS=true
+
+# ========================================
+# CONFIGURAÇÃO DE INSTÂNCIAS
+# ========================================
+DEL_INSTANCE=false
+# Se true, deleta a instância quando desconectar
+
+# ========================================
+# RABBITMQ (Opcional - para alta performance)
+# ========================================
+RABBITMQ_ENABLED=false
+
+# ========================================
+# REDIS (Opcional - para cache)
+# ========================================
+CACHE_REDIS_ENABLED=false
+
+# ========================================
+# S3 (Opcional - para armazenar mídias)
+# ========================================
+S3_ENABLED=false
+
+# ========================================
+# CONFIGURAÇÃO MÍNIMA PARA FUNCIONAR
+# ========================================
+# Se você quer apenas testar rapidamente, use APENAS estas variáveis:
+#
+# AUTHENTICATION_API_KEY=Active2024SecureKey!@#
+# SERVER_URL=https://evolution-api.up.railway.app
+# CORS_ORIGIN=*
+# CORS_CREDENTIALS=true
+#
+# ========================================
