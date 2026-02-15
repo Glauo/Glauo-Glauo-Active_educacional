@@ -13,11 +13,14 @@ O **Evolution API** não estava gerando QR codes porque **não havia a variável
 As seguintes variáveis foram adicionadas ao serviço `evolution-api` no Railway:
 
 ```env
+AUTHENTICATION_TYPE=apikey
 AUTHENTICATION_API_KEY=Active2024SecureKey!@#
 SERVER_URL=https://evolution-api.up.railway.app
 CORS_ORIGIN=*
 CORS_CREDENTIALS=true
 ```
+
+**IMPORTANTE**: A variável `AUTHENTICATION_TYPE=apikey` é OBRIGATÓRIA para o Evolution API v2 funcionar corretamente.
 
 ### 2. Status Atual
 
@@ -56,13 +59,15 @@ https://github.com/Glauo/Glauo-Glauo-Active_educacional
 4. **Confirme que você clicou em "Update Variables"**
 5. Aguarde o serviço reiniciar (veja o status em "Deployments")
 
-### Passo 2: Verificar se há conflito de variáveis
+### Passo 2: Adicionar a variável AUTHENTICATION_TYPE
 
-Se você já tinha uma `AUTHENTICATION_API_KEY` configurada antes, ela pode estar em conflito. Nesse caso:
+**ATENÇÃO**: Se o login ainda não funcionar, adicione esta variável que estava faltando:
 
-**Opção A**: Use a API Key antiga que já estava configurada
+```
+AUTHENTICATION_TYPE=apikey
+```
 
-**Opção B**: Remova a API Key antiga e mantenha apenas a nova (`Active2024SecureKey!@#`)
+Esta variável é **OBRIGATÓRIA** no Evolution API v2 para definir o tipo de autenticação.
 
 ### Passo 3: Testar o login novamente
 

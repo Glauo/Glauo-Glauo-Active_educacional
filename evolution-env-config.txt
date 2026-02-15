@@ -9,6 +9,9 @@
 # ========================================
 # AUTENTICAÇÃO (OBRIGATÓRIO)
 # ========================================
+AUTHENTICATION_TYPE=apikey
+# Tipo de autenticação (apikey ou jwt)
+
 AUTHENTICATION_API_KEY=Active2024SecureKey!@#
 # Esta é a chave que você usará para fazer login no Manager e nas chamadas da API
 # IMPORTANTE: Guarde esta chave em local seguro!
@@ -97,6 +100,7 @@ S3_ENABLED=false
 # ========================================
 # Se você quer apenas testar rapidamente, use APENAS estas variáveis:
 #
+# AUTHENTICATION_TYPE=apikey
 # AUTHENTICATION_API_KEY=Active2024SecureKey!@#
 # SERVER_URL=https://evolution-api.up.railway.app
 # CORS_ORIGIN=*
