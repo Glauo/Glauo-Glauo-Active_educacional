@@ -1,103 +1,47 @@
-# ✅ SOLUÇÃO FINAL - Evolution API
+# Solução Final - QR Code Evolution API
 
-## 🎯 O Problema
+## Problema Identificado
 
-O Evolution API não estava gerando QR codes porque faltavam **2 variáveis obrigatórias**:
-1. `AUTHENTICATION_TYPE=apikey`
-2. `AUTHENTICATION_API_KEY` (qualquer valor)
+O Evolution API v2.2.3 tinha um **bug conhecido** (Issue #2367 no GitHub) que causava um **loop infinito de reconexão**, impedindo a geração do QR code. O endpoint `/instance/connect` sempre retornava `{"count": 0}`.
 
----
+## Causa Raiz
 
-## 📋 O QUE VOCÊ PRECISA FAZER AGORA
+O Baileys (biblioteca WhatsApp) fechava a conexão durante a configuração inicial (antes do scan do QR), e o código do Evolution API disparava um loop de reconexão ao invés de aguardar a geração do QR code.
 
-### Passo 1: Adicionar a variável que está faltando
+## Solução Aplicada
 
-No Railway, vá em **Variables** e adicione esta linha:
+Foram adicionadas **2 variáveis de ambiente** no Railway:
 
 ```
-AUTHENTICATION_TYPE=apikey
+NODE_OPTIONS="--network-family-autoselection-attempt-timeout=1000"
+CONFIG_SESSION_PHONE_VERSION="2.3000.1028450369"
 ```
 
-### Passo 2: Verificar todas as variáveis necessárias
+### NODE_OPTIONS
+Aumenta o timeout de seleção de família de rede, permitindo que o QR code seja gerado corretamente antes do timeout.
 
-Certifique-se de que estas 5 variáveis estão configuradas:
+### CONFIG_SESSION_PHONE_VERSION
+Define uma versão específica do WhatsApp para evitar problemas de compatibilidade.
 
-```env
-AUTHENTICATION_TYPE=apikey
-AUTHENTICATION_API_KEY=Active2024SecureKey!@#
-SERVER_URL=https://evolution-api.up.railway.app
-CORS_ORIGIN=*
-CORS_CREDENTIALS=true
-```
+## Credenciais de Acesso
 
-### Passo 3: Atualizar e aguardar
+| Item | Valor |
+|------|-------|
+| **URL do Manager** | https://evolution-api-production-349d.up.railway.app/manager |
+| **API Key Global** | `Active2024SecureKey!@#` |
+| **Instância** | `active_educacional` |
+| **Token da Instância** | Gerado automaticamente na criação |
 
-1. Clique em **"Update Variables"** (botão roxo)
-2. Aguarde 2-3 minutos para o serviço reiniciar
-3. Veja o status em **Deployments** (deve ficar verde)
+## Como Usar
 
-### Passo 4: Fazer login no Evolution Manager
+1. Acesse o Evolution Manager: https://evolution-api-production-349d.up.railway.app/manager/login
+2. Faça login com a API Key: `Active2024SecureKey!@#`
+3. Clique na instância `active_educacional`
+4. Clique em "Get QR Code"
+5. Escaneie com o WhatsApp
 
-1. Acesse: https://evolution-api.up.railway.app/manager/login
-2. **Server URL**: `https://evolution-api.up.railway.app`
-3. **API Key Global**: `Active2024SecureKey!@#`
-4. Clique em **Login**
+## Referências
 
----
-
-## 🎉 Depois do Login
-
-Você verá a interface do Evolution Manager e poderá:
-
-1. **Criar uma instância** (clique em "Create Instance")
-2. **Nome da instância**: `active_educacional`
-3. **Gerar QR code** (aparecerá automaticamente)
-4. **Escanear com WhatsApp** (use o WhatsApp que enviará as mensagens)
-5. **Aguardar conexão** (status mudará para "Connected")
-
----
-
-## 📱 Como Usar o WhatsApp no seu Sistema
-
-Depois de conectar, use o módulo Python que criei:
-
-```python
-from evolution_integration import get_evolution_client
-
-# Enviar mensagem
-client = get_evolution_client()
-client.send_text_message(
-    instance_name="active_educacional",
-    number="5511999999999",
-    message="Olá! Teste de mensagem."
-)
-```
-
----
-
-## 🔧 Se Ainda Não Funcionar
-
-Se após adicionar `AUTHENTICATION_TYPE=apikey` ainda der erro:
-
-1. **Verifique os logs** no Railway (Deployments > View Logs)
-2. **Procure por erros** relacionados a AUTHENTICATION
-3. **Me avise** e eu ajudo a resolver
-
----
-
-## 📚 Arquivos no GitHub
-
-Todos os arquivos foram atualizados em:
-https://github.com/Glauo/Glauo-Glauo-Active_educacional
-
-- ✅ `evolution_integration.py` - Módulo de integração
-- ✅ `exemplo_integracao_whatsapp.py` - Exemplos de uso
-- ✅ `README_EVOLUTION.md` - Documentação completa
-- ✅ `evolution-env-config.txt` - Todas as variáveis disponíveis
-- ✅ `RESUMO_EXECUTIVO.md` - Resumo da solução
-- ✅ `SOLUCAO_FINAL.md` - Este arquivo
-
----
-
-**Última atualização**: 15/02/2026  
-**Commit**: `a87120c` - "fix: Adicionar AUTHENTICATION_TYPE=apikey obrigatório para Evolution API v2"
+- [Issue #2367 - BUG ERROR GENERATE QR CODE](https://github.com/EvolutionAPI/evolution-api/issues/2367)
+- [PR #2365 - Bug Fix: QR Code Infinite Reconnection Loop](https://github.com/EvolutionAPI/evolution-api/pull/2365)
+- [Issue #2388 - NODE_OPTIONS fix](https://github.com/EvolutionAPI/evolution-api/issues/2388)
