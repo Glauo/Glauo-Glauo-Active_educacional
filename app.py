@@ -143,6 +143,7 @@ MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
 CHALLENGES_FILE = DATA_DIR / "challenges.json"
 CHALLENGE_COMPLETIONS_FILE = DATA_DIR / "challenge_completions.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
+BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
 WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
 
@@ -584,6 +585,7 @@ DEFAULT_WIZ_SETTINGS = {
     "enabled": True,
     "notify_email": True,
     "notify_whatsapp": True,
+    "auto_daily_backup": True,
     "on_student_created": True,
     "on_teacher_created": True,
     "on_user_created": True,
@@ -630,6 +632,82 @@ def save_wiz_settings(settings):
     st.session_state["wiz_settings"] = merged
     _save_json_dict(WIZ_SETTINGS_FILE, merged)
     return merged
+
+def _backup_datasets():
+    return [
+        ("users.json", "users", USERS_FILE),
+        ("students.json", "students", STUDENTS_FILE),
+        ("classes.json", "classes", CLASSES_FILE),
+        ("teachers.json", "teachers", TEACHERS_FILE),
+        ("agenda.json", "agenda", AGENDA_FILE),
+        ("messages.json", "messages", MESSAGES_FILE),
+        ("challenges.json", "challenges", CHALLENGES_FILE),
+        ("challenge_completions.json", "challenge_completions", CHALLENGE_COMPLETIONS_FILE),
+        ("receivables.json", "receivables", RECEIVABLES_FILE),
+        ("payables.json", "payables", PAYABLES_FILE),
+        ("inventory.json", "inventory", INVENTORY_FILE),
+        ("inventory_moves.json", "inventory_moves", INVENTORY_MOVES_FILE),
+        ("certificates.json", "certificates", CERTIFICATES_FILE),
+        ("books.json", "books", BOOKS_FILE),
+        ("materials.json", "materials", MATERIALS_FILE),
+        ("material_orders.json", "material_orders", MATERIAL_ORDERS_FILE),
+        ("grades.json", "grades", GRADES_FILE),
+        ("fee_templates.json", "fee_templates", FEE_TEMPLATES_FILE),
+        ("email_log.json", "email_log", EMAIL_LOG_FILE),
+    ]
+
+def _build_backup_zip_bytes():
+    datasets = _backup_datasets()
+    snapshot_meta = {
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "counts": {name: len(st.session_state.get(key, []) or []) for name, key, _ in datasets if isinstance(st.session_state.get(key, []), list)},
+    }
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("meta.json", json.dumps(snapshot_meta, ensure_ascii=False, indent=2).encode("utf-8"))
+        for file_name, session_key, _ in datasets:
+            data = st.session_state.get(session_key, [])
+            if session_key == "users":
+                data = st.session_state.get("users", [])
+            if not isinstance(data, list):
+                data = []
+            zf.writestr(file_name, json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
+    return bio.getvalue(), snapshot_meta
+
+def _run_wiz_daily_backup(force=False):
+    settings = get_wiz_settings()
+    if not force and not bool(settings.get("auto_daily_backup", True)):
+        return False, "backup diario desativado", None
+
+    meta = _load_json_dict(BACKUP_META_FILE, {})
+    today = datetime.date.today().isoformat()
+    if not force and str(meta.get("last_daily_backup_date", "")) == today:
+        return False, "backup diario ja executado hoje", str(meta.get("last_backup_file", ""))
+
+    try:
+        payload, snap_meta = _build_backup_zip_bytes()
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = BACKUP_DIR / f"active_daily_{stamp}.zip"
+        with DATA_IO_LOCK:
+            backup_file.write_bytes(payload)
+            old = sorted(BACKUP_DIR.glob("active_daily_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for stale in old[30:]:
+                try:
+                    stale.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        _save_json_dict(
+            BACKUP_META_FILE,
+            {
+                "last_daily_backup_date": today,
+                "last_backup_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_backup_file": str(backup_file),
+                "counts": snap_meta.get("counts", {}),
+            },
+        )
+        return True, "backup diario criado", str(backup_file)
+    except Exception as exc:
+        return False, f"falha no backup diario: {exc}", None
 
 def wiz_enabled():
     return bool(get_wiz_settings().get("enabled", True))
@@ -1137,6 +1215,7 @@ def run_wiz_assistant():
             enabled = st.checkbox("Assistente habilitado", value=bool(settings.get("enabled")), key="wiz_enabled")
             notify_email = st.checkbox("Enviar e-mail", value=bool(settings.get("notify_email")), key="wiz_notify_email")
             notify_whatsapp = st.checkbox("Enviar WhatsApp", value=bool(settings.get("notify_whatsapp")), key="wiz_notify_whatsapp")
+            auto_daily_backup = st.checkbox("Backup diário automático", value=bool(settings.get("auto_daily_backup", True)), key="wiz_auto_daily_backup")
         with c2:
             on_student_created = st.checkbox("Cadastro de alunos", value=bool(settings.get("on_student_created")), key="wiz_on_student_created")
             on_teacher_created = st.checkbox("Cadastro de professores", value=bool(settings.get("on_teacher_created")), key="wiz_on_teacher_created")
@@ -1153,6 +1232,7 @@ def run_wiz_assistant():
                     "enabled": enabled,
                     "notify_email": notify_email,
                     "notify_whatsapp": notify_whatsapp,
+                    "auto_daily_backup": auto_daily_backup,
                     "on_student_created": on_student_created,
                     "on_teacher_created": on_teacher_created,
                     "on_user_created": on_user_created,
@@ -1164,6 +1244,18 @@ def run_wiz_assistant():
                 }
             )
             st.success("Configurações salvas.")
+        backup_meta = _load_json_dict(BACKUP_META_FILE, {})
+        st.caption(
+            "Último backup diário: "
+            f"{backup_meta.get('last_backup_at', 'nunca')} | "
+            f"{backup_meta.get('last_backup_file', 'sem arquivo')}"
+        )
+        if st.button("Executar backup agora", key="wiz_run_backup_now"):
+            ok, msg, file_path = _run_wiz_daily_backup(force=True)
+            if ok:
+                st.success(f"{msg}: {file_path}")
+            else:
+                st.warning(msg)
 
     with st.expander("Integração WhatsApp (W-API / Evolution)", expanded=False):
         diag = _whatsapp_config_diagnostics()
@@ -2787,6 +2879,11 @@ st.session_state["users"] = ensure_admin_user(st.session_state["users"])
 st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
 save_users(st.session_state["users"])
 st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
+if "wiz_daily_backup_checked" not in st.session_state:
+    st.session_state["wiz_daily_backup_checked"] = False
+if not st.session_state["wiz_daily_backup_checked"]:
+    _run_wiz_daily_backup(force=False)
+    st.session_state["wiz_daily_backup_checked"] = True
 
 # ==============================================================================
 # TELA DE LOGIN
