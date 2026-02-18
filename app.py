@@ -106,6 +106,12 @@ if "evo_instances_cache" not in st.session_state:
     st.session_state["evo_instances_cache"] = []
 if "evo_instances_cache_error" not in st.session_state:
     st.session_state["evo_instances_cache_error"] = ""
+if "wiz_settings" not in st.session_state:
+    st.session_state["wiz_settings"] = {}
+if "wiz_action_plan" not in st.session_state:
+    st.session_state["wiz_action_plan"] = []
+if "wiz_last_execution" not in st.session_state:
+    st.session_state["wiz_last_execution"] = []
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "2523"
@@ -136,7 +142,9 @@ BOOKS_FILE = DATA_DIR / "books.json"
 MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
 CHALLENGES_FILE = DATA_DIR / "challenges.json"
 CHALLENGE_COMPLETIONS_FILE = DATA_DIR / "challenge_completions.json"
+WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 WHATSAPP_NUMBER = "5516996043314" 
+WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
 
 def _get_config_value(name, default=""):
     env_val = os.getenv(name, None)
@@ -167,6 +175,27 @@ def _evolution_instance_name():
         or _get_config_value("EVOLUTION_INSTANCE_NAME", "")
         or _get_config_value("EVOLUTION_INSTANCE_ID", "")
     )
+
+def _wapi_base_url():
+    return (
+        _get_config_value("WAPI_BASE_URL", "")
+        or _get_config_value("W_API_URL", "")
+        or _get_config_value("WAPI_URL", "")
+    ).strip().rstrip("/")
+
+def _wapi_token():
+    return (
+        _get_config_value("WAPI_TOKEN", "")
+        or _get_config_value("W_API_TOKEN", "")
+        or _get_config_value("WAPI_API_KEY", "")
+    ).strip()
+
+def _wapi_instance_id():
+    return (
+        _get_config_value("WAPI_INSTANCE_ID", "")
+        or _get_config_value("W_API_INSTANCE_ID", "")
+        or WAPI_DEFAULT_INSTANCE_ID
+    ).strip()
 
 def _http_request(method, url, headers=None, json_payload=None, timeout=15):
     headers = dict(headers or {})
@@ -548,6 +577,628 @@ def load_list(path):
 
 def save_list(path, data):
     _save_json_list(path, data)
+
+DEFAULT_WIZ_SETTINGS = {
+    "enabled": True,
+    "notify_email": True,
+    "notify_whatsapp": True,
+    "on_student_created": True,
+    "on_teacher_created": True,
+    "on_user_created": True,
+    "on_news_posted": True,
+    "on_grade_approved": True,
+    "on_agenda_created": True,
+    "on_class_link_updated": True,
+    "on_financial_created": True,
+}
+
+def _load_json_dict(path, default_obj=None):
+    default_obj = dict(default_obj or {})
+    with DATA_IO_LOCK:
+        if not path.exists():
+            _atomic_write_json(path, default_obj)
+            return dict(default_obj)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else dict(default_obj)
+        except Exception:
+            return dict(default_obj)
+
+def _save_json_dict(path, data):
+    if not isinstance(data, dict):
+        data = {}
+    with DATA_IO_LOCK:
+        _atomic_write_json(path, data)
+
+def get_wiz_settings():
+    raw = st.session_state.get("wiz_settings") or {}
+    out = dict(DEFAULT_WIZ_SETTINGS)
+    if isinstance(raw, dict):
+        for key in out:
+            if key in raw:
+                out[key] = bool(raw.get(key))
+    return out
+
+def save_wiz_settings(settings):
+    merged = dict(DEFAULT_WIZ_SETTINGS)
+    if isinstance(settings, dict):
+        for key in merged:
+            if key in settings:
+                merged[key] = bool(settings.get(key))
+    st.session_state["wiz_settings"] = merged
+    _save_json_dict(WIZ_SETTINGS_FILE, merged)
+    return merged
+
+def wiz_enabled():
+    return bool(get_wiz_settings().get("enabled", True))
+
+def wiz_event_enabled(event_key):
+    settings = get_wiz_settings()
+    return bool(settings.get("enabled", True)) and bool(settings.get(event_key, False))
+
+def _normalize_whatsapp_number(number_raw):
+    digits = re.sub(r"\D+", "", str(number_raw or ""))
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) in (10, 11):
+        digits = "55" + digits
+    return digits
+
+def _student_whatsapp_recipients(student):
+    numbers = set()
+    if not isinstance(student, dict):
+        return []
+    student_number = _normalize_whatsapp_number(student.get("celular", ""))
+    if student_number:
+        numbers.add(student_number)
+    resp = student.get("responsavel", {})
+    if isinstance(resp, dict):
+        resp_number = _normalize_whatsapp_number(resp.get("celular", ""))
+        if resp_number:
+            numbers.add(resp_number)
+    return sorted(numbers)
+
+def _send_whatsapp_evolution(number, text, timeout=20):
+    number = _normalize_whatsapp_number(number)
+    message_text = str(text or "").strip()
+    base_url = _evolution_base_url()
+    api_key = _evolution_api_key()
+    instance = _evolution_instance_name()
+    if not (number and message_text and base_url and instance and api_key):
+        return False, "evolution nao configurado", []
+
+    auth_mode = str(_get_config_value("EVOLUTION_AUTH_MODE", "apikey")).strip().lower()
+    headers = {"Accept": "application/json", "User-Agent": "Active-Wiz-Automation/1.0"}
+    if auth_mode.startswith("authorization"):
+        headers["Authorization"] = api_key if api_key.lower().startswith("bearer ") else f"Bearer {api_key}"
+    else:
+        headers["apikey"] = api_key
+
+    inst = quote(instance, safe="")
+    candidates = []
+    number_variants = [number, f"{number}@s.whatsapp.net"]
+    prefixes = ["", "/api", "/api/v1", "/v1"]
+    payload_shapes = []
+    for num in number_variants:
+        payload_shapes.extend(
+            [
+                {"number": num, "text": message_text},
+                {"number": num, "message": message_text},
+                {"number": num, "textMessage": {"text": message_text}},
+                {"number": num, "options": {"delay": 1200}, "textMessage": {"text": message_text}},
+            ]
+        )
+    for pfx in prefixes:
+        candidates.extend(
+            [
+                ("POST", f"{pfx}/message/sendText/{inst}"),
+                ("POST", f"{pfx}/chat/sendText/{inst}"),
+            ]
+        )
+
+    attempts = []
+    for method, path in candidates:
+        for payload in payload_shapes:
+            status, ct, body, err = _http_request(
+                method,
+                base_url.rstrip("/") + path,
+                headers=headers,
+                json_payload=payload,
+                timeout=int(timeout),
+            )
+            parsed, text_preview = _try_parse_json(ct, body)
+            ok = status is not None and 200 <= int(status) < 300
+            attempts.append(
+                {
+                    "path": path,
+                    "status": status,
+                    "error": err,
+                    "payload_keys": sorted(list(payload.keys())),
+                    "preview": (text_preview or "")[:200],
+                }
+            )
+            if ok:
+                return True, f"enviado (HTTP {status})", attempts
+            if isinstance(parsed, dict):
+                msg = str(parsed.get("message", "") or parsed.get("error", "")).strip()
+                if msg and ("sent" in msg.lower() or "sucesso" in msg.lower() or "success" in msg.lower()):
+                    return True, msg, attempts
+    last = attempts[-1] if attempts else {}
+    return False, f"falha whatsapp (HTTP {last.get('status')})", attempts
+
+def _send_whatsapp_wapi(number, text, timeout=20):
+    number = _normalize_whatsapp_number(number)
+    message_text = str(text or "").strip()
+    base_url = _wapi_base_url()
+    token = _wapi_token()
+    instance_id = _wapi_instance_id()
+    if not (number and message_text and base_url and token and instance_id):
+        return False, "wapi nao configurado", []
+
+    headers_list = [
+        {"Authorization": token if token.lower().startswith("bearer ") else f"Bearer {token}"},
+        {"apikey": token},
+        {"x-api-key": token},
+    ]
+    candidates = [
+        ("POST", "/api/v1/message/send-text"),
+        ("POST", "/api/v1/messages/send-text"),
+        ("POST", "/message/send-text"),
+        ("POST", "/message/sendText"),
+        ("POST", f"/api/v1/instances/{quote(instance_id, safe='')}/send-text"),
+        ("POST", f"/instance/{quote(instance_id, safe='')}/send-text"),
+    ]
+    payloads = [
+        {"instanceId": instance_id, "phone": number, "message": message_text},
+        {"instanceId": instance_id, "number": number, "text": message_text},
+        {"instance_id": instance_id, "phone": number, "message": message_text},
+        {"instance": instance_id, "phone": number, "message": message_text},
+    ]
+
+    attempts = []
+    for method, path in candidates:
+        for auth_headers in headers_list:
+            headers = {"Accept": "application/json", "User-Agent": "Active-Wiz-Automation/1.0"}
+            headers.update(auth_headers)
+            for payload in payloads:
+                status, ct, body, err = _http_request(
+                    method,
+                    base_url.rstrip("/") + path,
+                    headers=headers,
+                    json_payload=payload,
+                    timeout=int(timeout),
+                )
+                parsed, text_preview = _try_parse_json(ct, body)
+                ok = status is not None and 200 <= int(status) < 300
+                attempts.append(
+                    {
+                        "path": path,
+                        "status": status,
+                        "error": err,
+                        "auth": next(iter(auth_headers.keys())),
+                        "payload_keys": sorted(list(payload.keys())),
+                        "preview": (text_preview or "")[:200],
+                    }
+                )
+                if ok:
+                    return True, f"enviado (HTTP {status})", attempts
+                if isinstance(parsed, dict):
+                    msg = str(parsed.get("message", "") or parsed.get("error", "")).strip()
+                    if msg and ("sent" in msg.lower() or "sucesso" in msg.lower() or "success" in msg.lower()):
+                        return True, msg, attempts
+    last = attempts[-1] if attempts else {}
+    return False, f"falha wapi (HTTP {last.get('status')})", attempts
+
+def _has_wapi_config():
+    return bool(_wapi_base_url() and _wapi_token() and _wapi_instance_id())
+
+def _has_evolution_config():
+    return bool(_evolution_base_url() and _evolution_api_key() and _evolution_instance_name())
+
+def _send_whatsapp_auto(number, text, timeout=20):
+    provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip().lower()
+    if provider == "wapi":
+        return _send_whatsapp_wapi(number, text, timeout=timeout)
+    if provider == "evolution":
+        return _send_whatsapp_evolution(number, text, timeout=timeout)
+
+    # auto: prioriza W-API se estiver configurado; caso contrario, Evolution.
+    if _has_wapi_config():
+        ok, status, attempts = _send_whatsapp_wapi(number, text, timeout=timeout)
+        if ok:
+            return ok, status, attempts
+    if _has_evolution_config():
+        return _send_whatsapp_evolution(number, text, timeout=timeout)
+    if _has_wapi_config():
+        return _send_whatsapp_wapi(number, text, timeout=timeout)
+    return False, "nenhum provedor whatsapp configurado", []
+
+def _log_comm_event(destinatario, canal, contato, assunto, mensagem, origem, status):
+    st.session_state["email_log"].append(
+        {
+            "destinatario": destinatario,
+            "canal": canal,
+            "email": contato if canal == "email" else "",
+            "whatsapp": contato if canal == "whatsapp" else "",
+            "assunto": assunto,
+            "mensagem": mensagem,
+            "origem": origem,
+            "status": status,
+            "data": datetime.date.today().strftime("%d/%m/%Y"),
+        }
+    )
+    save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
+
+def _notify_direct_contacts(destinatario, emails, whatsapps, assunto, mensagem, origem):
+    settings = get_wiz_settings()
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    email_enabled = bool(settings.get("enabled")) and bool(settings.get("notify_email"))
+    wa_enabled = bool(settings.get("enabled")) and bool(settings.get("notify_whatsapp"))
+
+    if email_enabled:
+        for email in sorted({str(e).strip().lower() for e in emails if str(e).strip()}):
+            ok, status = _send_email_smtp(email, assunto, mensagem)
+            stats["email_total"] += 1
+            if ok:
+                stats["email_ok"] += 1
+            _log_comm_event(destinatario, "email", email, assunto, mensagem, origem, status)
+
+    if wa_enabled:
+        for number in sorted({str(n).strip() for n in whatsapps if str(n).strip()}):
+            ok, status, _ = _send_whatsapp_auto(number, f"{assunto}\n\n{mensagem}")
+            stats["whatsapp_total"] += 1
+            if ok:
+                stats["whatsapp_ok"] += 1
+            _log_comm_event(destinatario, "whatsapp", number, assunto, mensagem, origem, status)
+
+    return stats
+
+def notify_students_by_turma_multichannel(turma, assunto, corpo, origem):
+    total_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    for student in st.session_state.get("students", []):
+        if turma != "Todas" and student.get("turma") != turma:
+            continue
+        emails = _message_recipients_for_student(student)
+        whatsapps = _student_whatsapp_recipients(student)
+        stats = _notify_direct_contacts(student.get("nome", "Aluno"), emails, whatsapps, assunto, corpo, origem)
+        for key in total_stats:
+            total_stats[key] += stats.get(key, 0)
+    return total_stats
+
+def notify_students_by_turma_whatsapp(turma, assunto, corpo, origem):
+    total = {"whatsapp_total": 0, "whatsapp_ok": 0}
+    settings = get_wiz_settings()
+    if not (settings.get("enabled") and settings.get("notify_whatsapp")):
+        return total
+    for student in st.session_state.get("students", []):
+        if turma != "Todas" and student.get("turma") != turma:
+            continue
+        for number in _student_whatsapp_recipients(student):
+            ok, status, _ = _send_whatsapp_auto(number, f"{assunto}\n\n{corpo}")
+            total["whatsapp_total"] += 1
+            if ok:
+                total["whatsapp_ok"] += 1
+            _log_comm_event(student.get("nome", "Aluno"), "whatsapp", number, assunto, corpo, origem, status)
+    return total
+
+def notify_student_financial_event(aluno_nome, itens):
+    if not wiz_event_enabled("on_financial_created"):
+        return {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    student = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
+    if not student:
+        return {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    lines = []
+    for item in itens[:12]:
+        lines.append(
+            f"- {item.get('descricao','Lancamento')} | Venc: {item.get('vencimento','')} | "
+            f"Parcela: {item.get('parcela','')} | Valor: {item.get('valor_parcela', item.get('valor',''))}"
+        )
+    assunto = "[Active] Novo lançamento financeiro"
+    corpo = "Foram lançados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
+    return _notify_direct_contacts(
+        student.get("nome", "Aluno"),
+        _message_recipients_for_student(student),
+        _student_whatsapp_recipients(student),
+        assunto,
+        corpo,
+        "Financeiro",
+    )
+
+def _extract_first_json(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return {}
+    match = re.search(r"\{[\s\S]*\}", raw)
+    if not match:
+        return {}
+    snippet = match.group(0)
+    try:
+        return json.loads(snippet)
+    except Exception:
+        return {}
+
+def _wiz_execute_actions(actions):
+    reports = []
+    for action in actions:
+        kind = str((action or {}).get("type", "")).strip().lower()
+        data = action.get("data", {}) if isinstance(action, dict) else {}
+        try:
+            if kind == "cadastrar_aluno":
+                nome = str(data.get("nome", "")).strip()
+                email = str(data.get("email", "")).strip().lower()
+                if not nome or not email:
+                    reports.append({"type": kind, "ok": False, "message": "nome e email sao obrigatorios"})
+                    continue
+                novo = {
+                    "nome": nome,
+                    "matricula": _next_student_matricula(st.session_state.get("students", [])),
+                    "idade": int(data.get("idade") or 18),
+                    "data_nascimento": str(data.get("data_nascimento", "")),
+                    "celular": str(data.get("celular", "")),
+                    "email": email,
+                    "rg": str(data.get("rg", "")),
+                    "cpf": str(data.get("cpf", "")),
+                    "cidade_natal": str(data.get("cidade_natal", "")),
+                    "pais": str(data.get("pais", "Brasil")),
+                    "cep": str(data.get("cep", "")),
+                    "cidade": str(data.get("cidade", "")),
+                    "bairro": str(data.get("bairro", "")),
+                    "rua": str(data.get("rua", "")),
+                    "numero": str(data.get("numero", "")),
+                    "turma": str(data.get("turma", "Sem Turma")),
+                    "modulo": str(data.get("modulo", "Presencial em Turma")),
+                    "livro": str(data.get("livro", "")),
+                    "usuario": str(data.get("usuario", "")),
+                    "senha": str(data.get("senha", "")),
+                    "responsavel": {
+                        "nome": str(data.get("responsavel_nome", "")),
+                        "cpf": str(data.get("responsavel_cpf", "")),
+                        "celular": str(data.get("responsavel_celular", "")),
+                        "email": str(data.get("responsavel_email", "")).strip().lower(),
+                    },
+                }
+                st.session_state["students"].append(novo)
+                save_list(STUDENTS_FILE, st.session_state["students"])
+                reports.append({"type": kind, "ok": True, "message": f"aluno {nome} cadastrado"})
+            elif kind == "cadastrar_professor":
+                nome = str(data.get("nome", "")).strip()
+                if not nome:
+                    reports.append({"type": kind, "ok": False, "message": "nome e obrigatorio"})
+                    continue
+                prof = {
+                    "nome": nome,
+                    "area": str(data.get("area", "")),
+                    "email": str(data.get("email", "")).strip().lower(),
+                    "celular": str(data.get("celular", "")),
+                    "usuario": str(data.get("usuario", "")).strip(),
+                    "senha": str(data.get("senha", "")).strip(),
+                }
+                st.session_state["teachers"].append(prof)
+                save_list(TEACHERS_FILE, st.session_state["teachers"])
+                reports.append({"type": kind, "ok": True, "message": f"professor {nome} cadastrado"})
+            elif kind == "cadastrar_usuario":
+                usuario = str(data.get("usuario", "")).strip()
+                senha = str(data.get("senha", "")).strip()
+                perfil = str(data.get("perfil", "Coordenador")).strip()
+                if not usuario or not senha:
+                    reports.append({"type": kind, "ok": False, "message": "usuario e senha sao obrigatorios"})
+                    continue
+                st.session_state["users"].append(
+                    {
+                        "usuario": usuario,
+                        "senha": senha,
+                        "perfil": perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin") else "Coordenador",
+                        "pessoa": str(data.get("pessoa", "")),
+                        "email": str(data.get("email", "")).strip().lower(),
+                        "celular": str(data.get("celular", "")),
+                    }
+                )
+                save_users(st.session_state["users"])
+                reports.append({"type": kind, "ok": True, "message": f"usuario {usuario} criado"})
+            elif kind == "agendar_aula":
+                turma = str(data.get("turma", "")).strip()
+                if not turma:
+                    reports.append({"type": kind, "ok": False, "message": "turma e obrigatoria"})
+                    continue
+                data_txt = str(data.get("data", datetime.date.today().strftime("%d/%m/%Y")))
+                hora_txt = str(data.get("hora", "19:00"))
+                item = {
+                    "turma": turma,
+                    "professor": str(data.get("professor", "")),
+                    "titulo": str(data.get("titulo", "Aula ao vivo")).strip() or "Aula ao vivo",
+                    "descricao": str(data.get("descricao", "")),
+                    "data": data_txt,
+                    "hora": hora_txt,
+                    "link": str(data.get("link", "")),
+                    "recorrencia": "",
+                }
+                item["google_calendar_link"] = build_google_calendar_event_link(item)
+                st.session_state["agenda"].append(item)
+                save_list(AGENDA_FILE, st.session_state["agenda"])
+                reports.append({"type": kind, "ok": True, "message": f"aula agendada para {turma}"})
+            elif kind == "atualizar_link_turma":
+                turma = str(data.get("turma", "")).strip()
+                novo_link = str(data.get("link", "")).strip()
+                turma_obj = next((t for t in st.session_state.get("classes", []) if t.get("nome") == turma), None)
+                if not turma_obj:
+                    reports.append({"type": kind, "ok": False, "message": "turma nao encontrada"})
+                    continue
+                turma_obj["link_zoom"] = novo_link
+                save_list(CLASSES_FILE, st.session_state["classes"])
+                reports.append({"type": kind, "ok": True, "message": f"link atualizado para {turma}"})
+            elif kind == "publicar_noticia":
+                titulo = str(data.get("titulo", "")).strip()
+                mensagem = str(data.get("mensagem", "")).strip()
+                turma = str(data.get("turma", "Todas")).strip() or "Todas"
+                if not titulo or not mensagem:
+                    reports.append({"type": kind, "ok": False, "message": "titulo e mensagem sao obrigatorios"})
+                    continue
+                post_message_and_notify(
+                    autor=st.session_state.get("user_name", "Assistente Wiz"),
+                    titulo=titulo,
+                    mensagem=mensagem,
+                    turma=turma,
+                    origem="Assistente Wiz",
+                )
+                reports.append({"type": kind, "ok": True, "message": "noticia publicada"})
+            elif kind == "lancar_recebivel":
+                aluno = str(data.get("aluno", "")).strip()
+                valor = str(data.get("valor", "")).strip()
+                descricao = str(data.get("descricao", "Mensalidade")).strip()
+                if not aluno or not valor:
+                    reports.append({"type": kind, "ok": False, "message": "aluno e valor sao obrigatorios"})
+                    continue
+                venc = parse_date(str(data.get("vencimento", ""))) or datetime.date.today()
+                codigo = add_receivable(
+                    aluno=aluno,
+                    descricao=descricao,
+                    valor=valor,
+                    vencimento=venc,
+                    cobranca=str(data.get("cobranca", "Boleto")),
+                    categoria=str(data.get("categoria", "Mensalidade")),
+                    data_lancamento=datetime.date.today(),
+                    valor_parcela=str(data.get("valor_parcela", valor)),
+                    parcela=str(data.get("parcela", "1/1")),
+                    numero_pedido=str(data.get("numero_pedido", "")),
+                )
+                reports.append({"type": kind, "ok": True, "message": f"recebivel lancado ({codigo})"})
+            elif kind == "lancar_nota":
+                aluno = str(data.get("aluno", "")).strip()
+                if not aluno:
+                    reports.append({"type": kind, "ok": False, "message": "aluno e obrigatorio"})
+                    continue
+                st.session_state["grades"].append(
+                    {
+                        "aluno": aluno,
+                        "turma": str(data.get("turma", "")),
+                        "disciplina": str(data.get("disciplina", "Ingles")),
+                        "avaliacao": str(data.get("avaliacao", "Avaliação")),
+                        "nota": str(data.get("nota", "")),
+                        "status": str(data.get("status", "Pendente")),
+                        "data": datetime.date.today().strftime("%d/%m/%Y"),
+                    }
+                )
+                save_list(GRADES_FILE, st.session_state["grades"])
+                reports.append({"type": kind, "ok": True, "message": f"nota lancada para {aluno}"})
+            else:
+                reports.append({"type": kind, "ok": False, "message": "acao nao suportada"})
+        except Exception as exc:
+            reports.append({"type": kind, "ok": False, "message": f"falha: {exc}"})
+    return reports
+
+def run_wiz_assistant():
+    st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
+    st.caption("Automação operacional com IA para Coordenação/Admin.")
+    provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip() or "auto"
+    st.caption(
+        "WhatsApp provider: "
+        f"{provider} | W-API instance: {_wapi_instance_id() or '(não definido)'}"
+    )
+
+    role = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+    if role not in ("Admin", "Coordenador"):
+        st.error("Acesso restrito para Coordenador/Admin.")
+        return
+
+    settings = get_wiz_settings()
+    with st.expander("Configurar automações", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            enabled = st.checkbox("Assistente habilitado", value=bool(settings.get("enabled")), key="wiz_enabled")
+            notify_email = st.checkbox("Enviar e-mail", value=bool(settings.get("notify_email")), key="wiz_notify_email")
+            notify_whatsapp = st.checkbox("Enviar WhatsApp", value=bool(settings.get("notify_whatsapp")), key="wiz_notify_whatsapp")
+        with c2:
+            on_student_created = st.checkbox("Cadastro de alunos", value=bool(settings.get("on_student_created")), key="wiz_on_student_created")
+            on_teacher_created = st.checkbox("Cadastro de professores", value=bool(settings.get("on_teacher_created")), key="wiz_on_teacher_created")
+            on_user_created = st.checkbox("Cadastro de usuários", value=bool(settings.get("on_user_created")), key="wiz_on_user_created")
+            on_news_posted = st.checkbox("Publicação de notícias", value=bool(settings.get("on_news_posted")), key="wiz_on_news_posted")
+        with c3:
+            on_grade_approved = st.checkbox("Aprovação de notas", value=bool(settings.get("on_grade_approved")), key="wiz_on_grade_approved")
+            on_agenda_created = st.checkbox("Agendamento de aula", value=bool(settings.get("on_agenda_created")), key="wiz_on_agenda_created")
+            on_class_link_updated = st.checkbox("Alteração de link de turma", value=bool(settings.get("on_class_link_updated")), key="wiz_on_class_link_updated")
+            on_financial_created = st.checkbox("Lançamento financeiro", value=bool(settings.get("on_financial_created")), key="wiz_on_financial_created")
+        if st.button("Salvar configurações do Assistente Wiz", type="primary"):
+            save_wiz_settings(
+                {
+                    "enabled": enabled,
+                    "notify_email": notify_email,
+                    "notify_whatsapp": notify_whatsapp,
+                    "on_student_created": on_student_created,
+                    "on_teacher_created": on_teacher_created,
+                    "on_user_created": on_user_created,
+                    "on_news_posted": on_news_posted,
+                    "on_grade_approved": on_grade_approved,
+                    "on_agenda_created": on_agenda_created,
+                    "on_class_link_updated": on_class_link_updated,
+                    "on_financial_created": on_financial_created,
+                }
+            )
+            st.success("Configurações salvas.")
+
+    st.markdown("### Comando operacional por IA")
+    st.caption("Descreva o que o Wiz deve fazer. Ele retorna um plano JSON e executa no Active.")
+    comando = st.text_area(
+        "Instrução",
+        placeholder="Ex: Cadastre o aluno João na turma Kids 2, lance mensalidade de 250 para 10/03/2026 e publique aviso para a turma.",
+        height=110,
+        key="wiz_command_text",
+    )
+
+    if st.button("Gerar plano com IA", key="wiz_plan_ai"):
+        api_key = get_groq_api_key()
+        if not api_key:
+            st.error("Configure GROQ_API_KEY para gerar o plano com IA.")
+        elif not str(comando or "").strip():
+            st.error("Descreva uma instrução.")
+        else:
+            system = "\n".join(
+                [
+                    "Voce transforma comandos administrativos em JSON executavel.",
+                    "Responda SOMENTE JSON valido, sem markdown.",
+                    "Formato: {\"actions\":[{\"type\":\"...\",\"data\":{...}}]}",
+                    "Acoes permitidas: cadastrar_aluno, cadastrar_professor, cadastrar_usuario, agendar_aula, atualizar_link_turma, publicar_noticia, lancar_recebivel, lancar_nota.",
+                    "Use poucos campos, apenas o necessario.",
+                ]
+            )
+            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+            try:
+                result = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": comando},
+                    ],
+                    temperature=0.1,
+                    max_tokens=1200,
+                )
+                raw = (result.choices[0].message.content or "").strip()
+                parsed = _extract_first_json(raw)
+                actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
+                if not isinstance(actions, list):
+                    actions = []
+                st.session_state["wiz_action_plan"] = actions
+                if actions:
+                    st.success(f"Plano gerado com {len(actions)} ação(ões).")
+                else:
+                    st.warning("A IA não retornou ações executáveis.")
+            except Exception as exc:
+                st.error(f"Falha ao gerar plano: {exc}")
+
+    plan = st.session_state.get("wiz_action_plan") or []
+    if plan:
+        st.markdown("### Plano atual")
+        st.json(plan)
+        if st.button("Executar plano no sistema", type="primary", key="wiz_exec_plan"):
+            reports = _wiz_execute_actions(plan)
+            st.session_state["wiz_last_execution"] = reports
+            st.success("Execução concluída.")
+
+    if st.session_state.get("wiz_last_execution"):
+        st.markdown("### Última execução")
+        st.dataframe(pd.DataFrame(st.session_state["wiz_last_execution"]), use_container_width=True)
 
 def ensure_admin_user(users):
     if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
@@ -1361,7 +2012,15 @@ def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mens
         f"Data: {mensagem_obj['data']}\n\n"
         f"{mensagem_obj['mensagem']}"
     )
-    return email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
+    if wiz_event_enabled("on_news_posted"):
+        return notify_students_by_turma_multichannel(mensagem_obj["turma"], assunto, corpo, origem)
+    stats = email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
+    return {
+        "email_total": stats.get("total", 0),
+        "email_ok": stats.get("enviados", 0),
+        "whatsapp_total": 0,
+        "whatsapp_ok": 0,
+    }
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
@@ -2064,6 +2723,7 @@ st.session_state["users"] = load_users()
 st.session_state["users"] = ensure_admin_user(st.session_state["users"])
 st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
 save_users(st.session_state["users"])
+st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
 
 # ==============================================================================
 # TELA DE LOGIN
@@ -2499,7 +3159,11 @@ elif st.session_state["role"] == "Professor":
                             turma=turma_msg,
                             origem="Mensagens Professor",
                         )
-                        st.success(f"Mensagem publicada. E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.success(
+                            "Mensagem publicada. "
+                            f"E-mail: {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                            f"WhatsApp: {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                        )
                         st.rerun()
             st.markdown("### Historico")
             historico = [
@@ -2561,6 +3225,7 @@ elif st.session_state["role"] == "Coordenador":
                 "Conteúdos",
                 "Desafios",
                 "WhatsApp (Evolution)",
+                "ASSISTENTE WIZ",
                 "Backup",
                 "Professor Wiz",
             ],
@@ -2587,6 +3252,7 @@ elif st.session_state["role"] == "Coordenador":
         "Conteúdos": "Conteudos",
         "Desafios": "Desafios",
         "WhatsApp (Evolution)": "WhatsApp",
+        "ASSISTENTE WIZ": "Assistente Wiz",
         "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
     }
@@ -2653,7 +3319,7 @@ elif st.session_state["role"] == "Coordenador":
                             st.session_state["agenda"].append(agenda_item)
                             novos_itens.append(agenda_item)
                         save_list(AGENDA_FILE, st.session_state["agenda"])
-                        if enviar_email_convite and novos_itens:
+                        if novos_itens:
                             resumo = []
                             for item in novos_itens:
                                 linha = f"- {item.get('data','')} {item.get('hora','')} | {item.get('titulo','Aula')}"
@@ -2668,8 +3334,17 @@ elif st.session_state["role"] == "Coordenador":
                                 f"Novas aulas foram agendadas para a turma {turma_sel}.\n\n"
                                 + "\n".join(resumo)
                             )
-                            stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
-                            st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
+                            email_stats = {"total": 0, "enviados": 0}
+                            wa_stats = {"whatsapp_total": 0, "whatsapp_ok": 0}
+                            if enviar_email_convite:
+                                email_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
+                            if wiz_event_enabled("on_agenda_created"):
+                                wa_stats = notify_students_by_turma_whatsapp(turma_sel, assunto, corpo, "Agenda")
+                            st.info(
+                                "Disparos da agenda: "
+                                f"E-mail {email_stats.get('enviados', 0)}/{email_stats.get('total', 0)} | "
+                                f"WhatsApp {wa_stats.get('whatsapp_ok', 0)}/{wa_stats.get('whatsapp_total', 0)}."
+                            )
                         st.success("Aula(s) agendada(s)!")
                         st.rerun()
 
@@ -2689,6 +3364,19 @@ elif st.session_state["role"] == "Coordenador":
                     if turma_obj:
                         turma_obj["link_zoom"] = novo_link
                         save_list(CLASSES_FILE, st.session_state["classes"])
+                        if wiz_event_enabled("on_class_link_updated"):
+                            assunto = f"[Active] Link atualizado - Turma {turma_sel}"
+                            corpo = (
+                                f"O link da aula da turma {turma_sel} foi atualizado.\n\n"
+                                f"Novo link: {novo_link}"
+                            )
+                            email_stats = email_students_by_turma(turma_sel, assunto, corpo, "Links")
+                            wa_stats = notify_students_by_turma_whatsapp(turma_sel, assunto, corpo, "Links")
+                            st.info(
+                                "Disparos do link: "
+                                f"E-mail {email_stats.get('enviados', 0)}/{email_stats.get('total', 0)} | "
+                                f"WhatsApp {wa_stats.get('whatsapp_ok', 0)}/{wa_stats.get('whatsapp_total', 0)}."
+                            )
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
     elif menu_coord == "Estoque":
@@ -3543,10 +4231,38 @@ elif st.session_state["role"] == "Coordenador":
                             )
                             save_users(st.session_state["users"])
 
-                        destinatario_email = resp_email if idade_final < 18 else email
+                        turma_link = str(turma_obj.get("link_zoom", "")).strip() if isinstance(turma_obj, dict) else ""
+                        assunto_auto = "[Active] Boas-vindas e acesso inicial"
+                        corpo_auto = (
+                            f"Olá, {nome}!\n\n"
+                            f"Seu cadastro foi concluído no Active.\n"
+                            f"Turma: {turma}\n"
+                            f"Livro/Nível: {livro_final or 'A definir'}\n"
+                            f"Matrícula: {matricula_final}\n"
+                        )
+                        if turma_link:
+                            corpo_auto += f"Link da aula: {turma_link}\n"
+                        corpo_auto += (
+                            "\nFinanceiro e boletos ficam disponíveis no portal do aluno.\n"
+                            "Em caso de dúvidas, responda esta mensagem."
+                        )
+                        notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                        if wiz_event_enabled("on_student_created"):
+                            notify_stats = _notify_direct_contacts(
+                                nome,
+                                _message_recipients_for_student(novo_aluno),
+                                _student_whatsapp_recipients(novo_aluno),
+                                assunto_auto,
+                                corpo_auto,
+                                "Cadastro Aluno",
+                            )
                         st.session_state["add_student_feedback"] = {
                             "success": "Cadastro realizado com sucesso!",
-                            "info": f"E-mail enviado automaticamente para {destinatario_email} com: Comunicado de Boas-vindas, Link da Aula e Boletos.",
+                            "info": (
+                                "Disparos automáticos: "
+                                f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
+                                f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
+                            ),
                         }
                         st.session_state["add_student_form_version"] = form_ver + 1
                         st.rerun()
@@ -3683,6 +4399,9 @@ elif st.session_state["role"] == "Coordenador":
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome")
                 with c2: area = st.text_input("Area")
+                c_email, c_cel = st.columns(2)
+                with c_email: email_prof = st.text_input("E-mail do Professor")
+                with c_cel: celular_prof = st.text_input("Celular/WhatsApp do Professor")
 
                 c3, c4 = st.columns(2)
                 with c3: login_prof = st.text_input("Login do Professor")
@@ -3698,6 +4417,8 @@ elif st.session_state["role"] == "Coordenador":
                             {
                                 "nome": nome,
                                 "area": area,
+                                "email": email_prof.strip().lower(),
+                                "celular": celular_prof.strip(),
                                 "usuario": login_prof.strip(),
                                 "senha": senha_prof.strip(),
                             }
@@ -3710,9 +4431,20 @@ elif st.session_state["role"] == "Coordenador":
                                     "senha": senha_prof.strip(),
                                     "perfil": "Professor",
                                     "pessoa": nome,
+                                    "email": email_prof.strip().lower(),
+                                    "celular": celular_prof.strip(),
                                 }
                             )
                             save_users(st.session_state["users"])
+                        if wiz_event_enabled("on_teacher_created"):
+                            _notify_direct_contacts(
+                                nome or "Professor",
+                                [email_prof],
+                                [celular_prof],
+                                "[Active] Cadastro de professor concluído",
+                                "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
+                                "Cadastro Professor",
+                            )
                         st.success("Cadastro realizado com sucesso!")
         with tab2:
             if not st.session_state["teachers"]:
@@ -3725,6 +4457,9 @@ elif st.session_state["role"] == "Coordenador":
                     with st.form("edit_prof"):
                         new_nome = st.text_input("Nome", value=prof_obj["nome"])
                         new_area = st.text_input("Area", value=prof_obj.get("area", ""))
+                        ec1, ec2 = st.columns(2)
+                        with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
+                        with ec2: new_cel = st.text_input("Celular/WhatsApp", value=prof_obj.get("celular", ""))
 
                         c3, c4 = st.columns(2)
                         with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
@@ -3766,6 +4501,8 @@ elif st.session_state["role"] == "Coordenador":
 
                                     prof_obj["nome"] = new_nome
                                     prof_obj["area"] = new_area
+                                    prof_obj["email"] = new_email.strip().lower()
+                                    prof_obj["celular"] = new_cel.strip()
                                     prof_obj["usuario"] = login
                                     prof_obj["senha"] = senha
                                     save_list(TEACHERS_FILE, st.session_state["teachers"])
@@ -3932,6 +4669,7 @@ elif st.session_state["role"] == "Coordenador":
                     if not aluno or not val:
                         st.error("Informe aluno e valor.")
                     else:
+                        before_count = len(st.session_state.get("receivables", []))
                         if categoria == "Mensalidade" and gerar_12:
                             for i in range(int(qtd_meses)):
                                 data_venc = add_months(venc, i)
@@ -3987,6 +4725,14 @@ elif st.session_state["role"] == "Coordenador":
                                 numero_pedido=numero_pedido,
                             )
                             st.success("Lançado!")
+                        if wiz_event_enabled("on_financial_created"):
+                            new_items = st.session_state.get("receivables", [])[before_count:]
+                            stats_fin = notify_student_financial_event(aluno, new_items)
+                            st.info(
+                                "Disparos financeiros: "
+                                f"E-mail {stats_fin.get('email_ok', 0)}/{stats_fin.get('email_total', 0)} | "
+                                f"WhatsApp {stats_fin.get('whatsapp_ok', 0)}/{stats_fin.get('whatsapp_total', 0)}."
+                            )
             st.markdown("### Recebimentos")
             recebimentos = st.session_state["receivables"]
             c_f1, c_f2, c_f3, c_f4 = st.columns(4)
@@ -4166,9 +4912,37 @@ elif st.session_state["role"] == "Coordenador":
         if pendentes:
             st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
             if st.button("Aprovar Todas as Pendentes", type="primary"):
+                aprovados_por_aluno = {}
                 for g in st.session_state["grades"]:
-                    if g.get("status") == "Pendente": g["status"] = "Aprovado"
+                    if g.get("status") == "Pendente":
+                        g["status"] = "Aprovado"
+                        aluno_nome = str(g.get("aluno", "")).strip()
+                        if aluno_nome:
+                            aprovados_por_aluno.setdefault(aluno_nome, []).append(g)
                 save_list(GRADES_FILE, st.session_state["grades"])
+                if wiz_event_enabled("on_grade_approved"):
+                    sent_students = 0
+                    for aluno_nome, notas in aprovados_por_aluno.items():
+                        student = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
+                        if not student:
+                            continue
+                        linhas = []
+                        for n in notas[:12]:
+                            linhas.append(
+                                f"- {n.get('avaliacao','Avaliação')}: nota {n.get('nota','')} "
+                                f"({n.get('disciplina','Inglês')})"
+                            )
+                        _notify_direct_contacts(
+                            student.get("nome", "Aluno"),
+                            _message_recipients_for_student(student),
+                            _student_whatsapp_recipients(student),
+                            "[Active] Notas aprovadas",
+                            "Suas notas foram aprovadas:\n\n" + "\n".join(linhas),
+                            "Notas",
+                        )
+                        sent_students += 1
+                    if sent_students:
+                        st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
                 st.success("Notas aprovadas!")
                 st.rerun()
         else:
@@ -4183,9 +4957,31 @@ elif st.session_state["role"] == "Coordenador":
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
                 with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                d1, d2, d3 = st.columns(3)
+                with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
+                with d2: u_email = st.text_input("E-mail (opcional)")
+                with d3: u_cel = st.text_input("Celular/WhatsApp (opcional)")
                 if st.form_submit_button("Criar Acesso"):
-                    st.session_state["users"].append({"usuario": u_user, "senha": u_pass, "perfil": u_role})
+                    st.session_state["users"].append(
+                        {
+                            "usuario": u_user,
+                            "senha": u_pass,
+                            "perfil": u_role,
+                            "pessoa": u_pessoa.strip(),
+                            "email": u_email.strip().lower(),
+                            "celular": u_cel.strip(),
+                        }
+                    )
                     save_users(st.session_state["users"])
+                    if wiz_event_enabled("on_user_created"):
+                        _notify_direct_contacts(
+                            u_pessoa.strip() or u_user.strip() or "Usuário",
+                            [u_email],
+                            [u_cel],
+                            "[Active] Acesso criado",
+                            f"Seu acesso ao Active foi criado.\nPerfil: {u_role}\nUsuário: {u_user}",
+                            "Cadastro Usuário",
+                        )
                     st.success("Usuário criado!")
         with tab2:
             if not st.session_state["users"]: st.info("Nenhum usuário cadastrado.")
@@ -4198,12 +4994,19 @@ elif st.session_state["role"] == "Coordenador":
                         new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
                         new_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"], index=["Aluno", "Professor", "Coordenador"].index(user_obj["perfil"]) if user_obj["perfil"] in ["Aluno", "Professor", "Coordenador"] else 0)
+                        e1, e2, e3 = st.columns(3)
+                        with e1: new_person = st.text_input("Pessoa", value=user_obj.get("pessoa", ""))
+                        with e2: new_email = st.text_input("E-mail", value=user_obj.get("email", ""))
+                        with e3: new_cel = st.text_input("Celular", value=user_obj.get("celular", ""))
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("Salvar Alterações"):
                                 user_obj["usuario"] = new_user
                                 user_obj["senha"] = new_pass
                                 user_obj["perfil"] = new_role
+                                user_obj["pessoa"] = new_person.strip()
+                                user_obj["email"] = new_email.strip().lower()
+                                user_obj["celular"] = new_cel.strip()
                                 save_users(st.session_state["users"])
                                 st.success("Usuário atualizado!")
                                 st.rerun()
@@ -4236,7 +5039,11 @@ elif st.session_state["role"] == "Coordenador":
                             turma=turma_msg,
                             origem="Mensagens Coordenacao",
                         )
-                        st.success(f"Mensagem publicada. E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.success(
+                            "Mensagem publicada. "
+                            f"E-mail: {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                            f"WhatsApp: {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                        )
                         st.rerun()
         with tab_hist:
             if not st.session_state["messages"]:
@@ -4753,6 +5560,9 @@ elif st.session_state["role"] == "Coordenador":
                     with st.expander("Debug (Evolution API)", expanded=not bool(found_img)):
                         st.json(attempts)
                         st.caption("Dicas: 401=chave errada. 404=URL/prefixo errado. Se ja estiver conectado, pode nao haver QR.")
+
+    elif menu_coord == "Assistente Wiz":
+        run_wiz_assistant()
 
     elif menu_coord == "Backup":
         st.markdown('<div class="main-header">Backup</div>', unsafe_allow_html=True)
