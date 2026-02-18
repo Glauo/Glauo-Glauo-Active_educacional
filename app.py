@@ -12,7 +12,7 @@ import calendar
 import zipfile
 from email.message import EmailMessage
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 import urllib.error
 import urllib.request
 
@@ -194,6 +194,8 @@ def _wapi_instance_id():
     return (
         _get_config_value("WAPI_INSTANCE_ID", "")
         or _get_config_value("W_API_INSTANCE_ID", "")
+        or _get_config_value("WAPI_INSTANCE", "")
+        or _get_config_value("W_API_INSTANCE", "")
         or WAPI_DEFAULT_INSTANCE_ID
     ).strip()
 
@@ -737,18 +739,29 @@ def _send_whatsapp_wapi(number, text, timeout=20):
     if not (number and message_text and base_url and token and instance_id):
         return False, "wapi nao configurado", []
 
+    split = urlsplit(base_url)
+    direct_endpoint = "send-text" in str(split.path or "").lower()
+    endpoint_urls = []
+    if direct_endpoint:
+        qs = dict(parse_qsl(split.query, keep_blank_values=True))
+        if "instanceId" not in qs and "instance_id" not in qs:
+            qs["instanceId"] = instance_id
+        direct_url = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs), split.fragment))
+        endpoint_urls = [direct_url]
+    else:
+        endpoint_urls = [base_url.rstrip("/") + p for p in [
+            "/api/v1/message/send-text",
+            "/api/v1/messages/send-text",
+            "/message/send-text",
+            "/message/sendText",
+            f"/api/v1/instances/{quote(instance_id, safe='')}/send-text",
+            f"/instance/{quote(instance_id, safe='')}/send-text",
+        ]]
+
     headers_list = [
         {"Authorization": token if token.lower().startswith("bearer ") else f"Bearer {token}"},
         {"apikey": token},
         {"x-api-key": token},
-    ]
-    candidates = [
-        ("POST", "/api/v1/message/send-text"),
-        ("POST", "/api/v1/messages/send-text"),
-        ("POST", "/message/send-text"),
-        ("POST", "/message/sendText"),
-        ("POST", f"/api/v1/instances/{quote(instance_id, safe='')}/send-text"),
-        ("POST", f"/instance/{quote(instance_id, safe='')}/send-text"),
     ]
     payloads = [
         {"instanceId": instance_id, "phone": number, "message": message_text},
@@ -758,14 +771,14 @@ def _send_whatsapp_wapi(number, text, timeout=20):
     ]
 
     attempts = []
-    for method, path in candidates:
+    for url in endpoint_urls:
         for auth_headers in headers_list:
             headers = {"Accept": "application/json", "User-Agent": "Active-Wiz-Automation/1.0"}
             headers.update(auth_headers)
             for payload in payloads:
                 status, ct, body, err = _http_request(
-                    method,
-                    base_url.rstrip("/") + path,
+                    "POST",
+                    url,
                     headers=headers,
                     json_payload=payload,
                     timeout=int(timeout),
@@ -774,7 +787,7 @@ def _send_whatsapp_wapi(number, text, timeout=20):
                 ok = status is not None and 200 <= int(status) < 300
                 attempts.append(
                     {
-                        "path": path,
+                        "url": url,
                         "status": status,
                         "error": err,
                         "auth": next(iter(auth_headers.keys())),
@@ -814,6 +827,21 @@ def _send_whatsapp_auto(number, text, timeout=20):
     if _has_wapi_config():
         return _send_whatsapp_wapi(number, text, timeout=timeout)
     return False, "nenhum provedor whatsapp configurado", []
+
+def _whatsapp_config_diagnostics():
+    provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip().lower() or "auto"
+    diag = {
+        "provider": provider,
+        "wapi_base_url": bool(_wapi_base_url()),
+        "wapi_token": bool(_wapi_token()),
+        "wapi_instance_id": _wapi_instance_id() or "",
+        "evolution_base_url": bool(_evolution_base_url()),
+        "evolution_api_key": bool(_evolution_api_key()),
+        "evolution_instance": bool(_evolution_instance_name()),
+    }
+    diag["wapi_ready"] = _has_wapi_config()
+    diag["evolution_ready"] = _has_evolution_config()
+    return diag
 
 def _log_comm_event(destinatario, canal, contato, assunto, mensagem, origem, status):
     st.session_state["email_log"].append(
@@ -1136,6 +1164,57 @@ def run_wiz_assistant():
                 }
             )
             st.success("Configurações salvas.")
+
+    with st.expander("Integração WhatsApp (W-API / Evolution)", expanded=False):
+        diag = _whatsapp_config_diagnostics()
+        st.write(
+            "Status atual: "
+            f"provider=`{diag.get('provider')}` | "
+            f"wapi_ready=`{diag.get('wapi_ready')}` | "
+            f"evolution_ready=`{diag.get('evolution_ready')}`"
+        )
+        st.caption(
+            "Configure via variáveis/secrets: "
+            "`ACTIVE_WHATSAPP_PROVIDER` (`wapi`/`evolution`/`auto`), "
+            "`WAPI_BASE_URL`, `WAPI_TOKEN`, `WAPI_INSTANCE_ID`."
+        )
+        st.code(
+            "\n".join(
+                [
+                    f"WAPI_INSTANCE_ID (lido): {diag.get('wapi_instance_id') or '(vazio)'}",
+                    f"WAPI_BASE_URL: {'OK' if diag.get('wapi_base_url') else 'FALTA'}",
+                    f"WAPI_TOKEN: {'OK' if diag.get('wapi_token') else 'FALTA'}",
+                ]
+            ),
+            language="text",
+        )
+        t1, t2, t3 = st.columns([1.2, 2, 1])
+        with t1:
+            test_number = st.text_input(
+                "Número teste",
+                value="",
+                placeholder="5516999999999",
+                key="wiz_test_wa_number",
+            )
+        with t2:
+            test_message = st.text_input(
+                "Mensagem teste",
+                value="Teste de integração W-API no Active.",
+                key="wiz_test_wa_message",
+            )
+        with t3:
+            timeout_s = st.number_input("Timeout", min_value=5, max_value=60, value=20, step=1, key="wiz_test_wa_timeout")
+        if st.button("Testar envio WhatsApp", key="wiz_test_wa_send"):
+            if not str(test_number or "").strip():
+                st.error("Informe um número para teste.")
+            else:
+                ok, status, attempts = _send_whatsapp_auto(test_number, test_message, timeout=int(timeout_s))
+                if ok:
+                    st.success(f"Envio concluído: {status}")
+                else:
+                    st.error(f"Falha no envio: {status}")
+                with st.expander("Debug do envio", expanded=not ok):
+                    st.json(attempts[-8:] if isinstance(attempts, list) else attempts)
 
     st.markdown("### Comando operacional por IA")
     st.caption("Descreva o que o Wiz deve fazer. Ele retorna um plano JSON e executa no Active.")
@@ -1948,52 +2027,44 @@ def _message_recipients_for_student(student):
     return sorted(recipients)
 
 def email_students_by_turma(turma, assunto, corpo, origem):
-    delivered = 0
-    total = 0
-    for student in st.session_state["students"]:
-        if turma == "Todas" or student.get("turma") == turma:
-            for email in _message_recipients_for_student(student):
-                ok, status = _send_email_smtp(email, assunto, corpo)
-                total += 1
-                if ok:
-                    delivered += 1
-                st.session_state["email_log"].append({
-                    "destinatario": student.get("nome", "Aluno"),
-                    "email": email,
-                    "assunto": assunto,
-                    "mensagem": corpo,
-                    "origem": origem,
-                    "status": status,
-                    "data": datetime.date.today().strftime("%d/%m/%Y"),
-                })
-    save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
-    return {"total": total, "enviados": delivered}
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    for student in st.session_state.get("students", []):
+        if turma != "Todas" and student.get("turma") != turma:
+            continue
+        partial = _notify_direct_contacts(
+            student.get("nome", "Aluno"),
+            _message_recipients_for_student(student),
+            _student_whatsapp_recipients(student),
+            assunto,
+            corpo,
+            origem,
+        )
+        for key in stats:
+            stats[key] += int(partial.get(key, 0))
+    # Compatibilidade com trechos legados que usam total/enviados para e-mail.
+    stats["total"] = stats["email_total"]
+    stats["enviados"] = stats["email_ok"]
+    return stats
 
 def email_students_by_level(level, assunto, corpo, origem):
     level = _norm_book_level(level)
-    delivered = 0
-    total = 0
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     for student in st.session_state.get("students", []):
         if student_book_level(student) != level:
             continue
-        for email in _message_recipients_for_student(student):
-            ok, status = _send_email_smtp(email, assunto, corpo)
-            total += 1
-            if ok:
-                delivered += 1
-            st.session_state["email_log"].append(
-                {
-                    "destinatario": student.get("nome", "Aluno"),
-                    "email": email,
-                    "assunto": assunto,
-                    "mensagem": corpo,
-                    "origem": origem,
-                    "status": status,
-                    "data": datetime.date.today().strftime("%d/%m/%Y"),
-                }
-            )
-    save_list(EMAIL_LOG_FILE, st.session_state["email_log"])
-    return {"total": total, "enviados": delivered}
+        partial = _notify_direct_contacts(
+            student.get("nome", "Aluno"),
+            _message_recipients_for_student(student),
+            _student_whatsapp_recipients(student),
+            assunto,
+            corpo,
+            origem,
+        )
+        for key in stats:
+            stats[key] += int(partial.get(key, 0))
+    stats["total"] = stats["email_total"]
+    stats["enviados"] = stats["email_ok"]
+    return stats
 
 def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mensagens"):
     mensagem_obj = {
@@ -2012,15 +2083,7 @@ def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mens
         f"Data: {mensagem_obj['data']}\n\n"
         f"{mensagem_obj['mensagem']}"
     )
-    if wiz_event_enabled("on_news_posted"):
-        return notify_students_by_turma_multichannel(mensagem_obj["turma"], assunto, corpo, origem)
-    stats = email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
-    return {
-        "email_total": stats.get("total", 0),
-        "email_ok": stats.get("enviados", 0),
-        "whatsapp_total": 0,
-        "whatsapp_ok": 0,
-    }
+    return email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
@@ -3334,16 +3397,13 @@ elif st.session_state["role"] == "Coordenador":
                                 f"Novas aulas foram agendadas para a turma {turma_sel}.\n\n"
                                 + "\n".join(resumo)
                             )
-                            email_stats = {"total": 0, "enviados": 0}
-                            wa_stats = {"whatsapp_total": 0, "whatsapp_ok": 0}
+                            notif_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                             if enviar_email_convite:
-                                email_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
-                            if wiz_event_enabled("on_agenda_created"):
-                                wa_stats = notify_students_by_turma_whatsapp(turma_sel, assunto, corpo, "Agenda")
+                                notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
                             st.info(
                                 "Disparos da agenda: "
-                                f"E-mail {email_stats.get('enviados', 0)}/{email_stats.get('total', 0)} | "
-                                f"WhatsApp {wa_stats.get('whatsapp_ok', 0)}/{wa_stats.get('whatsapp_total', 0)}."
+                                f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
+                                f"WhatsApp {notif_stats.get('whatsapp_ok', 0)}/{notif_stats.get('whatsapp_total', 0)}."
                             )
                         st.success("Aula(s) agendada(s)!")
                         st.rerun()
@@ -3370,12 +3430,11 @@ elif st.session_state["role"] == "Coordenador":
                                 f"O link da aula da turma {turma_sel} foi atualizado.\n\n"
                                 f"Novo link: {novo_link}"
                             )
-                            email_stats = email_students_by_turma(turma_sel, assunto, corpo, "Links")
-                            wa_stats = notify_students_by_turma_whatsapp(turma_sel, assunto, corpo, "Links")
+                            notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Links")
                             st.info(
                                 "Disparos do link: "
-                                f"E-mail {email_stats.get('enviados', 0)}/{email_stats.get('total', 0)} | "
-                                f"WhatsApp {wa_stats.get('whatsapp_ok', 0)}/{wa_stats.get('whatsapp_total', 0)}."
+                                f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
+                                f"WhatsApp {notif_stats.get('whatsapp_ok', 0)}/{notif_stats.get('whatsapp_total', 0)}."
                             )
                         st.success(f"Link atualizado com sucesso para a turma {turma_sel}!")
 
@@ -5175,7 +5234,11 @@ elif st.session_state["role"] == "Coordenador":
                                 "Acesse o portal do aluno > Desafios para responder e ser avaliado."
                             )
                             stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
-                            st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
+                            st.info(
+                                "Disparos dos desafios: "
+                                f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                                f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                            )
                         st.success(f"Desafio gerado e salvo para {nivel} - {semana}.")
                         st.rerun()
                     except Exception as exc:
@@ -5238,7 +5301,11 @@ elif st.session_state["role"] == "Coordenador":
                             "Acesse o portal do aluno > Desafios para responder e ser avaliado."
                         )
                         stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
-                        st.info(f"E-mails processados: {stats['enviados']}/{stats['total']}.")
+                        st.info(
+                            "Disparos dos desafios: "
+                            f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                            f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                        )
                     st.success(f"Desafio salvo para {nivel} - {semana}.")
                     st.rerun()
 
