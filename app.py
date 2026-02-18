@@ -439,7 +439,44 @@ def _rotate_backups(path, keep=30):
             pass
 
 def _db_url():
-    return _get_config_value("ACTIVE_DATABASE_URL", "") or _get_config_value("DATABASE_URL", "")
+    raw_url = (
+        _get_config_value("ACTIVE_DATABASE_URL", "")
+        or _get_config_value("DATABASE_URL", "")
+        or _get_config_value("URL_DO_BANCO_DE_DADOS", "")
+        or _get_config_value("URL_BANCO_DADOS", "")
+        or _get_config_value("POSTGRES_URL", "")
+        or _get_config_value("POSTGRESQL_URL", "")
+    )
+    url = str(raw_url or "").strip().strip('"').strip("'")
+    if url.startswith("postgres://"):
+        # Normaliza para o esquema padrão aceito pelo driver.
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
+
+def _db_key_for_path(path):
+    return str(getattr(path, "stem", path)).strip()
+
+def _db_legacy_keys_for_path(path):
+    out = []
+    seen = set()
+
+    def _add(value):
+        value = str(value or "").strip()
+        if not value or value in seen:
+            return
+        seen.add(value)
+        out.append(value)
+
+    if isinstance(path, Path):
+        _add(path.name)
+        _add(path.as_posix())
+        _add(str(path))
+        _add(f"{path.stem}.json")
+    else:
+        _add(path)
+    return out
+
+_DB_UNAVAILABLE = object()
 
 def _db_enabled():
     return bool(_db_url()) and psycopg2 is not None
@@ -476,7 +513,7 @@ def _db_get(key):
                 row = cur.fetchone()
                 return row[0] if row else None
     except Exception:
-        return None
+        return _DB_UNAVAILABLE
 
 def _db_set(key, value):
     try:
@@ -545,28 +582,44 @@ def _save_json_list_file(path, data):
         _atomic_write_json(path, safe_data)
 
 def _load_json_list(path):
-    key = str(getattr(path, "stem", path)).strip()
+    key = _db_key_for_path(path)
     if _db_enabled():
         data = _db_get(key)
+        if data is _DB_UNAVAILABLE:
+            # Se o banco estiver indisponível, evita sobrescrever com vazio.
+            return _load_json_list_file(path)
         if isinstance(data, list):
             return data
         if data is None:
+            # Migra automaticamente caso a versão antiga tenha salvo com outra chave.
+            for legacy_key in _db_legacy_keys_for_path(path):
+                if legacy_key == key:
+                    continue
+                legacy_data = _db_get(legacy_key)
+                if legacy_data is _DB_UNAVAILABLE:
+                    return _load_json_list_file(path)
+                if isinstance(legacy_data, list):
+                    _db_set(key, legacy_data)
+                    return legacy_data
             # First run with DB: seed from local file if exists.
             seeded = _load_json_list_file(path)
-            _db_set(key, seeded)
+            if seeded:
+                _db_set(key, seeded)
             return seeded
         return []
     return _load_json_list_file(path)
 
 def _save_json_list(path, data):
-    key = str(getattr(path, "stem", path)).strip()
+    key = _db_key_for_path(path)
+    safe_data = data if isinstance(data, list) else []
     if _db_enabled():
-        ok = _db_set(key, data if isinstance(data, list) else [])
+        ok = _db_set(key, safe_data)
         mirror = os.getenv("ACTIVE_MIRROR_FILES", "0").strip().lower() in ("1", "true", "yes")
-        if mirror:
-            _save_json_list_file(path, data)
+        # Se falhar no banco, salva localmente para nao perder alteracoes da sessao.
+        if mirror or not ok:
+            _save_json_list_file(path, safe_data)
         return ok
-    _save_json_list_file(path, data)
+    _save_json_list_file(path, safe_data)
     return True
 
 def load_users():
