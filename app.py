@@ -28,7 +28,7 @@ except Exception:
 
 # --- CONFIGURACAO DA PAGINA ---
 st.set_page_config(
-    page_title="Active Educacional",
+    page_title="Ativo Sistema Educacional",
     page_icon=":mortar_board:",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -2789,17 +2789,89 @@ def run_active_chatbot():
 
 def run_student_finance_assistant():
     st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
-    st.caption("Escolha uma opcao abaixo para falar com a IA.")
+    aluno_nome = str(st.session_state.get("user_name", "")).strip()
+    recebiveis_aluno = [
+        r for r in st.session_state.get("receivables", [])
+        if str(r.get("aluno", "")).strip() == aluno_nome
+    ]
+    hoje = datetime.date.today()
 
-    api_key = get_groq_api_key()
-    if not api_key:
-        st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o assistente financeiro.")
-        return
+    def _valor_item(item):
+        return parse_money(item.get("valor_parcela", item.get("valor", 0)))
 
-    chat_key = f"finance:{get_active_chat_history_key()}"
-    if chat_key not in st.session_state["active_chat_histories"]:
-        st.session_state["active_chat_histories"][chat_key] = []
-    chat_history = st.session_state["active_chat_histories"][chat_key]
+    a_vencer = []
+    vencidos = []
+    pagos = []
+    for item in recebiveis_aluno:
+        status = str(item.get("status", "")).strip().lower()
+        if status == "pago":
+            pagos.append(item)
+            continue
+        dt_venc = parse_date(item.get("vencimento", ""))
+        if dt_venc and dt_venc < hoje:
+            vencidos.append(item)
+        else:
+            a_vencer.append(item)
+
+    total_a_vencer = sum(_valor_item(i) for i in a_vencer)
+    total_vencido = sum(_valor_item(i) for i in vencidos)
+    total_pago = sum(_valor_item(i) for i in pagos)
+
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Boletos a vencer", f"{len(a_vencer)}")
+        st.caption(format_money(total_a_vencer))
+    with m2:
+        st.metric("Boletos vencidos", f"{len(vencidos)}")
+        st.caption(format_money(total_vencido))
+    with m3:
+        st.metric("Pagamentos realizados", f"{len(pagos)}")
+        st.caption(format_money(total_pago))
+
+    st.markdown("### Referencias financeiras")
+    ref_opt = st.selectbox(
+        "Selecione o que deseja visualizar",
+        [
+            "Boletos a vencer",
+            "Boletos vencidos",
+            "Resumo do que foi pago",
+            "Todos os lancamentos",
+        ],
+        key="finance_ref_opt",
+    )
+
+    if ref_opt == "Boletos a vencer":
+        dados_tabela = a_vencer
+        tabela_msg = "Nenhum boleto a vencer."
+    elif ref_opt == "Boletos vencidos":
+        dados_tabela = vencidos
+        tabela_msg = "Nenhum boleto vencido."
+    elif ref_opt == "Resumo do que foi pago":
+        dados_tabela = pagos
+        tabela_msg = "Nenhum pagamento encontrado."
+    else:
+        dados_tabela = recebiveis_aluno
+        tabela_msg = "Nenhum lancamento financeiro encontrado."
+
+    if dados_tabela:
+        df = pd.DataFrame(dados_tabela)
+        col_order = [
+            "data",
+            "vencimento",
+            "descricao",
+            "categoria",
+            "valor_parcela",
+            "parcela",
+            "cobranca",
+            "status",
+        ]
+        df = df[[c for c in col_order if c in df.columns]]
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info(tabela_msg)
+
+    st.markdown("### Assistente financeiro (Wiz)")
+    st.caption("Escolha uma opcao para o Wiz responder com orientacao financeira.")
 
     options = [
         "Historico de pagamentos",
@@ -2812,9 +2884,29 @@ def run_student_finance_assistant():
     ]
     choice = st.selectbox("Opcoes financeiras", options, index=0, key="finance_choice")
 
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.warning("Assistente IA indisponivel: configure GROQ_API_KEY para liberar o Wiz nesta tela.")
+        return
+
+    chat_key = f"finance:{get_active_chat_history_key()}"
+    if chat_key not in st.session_state["active_chat_histories"]:
+        st.session_state["active_chat_histories"][chat_key] = []
+    chat_history = st.session_state["active_chat_histories"][chat_key]
+
     col1, col2 = st.columns([1, 1])
     if col1.button("Consultar", type="primary"):
-        chat_history.append({"role": "user", "content": f"Quero ajuda com: {choice}."})
+        resumo_contexto = (
+            f"A vencer: {len(a_vencer)} ({format_money(total_a_vencer)}). "
+            f"Vencidos: {len(vencidos)} ({format_money(total_vencido)}). "
+            f"Pagos: {len(pagos)} ({format_money(total_pago)})."
+        )
+        chat_history.append(
+            {
+                "role": "user",
+                "content": f"Quero ajuda com: {choice}. Contexto financeiro atual: {resumo_contexto}",
+            }
+        )
         system_prompt = get_active_system_prompt("Financeiro", include_context=True)
         system_prompt += (
             "\nAtenda somente aos temas: historico de pagamentos, parcelas a vencer, parcelas vencidas, "
@@ -3001,7 +3093,7 @@ if not st.session_state.get("logged_in", False):
             f"""
 <div class="hero-card">
   {logo_html}
-  <div class="hero-title">Sistema Educacional<br>Ativo</div>
+  <div class="hero-title">Ativo<br>Sistema Educacional</div>
   <div class="hero-meta">Escola de líderes e inglês Mister Wiz</div>
   <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
@@ -3304,13 +3396,13 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestao", ["Minhas Turmas", "Agenda", "Mensagens", "Livros", "Professor Wiz"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestao", ["Minhas Turmas", "Agenda", "Mensagens", "Lancar Notas", "Livros", "Professor Wiz"], "menu_prof")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_prof_map = {"Minhas Turmas": "Minhas Turmas", "Agenda": "Agenda", "Mensagens": "Mensagens", "Livros": "Livros", "Professor Wiz": "Assistente IA"}
+    menu_prof_map = {"Minhas Turmas": "Minhas Turmas", "Agenda": "Agenda", "Mensagens": "Mensagens", "Lancar Notas": "Notas", "Livros": "Livros", "Professor Wiz": "Assistente IA"}
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -3448,6 +3540,70 @@ elif st.session_state["role"] == "Professor":
 <div>{msg.get('mensagem','')}</div></div>""",
                     unsafe_allow_html=True,
                 )
+    elif menu_prof == "Notas":
+        st.markdown('<div class="main-header">Lancamento de Notas</div>', unsafe_allow_html=True)
+        prof_nome = st.session_state["user_name"].strip().lower()
+        turmas_prof = [
+            c.get("nome") for c in st.session_state["classes"]
+            if str(c.get("professor", "")).strip().lower() == prof_nome
+        ]
+        if not turmas_prof:
+            st.info("Nenhuma turma atribuida a voce.")
+        else:
+            turma_nota = st.selectbox("Turma", turmas_prof, key="prof_turma_nota")
+            alunos_turma = [s.get("nome") for s in st.session_state["students"] if s.get("turma") == turma_nota]
+            if not alunos_turma:
+                st.info("Nao ha alunos nessa turma para lancar nota.")
+            else:
+                with st.form("prof_launch_grades"):
+                    aluno_nota = st.selectbox("Aluno", alunos_turma)
+                    avaliacao_base = st.text_input("Avaliacao", value="Avaliacao mensal")
+                    data_avaliacao = st.date_input("Data da avaliacao", value=datetime.date.today(), format="DD/MM/YYYY")
+                    c_n1, c_n2, c_n3 = st.columns(3)
+                    with c_n1:
+                        nota_prova = st.number_input("Nota da prova", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                    with c_n2:
+                        nota_conteudo = st.number_input("Nota de conteudo", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                    with c_n3:
+                        nota_presenca = st.number_input("Presenca (%)", min_value=0, max_value=100, value=100, step=1)
+                    observacao = st.text_area("Observacao (opcional)")
+
+                    if st.form_submit_button("Enviar para analise do coordenador"):
+                        data_txt = data_avaliacao.strftime("%d/%m/%Y") if data_avaliacao else datetime.date.today().strftime("%d/%m/%Y")
+                        lancamentos = [
+                            ("Nota da prova", f"{nota_prova:.1f}"),
+                            ("Conteudo", f"{nota_conteudo:.1f}"),
+                            ("Presenca", f"{nota_presenca}%"),
+                        ]
+                        for tipo, valor_nota in lancamentos:
+                            st.session_state["grades"].append(
+                                {
+                                    "aluno": aluno_nota,
+                                    "turma": turma_nota,
+                                    "disciplina": "Ingles",
+                                    "avaliacao": f"{avaliacao_base} - {tipo}",
+                                    "nota": valor_nota,
+                                    "status": "Pendente",
+                                    "data": data_txt,
+                                    "autor": st.session_state.get("user_name", "Professor"),
+                                    "observacao": observacao.strip(),
+                                }
+                            )
+                        save_list(GRADES_FILE, st.session_state["grades"])
+                        st.success("Notas enviadas para analise do coordenador.")
+                        st.rerun()
+
+                pendentes_prof = [
+                    g for g in st.session_state["grades"]
+                    if g.get("turma") == turma_nota and g.get("status") == "Pendente"
+                ]
+                if pendentes_prof:
+                    st.markdown("### Pendentes de aprovacao")
+                    df_pend = pd.DataFrame(pendentes_prof)
+                    col_order = [c for c in ["data", "aluno", "avaliacao", "nota", "status", "autor"] if c in df_pend.columns]
+                    if col_order:
+                        df_pend = df_pend[col_order]
+                    st.dataframe(df_pend, use_container_width=True)
     elif menu_prof == "Livros":
         st.markdown('<div class="main-header">Livros Didáticos</div>', unsafe_allow_html=True)
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
@@ -5024,21 +5180,39 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        def _parse_parcela_info(parcela_txt):
+            parcela_str = str(parcela_txt or "").strip()
+            atual = 1
+            total = 1
+            if "/" in parcela_str:
+                parte_atual, parte_total = parcela_str.split("/", 1)
+                atual = max(1, parse_int(parte_atual) or 1)
+                total = max(1, parse_int(parte_total) or 1)
+            else:
+                atual = max(1, parse_int(parcela_str) or 1)
+                total = atual
+            return atual, total
+
         tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
         with tab1:
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
-                with c2: val = st.text_input("Valor (Ex: 150,00)")
+                with c2: val = st.text_input("Valor total (Ex: 150,00)")
                 with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
                 with c4:
                     categoria_lancamento = st.selectbox(
                         "Categoria do lancamento",
                         ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
                     )
+                alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
                 if categoria_lancamento == "Aluno":
-                    aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                    if alunos_opts:
+                        aluno = st.selectbox("Aluno", alunos_opts)
+                    else:
+                        aluno = ""
+                        st.info("Nenhum aluno cadastrado para lancar recebimento.")
                 else:
                     ref_label = {
                         "Fornecedor": "Fornecedor",
@@ -5049,7 +5223,7 @@ elif st.session_state["role"] == "Coordenador":
                     aluno = st.text_input(f"{ref_label} *")
                 c4, c5, c6 = st.columns(3)
                 with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c5: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
                 material_payment = "A vista"
                 if categoria == "Material":
                     with c6:
@@ -5060,14 +5234,13 @@ elif st.session_state["role"] == "Coordenador":
                     cobranca = material_payment
                 else:
                     with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
-                c7, c8, c9 = st.columns(3)
+                c7, c8 = st.columns(2)
                 is_material = categoria == "Material"
-                with c7: valor_parcela = st.text_input("Valor da parcela", value=val, disabled=is_material)
-                with c8: parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
-                with c9: numero_pedido = st.text_input("Número do pedido")
+                with c7:
+                    parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
                 material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
                 if categoria == "Mensalidade":
-                    gerar_12 = st.checkbox("Gerar mensalidades em série", value=True)
+                    gerar_12 = st.checkbox("Gerar mensalidades em serie", value=True)
                     qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=12)
                 elif categoria == "Material":
                     gerar_12 = False
@@ -5081,15 +5254,30 @@ elif st.session_state["role"] == "Coordenador":
                 else:
                     gerar_12 = False
                     qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1)
-                if st.form_submit_button("Lançar"):
-                    if not aluno or not val:
-                        st.error("Informe referencia e valor.")
+
+                if categoria == "Mensalidade" and not gerar_12:
+                    qtd_parcelas_calc = 1
+                elif categoria == "Material" and not material_parcelado:
+                    qtd_parcelas_calc = 1
+                else:
+                    qtd_parcelas_calc = max(1, int(qtd_meses))
+
+                valor_total_num = parse_money(val)
+                valor_parcela_num = (valor_total_num / qtd_parcelas_calc) if valor_total_num > 0 else 0.0
+                valor_parcela_auto = f"{valor_parcela_num:.2f}".replace(".", ",")
+                with c8:
+                    st.text_input("Valor da parcela (automatico)", value=valor_parcela_auto, disabled=True, key="rec_valor_parcela_auto")
+
+                if st.form_submit_button("Lancar"):
+                    if not str(aluno).strip() or valor_total_num <= 0:
+                        st.error("Informe referencia e valor total valido.")
                     else:
                         before_count = len(st.session_state.get("receivables", []))
+                        total_lancados = 0
                         if categoria == "Mensalidade" and gerar_12:
-                            for i in range(int(qtd_meses)):
+                            for i in range(qtd_parcelas_calc):
                                 data_venc = add_months(venc, i)
-                                parcela = f"{parcela_inicial + i}/{qtd_meses}"
+                                parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}"
                                 add_receivable(
                                     aluno,
                                     desc,
@@ -5098,52 +5286,49 @@ elif st.session_state["role"] == "Coordenador":
                                     cobranca,
                                     categoria,
                                     data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela or val,
+                                    valor_parcela=valor_parcela_auto,
                                     parcela=parcela,
-                                    numero_pedido=numero_pedido,
                                     categoria_lancamento=categoria_lancamento,
                                 )
-                            st.success("Mensalidades lançadas!")
+                                total_lancados += 1
+                            st.success(f"Mensalidades lancadas! ({total_lancados} parcelas)")
                         elif categoria == "Material":
-                            total_material = parse_money(val)
-                            if total_material <= 0:
-                                st.error("Informe um valor válido para o material.")
-                            else:
-                                qtd_material = int(qtd_meses) if material_parcelado else 1
-                                valor_parcela_material = total_material / qtd_material
-                                for i in range(qtd_material):
-                                    data_venc = add_months(venc, i)
-                                    parcela = f"{1 + i}/{qtd_material}"
-                                    add_receivable(
-                                        aluno,
-                                        desc or "Material",
-                                        val,
-                                        data_venc,
-                                        cobranca,
-                                        categoria,
-                                        data_lancamento=data_lanc,
-                                        valor_parcela=f"{valor_parcela_material:.2f}".replace(".", ","),
-                                        parcela=parcela,
-                                        numero_pedido=numero_pedido,
-                                        categoria_lancamento=categoria_lancamento,
-                                    )
-                                st.success(f"Material lançado com parcelamento em {qtd_material}x.")
+                            qtd_material = qtd_parcelas_calc
+                            for i in range(qtd_material):
+                                data_venc = add_months(venc, i)
+                                parcela = f"{1 + i}/{qtd_material}" if qtd_material > 1 else "1"
+                                add_receivable(
+                                    aluno,
+                                    desc or "Material",
+                                    val,
+                                    data_venc,
+                                    cobranca,
+                                    categoria,
+                                    data_lancamento=data_lanc,
+                                    valor_parcela=valor_parcela_auto,
+                                    parcela=parcela,
+                                    categoria_lancamento=categoria_lancamento,
+                                )
+                                total_lancados += 1
+                            st.success(f"Material lancado com parcelamento em {qtd_material}x.")
                         else:
-                            parcela = f"{parcela_inicial}/{qtd_meses}" if categoria == "Mensalidade" else str(parcela_inicial)
-                            add_receivable(
-                                aluno,
-                                desc,
-                                val,
-                                venc,
-                                cobranca,
-                                categoria,
-                                data_lancamento=data_lanc,
-                                valor_parcela=valor_parcela or val,
-                                parcela=parcela,
-                                numero_pedido=numero_pedido,
-                                categoria_lancamento=categoria_lancamento,
-                            )
-                            st.success("Lançado!")
+                            for i in range(qtd_parcelas_calc):
+                                data_venc = add_months(venc, i) if qtd_parcelas_calc > 1 else venc
+                                parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}" if qtd_parcelas_calc > 1 else str(parcela_inicial)
+                                add_receivable(
+                                    aluno,
+                                    desc,
+                                    val,
+                                    data_venc,
+                                    cobranca,
+                                    categoria,
+                                    data_lancamento=data_lanc,
+                                    valor_parcela=valor_parcela_auto,
+                                    parcela=parcela,
+                                    categoria_lancamento=categoria_lancamento,
+                                )
+                                total_lancados += 1
+                            st.success(f"Lancado! ({total_lancados} parcela(s))")
                         if wiz_event_enabled("on_financial_created") and categoria_lancamento == "Aluno":
                             new_items = st.session_state.get("receivables", [])[before_count:]
                             stats_fin = notify_student_financial_event(aluno, new_items)
@@ -5200,7 +5385,6 @@ elif st.session_state["role"] == "Coordenador":
                     "item_codigo",
                     "valor_parcela",
                     "parcela",
-                    "numero_pedido",
                     "vencimento",
                     "status",
                     "cobranca",
@@ -5209,6 +5393,121 @@ elif st.session_state["role"] == "Coordenador":
                 st.dataframe(df_rec, use_container_width=True)
             else:
                 st.info("Nenhum recebimento encontrado.")
+
+            st.markdown("### Gerenciamento de Recebimentos")
+            if not recebimentos:
+                st.info("Nenhum recebimento para gerenciar.")
+            else:
+                opcoes_rec = [
+                    f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}"
+                    for r in recebimentos
+                ]
+                idx_rec = st.selectbox(
+                    "Selecione o recebimento",
+                    list(range(len(recebimentos))),
+                    format_func=lambda i: opcoes_rec[i],
+                    key="manage_rec_idx",
+                )
+                rec_obj = recebimentos[idx_rec]
+                parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
+                venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
+
+                categoria_opts_rec = ["Mensalidade", "Material", "Taxa de Matricula"]
+                if rec_obj.get("categoria", "") and rec_obj.get("categoria", "") not in categoria_opts_rec:
+                    categoria_opts_rec.append(rec_obj.get("categoria", ""))
+
+                cat_lanc_opts_rec = ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"]
+                if rec_obj.get("categoria_lancamento", "") and rec_obj.get("categoria_lancamento", "") not in cat_lanc_opts_rec:
+                    cat_lanc_opts_rec.append(rec_obj.get("categoria_lancamento", ""))
+
+                cobranca_opts_rec = ["Boleto", "Pix", "Cartao", "Dinheiro", "A vista", "Parcelado no Cartao", "Parcelado no Boleto"]
+                if rec_obj.get("cobranca", "") and rec_obj.get("cobranca", "") not in cobranca_opts_rec:
+                    cobranca_opts_rec.append(rec_obj.get("cobranca", ""))
+
+                status_opts_rec = ["Aberto", "Pago", "Cancelado"]
+                if rec_obj.get("status", "") and rec_obj.get("status", "") not in status_opts_rec:
+                    status_opts_rec.append(rec_obj.get("status", ""))
+
+                with st.form("manage_rec_form"):
+                    mr1, mr2, mr3 = st.columns(3)
+                    with mr1:
+                        new_desc_rec = st.text_input("Descricao", value=str(rec_obj.get("descricao", "")))
+                    with mr2:
+                        new_val_total_rec = st.text_input("Valor total", value=str(rec_obj.get("valor", rec_obj.get("valor_parcela", ""))))
+                    with mr3:
+                        new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
+
+                    mr4, mr5, mr6 = st.columns(3)
+                    with mr4:
+                        new_ref_rec = st.text_input("Aluno/Referencia", value=str(rec_obj.get("aluno", "")))
+                    with mr5:
+                        cat_rec = str(rec_obj.get("categoria", "Mensalidade"))
+                        new_cat_rec = st.selectbox(
+                            "Categoria",
+                            categoria_opts_rec,
+                            index=categoria_opts_rec.index(cat_rec) if cat_rec in categoria_opts_rec else 0,
+                        )
+                    with mr6:
+                        cat_lanc_rec = str(rec_obj.get("categoria_lancamento", "Aluno"))
+                        new_cat_lanc_rec = st.selectbox(
+                            "Categoria do lancamento",
+                            cat_lanc_opts_rec,
+                            index=cat_lanc_opts_rec.index(cat_lanc_rec) if cat_lanc_rec in cat_lanc_opts_rec else 0,
+                        )
+
+                    mr7, mr8, mr9 = st.columns(3)
+                    with mr7:
+                        new_venc_rec = st.date_input("Vencimento", value=venc_atual_rec, format="DD/MM/YYYY")
+                    with mr8:
+                        cob_rec = str(rec_obj.get("cobranca", "Boleto"))
+                        new_cobranca_rec = st.selectbox(
+                            "Cobranca",
+                            cobranca_opts_rec,
+                            index=cobranca_opts_rec.index(cob_rec) if cob_rec in cobranca_opts_rec else 0,
+                        )
+                    with mr9:
+                        stat_rec = str(rec_obj.get("status", "Aberto"))
+                        new_status_rec = st.selectbox(
+                            "Status",
+                            status_opts_rec,
+                            index=status_opts_rec.index(stat_rec) if stat_rec in status_opts_rec else 0,
+                        )
+
+                    new_val_total_num = parse_money(new_val_total_rec)
+                    new_qtd_rec_int = max(1, int(new_qtd_rec))
+                    new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
+                    st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
+
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        salvar_rec = st.form_submit_button("Salvar alteracoes")
+                    with mc2:
+                        excluir_rec = st.form_submit_button("Excluir recebimento", type="primary")
+
+                    if salvar_rec:
+                        if not new_ref_rec.strip() or new_val_total_num <= 0:
+                            st.error("Informe referencia e valor total valido.")
+                        else:
+                            rec_obj["descricao"] = new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade")
+                            rec_obj["aluno"] = new_ref_rec.strip()
+                            rec_obj["categoria"] = new_cat_rec
+                            rec_obj["categoria_lancamento"] = new_cat_lanc_rec
+                            rec_obj["cobranca"] = new_cobranca_rec
+                            rec_obj["valor"] = new_val_total_rec.strip()
+                            rec_obj["valor_parcela"] = new_valor_parcela_rec
+                            rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
+                            rec_obj["status"] = new_status_rec
+                            rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
+                            rec_obj["numero_pedido"] = ""
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.success("Recebimento atualizado!")
+                            st.rerun()
+
+                    if excluir_rec:
+                        st.session_state["receivables"].remove(rec_obj)
+                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                        st.success("Recebimento excluido.")
+                        st.rerun()
 
             st.markdown("### Lançar Material do Estoque")
             itens_estoque = st.session_state["inventory"]
@@ -5237,7 +5536,6 @@ elif st.session_state["role"] == "Coordenador":
                         disabled=not material_parcelado,
                         key="parcelas_mat_fin",
                     )
-                    numero_pedido = st.text_input("Número do pedido", key="pedido_mat")
                     if st.form_submit_button("Lançar material"):
                         item_obj = itens_estoque[opcoes.index(item_sel)]
                         preco = parse_money(item_obj.get("preco", 0))
@@ -5273,7 +5571,6 @@ elif st.session_state["role"] == "Coordenador":
                                     data_lancamento=data_lanc,
                                     valor_parcela=str(preco),
                                     parcela=parcela,
-                                    numero_pedido=numero_pedido,
                                     item_codigo=item_codigo,
                                     categoria_lancamento="Aluno",
                                 )
@@ -5321,10 +5618,12 @@ elif st.session_state["role"] == "Coordenador":
                         st.rerun()
         with tab2:
             with st.form("add_pag"):
-                st.markdown("### Lançar Despesa")
+                st.markdown("### Lancar Despesa")
                 c1, c2, c3 = st.columns(3)
-                with c1: desc = st.text_input("Descricao")
-                with c2: val = st.text_input("Valor")
+                with c1:
+                    desc = st.text_input("Descricao")
+                with c2:
+                    val = st.text_input("Valor total")
                 with c3:
                     categoria_lancamento_pag = st.selectbox(
                         "Categoria do lancamento",
@@ -5337,19 +5636,190 @@ elif st.session_state["role"] == "Coordenador":
                     "Aluno": "Aluno",
                     "Outro": "Referencia",
                 }.get(categoria_lancamento_pag, "Referencia")
-                forn = st.text_input(f"{ref_pag}")
+                c4, c5, c6 = st.columns(3)
+                with c4:
+                    forn = st.text_input(f"{ref_pag}")
+                with c5:
+                    data_pag = st.date_input("Data do lancamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c6:
+                    venc_pag = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+
+                c7, c8, c9 = st.columns(3)
+                with c7:
+                    qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1, step=1)
+                val_total_pag_num = parse_money(val)
+                qtd_pag_int = max(1, int(qtd_pag))
+                valor_parcela_pag = f"{(val_total_pag_num / qtd_pag_int):.2f}".replace(".", ",") if val_total_pag_num > 0 else "0,00"
+                with c8:
+                    st.text_input("Valor da parcela (automatico)", value=valor_parcela_pag, disabled=True, key="pag_valor_parcela_auto")
+                with c9:
+                    numero_pedido_pag = st.text_input("Numero do pedido")
+
+                c10, c11 = st.columns(2)
+                with c10:
+                    cobranca_pag = st.selectbox("Forma de pagamento", ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"])
+                with c11:
+                    status_pag = st.selectbox("Status", ["Aberto", "Pago"])
+
                 if st.form_submit_button("Lancar"):
-                    st.session_state["payables"].append(
-                        {
-                            "descricao": desc,
-                            "valor": val,
-                            "fornecedor": forn,
-                            "categoria_lancamento": categoria_lancamento_pag,
-                        }
-                    )
-                    save_list(PAYABLES_FILE, st.session_state["payables"])
-                    st.success("Lançado!")
-            st.dataframe(pd.DataFrame(st.session_state["payables"]), use_container_width=True)
+                    if not desc.strip() or not forn.strip() or val_total_pag_num <= 0:
+                        st.error("Informe descricao, referencia e valor total valido.")
+                    else:
+                        for i in range(qtd_pag_int):
+                            venc_item = add_months(venc_pag, i) if qtd_pag_int > 1 else venc_pag
+                            parcela_txt = f"{1 + i}/{qtd_pag_int}" if qtd_pag_int > 1 else "1"
+                            st.session_state["payables"].append(
+                                {
+                                    "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
+                                    "descricao": desc.strip(),
+                                    "valor": val.strip(),
+                                    "valor_parcela": valor_parcela_pag,
+                                    "parcela": parcela_txt,
+                                    "fornecedor": forn.strip(),
+                                    "categoria_lancamento": categoria_lancamento_pag,
+                                    "numero_pedido": numero_pedido_pag.strip(),
+                                    "data": data_pag.strftime("%d/%m/%Y"),
+                                    "vencimento": venc_item.strftime("%d/%m/%Y"),
+                                    "cobranca": cobranca_pag,
+                                    "status": status_pag,
+                                }
+                            )
+                        save_list(PAYABLES_FILE, st.session_state["payables"])
+                        st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
+
+            st.markdown("### Despesas")
+            despesas = st.session_state["payables"]
+            if despesas:
+                df_pag = pd.DataFrame(despesas)
+                col_order_pag = [
+                    "codigo",
+                    "data",
+                    "fornecedor",
+                    "descricao",
+                    "categoria_lancamento",
+                    "numero_pedido",
+                    "valor_parcela",
+                    "parcela",
+                    "vencimento",
+                    "status",
+                    "cobranca",
+                ]
+                df_pag = df_pag[[c for c in col_order_pag if c in df_pag.columns]]
+                st.dataframe(df_pag, use_container_width=True)
+            else:
+                st.info("Nenhuma conta a pagar cadastrada.")
+
+            st.markdown("### Gerenciamento de Despesas")
+            if not despesas:
+                st.info("Nenhuma despesa para gerenciar.")
+            else:
+                opcoes_pag = [
+                    f"{p.get('codigo','')} | {p.get('fornecedor','')} | {p.get('descricao','')} | Venc: {p.get('vencimento','')}"
+                    for p in despesas
+                ]
+                idx_pag = st.selectbox(
+                    "Selecione a despesa",
+                    list(range(len(despesas))),
+                    format_func=lambda i: opcoes_pag[i],
+                    key="manage_pag_idx",
+                )
+                pag_obj = despesas[idx_pag]
+                parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
+                data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
+                venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
+
+                cat_lanc_opts_pag = ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"]
+                if pag_obj.get("categoria_lancamento", "") and pag_obj.get("categoria_lancamento", "") not in cat_lanc_opts_pag:
+                    cat_lanc_opts_pag.append(pag_obj.get("categoria_lancamento", ""))
+
+                cobranca_opts_pag = ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"]
+                if pag_obj.get("cobranca", "") and pag_obj.get("cobranca", "") not in cobranca_opts_pag:
+                    cobranca_opts_pag.append(pag_obj.get("cobranca", ""))
+
+                status_opts_pag = ["Aberto", "Pago", "Cancelado"]
+                if pag_obj.get("status", "") and pag_obj.get("status", "") not in status_opts_pag:
+                    status_opts_pag.append(pag_obj.get("status", ""))
+
+                with st.form("manage_pag_form"):
+                    mp1, mp2, mp3 = st.columns(3)
+                    with mp1:
+                        new_desc_pag = st.text_input("Descricao", value=str(pag_obj.get("descricao", "")))
+                    with mp2:
+                        new_val_total_pag = st.text_input("Valor total", value=str(pag_obj.get("valor", pag_obj.get("valor_parcela", ""))))
+                    with mp3:
+                        new_qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_pag)), step=1)
+
+                    mp4, mp5, mp6 = st.columns(3)
+                    with mp4:
+                        new_forn_pag = st.text_input("Fornecedor/Referencia", value=str(pag_obj.get("fornecedor", "")))
+                    with mp5:
+                        cat_pag = str(pag_obj.get("categoria_lancamento", "Fornecedor"))
+                        new_cat_pag = st.selectbox(
+                            "Categoria do lancamento",
+                            cat_lanc_opts_pag,
+                            index=cat_lanc_opts_pag.index(cat_pag) if cat_pag in cat_lanc_opts_pag else 0,
+                        )
+                    with mp6:
+                        new_numero_pedido_pag = st.text_input("Numero do pedido", value=str(pag_obj.get("numero_pedido", "")))
+
+                    mp7, mp8, mp9 = st.columns(3)
+                    with mp7:
+                        new_data_pag = st.date_input("Data do lancamento", value=data_atual_pag, format="DD/MM/YYYY")
+                    with mp8:
+                        new_venc_pag = st.date_input("Vencimento", value=venc_atual_pag, format="DD/MM/YYYY")
+                    with mp9:
+                        cob_pag = str(pag_obj.get("cobranca", "Boleto"))
+                        new_cobranca_pag = st.selectbox(
+                            "Forma de pagamento",
+                            cobranca_opts_pag,
+                            index=cobranca_opts_pag.index(cob_pag) if cob_pag in cobranca_opts_pag else 0,
+                        )
+
+                    mp10, mp11 = st.columns(2)
+                    with mp10:
+                        status_pag_atual = str(pag_obj.get("status", "Aberto"))
+                        new_status_pag = st.selectbox(
+                            "Status",
+                            status_opts_pag,
+                            index=status_opts_pag.index(status_pag_atual) if status_pag_atual in status_opts_pag else 0,
+                        )
+
+                    new_val_total_pag_num = parse_money(new_val_total_pag)
+                    new_qtd_pag_int = max(1, int(new_qtd_pag))
+                    new_valor_parcela_pag = f"{(new_val_total_pag_num / new_qtd_pag_int):.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
+                    with mp11:
+                        st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_pag, disabled=True, key="pag_edit_valor_parcela_auto")
+
+                    mpc1, mpc2 = st.columns(2)
+                    with mpc1:
+                        salvar_pag = st.form_submit_button("Salvar alteracoes")
+                    with mpc2:
+                        excluir_pag = st.form_submit_button("Excluir despesa", type="primary")
+
+                    if salvar_pag:
+                        if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_total_pag_num <= 0:
+                            st.error("Informe descricao, referencia e valor total valido.")
+                        else:
+                            pag_obj["descricao"] = new_desc_pag.strip()
+                            pag_obj["valor"] = new_val_total_pag.strip()
+                            pag_obj["valor_parcela"] = new_valor_parcela_pag
+                            pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
+                            pag_obj["fornecedor"] = new_forn_pag.strip()
+                            pag_obj["categoria_lancamento"] = new_cat_pag
+                            pag_obj["numero_pedido"] = new_numero_pedido_pag.strip()
+                            pag_obj["data"] = new_data_pag.strftime("%d/%m/%Y")
+                            pag_obj["vencimento"] = new_venc_pag.strftime("%d/%m/%Y")
+                            pag_obj["cobranca"] = new_cobranca_pag
+                            pag_obj["status"] = new_status_pag
+                            save_list(PAYABLES_FILE, st.session_state["payables"])
+                            st.success("Despesa atualizada!")
+                            st.rerun()
+
+                    if excluir_pag:
+                        st.session_state["payables"].remove(pag_obj)
+                        save_list(PAYABLES_FILE, st.session_state["payables"])
+                        st.success("Despesa excluida.")
+                        st.rerun()
 
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
@@ -6119,4 +6589,6 @@ elif st.session_state["role"] == "Coordenador":
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
+
+
 
