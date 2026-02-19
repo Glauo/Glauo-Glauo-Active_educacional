@@ -200,6 +200,13 @@ def _wapi_instance_id():
         or WAPI_DEFAULT_INSTANCE_ID
     ).strip()
 
+def _student_portal_url():
+    return (
+        _get_config_value("ALUNO_PORTAL_URL", "")
+        or _get_config_value("ACTIVE_PORTAL_URL", "")
+        or "https://activeducacional.streamlit.app/"
+    ).strip()
+
 def _http_request(method, url, headers=None, json_payload=None, timeout=15):
     headers = dict(headers or {})
     data = None
@@ -1094,6 +1101,7 @@ def _wiz_execute_actions(actions):
                     "nome": nome,
                     "matricula": _next_student_matricula(st.session_state.get("students", [])),
                     "idade": int(data.get("idade") or 18),
+                    "genero": str(data.get("genero", data.get("sexo", ""))).strip(),
                     "data_nascimento": str(data.get("data_nascimento", "")),
                     "celular": str(data.get("celular", "")),
                     "email": email,
@@ -2249,6 +2257,7 @@ STUDENT_IMPORT_COLUMNS = [
     "celular",
     "data_nascimento",
     "idade",
+    "genero",
     "rg",
     "cpf",
     "cidade",
@@ -2388,6 +2397,8 @@ def _normalize_import_df(df):
         "data_nascimento": "data_nascimento",
         "nascimento": "data_nascimento",
         "idade": "idade",
+        "genero": "genero",
+        "sexo": "genero",
         "rg": "rg",
         "cpf": "cpf",
         "cidade": "cidade",
@@ -2448,6 +2459,7 @@ def _student_from_row(row):
         "celular": _safe_str(row.get("celular")),
         "data_nascimento": data_nascimento,
         "idade": idade,
+        "genero": _safe_str(row.get("genero")) or _safe_str(row.get("sexo")),
         "rg": _safe_str(row.get("rg")),
         "cpf": _safe_str(row.get("cpf")),
         "cidade": _safe_str(row.get("cidade")),
