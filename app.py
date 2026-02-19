@@ -1565,6 +1565,34 @@ def parse_time(value):
     except Exception:
         return datetime.time(0, 0)
 
+WEEKDAY_OPTIONS_PT = [
+    "Segunda",
+    "Ter?a",
+    "Quarta",
+    "Quinta",
+    "Sexta",
+    "S?bado",
+    "Domingo",
+]
+WEEKDAY_TO_INDEX = {dia: idx for idx, dia in enumerate(WEEKDAY_OPTIONS_PT)}
+
+def infer_class_days_from_text(dias_texto):
+    texto = str(dias_texto or "").lower()
+    return [dia for dia in WEEKDAY_OPTIONS_PT if dia.lower() in texto]
+
+def format_class_schedule(dias_semana=None, hora_inicio="", hora_fim=""):
+    dias_validos = [dia for dia in (dias_semana or []) if dia in WEEKDAY_OPTIONS_PT]
+    if not dias_validos:
+        return "Hor?rio a definir"
+    faixa = ""
+    if hora_inicio and hora_fim:
+        faixa = f" | {hora_inicio} - {hora_fim}"
+    elif hora_inicio:
+        faixa = f" | {hora_inicio}"
+    elif hora_fim:
+        faixa = f" | {hora_fim}"
+    return f"{', '.join(dias_validos)}{faixa}"
+
 def build_google_calendar_event_link(event):
     data = parse_date(event.get("data", ""))
     hora = parse_time(event.get("hora", ""))
@@ -3302,7 +3330,14 @@ elif st.session_state["role"] == "Professor":
             st.markdown("### Detalhes da Turma")
             st.write(f"**Turma:** {turma_obj.get('nome', '')}")
             st.write(f"**Professor:** {turma_obj.get('professor', '')}")
-            st.write(f"**Dias e Horários:** {turma_obj.get('dias', 'Horário a definir')}")
+            dias_turma_exibicao = str(turma_obj.get("dias", "")).strip()
+            if not dias_turma_exibicao:
+                dias_turma_exibicao = format_class_schedule(
+                    turma_obj.get("dias_semana", []),
+                    str(turma_obj.get("hora_inicio", "")).strip(),
+                    str(turma_obj.get("hora_fim", "")).strip(),
+                )
+            st.write(f"**Dias e Hor?rios:** {dias_turma_exibicao or 'Hor?rio a definir'}")
             st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
 
             st.markdown("### Aula ao Vivo")
@@ -3524,59 +3559,102 @@ elif st.session_state["role"] == "Coordenador":
                     turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma_sel), {})
                     prof_default = turma_obj.get("professor", "")
                     link_default = turma_obj.get("link_zoom", "")
-                    titulo = st.text_input("Título", value="Aula ao vivo")
-                    descricao = st.text_area("Descrição")
+                    titulo = st.text_input("T?tulo", value="Aula ao vivo")
+                    descricao = st.text_area("Descri??o")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
-                    hora_aula = st.time_input("Horário", value=datetime.time(19, 0))
-                    repetir = st.checkbox("Repetir semanalmente", value=False)
-                    semanas = st.number_input("Número de semanas", min_value=1, max_value=52, value=4)
+                    hora_padrao = parse_time(str(turma_obj.get("hora_inicio", "19:00")).strip() or "19:00")
+                    hora_aula = st.time_input("Hor?rio", value=hora_padrao)
+
+                    rep_c1, rep_c2 = st.columns([2, 1])
+                    with rep_c1:
+                        repetir = st.checkbox("Repetir semanalmente", value=False)
+                    with rep_c2:
+                        repetir_por_data = st.checkbox("Data", value=False, disabled=not repetir, help="Selecionar dias para repeti??o")
+
+                    semanas = st.number_input("N?mero de semanas", min_value=1, max_value=52, value=4, disabled=not repetir)
+                    dias_repeticao = []
+                    if repetir and repetir_por_data:
+                        dia_base = WEEKDAY_OPTIONS_PT[data_aula.weekday()] if data_aula else WEEKDAY_OPTIONS_PT[0]
+                        dias_repeticao = st.multiselect(
+                            "Dias para repetir as aulas",
+                            WEEKDAY_OPTIONS_PT,
+                            default=[dia_base],
+                        )
+
                     professor = st.text_input("Professor", value=prof_default)
                     link_aula = st.text_input("Link da aula", value=link_default)
                     enviar_email_convite = st.checkbox("Enviar email automatico para alunos da turma", value=True)
                     if st.form_submit_button("Agendar aula"):
-                        total = int(semanas) if repetir else 1
-                        novos_itens = []
-                        for i in range(total):
-                            data_item = data_aula + datetime.timedelta(weeks=i) if data_aula else None
-                            agenda_item = {
-                                "turma": turma_sel,
-                                "professor": professor.strip(),
-                                "titulo": titulo.strip() or "Aula ao vivo",
-                                "descricao": descricao.strip(),
-                                "data": data_item.strftime("%d/%m/%Y") if data_item else "",
-                                "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
-                                "link": link_aula.strip(),
-                                "recorrencia": "Semanal" if repetir else "",
-                            }
-                            agenda_item["google_calendar_link"] = build_google_calendar_event_link(agenda_item)
-                            st.session_state["agenda"].append(agenda_item)
-                            novos_itens.append(agenda_item)
-                        save_list(AGENDA_FILE, st.session_state["agenda"])
-                        if novos_itens:
-                            resumo = []
-                            for item in novos_itens:
-                                linha = f"- {item.get('data','')} {item.get('hora','')} | {item.get('titulo','Aula')}"
-                                gcal = item.get("google_calendar_link", "")
-                                if gcal:
-                                    linha += f"\n  Google Agenda: {gcal}"
-                                if item.get("link"):
-                                    linha += f"\n  Link da aula: {item.get('link')}"
-                                resumo.append(linha)
-                            assunto = f"[Active] Aula agendada - Turma {turma_sel}"
-                            corpo = (
-                                f"Novas aulas foram agendadas para a turma {turma_sel}.\n\n"
-                                + "\n".join(resumo)
-                            )
-                            notif_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
-                            if enviar_email_convite:
-                                notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
-                            st.info(
-                                "Disparos da agenda: "
-                                f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
-                                f"WhatsApp {notif_stats.get('whatsapp_ok', 0)}/{notif_stats.get('whatsapp_total', 0)}."
-                            )
-                        st.success("Aula(s) agendada(s)!")
-                        st.rerun()
+                        if repetir and repetir_por_data and not dias_repeticao:
+                            st.error("Selecione pelo menos um dia para repeti??o por data.")
+                        else:
+                            datas_aulas = []
+                            if repetir:
+                                total_semanas = int(semanas)
+                                if repetir_por_data:
+                                    dias_idx = {WEEKDAY_TO_INDEX[dia] for dia in dias_repeticao if dia in WEEKDAY_TO_INDEX}
+                                    inicio_periodo = data_aula
+                                    fim_periodo = data_aula + datetime.timedelta(weeks=total_semanas) - datetime.timedelta(days=1)
+                                    cursor = inicio_periodo
+                                    while cursor <= fim_periodo:
+                                        if cursor.weekday() in dias_idx:
+                                            datas_aulas.append(cursor)
+                                        cursor += datetime.timedelta(days=1)
+                                    if not datas_aulas and data_aula:
+                                        datas_aulas = [data_aula]
+                                else:
+                                    datas_aulas = [data_aula + datetime.timedelta(weeks=i) for i in range(total_semanas)] if data_aula else []
+                            elif data_aula:
+                                datas_aulas = [data_aula]
+
+                            recorrencia = ""
+                            if repetir and repetir_por_data and dias_repeticao:
+                                recorrencia = f"Semanal ({', '.join(dias_repeticao)})"
+                            elif repetir:
+                                recorrencia = "Semanal"
+
+                            novos_itens = []
+                            for data_item in datas_aulas:
+                                agenda_item = {
+                                    "turma": turma_sel,
+                                    "professor": professor.strip(),
+                                    "titulo": titulo.strip() or "Aula ao vivo",
+                                    "descricao": descricao.strip(),
+                                    "data": data_item.strftime("%d/%m/%Y") if data_item else "",
+                                    "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
+                                    "link": link_aula.strip(),
+                                    "recorrencia": recorrencia,
+                                }
+                                agenda_item["google_calendar_link"] = build_google_calendar_event_link(agenda_item)
+                                st.session_state["agenda"].append(agenda_item)
+                                novos_itens.append(agenda_item)
+
+                            save_list(AGENDA_FILE, st.session_state["agenda"])
+                            if novos_itens:
+                                resumo = []
+                                for item in novos_itens:
+                                    linha = f"- {item.get('data','')} {item.get('hora','')} | {item.get('titulo','Aula')}"
+                                    gcal = item.get("google_calendar_link", "")
+                                    if gcal:
+                                        linha += f"\n  Google Agenda: {gcal}"
+                                    if item.get("link"):
+                                        linha += f"\n  Link da aula: {item.get('link')}"
+                                    resumo.append(linha)
+                                assunto = f"[Active] Aula agendada - Turma {turma_sel}"
+                                corpo = (
+                                    f"Novas aulas foram agendadas para a turma {turma_sel}.\n\n"
+                                    + "\n".join(resumo)
+                                )
+                                notif_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                                if enviar_email_convite:
+                                    notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
+                                st.info(
+                                    "Disparos da agenda: "
+                                    f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
+                                    f"WhatsApp {notif_stats.get('whatsapp_ok', 0)}/{notif_stats.get('whatsapp_total', 0)}."
+                                )
+                            st.success("Aula(s) agendada(s)!")
+                            st.rerun()
 
     elif menu_coord == "Links":
         st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
@@ -4786,7 +4864,7 @@ elif st.session_state["role"] == "Coordenador":
                                 st.rerun()
 
     elif menu_coord == "Turmas":
-        st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gest?o de Turmas</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
@@ -4796,23 +4874,44 @@ elif st.session_state["role"] == "Coordenador":
                 with c2: prof = st.selectbox("Professor", ["Sem Professor"] + teacher_names())
                 modulo_opts = class_module_options()
                 modulo = st.selectbox("Modulo da Turma", modulo_opts)
+
                 c3, c4 = st.columns(2)
-                with c3: dias = st.text_input("Dias e Horários")
+                with c3: dias_semana = st.multiselect("Dias das aulas", WEEKDAY_OPTIONS_PT)
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
-                livro = st.selectbox("Livro/Nível da Turma", book_levels())
+
+                c5, c6 = st.columns(2)
+                with c5: hora_inicio = st.time_input("Hor?rio inicial", value=datetime.time(19, 0))
+                with c6: hora_fim = st.time_input("Hor?rio final", value=datetime.time(20, 0))
+
+                livro = st.selectbox("Livro/N?vel da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
-                    st.session_state["classes"].append(
-                        {
-                            "nome": nome,
-                            "professor": prof,
-                            "modulo": modulo,
-                            "dias": dias,
-                            "link_zoom": link,
-                            "livro": livro,
-                        }
-                    )
-                    save_list(CLASSES_FILE, st.session_state["classes"])
-                    st.success("Turma salva!")
+                    nome = nome.strip()
+                    dias_semana = [dia for dia in dias_semana if dia in WEEKDAY_OPTIONS_PT]
+                    hora_inicio_str = hora_inicio.strftime("%H:%M") if hora_inicio else ""
+                    hora_fim_str = hora_fim.strftime("%H:%M") if hora_fim else ""
+
+                    if not nome:
+                        st.error("Informe o nome da turma.")
+                    elif not dias_semana:
+                        st.error("Selecione pelo menos um dia das aulas.")
+                    elif hora_fim <= hora_inicio:
+                        st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                    else:
+                        st.session_state["classes"].append(
+                            {
+                                "nome": nome,
+                                "professor": prof,
+                                "modulo": modulo,
+                                "dias": format_class_schedule(dias_semana, hora_inicio_str, hora_fim_str),
+                                "dias_semana": dias_semana,
+                                "hora_inicio": hora_inicio_str,
+                                "hora_fim": hora_fim_str,
+                                "link_zoom": link.strip(),
+                                "livro": livro,
+                            }
+                        )
+                        save_list(CLASSES_FILE, st.session_state["classes"])
+                        st.success("Turma salva!")
 
         with tab2:
             if not st.session_state["classes"]:
@@ -4837,34 +4936,79 @@ elif st.session_state["role"] == "Coordenador":
                             modulo_opts.append(current_modulo)
                         modulo_index = modulo_opts.index(current_modulo) if current_modulo in modulo_opts else 0
                         new_modulo = st.selectbox("Modulo da Turma", modulo_opts, index=modulo_index)
-                        new_dias = st.text_input("Dias e Horários", value=turma_obj.get("dias", ""))
-                        new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
+
+                        dias_salvos = turma_obj.get("dias_semana", [])
+                        if isinstance(dias_salvos, str):
+                            dias_salvos = [dias_salvos]
+                        dias_salvos = [dia for dia in dias_salvos if dia in WEEKDAY_OPTIONS_PT]
+                        if not dias_salvos:
+                            dias_salvos = infer_class_days_from_text(turma_obj.get("dias", ""))
+
+                        hora_inicio_atual = str(turma_obj.get("hora_inicio", "")).strip()
+                        hora_fim_atual = str(turma_obj.get("hora_fim", "")).strip()
+                        if not hora_inicio_atual or not hora_fim_atual:
+                            horarios_texto = re.findall(r"\b\d{1,2}:\d{2}\b", str(turma_obj.get("dias", "")))
+                            if not hora_inicio_atual and horarios_texto:
+                                hora_inicio_atual = horarios_texto[0]
+                            if not hora_fim_atual and len(horarios_texto) > 1:
+                                hora_fim_atual = horarios_texto[1]
+
+                        hora_inicio_padrao = parse_time(hora_inicio_atual or "19:00")
+                        hora_fim_padrao = parse_time(hora_fim_atual or "20:00")
+
+                        c_dias_1, c_dias_2 = st.columns(2)
+                        with c_dias_1:
+                            new_dias_semana = st.multiselect("Dias das aulas", WEEKDAY_OPTIONS_PT, default=dias_salvos)
+                        with c_dias_2:
+                            new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
+
+                        c_hora_1, c_hora_2 = st.columns(2)
+                        with c_hora_1:
+                            new_hora_inicio = st.time_input("Hor?rio inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
+                        with c_hora_2:
+                            new_hora_fim = st.time_input("Hor?rio final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
+
                         livro_atual = turma_obj.get("livro", "")
                         livro_opts = book_levels()
                         if livro_atual and livro_atual not in livro_opts:
                             livro_opts.append(livro_atual)
-                        new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
+                        new_livro = st.selectbox("Livro/N?vel da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar Alterações"):
-                                old_nome = turma_obj.get("nome", "")
-                                turma_obj["nome"] = new_nome
-                                turma_obj["professor"] = new_prof
-                                turma_obj["modulo"] = new_modulo
-                                turma_obj["dias"] = new_dias
-                                turma_obj["link_zoom"] = new_link
-                                turma_obj["livro"] = new_livro
+                            if st.form_submit_button("Salvar Altera??es"):
+                                new_nome = new_nome.strip()
+                                dias_limpos = [dia for dia in new_dias_semana if dia in WEEKDAY_OPTIONS_PT]
+                                new_hora_inicio_str = new_hora_inicio.strftime("%H:%M") if new_hora_inicio else ""
+                                new_hora_fim_str = new_hora_fim.strftime("%H:%M") if new_hora_fim else ""
 
-                                if old_nome and new_nome and old_nome != new_nome:
-                                    for aluno in st.session_state["students"]:
-                                        if aluno.get("turma") == old_nome:
-                                            aluno["turma"] = new_nome
-                                    save_list(STUDENTS_FILE, st.session_state["students"])
+                                if not new_nome:
+                                    st.error("Informe o nome da turma.")
+                                elif not dias_limpos:
+                                    st.error("Selecione pelo menos um dia das aulas.")
+                                elif new_hora_fim <= new_hora_inicio:
+                                    st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                                else:
+                                    old_nome = turma_obj.get("nome", "")
+                                    turma_obj["nome"] = new_nome
+                                    turma_obj["professor"] = new_prof
+                                    turma_obj["modulo"] = new_modulo
+                                    turma_obj["dias"] = format_class_schedule(dias_limpos, new_hora_inicio_str, new_hora_fim_str)
+                                    turma_obj["dias_semana"] = dias_limpos
+                                    turma_obj["hora_inicio"] = new_hora_inicio_str
+                                    turma_obj["hora_fim"] = new_hora_fim_str
+                                    turma_obj["link_zoom"] = new_link.strip()
+                                    turma_obj["livro"] = new_livro
 
-                                save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.success("Turma atualizada!")
-                                st.rerun()
+                                    if old_nome and new_nome and old_nome != new_nome:
+                                        for aluno in st.session_state["students"]:
+                                            if aluno.get("turma") == old_nome:
+                                                aluno["turma"] = new_nome
+                                        save_list(STUDENTS_FILE, st.session_state["students"])
+
+                                    save_list(CLASSES_FILE, st.session_state["classes"])
+                                    st.success("Turma atualizada!")
+                                    st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR TURMA", type="primary"):
                                 nome_turma = turma_obj.get("nome", "")
@@ -4875,7 +5019,7 @@ elif st.session_state["role"] == "Coordenador":
                                     save_list(STUDENTS_FILE, st.session_state["students"])
                                 st.session_state["classes"].remove(turma_obj)
                                 save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.error("Turma excluída.")
+                                st.error("Turma exclu?da.")
                                 st.rerun()
 
     elif menu_coord == "Financeiro":
