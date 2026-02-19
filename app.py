@@ -1114,6 +1114,7 @@ def _wiz_execute_actions(actions):
                     "bairro": str(data.get("bairro", "")),
                     "rua": str(data.get("rua", "")),
                     "numero": str(data.get("numero", "")),
+                    "complemento": str(data.get("complemento", data.get("observacao_endereco", ""))),
                     "turma": str(data.get("turma", "Sem Turma")),
                     "modulo": str(data.get("modulo", "Presencial em Turma")),
                     "livro": str(data.get("livro", "")),
@@ -1229,6 +1230,7 @@ def _wiz_execute_actions(actions):
                     valor_parcela=str(data.get("valor_parcela", valor)),
                     parcela=str(data.get("parcela", "1/1")),
                     numero_pedido=str(data.get("numero_pedido", "")),
+                    categoria_lancamento=str(data.get("categoria_lancamento", data.get("tipo_categoria", "Aluno"))),
                 )
                 reports.append({"type": kind, "ok": True, "message": f"recebivel lancado ({codigo})"})
             elif kind == "lancar_nota":
@@ -2113,13 +2115,14 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
-def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, data_lancamento=None, valor_parcela=None, parcela=None, numero_pedido="", item_codigo=""):
+def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, data_lancamento=None, valor_parcela=None, parcela=None, numero_pedido="", item_codigo="", categoria_lancamento="Aluno"):
     prefix = re.sub(r"[^A-Z0-9]+", "", str(cobranca).upper()) or "REC"
     codigo = f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
     st.session_state["receivables"].append({
         "descricao": descricao.strip() or "Mensalidade",
         "aluno": aluno.strip(),
         "categoria": categoria,
+        "categoria_lancamento": str(categoria_lancamento).strip() or "Aluno",
         "cobranca": cobranca,
         "codigo": codigo,
         "valor": valor.strip(),
@@ -2267,6 +2270,7 @@ STUDENT_IMPORT_COLUMNS = [
     "cep",
     "rua",
     "numero",
+    "complemento",
     "modulo",
     "livro",
     "usuario",
@@ -2408,6 +2412,9 @@ def _normalize_import_df(df):
         "cep": "cep",
         "rua": "rua",
         "numero": "numero",
+        "complemento": "complemento",
+        "observacao_endereco": "complemento",
+        "apto": "complemento",
         "modulo": "modulo",
         "livro": "livro",
         "usuario": "usuario",
@@ -2469,6 +2476,7 @@ def _student_from_row(row):
         "cep": _safe_str(row.get("cep")),
         "rua": _safe_str(row.get("rua")),
         "numero": _safe_str(row.get("numero")),
+        "complemento": _safe_str(row.get("complemento")) or _safe_str(row.get("observacao_endereco")) or _safe_str(row.get("apto")),
         "modulo": _safe_str(row.get("modulo")),
         "livro": _safe_str(row.get("livro")),
         "usuario": _safe_str(row.get("usuario")),
@@ -4291,6 +4299,7 @@ elif st.session_state["role"] == "Coordenador":
                 _sfk("add_student_bairro"): "",
                 _sfk("add_student_rua"): "",
                 _sfk("add_student_numero"): "",
+                _sfk("add_student_complemento"): "",
                 _sfk("add_student_turma"): "Sem Turma",
                 _sfk("add_student_modulo"): modulos[0],
                 _sfk("add_student_livro"): "Automatico (Turma)",
@@ -4352,11 +4361,11 @@ elif st.session_state["role"] == "Coordenador":
                 with c5: email = st.text_input("E-mail do Aluno *", key=_sfk("add_student_email"))
                 with c6: rg = st.text_input("RG", key=_sfk("add_student_rg"))
 
-                c7, c8, c9 = st.columns(3)
+                c7, c8, c9, c10 = st.columns(4)
                 with c7: cpf = st.text_input("CPF", key=_sfk("add_student_cpf"))
                 with c8: natal = st.text_input("Cidade Natal", key=_sfk("add_student_natal"))
                 with c9: pais = st.text_input("Pais de Origem", key=_sfk("add_student_pais"))
-                genero = st.radio("Sexo", ["Masculino", "Feminino"], horizontal=True, key=genero_key)
+                with c10: genero = st.selectbox("Sexo", ["Masculino", "Feminino"], key=genero_key)
 
                 st.divider()
                 st.markdown("### Endereco")
@@ -4365,9 +4374,10 @@ elif st.session_state["role"] == "Coordenador":
                 with ce2: cidade = st.text_input("Cidade", key=_sfk("add_student_cidade"))
                 with ce3: bairro = st.text_input("Bairro", key=_sfk("add_student_bairro"))
 
-                ce4, ce5 = st.columns([3, 1])
+                ce4, ce5, ce6 = st.columns([3, 1, 2])
                 with ce4: rua = st.text_input("Rua", key=_sfk("add_student_rua"))
                 with ce5: numero = st.text_input("Numero", key=_sfk("add_student_numero"))
+                with ce6: complemento = st.text_input("Observacao (Apto, Bloco, Casa)", key=_sfk("add_student_complemento"))
 
                 st.divider()
                 st.markdown("### Turma")
@@ -4433,6 +4443,7 @@ elif st.session_state["role"] == "Coordenador":
                             "bairro": bairro,
                             "rua": rua,
                             "numero": numero,
+                            "complemento": complemento,
                             "turma": turma,
                             "modulo": modulo_sel,
                             "livro": livro_final,
@@ -4873,11 +4884,25 @@ elif st.session_state["role"] == "Coordenador":
         with tab1:
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
-                c1, c2, c3 = st.columns(3)
-                with c1: desc = st.text_input("Descrição (Ex: Mensalidade)")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
                 with c2: val = st.text_input("Valor (Ex: 150,00)")
-                with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matrícula"])
-                aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
+                with c4:
+                    categoria_lancamento = st.selectbox(
+                        "Categoria do lancamento",
+                        ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
+                    )
+                if categoria_lancamento == "Aluno":
+                    aluno = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                else:
+                    ref_label = {
+                        "Fornecedor": "Fornecedor",
+                        "Professor": "Professor",
+                        "Interno": "Setor interno",
+                        "Outro": "Referencia",
+                    }.get(categoria_lancamento, "Referencia")
+                    aluno = st.text_input(f"{ref_label} *")
                 c4, c5, c6 = st.columns(3)
                 with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                 with c5: venc = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -4914,7 +4939,7 @@ elif st.session_state["role"] == "Coordenador":
                     qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1)
                 if st.form_submit_button("Lançar"):
                     if not aluno or not val:
-                        st.error("Informe aluno e valor.")
+                        st.error("Informe referencia e valor.")
                     else:
                         before_count = len(st.session_state.get("receivables", []))
                         if categoria == "Mensalidade" and gerar_12:
@@ -4932,6 +4957,7 @@ elif st.session_state["role"] == "Coordenador":
                                     valor_parcela=valor_parcela or val,
                                     parcela=parcela,
                                     numero_pedido=numero_pedido,
+                                    categoria_lancamento=categoria_lancamento,
                                 )
                             st.success("Mensalidades lançadas!")
                         elif categoria == "Material":
@@ -4955,6 +4981,7 @@ elif st.session_state["role"] == "Coordenador":
                                         valor_parcela=f"{valor_parcela_material:.2f}".replace(".", ","),
                                         parcela=parcela,
                                         numero_pedido=numero_pedido,
+                                        categoria_lancamento=categoria_lancamento,
                                     )
                                 st.success(f"Material lançado com parcelamento em {qtd_material}x.")
                         else:
@@ -4970,9 +4997,10 @@ elif st.session_state["role"] == "Coordenador":
                                 valor_parcela=valor_parcela or val,
                                 parcela=parcela,
                                 numero_pedido=numero_pedido,
+                                categoria_lancamento=categoria_lancamento,
                             )
                             st.success("Lançado!")
-                        if wiz_event_enabled("on_financial_created"):
+                        if wiz_event_enabled("on_financial_created") and categoria_lancamento == "Aluno":
                             new_items = st.session_state.get("receivables", [])[before_count:]
                             stats_fin = notify_student_financial_event(aluno, new_items)
                             st.info(
@@ -4982,7 +5010,7 @@ elif st.session_state["role"] == "Coordenador":
                             )
             st.markdown("### Recebimentos")
             recebimentos = st.session_state["receivables"]
-            c_f1, c_f2, c_f3, c_f4 = st.columns(4)
+            c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
             with c_f1:
                 status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
                 status_sel = st.selectbox("Status", status_opts)
@@ -4990,11 +5018,14 @@ elif st.session_state["role"] == "Coordenador":
                 cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
                 cat_sel = st.selectbox("Categoria", cat_opts)
             with c_f3:
-                aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
-                aluno_sel = st.selectbox("Aluno", aluno_opts)
+                cat_lanc_opts = ["Todos"] + sorted({r.get("categoria_lancamento", "Aluno") for r in recebimentos if r.get("categoria_lancamento", "Aluno")})
+                cat_lanc_sel = st.selectbox("Categoria do lancamento", cat_lanc_opts)
             with c_f4:
+                aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
+                aluno_sel = st.selectbox("Aluno/Referencia", aluno_opts)
+            with c_f5:
                 item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
-                item_sel = st.selectbox("Item (Código)", item_opts)
+                item_sel = st.selectbox("Item (Codigo)", item_opts)
             busca = st.text_input("Buscar por descrição")
 
             recebimentos_filtrados = recebimentos
@@ -5002,6 +5033,8 @@ elif st.session_state["role"] == "Coordenador":
                 recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("status") == status_sel]
             if cat_sel != "Todos":
                 recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria") == cat_sel]
+            if cat_lanc_sel != "Todos":
+                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria_lancamento", "Aluno") == cat_lanc_sel]
             if aluno_sel != "Todos":
                 recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("aluno") == aluno_sel]
             if item_sel != "Todos":
@@ -5019,6 +5052,7 @@ elif st.session_state["role"] == "Coordenador":
                     "aluno",
                     "descricao",
                     "categoria",
+                    "categoria_lancamento",
                     "item_codigo",
                     "valor_parcela",
                     "parcela",
@@ -5097,6 +5131,7 @@ elif st.session_state["role"] == "Coordenador":
                                     parcela=parcela,
                                     numero_pedido=numero_pedido,
                                     item_codigo=item_codigo,
+                                    categoria_lancamento="Aluno",
                                 )
                                 count += 1
                         st.success(f"Material lançado no financeiro! ({count} parcelas)")
@@ -5143,12 +5178,31 @@ elif st.session_state["role"] == "Coordenador":
         with tab2:
             with st.form("add_pag"):
                 st.markdown("### Lançar Despesa")
-                c1, c2 = st.columns(2)
-                with c1: desc = st.text_input("Descrição")
+                c1, c2, c3 = st.columns(3)
+                with c1: desc = st.text_input("Descricao")
                 with c2: val = st.text_input("Valor")
-                forn = st.text_input("Fornecedor")
-                if st.form_submit_button("Lançar"):
-                    st.session_state["payables"].append({"descricao": desc, "valor": val, "fornecedor": forn})
+                with c3:
+                    categoria_lancamento_pag = st.selectbox(
+                        "Categoria do lancamento",
+                        ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"],
+                    )
+                ref_pag = {
+                    "Fornecedor": "Fornecedor",
+                    "Professor": "Professor",
+                    "Interno": "Setor interno",
+                    "Aluno": "Aluno",
+                    "Outro": "Referencia",
+                }.get(categoria_lancamento_pag, "Referencia")
+                forn = st.text_input(f"{ref_pag}")
+                if st.form_submit_button("Lancar"):
+                    st.session_state["payables"].append(
+                        {
+                            "descricao": desc,
+                            "valor": val,
+                            "fornecedor": forn,
+                            "categoria_lancamento": categoria_lancamento_pag,
+                        }
+                    )
                     save_list(PAYABLES_FILE, st.session_state["payables"])
                     st.success("Lançado!")
             st.dataframe(pd.DataFrame(st.session_state["payables"]), use_container_width=True)
