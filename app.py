@@ -4279,6 +4279,7 @@ elif st.session_state["role"] == "Coordenador":
             student_form_defaults = {
                 _sfk("add_student_nome"): "",
                 _sfk("add_student_data_nascimento"): datetime.date.today(),
+                _sfk("add_student_genero"): "Masculino",
                 _sfk("add_student_celular"): "",
                 _sfk("add_student_email"): "",
                 _sfk("add_student_rg"): "",
@@ -4317,6 +4318,10 @@ elif st.session_state["role"] == "Coordenador":
             if st.session_state.get(livro_key) not in livro_opts:
                 st.session_state[livro_key] = "Automatico (Turma)"
 
+            genero_key = _sfk("add_student_genero")
+            if st.session_state.get(genero_key) not in ("Masculino", "Feminino"):
+                st.session_state[genero_key] = "Masculino"
+
             feedback = st.session_state.pop("add_student_feedback", None)
             if feedback:
                 st.success(feedback.get("success", "Cadastro realizado com sucesso!"))
@@ -4351,6 +4356,7 @@ elif st.session_state["role"] == "Coordenador":
                 with c7: cpf = st.text_input("CPF", key=_sfk("add_student_cpf"))
                 with c8: natal = st.text_input("Cidade Natal", key=_sfk("add_student_natal"))
                 with c9: pais = st.text_input("Pais de Origem", key=_sfk("add_student_pais"))
+                genero = st.radio("Sexo", ["Masculino", "Feminino"], horizontal=True, key=genero_key)
 
                 st.divider()
                 st.markdown("### Endereco")
@@ -4414,6 +4420,7 @@ elif st.session_state["role"] == "Coordenador":
                             "nome": nome,
                             "matricula": matricula_final,
                             "idade": idade_final,
+                            "genero": genero,
                             "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
                             "celular": celular,
                             "email": email,
@@ -4453,19 +4460,26 @@ elif st.session_state["role"] == "Coordenador":
                             save_users(st.session_state["users"])
 
                         turma_link = str(turma_obj.get("link_zoom", "")).strip() if isinstance(turma_obj, dict) else ""
+                        portal_url = _student_portal_url()
+                        login_info = login_aluno or "Nao informado"
+                        senha_info = senha_aluno or "Nao informada"
                         assunto_auto = "[Active] Boas-vindas e acesso inicial"
                         corpo_auto = (
-                            f"Olá, {nome}!\n\n"
-                            f"Seu cadastro foi concluído no Active.\n"
+                            f"Ola, {nome}! Seja muito bem-vindo(a) a Mister Wiz! \U0001F389\n\n"
+                            f"Seu cadastro foi concluido no Active.\n"
                             f"Turma: {turma}\n"
-                            f"Livro/Nível: {livro_final or 'A definir'}\n"
-                            f"Matrícula: {matricula_final}\n"
+                            f"Livro/Nivel: {livro_final or 'A definir'}\n"
+                            f"Matricula: {matricula_final}\n"
+                            f"Login: {login_info}\n"
+                            f"Senha: {senha_info}\n"
                         )
+                        if portal_url:
+                            corpo_auto += f"Portal do aluno: {portal_url}\n"
                         if turma_link:
                             corpo_auto += f"Link da aula: {turma_link}\n"
                         corpo_auto += (
-                            "\nFinanceiro e boletos ficam disponíveis no portal do aluno.\n"
-                            "Em caso de dúvidas, responda esta mensagem."
+                            "\nFinanceiro, boletos e materiais ficam disponiveis no portal do aluno.\n"
+                            "Em caso de duvidas, responda esta mensagem."
                         )
                         notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                         if wiz_event_enabled("on_student_created"):
@@ -4522,6 +4536,17 @@ elif st.session_state["role"] == "Coordenador":
                         with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
                         idade_edit_auto = _calc_age_from_date_obj(new_dn) or current_idade
                         with c4: st.number_input("Idade", min_value=1, max_value=120, step=1, value=idade_edit_auto, disabled=True)
+                        generos = ["Masculino", "Feminino"]
+                        genero_atual = str(aluno_obj.get("genero", "Masculino")).strip()
+                        if genero_atual not in generos:
+                            genero_atual = "Masculino"
+                        new_genero = st.radio(
+                            "Sexo",
+                            generos,
+                            index=generos.index(genero_atual),
+                            horizontal=True,
+                            key=f"edit_student_genero_{aluno_sel}",
+                        )
 
                         new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
                         modulos = [
@@ -4590,6 +4615,7 @@ elif st.session_state["role"] == "Coordenador":
                                     aluno_obj["email"] = new_email
                                     aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
                                     aluno_obj["idade"] = _calc_age_from_date_obj(new_dn) or current_idade
+                                    aluno_obj["genero"] = new_genero
                                     aluno_obj["modulo"] = new_modulo
                                     aluno_obj["livro"] = livro_final
                                     aluno_obj["usuario"] = login
