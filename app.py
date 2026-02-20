@@ -73,6 +73,16 @@ if "challenges" not in st.session_state:
     st.session_state["challenges"] = []
 if "challenge_completions" not in st.session_state:
     st.session_state["challenge_completions"] = []
+if "activities" not in st.session_state:
+    st.session_state["activities"] = []
+if "activity_submissions" not in st.session_state:
+    st.session_state["activity_submissions"] = []
+if "sales_leads" not in st.session_state:
+    st.session_state["sales_leads"] = []
+if "sales_agenda" not in st.session_state:
+    st.session_state["sales_agenda"] = []
+if "sales_payments" not in st.session_state:
+    st.session_state["sales_payments"] = []
 if "chatbot_log" not in st.session_state:
     st.session_state["chatbot_log"] = []
 if "agenda" not in st.session_state:
@@ -155,6 +165,11 @@ BOOKS_FILE = DATA_DIR / "books.json"
 MATERIAL_ORDERS_FILE = DATA_DIR / "material_orders.json"
 CHALLENGES_FILE = DATA_DIR / "challenges.json"
 CHALLENGE_COMPLETIONS_FILE = DATA_DIR / "challenge_completions.json"
+ACTIVITIES_FILE = DATA_DIR / "activities.json"
+ACTIVITY_SUBMISSIONS_FILE = DATA_DIR / "activity_submissions.json"
+SALES_LEADS_FILE = DATA_DIR / "sales_leads.json"
+SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
+SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
@@ -800,6 +815,11 @@ def _backup_datasets():
         ("messages.json", "messages", MESSAGES_FILE),
         ("challenges.json", "challenges", CHALLENGES_FILE),
         ("challenge_completions.json", "challenge_completions", CHALLENGE_COMPLETIONS_FILE),
+        ("activities.json", "activities", ACTIVITIES_FILE),
+        ("activity_submissions.json", "activity_submissions", ACTIVITY_SUBMISSIONS_FILE),
+        ("sales_leads.json", "sales_leads", SALES_LEADS_FILE),
+        ("sales_agenda.json", "sales_agenda", SALES_AGENDA_FILE),
+        ("sales_payments.json", "sales_payments", SALES_PAYMENTS_FILE),
         ("receivables.json", "receivables", RECEIVABLES_FILE),
         ("payables.json", "payables", PAYABLES_FILE),
         ("inventory.json", "inventory", INVENTORY_FILE),
@@ -1548,7 +1568,7 @@ def ensure_admin_user(users):
         users.append({
             "usuario": VENDAS_USERNAME,
             "senha": VENDAS_PASSWORD,
-            "perfil": "Coordenador",
+            "perfil": "Comercial",
             "pessoa": VENDAS_PERSON_NAME,
         })
 
@@ -1963,6 +1983,513 @@ def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
 
+def _parse_float(value, default=0.0):
+    try:
+        return float(str(value).replace(",", "."))
+    except Exception:
+        return float(default)
+
+def _is_activity_open(activity_obj):
+    status = str((activity_obj or {}).get("status", "Ativa")).strip().lower()
+    if not status:
+        return True
+    return status in ("ativa", "aberta", "open", "publicada")
+
+def _teacher_class_names_for_user(user_name):
+    prof_nome = str(user_name or "").strip().lower()
+    out = []
+    for turma in st.session_state.get("classes", []):
+        turma_nome = str(turma.get("nome", "")).strip()
+        turma_prof = str(turma.get("professor", "")).strip().lower()
+        if turma_nome and turma_prof == prof_nome:
+            out.append(turma_nome)
+    return out
+
+def _student_class_name(student_name):
+    aluno_nome = str(student_name or "").strip()
+    aluno_obj = next(
+        (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno_nome),
+        {},
+    )
+    return str(aluno_obj.get("turma", "")).strip()
+
+def _ensure_activity_store_ids():
+    changed = False
+    for activity in st.session_state.get("activities", []):
+        if not isinstance(activity, dict):
+            continue
+        if not activity.get("id"):
+            activity["id"] = uuid.uuid4().hex
+            changed = True
+        if "status" not in activity or not str(activity.get("status", "")).strip():
+            activity["status"] = "Ativa"
+            changed = True
+        if "allow_resubmission" not in activity:
+            activity["allow_resubmission"] = False
+            changed = True
+        if not isinstance(activity.get("questions"), list):
+            activity["questions"] = []
+            changed = True
+        for question in activity.get("questions", []):
+            if not isinstance(question, dict):
+                continue
+            if not question.get("id"):
+                question["id"] = uuid.uuid4().hex
+                changed = True
+            q_tipo = str(question.get("tipo", "aberta")).strip().lower()
+            if q_tipo not in ("multipla_escolha", "aberta"):
+                q_tipo = "aberta"
+                question["tipo"] = q_tipo
+                changed = True
+            pontos = parse_int(question.get("pontos", 1))
+            if pontos <= 0:
+                question["pontos"] = 1
+                changed = True
+            if q_tipo == "multipla_escolha":
+                opcoes_raw = question.get("opcoes", [])
+                if not isinstance(opcoes_raw, list):
+                    opcoes_raw = [opcoes_raw]
+                opcoes = [str(opt).strip() for opt in opcoes_raw if str(opt).strip()]
+                if len(opcoes) < 2:
+                    opcoes = ["Opcao 1", "Opcao 2"]
+                if question.get("opcoes") != opcoes:
+                    question["opcoes"] = opcoes
+                    changed = True
+                correta_idx = question.get("correta_idx", None)
+                try:
+                    correta_idx = int(correta_idx)
+                except Exception:
+                    correta_idx = None
+                if correta_idx is not None and (correta_idx < 0 or correta_idx >= len(opcoes)):
+                    correta_idx = None
+                if question.get("correta_idx", None) != correta_idx:
+                    question["correta_idx"] = correta_idx
+                    changed = True
+            else:
+                if question.get("opcoes"):
+                    question["opcoes"] = []
+                    changed = True
+                if question.get("correta_idx", None) is not None:
+                    question["correta_idx"] = None
+                    changed = True
+    if changed:
+        save_list(ACTIVITIES_FILE, st.session_state.get("activities", []))
+
+def _activity_points_total(activity_obj):
+    total = 0
+    for question in (activity_obj or {}).get("questions", []):
+        if not isinstance(question, dict):
+            continue
+        pontos = parse_int(question.get("pontos", 1))
+        total += pontos if pontos > 0 else 1
+    return total
+
+def get_activity_submission(activity_id, aluno_nome):
+    aid = str(activity_id or "").strip()
+    aluno_nome = str(aluno_nome or "").strip()
+    for submission in st.session_state.get("activity_submissions", []):
+        if str(submission.get("activity_id", "")).strip() == aid and str(submission.get("aluno", "")).strip() == aluno_nome:
+            return submission
+    return None
+
+def _score_activity_submission(activity_obj, answers_by_question):
+    answers_by_question = answers_by_question if isinstance(answers_by_question, dict) else {}
+    respostas = []
+    score_auto = 0
+    score_total = 0
+    needs_manual_review = False
+
+    for idx, question in enumerate((activity_obj or {}).get("questions", []), start=1):
+        if not isinstance(question, dict):
+            continue
+        qid = str(question.get("id", "")).strip() or f"q_{idx}"
+        q_tipo = str(question.get("tipo", "aberta")).strip().lower()
+        enunciado = str(question.get("enunciado", "")).strip()
+        pontos = parse_int(question.get("pontos", 1))
+        pontos = pontos if pontos > 0 else 1
+        score_total += pontos
+
+        answer_payload = answers_by_question.get(qid, {})
+        if q_tipo == "multipla_escolha":
+            opcoes = question.get("opcoes", [])
+            if not isinstance(opcoes, list):
+                opcoes = []
+            opcoes = [str(opt).strip() for opt in opcoes if str(opt).strip()]
+            selected_idx = answer_payload.get("indice") if isinstance(answer_payload, dict) else answer_payload
+            try:
+                selected_idx = int(selected_idx)
+            except Exception:
+                selected_idx = None
+            selected_text = opcoes[selected_idx] if selected_idx is not None and 0 <= selected_idx < len(opcoes) else ""
+            correta_idx = question.get("correta_idx", None)
+            try:
+                correta_idx = int(correta_idx)
+            except Exception:
+                correta_idx = None
+
+            is_correct = None
+            pontos_obtidos = 0
+            if correta_idx is None:
+                needs_manual_review = True
+            elif selected_idx is not None and selected_idx == correta_idx:
+                is_correct = True
+                pontos_obtidos = pontos
+            else:
+                is_correct = False
+            score_auto += pontos_obtidos
+            respostas.append(
+                {
+                    "question_id": qid,
+                    "tipo": "multipla_escolha",
+                    "enunciado": enunciado,
+                    "opcoes": opcoes,
+                    "resposta_indice": selected_idx,
+                    "resposta_texto": selected_text,
+                    "correta_idx": correta_idx,
+                    "correta_texto": opcoes[correta_idx] if correta_idx is not None and 0 <= correta_idx < len(opcoes) else "",
+                    "acertou": is_correct,
+                    "pontos": pontos,
+                    "pontos_obtidos": pontos_obtidos,
+                }
+            )
+        else:
+            resposta_texto = answer_payload.get("texto") if isinstance(answer_payload, dict) else answer_payload
+            resposta_texto = str(resposta_texto or "").strip()
+            needs_manual_review = True
+            respostas.append(
+                {
+                    "question_id": qid,
+                    "tipo": "aberta",
+                    "enunciado": enunciado,
+                    "resposta_texto": resposta_texto,
+                    "pontos": pontos,
+                    "pontos_obtidos": 0,
+                }
+            )
+
+    return {
+        "respostas": respostas,
+        "score_auto": int(score_auto),
+        "score_total": int(score_total),
+        "needs_manual_review": bool(needs_manual_review),
+    }
+
+def upsert_activity_submission(activity_obj, aluno_nome, turma_nome, answers_by_question):
+    if not isinstance(activity_obj, dict):
+        return False, "Atividade invalida."
+    activity_id = str(activity_obj.get("id", "")).strip()
+    if not activity_id:
+        return False, "Atividade sem ID."
+    aluno_nome = str(aluno_nome or "").strip()
+    if not aluno_nome:
+        return False, "Aluno invalido."
+    turma_nome = str(turma_nome or "").strip()
+    scoring = _score_activity_submission(activity_obj, answers_by_question)
+    now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    existing = get_activity_submission(activity_id, aluno_nome)
+
+    status = "Enviada" if scoring.get("needs_manual_review") else "Corrigida automaticamente"
+    record = existing if existing else {"id": uuid.uuid4().hex}
+    record.update(
+        {
+            "activity_id": activity_id,
+            "atividade_titulo": str(activity_obj.get("titulo", "")).strip(),
+            "atividade_tipo": str(activity_obj.get("tipo", "")).strip(),
+            "aluno": aluno_nome,
+            "turma": turma_nome,
+            "respostas": scoring.get("respostas", []),
+            "score_auto": int(scoring.get("score_auto", 0) or 0),
+            "score_total": int(scoring.get("score_total", 0) or 0),
+            "status": status,
+            "submitted_at": now,
+        }
+    )
+    if existing:
+        record["updated_at"] = now
+        # Em caso de reenvio, limpa avaliacao anterior para evitar inconsistencias.
+        record["score_professor"] = None
+        record["feedback_professor"] = ""
+        record["avaliado_em"] = ""
+    else:
+        st.session_state["activity_submissions"].append(record)
+    save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+    return True, "Resposta enviada."
+
+def activity_submission_final_score(submission_obj):
+    if not isinstance(submission_obj, dict):
+        return 0.0
+    score_prof = submission_obj.get("score_professor", None)
+    if score_prof is not None and str(score_prof).strip() != "":
+        return _parse_float(score_prof, default=0.0)
+    return _parse_float(submission_obj.get("score_auto", 0), default=0.0)
+
+def sales_lead_status_options():
+    return [
+        "Novo contato",
+        "Leads frios",
+        "Leads quentes",
+        "Evoluindo",
+        "Fechado",
+        "Desistir",
+        "Indicacao de alunos",
+    ]
+
+def sales_agenda_type_options():
+    return [
+        "Ligacao a fazer",
+        "Ligacao feita",
+        "Agendamento de visita",
+        "Aula experimental",
+        "Aula de nivelamento",
+    ]
+
+def sales_payment_method_options():
+    return ["Pix", "Dinheiro", "Cartao", "Boleto", "Transferencia"]
+
+def _ensure_sales_store_defaults():
+    leads_changed = False
+    agenda_changed = False
+    payments_changed = False
+
+    for lead in st.session_state.get("sales_leads", []):
+        if not isinstance(lead, dict):
+            continue
+        if not lead.get("id"):
+            lead["id"] = uuid.uuid4().hex
+            leads_changed = True
+        if "status" not in lead or not str(lead.get("status", "")).strip():
+            lead["status"] = "Novo contato"
+            leads_changed = True
+        if "created_at" not in lead:
+            lead["created_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+            leads_changed = True
+        if "updated_at" not in lead:
+            lead["updated_at"] = ""
+            leads_changed = True
+
+    for item in st.session_state.get("sales_agenda", []):
+        if not isinstance(item, dict):
+            continue
+        if not item.get("id"):
+            item["id"] = uuid.uuid4().hex
+            agenda_changed = True
+        if "status" not in item or not str(item.get("status", "")).strip():
+            item["status"] = "Agendado"
+            agenda_changed = True
+        if "whatsapp_sent" not in item:
+            item["whatsapp_sent"] = False
+            agenda_changed = True
+        if "whatsapp_status" not in item:
+            item["whatsapp_status"] = ""
+            agenda_changed = True
+        if "created_at" not in item:
+            item["created_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+            agenda_changed = True
+
+    for payment in st.session_state.get("sales_payments", []):
+        if not isinstance(payment, dict):
+            continue
+        if not payment.get("id"):
+            payment["id"] = uuid.uuid4().hex
+            payments_changed = True
+        if "status" not in payment or not str(payment.get("status", "")).strip():
+            payment["status"] = "Pendente"
+            payments_changed = True
+        if "receivable_code" not in payment:
+            payment["receivable_code"] = ""
+            payments_changed = True
+        if "comprovante_nome" not in payment:
+            payment["comprovante_nome"] = ""
+            payments_changed = True
+        if "comprovante_mime" not in payment:
+            payment["comprovante_mime"] = ""
+            payments_changed = True
+        if "comprovante_b64" not in payment:
+            payment["comprovante_b64"] = ""
+            payments_changed = True
+        if "recibo_numero" not in payment or not str(payment.get("recibo_numero", "")).strip():
+            payment["recibo_numero"] = f"REC-{datetime.datetime.now().strftime('%Y%m%d')}-{str(payment.get('id', ''))[:6].upper()}"
+            payments_changed = True
+        if "created_at" not in payment:
+            payment["created_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+            payments_changed = True
+        if "updated_at" not in payment:
+            payment["updated_at"] = ""
+            payments_changed = True
+
+    if leads_changed:
+        save_list(SALES_LEADS_FILE, st.session_state.get("sales_leads", []))
+    if agenda_changed:
+        save_list(SALES_AGENDA_FILE, st.session_state.get("sales_agenda", []))
+    if payments_changed:
+        save_list(SALES_PAYMENTS_FILE, st.session_state.get("sales_payments", []))
+
+def _sales_receipt_html(payment_obj):
+    payment_obj = payment_obj if isinstance(payment_obj, dict) else {}
+    aluno = str(payment_obj.get("aluno", "")).strip() or "Aluno"
+    telefone = str(payment_obj.get("telefone", "")).strip()
+    vendedor = str(payment_obj.get("vendedor", "")).strip() or "Comercial"
+    valor_txt = str(payment_obj.get("valor", "")).strip() or "0,00"
+    forma = str(payment_obj.get("forma_pagamento", "")).strip() or "Nao informado"
+    data_pag = str(payment_obj.get("data_pagamento", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
+    recibo = str(payment_obj.get("recibo_numero", "")).strip() or f"REC-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    observacao = str(payment_obj.get("observacao", "")).strip()
+    comprovante_nome = str(payment_obj.get("comprovante_nome", "")).strip()
+    return f"""
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recibo de Matricula</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; background: #f5f7fb; padding: 24px; }}
+    .card {{ max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #dbe7f6; border-radius: 14px; padding: 26px; }}
+    .title {{ font-size: 24px; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }}
+    .sub {{ color: #64748b; margin-bottom: 22px; }}
+    .row {{ margin: 8px 0; color: #0f172a; }}
+    .lbl {{ color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }}
+    .footer {{ margin-top: 30px; font-size: 12px; color: #64748b; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">Recibo de Matricula</div>
+    <div class="sub">Ativo Sistema Educacional</div>
+    <div class="row"><span class="lbl">Recibo:</span> {recibo}</div>
+    <div class="row"><span class="lbl">Data do pagamento:</span> {data_pag}</div>
+    <div class="row"><span class="lbl">Aluno:</span> {aluno}</div>
+    <div class="row"><span class="lbl">Telefone:</span> {telefone or "-"}</div>
+    <div class="row"><span class="lbl">Valor recebido:</span> R$ {valor_txt}</div>
+    <div class="row"><span class="lbl">Forma de pagamento:</span> {forma}</div>
+    <div class="row"><span class="lbl">Vendedor:</span> {vendedor}</div>
+    <div class="row"><span class="lbl">Comprovante:</span> {comprovante_nome or "Nao anexado"}</div>
+    <div class="row"><span class="lbl">Observacoes:</span> {observacao or "-"}</div>
+    <div class="footer">Este recibo registra o pagamento informado pelo Comercial e esta sujeito a aprovacao da Coordenacao.</div>
+  </div>
+</body>
+</html>
+""".strip()
+
+def _decode_sales_attachment(payment_obj):
+    payload = str((payment_obj or {}).get("comprovante_b64", "")).strip()
+    if not payload:
+        return b""
+    try:
+        return base64.b64decode(payload)
+    except Exception:
+        return b""
+
+def _approve_sales_payment(payment_obj, approver_name):
+    if not isinstance(payment_obj, dict):
+        return False, "Registro invalido."
+    if str(payment_obj.get("status", "")).strip().lower() == "aprovado" and str(payment_obj.get("receivable_code", "")).strip():
+        return True, "Pagamento ja estava aprovado."
+
+    aluno = str(payment_obj.get("aluno", "")).strip()
+    if not aluno:
+        return False, "Pagamento sem aluno."
+    valor_txt = str(payment_obj.get("valor", "")).strip()
+    valor_num = parse_money(valor_txt)
+    if valor_num <= 0:
+        return False, "Valor invalido para aprovar."
+    data_pag = parse_date(payment_obj.get("data_pagamento", "")) or datetime.date.today()
+    cobranca = str(payment_obj.get("forma_pagamento", "Pix")).strip() or "Pix"
+    descricao = str(payment_obj.get("descricao", "")).strip() or "Taxa de Matricula (Comercial)"
+
+    receivable_code = str(payment_obj.get("receivable_code", "")).strip()
+    if not receivable_code:
+        receivable_code = add_receivable(
+            aluno=aluno,
+            descricao=descricao,
+            valor=valor_txt,
+            vencimento=data_pag,
+            cobranca=cobranca,
+            categoria="Taxa de Matricula",
+            data_lancamento=data_pag,
+            valor_parcela=valor_txt,
+            parcela="1",
+            categoria_lancamento="Aluno",
+        )
+        payment_obj["receivable_code"] = receivable_code
+
+    rec_obj = next(
+        (r for r in st.session_state.get("receivables", []) if str(r.get("codigo", "")).strip() == receivable_code),
+        None,
+    )
+    if rec_obj:
+        rec_obj["status"] = "Pago"
+        rec_obj["baixa_data"] = data_pag.strftime("%d/%m/%Y")
+        rec_obj["baixa_tipo"] = "Comercial aprovado"
+        rec_obj["comercial_payment_id"] = str(payment_obj.get("id", "")).strip()
+        rec_obj["descricao"] = descricao
+        rec_obj["categoria"] = "Taxa de Matricula"
+        rec_obj["cobranca"] = cobranca
+        rec_obj["valor"] = valor_txt
+        rec_obj["valor_parcela"] = valor_txt
+        rec_obj["vencimento"] = data_pag.strftime("%d/%m/%Y")
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+
+    payment_obj["status"] = "Aprovado"
+    payment_obj["aprovado_por"] = str(approver_name or "").strip()
+    payment_obj["aprovado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    payment_obj["reprovado_motivo"] = ""
+    payment_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    save_list(SALES_PAYMENTS_FILE, st.session_state.get("sales_payments", []))
+    return True, "Pagamento aprovado e registrado no financeiro geral."
+
+def _reject_sales_payment(payment_obj, approver_name, motivo):
+    if not isinstance(payment_obj, dict):
+        return False, "Registro invalido."
+    payment_obj["status"] = "Reprovado"
+    payment_obj["aprovado_por"] = str(approver_name or "").strip()
+    payment_obj["aprovado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    payment_obj["reprovado_motivo"] = str(motivo or "").strip()
+    payment_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    save_list(SALES_PAYMENTS_FILE, st.session_state.get("sales_payments", []))
+    return True, "Pagamento reprovado."
+
+def _lead_phone_for_whatsapp(lead_obj):
+    if not isinstance(lead_obj, dict):
+        return ""
+    number = _normalize_whatsapp_number(lead_obj.get("telefone", ""))
+    if number:
+        return number
+    return _normalize_whatsapp_number(lead_obj.get("celular", ""))
+
+def _student_phone(student_obj):
+    if not isinstance(student_obj, dict):
+        return ""
+    phone = str(student_obj.get("celular", "")).strip()
+    if phone:
+        return phone
+    resp = student_obj.get("responsavel", {})
+    if isinstance(resp, dict):
+        return str(resp.get("celular", "")).strip()
+    return ""
+
+def _send_sales_schedule_whatsapp(lead_obj, schedule_obj):
+    lead_obj = lead_obj if isinstance(lead_obj, dict) else {}
+    schedule_obj = schedule_obj if isinstance(schedule_obj, dict) else {}
+    number = _lead_phone_for_whatsapp(lead_obj)
+    if not number:
+        return False, 0, []
+    nome = str(lead_obj.get("nome", "")).strip() or "Lead"
+    tipo = str(schedule_obj.get("tipo", "Agendamento")).strip()
+    data = str(schedule_obj.get("data", "")).strip()
+    hora = str(schedule_obj.get("hora", "")).strip()
+    detalhes = str(schedule_obj.get("detalhes", "")).strip()
+    mensagem = (
+        f"Ola, {nome}.\n"
+        f"Seu agendamento foi registrado no Active.\n"
+        f"Tipo: {tipo}\n"
+        f"Data: {data}\n"
+        f"Horario: {hora or '-'}\n"
+    )
+    if detalhes:
+        mensagem += f"Detalhes: {detalhes}\n"
+    mensagem += "\nQualquer ajuste, responda esta mensagem."
+    return _send_whatsapp_auto(number, mensagem)
+
 def _strip_code_fences(text):
     t = str(text or "").strip()
     if t.startswith("```"):
@@ -2330,8 +2857,9 @@ def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, dat
 def allowed_portals(profile):
     if profile == "Aluno": return ["Aluno"]
     if profile == "Professor": return ["Professor"]
-    if profile == "Coordenador": return ["Aluno", "Professor", "Coordenador"]
-    if profile == "Admin": return ["Aluno", "Professor", "Coordenador"]
+    if profile == "Comercial": return ["Comercial"]
+    if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
+    if profile == "Admin": return ["Aluno", "Professor", "Comercial", "Coordenador"]
     return []
 
 def _send_email_smtp(to_email, subject, body):
@@ -3201,6 +3729,494 @@ def run_student_finance_assistant():
         with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
             st.markdown(msg["content"])
 
+def run_commercial_panel():
+    with st.sidebar:
+        logo_path = get_logo_path()
+        render_sidebar_logo(logo_path)
+        st.markdown(f"### {st.session_state.get('user_name', '')}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        st.markdown("---")
+        menu_sales_label = sidebar_menu(
+            "Comercial",
+            [
+                "Leads",
+                "Agenda Comercial",
+                "Financeiro Matricula",
+                "Alunos Matriculados",
+                "WhatsApp Leads",
+                "Professor Wiz",
+            ],
+            "menu_sales",
+        )
+        st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        if st.button("Sair"):
+            logout_user()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    menu_sales_map = {
+        "Leads": "Leads",
+        "Agenda Comercial": "Agenda",
+        "Financeiro Matricula": "Financeiro Matricula",
+        "Alunos Matriculados": "Alunos Matriculados",
+        "WhatsApp Leads": "WhatsApp Leads",
+        "Professor Wiz": "Professor Wiz",
+    }
+    menu_sales = menu_sales_map.get(menu_sales_label, "Leads")
+
+    vendedor_atual = str(st.session_state.get("user_name", "")).strip() or "Comercial"
+
+    if menu_sales == "Leads":
+        st.markdown('<div class="main-header">Leads</div>', unsafe_allow_html=True)
+        tab_new, tab_manage = st.tabs(["Novo Lead", "Pipeline / Gerenciar"])
+
+        with tab_new:
+            with st.form("sales_new_lead", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    nome = st.text_input("Nome completo *")
+                with c2:
+                    telefone = st.text_input("Telefone / WhatsApp *")
+                c3, c4 = st.columns(2)
+                with c3:
+                    email = st.text_input("E-mail")
+                with c4:
+                    status = st.selectbox("Status", sales_lead_status_options(), index=0)
+                c5, c6 = st.columns(2)
+                with c5:
+                    origem = st.text_input("Origem do lead (Instagram, indicacao, etc.)")
+                with c6:
+                    interesse = st.text_input("Interesse / curso")
+                observacao = st.text_area("Observacoes")
+                if st.form_submit_button("Cadastrar lead", type="primary"):
+                    if not nome.strip() or not telefone.strip():
+                        st.error("Informe nome e telefone do lead.")
+                    else:
+                        st.session_state["sales_leads"].append(
+                            {
+                                "id": uuid.uuid4().hex,
+                                "nome": nome.strip(),
+                                "telefone": telefone.strip(),
+                                "email": email.strip().lower(),
+                                "status": status,
+                                "origem": origem.strip(),
+                                "interesse": interesse.strip(),
+                                "observacao": observacao.strip(),
+                                "vendedor": vendedor_atual,
+                                "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "updated_at": "",
+                                "ultimo_contato": "",
+                            }
+                        )
+                        save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                        st.success("Lead cadastrado com sucesso.")
+                        st.rerun()
+
+        with tab_manage:
+            leads = st.session_state.get("sales_leads", [])
+            if not leads:
+                st.info("Nenhum lead cadastrado.")
+            else:
+                status_filter = st.selectbox("Filtrar por status", ["Todos"] + sales_lead_status_options())
+                busca = st.text_input("Buscar por nome, telefone ou e-mail")
+                filtrados = leads
+                if status_filter != "Todos":
+                    filtrados = [l for l in filtrados if str(l.get("status", "")).strip() == status_filter]
+                if busca.strip():
+                    termo = busca.strip().lower()
+                    filtrados = [
+                        l
+                        for l in filtrados
+                        if termo in str(l.get("nome", "")).lower()
+                        or termo in str(l.get("telefone", "")).lower()
+                        or termo in str(l.get("email", "")).lower()
+                    ]
+
+                total = len(filtrados)
+                quentes = len([l for l in filtrados if str(l.get("status", "")).strip() == "Leads quentes"])
+                fechados = len([l for l in filtrados if str(l.get("status", "")).strip() == "Fechado"])
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Leads", str(total))
+                c2.metric("Quentes", str(quentes))
+                c3.metric("Fechados", str(fechados))
+
+                if filtrados:
+                    df_leads = pd.DataFrame(filtrados)
+                    col_order = [
+                        "nome",
+                        "telefone",
+                        "email",
+                        "status",
+                        "origem",
+                        "interesse",
+                        "vendedor",
+                        "ultimo_contato",
+                        "created_at",
+                    ]
+                    df_leads = df_leads[[c for c in col_order if c in df_leads.columns]]
+                    st.dataframe(df_leads, use_container_width=True)
+
+                    labels = [
+                        f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()}"
+                        for l in filtrados
+                    ]
+                    lead_sel_label = st.selectbox("Selecionar lead para editar", labels)
+                    lead_obj = filtrados[labels.index(lead_sel_label)]
+                    with st.form(f"sales_edit_lead_{lead_obj.get('id', uuid.uuid4().hex)}"):
+                        e1, e2 = st.columns(2)
+                        with e1:
+                            new_nome = st.text_input("Nome", value=str(lead_obj.get("nome", "")).strip())
+                        with e2:
+                            new_tel = st.text_input("Telefone", value=str(lead_obj.get("telefone", "")).strip())
+                        e3, e4 = st.columns(2)
+                        with e3:
+                            new_email = st.text_input("E-mail", value=str(lead_obj.get("email", "")).strip())
+                        with e4:
+                            new_status = st.selectbox(
+                                "Status",
+                                sales_lead_status_options(),
+                                index=sales_lead_status_options().index(str(lead_obj.get("status", "Novo contato")).strip())
+                                if str(lead_obj.get("status", "Novo contato")).strip() in sales_lead_status_options()
+                                else 0,
+                            )
+                        e5, e6 = st.columns(2)
+                        with e5:
+                            new_origem = st.text_input("Origem", value=str(lead_obj.get("origem", "")).strip())
+                        with e6:
+                            new_interesse = st.text_input("Interesse", value=str(lead_obj.get("interesse", "")).strip())
+                        new_obs = st.text_area("Observacoes", value=str(lead_obj.get("observacao", "")).strip())
+                        c_save, c_del = st.columns(2)
+                        with c_save:
+                            save_lead = st.form_submit_button("Salvar alteracoes")
+                        with c_del:
+                            delete_lead = st.form_submit_button("Excluir lead", type="primary")
+
+                        if save_lead:
+                            if not new_nome.strip() or not new_tel.strip():
+                                st.error("Nome e telefone sao obrigatorios.")
+                            else:
+                                lead_obj["nome"] = new_nome.strip()
+                                lead_obj["telefone"] = new_tel.strip()
+                                lead_obj["email"] = new_email.strip().lower()
+                                lead_obj["status"] = new_status
+                                lead_obj["origem"] = new_origem.strip()
+                                lead_obj["interesse"] = new_interesse.strip()
+                                lead_obj["observacao"] = new_obs.strip()
+                                lead_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                                st.success("Lead atualizado.")
+                                st.rerun()
+                        if delete_lead:
+                            st.session_state["sales_leads"].remove(lead_obj)
+                            save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                            st.success("Lead excluido.")
+                            st.rerun()
+                else:
+                    st.info("Nenhum lead encontrado com os filtros aplicados.")
+
+    elif menu_sales == "Agenda":
+        st.markdown('<div class="main-header">Agenda Comercial</div>', unsafe_allow_html=True)
+        leads = st.session_state.get("sales_leads", [])
+        tab_new, tab_list = st.tabs(["Novo agendamento", "Agenda cadastrada"])
+        with tab_new:
+            if not leads:
+                st.info("Cadastre ao menos um lead para criar agendamentos.")
+            else:
+                lead_labels = [
+                    f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()}"
+                    for l in leads
+                ]
+                with st.form("sales_new_agenda"):
+                    lead_label = st.selectbox("Lead", lead_labels)
+                    lead_obj = leads[lead_labels.index(lead_label)]
+                    tipo = st.selectbox("Tipo", sales_agenda_type_options())
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        data_ag = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c2:
+                        hora_ag = st.time_input("Horario", value=datetime.time(10, 0))
+                    detalhes = st.text_area("Detalhes")
+                    send_auto = st.checkbox("Enviar no WhatsApp automaticamente ao salvar", value=True)
+                    if st.form_submit_button("Salvar agendamento", type="primary"):
+                        item = {
+                            "id": uuid.uuid4().hex,
+                            "lead_id": str(lead_obj.get("id", "")).strip(),
+                            "lead_nome": str(lead_obj.get("nome", "")).strip(),
+                            "lead_telefone": str(lead_obj.get("telefone", "")).strip(),
+                            "tipo": tipo,
+                            "data": data_ag.strftime("%d/%m/%Y") if data_ag else "",
+                            "hora": hora_ag.strftime("%H:%M") if hora_ag else "",
+                            "detalhes": str(detalhes or "").strip(),
+                            "status": "Agendado",
+                            "vendedor": vendedor_atual,
+                            "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "whatsapp_sent": False,
+                            "whatsapp_status": "",
+                        }
+                        if send_auto:
+                            ok, status, _ = _send_sales_schedule_whatsapp(lead_obj, item)
+                            item["whatsapp_sent"] = bool(ok)
+                            item["whatsapp_status"] = str(status or "")
+                        st.session_state["sales_agenda"].append(item)
+                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                        st.success("Agendamento salvo.")
+                        st.rerun()
+
+        with tab_list:
+            agenda = st.session_state.get("sales_agenda", [])
+            if not agenda:
+                st.info("Nenhum agendamento cadastrado.")
+            else:
+                tipo_filtro = st.selectbox("Filtrar por tipo", ["Todos"] + sales_agenda_type_options())
+                status_filtro = st.selectbox("Filtrar por status", ["Todos", "Agendado", "Concluido", "Cancelado"])
+                agenda_filtrada = agenda
+                if tipo_filtro != "Todos":
+                    agenda_filtrada = [a for a in agenda_filtrada if str(a.get("tipo", "")).strip() == tipo_filtro]
+                if status_filtro != "Todos":
+                    agenda_filtrada = [a for a in agenda_filtrada if str(a.get("status", "")).strip() == status_filtro]
+                agenda_filtrada = sorted(
+                    agenda_filtrada,
+                    key=lambda a: (
+                        parse_date(a.get("data", "")) or datetime.date(2100, 1, 1),
+                        parse_time(a.get("hora", "00:00")),
+                    ),
+                )
+                if agenda_filtrada:
+                    df_ag = pd.DataFrame(agenda_filtrada)
+                    col_order = [
+                        "data",
+                        "hora",
+                        "lead_nome",
+                        "lead_telefone",
+                        "tipo",
+                        "status",
+                        "whatsapp_sent",
+                        "whatsapp_status",
+                        "detalhes",
+                        "vendedor",
+                    ]
+                    df_ag = df_ag[[c for c in col_order if c in df_ag.columns]]
+                    st.dataframe(df_ag, use_container_width=True)
+
+                    labels = [
+                        f"{a.get('data','')} {a.get('hora','')} | {a.get('lead_nome','')} | {a.get('tipo','')}"
+                        for a in agenda_filtrada
+                    ]
+                    ag_sel = st.selectbox("Selecionar item da agenda", labels)
+                    ag_obj = agenda_filtrada[labels.index(ag_sel)]
+                    c1, c2, c3 = st.columns(3)
+                    if c1.button("Marcar como concluido", key=f"sales_ag_done_{ag_obj.get('id','')}"):
+                        ag_obj["status"] = "Concluido"
+                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                        st.success("Agenda atualizada.")
+                        st.rerun()
+                    if c2.button("Cancelar", key=f"sales_ag_cancel_{ag_obj.get('id','')}"):
+                        ag_obj["status"] = "Cancelado"
+                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                        st.success("Agenda atualizada.")
+                        st.rerun()
+                    if c3.button("Reenviar WhatsApp", key=f"sales_ag_wa_{ag_obj.get('id','')}"):
+                        lead_ref = next(
+                            (l for l in st.session_state.get("sales_leads", []) if str(l.get("id", "")).strip() == str(ag_obj.get("lead_id", "")).strip()),
+                            {"nome": ag_obj.get("lead_nome", ""), "telefone": ag_obj.get("lead_telefone", "")},
+                        )
+                        ok, status, _ = _send_sales_schedule_whatsapp(lead_ref, ag_obj)
+                        ag_obj["whatsapp_sent"] = bool(ok)
+                        ag_obj["whatsapp_status"] = str(status or "")
+                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                        if ok:
+                            st.success("Mensagem enviada no WhatsApp.")
+                        else:
+                            st.error("Falha ao enviar WhatsApp.")
+                        st.rerun()
+                else:
+                    st.info("Nenhum item na agenda para os filtros selecionados.")
+
+    elif menu_sales == "Financeiro Matricula":
+        st.markdown('<div class="main-header">Financeiro de Matricula (Comercial)</div>', unsafe_allow_html=True)
+        students = [s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip()]
+        if "sales_receipt_preview" not in st.session_state:
+            st.session_state["sales_receipt_preview"] = ""
+        if "sales_receipt_filename" not in st.session_state:
+            st.session_state["sales_receipt_filename"] = "recibo_matricula.html"
+
+        with st.form("sales_payment_form"):
+            if students:
+                aluno_nome = st.selectbox("Aluno matriculado", [s.get("nome", "") for s in students])
+                aluno_obj = next((s for s in students if s.get("nome", "") == aluno_nome), {})
+                tel_default = _student_phone(aluno_obj)
+            else:
+                aluno_nome = st.text_input("Aluno matriculado")
+                tel_default = ""
+                st.info("Nenhum aluno cadastrado; informe manualmente.")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                telefone = st.text_input("Telefone do aluno", value=tel_default)
+            with c2:
+                valor = st.text_input("Valor recebido (R$)")
+            c3, c4 = st.columns(2)
+            with c3:
+                forma_pagamento = st.selectbox("Forma de pagamento", sales_payment_method_options())
+            with c4:
+                data_pagamento = st.date_input("Data do pagamento", value=datetime.date.today(), format="DD/MM/YYYY")
+            descricao = st.text_input("Descricao", value="Taxa de Matricula")
+            observacao = st.text_area("Observacoes")
+            comprovante = st.file_uploader(
+                "Anexar comprovante (imagem ou PDF)",
+                type=["png", "jpg", "jpeg", "pdf"],
+                key="sales_payment_file",
+            )
+
+            b1, b2 = st.columns(2)
+            with b1:
+                gerar_recibo = st.form_submit_button("Gerar recibo")
+            with b2:
+                enviar_aprovacao = st.form_submit_button("Enviar para aprovacao do coordenador", type="primary")
+
+            temp_record = {
+                "id": uuid.uuid4().hex,
+                "aluno": str(aluno_nome or "").strip(),
+                "telefone": str(telefone or "").strip(),
+                "valor": str(valor or "").strip(),
+                "forma_pagamento": str(forma_pagamento or "").strip(),
+                "data_pagamento": data_pagamento.strftime("%d/%m/%Y") if data_pagamento else "",
+                "descricao": str(descricao or "").strip() or "Taxa de Matricula",
+                "observacao": str(observacao or "").strip(),
+                "vendedor": vendedor_atual,
+                "status": "Pendente",
+                "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "updated_at": "",
+                "recibo_numero": f"REC-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}",
+                "receivable_code": "",
+                "comprovante_nome": comprovante.name if comprovante else "",
+                "comprovante_mime": comprovante.type if comprovante else "",
+                "comprovante_b64": base64.b64encode(comprovante.getvalue()).decode("utf-8") if comprovante else "",
+            }
+
+            if gerar_recibo:
+                if not str(temp_record.get("aluno", "")).strip() or parse_money(temp_record.get("valor", "")) <= 0:
+                    st.error("Informe aluno e valor valido para gerar o recibo.")
+                else:
+                    st.session_state["sales_receipt_preview"] = _sales_receipt_html(temp_record)
+                    st.session_state["sales_receipt_filename"] = f"recibo_{str(temp_record.get('aluno', 'aluno')).replace(' ', '_').lower()}.html"
+                    st.success("Recibo gerado.")
+
+            if enviar_aprovacao:
+                if not str(temp_record.get("aluno", "")).strip() or parse_money(temp_record.get("valor", "")) <= 0:
+                    st.error("Informe aluno e valor valido.")
+                else:
+                    st.session_state["sales_payments"].append(temp_record)
+                    save_list(SALES_PAYMENTS_FILE, st.session_state["sales_payments"])
+                    st.success("Pagamento enviado para aprovacao do coordenador.")
+                    st.rerun()
+
+        if st.session_state.get("sales_receipt_preview"):
+            st.markdown("### Pre-visualizacao do recibo")
+            st.components.v1.html(st.session_state.get("sales_receipt_preview", ""), height=520, scrolling=True)
+            st.download_button(
+                "Baixar recibo (HTML)",
+                data=st.session_state.get("sales_receipt_preview", ""),
+                file_name=st.session_state.get("sales_receipt_filename", "recibo_matricula.html"),
+                mime="text/html",
+            )
+
+        st.markdown("### Pagamentos enviados para aprovacao")
+        my_payments = [
+            p for p in st.session_state.get("sales_payments", [])
+            if str(p.get("vendedor", "")).strip() == vendedor_atual
+        ]
+        if not my_payments:
+            st.info("Nenhum pagamento enviado.")
+        else:
+            df_pay = pd.DataFrame(my_payments)
+            col_order = [
+                "created_at",
+                "aluno",
+                "telefone",
+                "valor",
+                "forma_pagamento",
+                "data_pagamento",
+                "status",
+                "recibo_numero",
+                "receivable_code",
+            ]
+            df_pay = df_pay[[c for c in col_order if c in df_pay.columns]]
+            st.dataframe(df_pay, use_container_width=True)
+
+    elif menu_sales == "Alunos Matriculados":
+        st.markdown('<div class="main-header">Alunos Matriculados</div>', unsafe_allow_html=True)
+        alunos = st.session_state.get("students", [])
+        if not alunos:
+            st.info("Nenhum aluno matriculado.")
+        else:
+            rows = []
+            for aluno in alunos:
+                nome = str(aluno.get("nome", "")).strip()
+                telefone = _student_phone(aluno)
+                if nome:
+                    rows.append({"nome_completo": nome, "telefone": telefone})
+            if not rows:
+                st.info("Nenhum aluno com dados disponiveis.")
+            else:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    elif menu_sales == "WhatsApp Leads":
+        st.markdown('<div class="main-header">WhatsApp para Leads</div>', unsafe_allow_html=True)
+        leads = st.session_state.get("sales_leads", [])
+        if not leads:
+            st.info("Cadastre leads para enviar mensagens.")
+        else:
+            status_filter = st.selectbox("Filtrar status dos leads", ["Todos"] + sales_lead_status_options())
+            leads_filtrados = leads
+            if status_filter != "Todos":
+                leads_filtrados = [l for l in leads if str(l.get("status", "")).strip() == status_filter]
+            labels = [
+                f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()}"
+                for l in leads_filtrados
+            ]
+            selected = st.multiselect("Leads para envio", labels, default=labels)
+            mensagem = st.text_area("Mensagem", value="Ola! Tudo bem? Aqui e do Comercial da Active Educacional.")
+            if st.button("Enviar WhatsApp para selecionados", type="primary"):
+                if not selected:
+                    st.error("Selecione ao menos um lead.")
+                elif not str(mensagem).strip():
+                    st.error("Digite uma mensagem.")
+                else:
+                    total = 0
+                    ok_count = 0
+                    fail_count = 0
+                    for label in selected:
+                        lead_obj = leads_filtrados[labels.index(label)]
+                        number = _lead_phone_for_whatsapp(lead_obj)
+                        if not number:
+                            fail_count += 1
+                            continue
+                        total += 1
+                        ok, status, _ = _send_whatsapp_auto(number, str(mensagem).strip())
+                        if ok:
+                            ok_count += 1
+                            lead_obj["ultimo_contato"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            lead_obj["updated_at"] = lead_obj["ultimo_contato"]
+                        else:
+                            fail_count += 1
+                            lead_obj["ultimo_erro_whatsapp"] = str(status or "")
+                    save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                    st.success(f"Envio concluido. Sucesso: {ok_count} | Falhas: {fail_count} | Tentativas: {total}")
+
+    elif menu_sales == "Professor Wiz":
+        run_active_chatbot()
+
 # ==============================================================================
 # CSS DINAMICO
 # ==============================================================================
@@ -3314,8 +4330,15 @@ st.session_state["books"] = load_list(BOOKS_FILE)
 st.session_state["material_orders"] = load_list(MATERIAL_ORDERS_FILE)
 st.session_state["challenges"] = load_list(CHALLENGES_FILE)
 st.session_state["challenge_completions"] = load_list(CHALLENGE_COMPLETIONS_FILE)
+st.session_state["activities"] = load_list(ACTIVITIES_FILE)
+st.session_state["activity_submissions"] = load_list(ACTIVITY_SUBMISSIONS_FILE)
+st.session_state["sales_leads"] = load_list(SALES_LEADS_FILE)
+st.session_state["sales_agenda"] = load_list(SALES_AGENDA_FILE)
+st.session_state["sales_payments"] = load_list(SALES_PAYMENTS_FILE)
 
 _ensure_challenge_store_ids()
+_ensure_activity_store_ids()
+_ensure_sales_store_defaults()
 
 if not st.session_state["books"]:
     st.session_state["books"] = [
@@ -3384,7 +4407,7 @@ if not st.session_state.get("logged_in", False):
                     """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
                     unsafe_allow_html=True,
                 )
-                role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador"])
                 unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
                 unidade_sel = st.selectbox("Unidade", unidades)
                 if unidade_sel == "Outra":
@@ -3468,13 +4491,13 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Professor Wiz"], "menu_aluno")
+        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Atividades", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Professor Wiz"], "menu_aluno")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Professor Wiz": "Professor Wiz"}
+    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Atividades": "Atividades", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Professor Wiz": "Professor Wiz"}
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -3565,6 +4588,156 @@ elif st.session_state["role"] == "Aluno":
         for msg in reversed(mensagens_aluno):
             with st.container():
                 st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
+
+    elif menu_aluno == "Atividades":
+        st.markdown('<div class="main-header">Atividades (Tarefas, Provas e Trabalhos)</div>', unsafe_allow_html=True)
+        aluno_nome = st.session_state.get("user_name", "")
+        turma_aluno = _student_class_name(aluno_nome)
+        if not turma_aluno:
+            st.info("Seu usuario nao esta vinculado a uma turma.")
+        else:
+            atividades_turma = [
+                a for a in st.session_state.get("activities", [])
+                if str(a.get("turma", "")).strip() == turma_aluno
+            ]
+            atividades_turma = sorted(
+                atividades_turma,
+                key=lambda a: (
+                    0 if _is_activity_open(a) else 1,
+                    parse_date(a.get("due_date", "")) or datetime.date(2100, 1, 1),
+                    str(a.get("created_at", "")),
+                ),
+            )
+            if not atividades_turma:
+                st.info("Nenhuma atividade publicada para sua turma.")
+            else:
+                st.caption(f"Turma: {turma_aluno}")
+                for atividade in atividades_turma:
+                    activity_id = str(atividade.get("id", "")).strip()
+                    if not activity_id:
+                        continue
+                    titulo = str(atividade.get("titulo", "Atividade")).strip() or "Atividade"
+                    tipo_atividade = str(atividade.get("tipo", "Atividade")).strip() or "Atividade"
+                    data_limite = str(atividade.get("due_date", "")).strip() or "Sem prazo"
+                    atividade_aberta = _is_activity_open(atividade)
+                    status_atividade = "Ativa" if atividade_aberta else "Encerrada"
+                    total_pontos = _activity_points_total(atividade)
+                    submission = get_activity_submission(activity_id, aluno_nome)
+                    permitir_reenvio = bool(atividade.get("allow_resubmission", False))
+
+                    st.markdown("---")
+                    st.markdown(f"### {titulo}")
+                    st.caption(
+                        f"Tipo: {tipo_atividade} | Status: {status_atividade} | Prazo: {data_limite} | Pontos: {total_pontos}"
+                    )
+                    if str(atividade.get("descricao", "")).strip():
+                        st.write(str(atividade.get("descricao", "")).strip())
+
+                    existing_answers = {}
+                    if submission:
+                        for ans in submission.get("respostas", []):
+                            qid = str(ans.get("question_id", "")).strip()
+                            if qid:
+                                existing_answers[qid] = ans
+
+                        score_final = activity_submission_final_score(submission)
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Status da sua entrega", str(submission.get("status", "Enviada")))
+                        c2.metric("Nota final", f"{score_final:.1f}/{submission.get('score_total', total_pontos)}")
+                        c3.metric(
+                            "Correcao automatica",
+                            f"{_parse_float(submission.get('score_auto', 0), 0.0):.1f}/{submission.get('score_total', total_pontos)}",
+                        )
+                        if str(submission.get("feedback_professor", "")).strip():
+                            st.info(f"Feedback do professor: {submission.get('feedback_professor')}")
+                        with st.expander("Ver minhas respostas"):
+                            respostas_enviadas = submission.get("respostas", []) or []
+                            if not respostas_enviadas:
+                                st.caption("Sem respostas registradas.")
+                            for idx, resp in enumerate(respostas_enviadas, start=1):
+                                enunciado = str(resp.get("enunciado", "")).strip()
+                                st.markdown(f"**{idx}. {enunciado or 'Questao'}**")
+                                if str(resp.get("tipo", "")).strip() == "multipla_escolha":
+                                    st.write(f"Resposta: {str(resp.get('resposta_texto', '')).strip() or '(nao respondida)'}")
+                                else:
+                                    st.write(str(resp.get("resposta_texto", "")).strip() or "(nao respondida)")
+
+                    if not atividade_aberta:
+                        st.warning("Atividade encerrada pelo professor. Novas respostas estao desativadas.")
+                        continue
+
+                    if submission and not permitir_reenvio:
+                        st.success("Atividade ja enviada. Reenvio desativado pelo professor.")
+                        continue
+
+                    with st.form(f"aluno_activity_form_{activity_id}"):
+                        answers_payload = {}
+                        missing_questions = []
+                        questions = [q for q in atividade.get("questions", []) if isinstance(q, dict)]
+                        if not questions:
+                            st.info("Esta atividade ainda nao possui questoes cadastradas.")
+                        for idx, question in enumerate(questions, start=1):
+                            qid = str(question.get("id", "")).strip() or f"q_{idx}"
+                            q_tipo = str(question.get("tipo", "aberta")).strip().lower()
+                            enunciado = str(question.get("enunciado", "")).strip() or f"Questao {idx}"
+                            pontos = parse_int(question.get("pontos", 1))
+                            pontos = pontos if pontos > 0 else 1
+                            st.markdown(f"**{idx}. {enunciado}**")
+                            st.caption(f"Pontos: {pontos}")
+                            prev_answer = existing_answers.get(qid, {})
+
+                            if q_tipo == "multipla_escolha":
+                                opcoes = question.get("opcoes", [])
+                                if not isinstance(opcoes, list):
+                                    opcoes = []
+                                opcoes = [str(opt).strip() for opt in opcoes if str(opt).strip()]
+                                placeholder = "Selecione uma opcao"
+                                opcoes_select = [placeholder] + opcoes
+                                prev_idx = prev_answer.get("resposta_indice", None)
+                                try:
+                                    prev_idx = int(prev_idx)
+                                except Exception:
+                                    prev_idx = None
+                                default_idx = prev_idx + 1 if prev_idx is not None and 0 <= prev_idx < len(opcoes) else 0
+                                escolha = st.selectbox(
+                                    "Resposta",
+                                    opcoes_select,
+                                    index=default_idx,
+                                    key=f"aluno_act_{activity_id}_{qid}_choice",
+                                )
+                                selected_idx = opcoes_select.index(escolha) - 1 if escolha != placeholder else None
+                                answers_payload[qid] = {"indice": selected_idx}
+                                if selected_idx is None:
+                                    missing_questions.append(f"Questao {idx}")
+                            else:
+                                prev_text = str(prev_answer.get("resposta_texto", "")).strip()
+                                resposta_texto = st.text_area(
+                                    "Resposta",
+                                    value=prev_text,
+                                    key=f"aluno_act_{activity_id}_{qid}_text",
+                                )
+                                answers_payload[qid] = {"texto": resposta_texto}
+                                if not str(resposta_texto).strip():
+                                    missing_questions.append(f"Questao {idx}")
+
+                        submit_label = "Reenviar atividade" if submission and permitir_reenvio else "Enviar atividade"
+                        if st.form_submit_button(submit_label, type="primary"):
+                            if not questions:
+                                st.error("Esta atividade nao possui questoes para responder.")
+                            elif missing_questions:
+                                st.error("Responda todas as questoes antes de enviar.")
+                            else:
+                                ok, msg = upsert_activity_submission(
+                                    atividade,
+                                    aluno_nome,
+                                    turma_aluno,
+                                    answers_payload,
+                                )
+                                if ok:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
     elif menu_aluno == "Desafios":
         st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
@@ -3704,7 +4877,7 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestão", ["Minhas Turmas", "Agenda", "Mensagens", "Lançar Notas", "Biblioteca", "Professor Wiz"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestão", ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lançar Notas", "Biblioteca", "Professor Wiz"], "menu_prof")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
@@ -3714,6 +4887,7 @@ elif st.session_state["role"] == "Professor":
         "Minhas Turmas": "Minhas Turmas",
         "Agenda": "Agenda",
         "Mensagens": "Mensagens",
+        "Atividades": "Atividades",
         "Lançar Notas": "Notas",
         "Lancar Notas": "Notas",
         "Biblioteca": "Livros",
@@ -3973,6 +5147,277 @@ elif st.session_state["role"] == "Professor":
 <div>{msg.get('mensagem','')}</div></div>""",
                     unsafe_allow_html=True,
                 )
+    elif menu_prof == "Atividades":
+        st.markdown('<div class="main-header">Atividades (Tarefas, Provas e Trabalhos)</div>', unsafe_allow_html=True)
+        turmas_prof = _teacher_class_names_for_user(st.session_state.get("user_name", ""))
+        if not turmas_prof:
+            st.info("Nenhuma turma atribuida a voce.")
+        else:
+            tab_publicar, tab_publicadas, tab_respostas = st.tabs(
+                ["Publicar atividade", "Atividades publicadas", "Respostas dos alunos"]
+            )
+
+            with tab_publicar:
+                with st.form("prof_create_activity"):
+                    turma_atividade = st.selectbox("Turma", turmas_prof)
+                    tipo_atividade = st.selectbox("Tipo", ["Tarefa de Casa", "Prova", "Trabalho"])
+                    titulo_atividade = st.text_input("Titulo")
+                    descricao_atividade = st.text_area("Descricao / instrucoes")
+                    due_date = st.date_input(
+                        "Prazo final",
+                        value=datetime.date.today() + datetime.timedelta(days=7),
+                        format="DD/MM/YYYY",
+                    )
+                    allow_resubmission = st.checkbox("Permitir reenvio do aluno", value=False)
+                    qtd_questoes = st.number_input("Quantidade de questoes", min_value=1, max_value=20, value=3, step=1)
+                    st.caption("Monte as questoes abaixo. Em multipla escolha, informe uma opcao por linha.")
+
+                    questions_payload = []
+                    validation_errors = []
+                    for idx in range(int(qtd_questoes)):
+                        st.markdown(f"#### Questao {idx + 1}")
+                        q_tipo_label = st.selectbox(
+                            "Tipo da questao",
+                            ["Multipla escolha", "Resposta aberta"],
+                            key=f"prof_activity_qtype_{idx}",
+                        )
+                        q_enunciado = st.text_area(
+                            "Enunciado",
+                            key=f"prof_activity_qtext_{idx}",
+                        )
+                        q_pontos = st.number_input(
+                            "Pontos da questao",
+                            min_value=1,
+                            max_value=100,
+                            value=10,
+                            step=1,
+                            key=f"prof_activity_qpoints_{idx}",
+                        )
+                        qid = uuid.uuid4().hex
+
+                        if not str(q_enunciado).strip():
+                            validation_errors.append(f"Questao {idx + 1}: informe o enunciado.")
+
+                        if q_tipo_label == "Multipla escolha":
+                            q_opcoes_text = st.text_area(
+                                "Opcoes (uma por linha)",
+                                value="Opcao A\nOpcao B\nOpcao C\nOpcao D",
+                                key=f"prof_activity_qopts_{idx}",
+                            )
+                            q_opcoes = [line.strip() for line in str(q_opcoes_text or "").splitlines() if line.strip()]
+                            if len(q_opcoes) < 2:
+                                validation_errors.append(f"Questao {idx + 1}: multipla escolha precisa de ao menos 2 opcoes.")
+                            corretas_opts = ["Nao definir"] + q_opcoes if q_opcoes else ["Nao definir"]
+                            q_correta = st.selectbox(
+                                "Resposta correta (opcional)",
+                                corretas_opts,
+                                key=f"prof_activity_qcorrect_{idx}",
+                            )
+                            correta_idx = q_opcoes.index(q_correta) if q_correta != "Nao definir" and q_correta in q_opcoes else None
+                            questions_payload.append(
+                                {
+                                    "id": qid,
+                                    "tipo": "multipla_escolha",
+                                    "enunciado": str(q_enunciado).strip(),
+                                    "opcoes": q_opcoes,
+                                    "correta_idx": correta_idx,
+                                    "pontos": int(q_pontos),
+                                }
+                            )
+                        else:
+                            questions_payload.append(
+                                {
+                                    "id": qid,
+                                    "tipo": "aberta",
+                                    "enunciado": str(q_enunciado).strip(),
+                                    "opcoes": [],
+                                    "correta_idx": None,
+                                    "pontos": int(q_pontos),
+                                }
+                            )
+
+                    if st.form_submit_button("Publicar atividade", type="primary"):
+                        if not str(titulo_atividade).strip():
+                            st.error("Informe o titulo da atividade.")
+                        elif validation_errors:
+                            st.error(validation_errors[0])
+                        else:
+                            st.session_state["activities"].append(
+                                {
+                                    "id": uuid.uuid4().hex,
+                                    "turma": turma_atividade,
+                                    "tipo": str(tipo_atividade).strip(),
+                                    "titulo": str(titulo_atividade).strip(),
+                                    "descricao": str(descricao_atividade).strip(),
+                                    "questions": questions_payload,
+                                    "allow_resubmission": bool(allow_resubmission),
+                                    "status": "Ativa",
+                                    "autor": st.session_state.get("user_name", "Professor"),
+                                    "due_date": due_date.strftime("%d/%m/%Y") if due_date else "",
+                                    "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                    "updated_at": "",
+                                }
+                            )
+                            save_list(ACTIVITIES_FILE, st.session_state["activities"])
+                            st.success("Atividade publicada com sucesso.")
+                            st.rerun()
+
+            atividades_prof = [
+                a for a in st.session_state.get("activities", [])
+                if str(a.get("turma", "")).strip() in set(turmas_prof)
+            ]
+            atividades_prof = sorted(
+                atividades_prof,
+                key=lambda a: (
+                    0 if _is_activity_open(a) else 1,
+                    parse_date(a.get("due_date", "")) or datetime.date(2100, 1, 1),
+                    str(a.get("created_at", "")),
+                ),
+            )
+
+            with tab_publicadas:
+                if not atividades_prof:
+                    st.info("Nenhuma atividade publicada ainda.")
+                else:
+                    for atividade in atividades_prof:
+                        activity_id = str(atividade.get("id", "")).strip()
+                        titulo = str(atividade.get("titulo", "Atividade")).strip() or "Atividade"
+                        turma = str(atividade.get("turma", "")).strip()
+                        tipo = str(atividade.get("tipo", "")).strip()
+                        status = "Ativa" if _is_activity_open(atividade) else "Encerrada"
+                        due_date = str(atividade.get("due_date", "")).strip() or "Sem prazo"
+                        total_pontos = _activity_points_total(atividade)
+                        total_submissoes = len(
+                            [s for s in st.session_state.get("activity_submissions", []) if str(s.get("activity_id", "")).strip() == activity_id]
+                        )
+                        alunos_turma = [
+                            s.get("nome", "")
+                            for s in st.session_state.get("students", [])
+                            if str(s.get("turma", "")).strip() == turma
+                        ]
+
+                        with st.expander(f"{titulo} | {turma} | {status}"):
+                            st.caption(
+                                f"Tipo: {tipo} | Prazo: {due_date} | Questoes: {len(atividade.get('questions', []) or [])} | Pontos: {total_pontos}"
+                            )
+                            st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
+                            if str(atividade.get("descricao", "")).strip():
+                                st.write(str(atividade.get("descricao", "")).strip())
+
+                            if _is_activity_open(atividade):
+                                if st.button("Encerrar atividade", key=f"close_activity_{activity_id}"):
+                                    atividade["status"] = "Encerrada"
+                                    atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                                    save_list(ACTIVITIES_FILE, st.session_state["activities"])
+                                    st.success("Atividade encerrada.")
+                                    st.rerun()
+                            else:
+                                if st.button("Reabrir atividade", key=f"open_activity_{activity_id}"):
+                                    atividade["status"] = "Ativa"
+                                    atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                                    save_list(ACTIVITIES_FILE, st.session_state["activities"])
+                                    st.success("Atividade reaberta.")
+                                    st.rerun()
+
+            with tab_respostas:
+                if not atividades_prof:
+                    st.info("Nenhuma atividade publicada para acompanhar respostas.")
+                else:
+                    atividade_labels = []
+                    atividade_map = {}
+                    for atividade in atividades_prof:
+                        aid = str(atividade.get("id", "")).strip()
+                        label = (
+                            f"{str(atividade.get('turma', '')).strip()} | "
+                            f"{str(atividade.get('tipo', '')).strip()} | "
+                            f"{str(atividade.get('titulo', 'Atividade')).strip()} | "
+                            f"#{aid[:6]}"
+                        )
+                        atividade_labels.append(label)
+                        atividade_map[label] = atividade
+                    atividade_sel_label = st.selectbox("Atividade", atividade_labels)
+                    atividade_sel = atividade_map.get(atividade_sel_label, {})
+                    aid_sel = str(atividade_sel.get("id", "")).strip()
+                    turma_sel = str(atividade_sel.get("turma", "")).strip()
+                    total_pontos = _activity_points_total(atividade_sel)
+                    alunos_turma = [
+                        s.get("nome", "")
+                        for s in st.session_state.get("students", [])
+                        if str(s.get("turma", "")).strip() == turma_sel
+                    ]
+                    submissions = [
+                        s for s in st.session_state.get("activity_submissions", [])
+                        if str(s.get("activity_id", "")).strip() == aid_sel
+                    ]
+                    submissions = sorted(submissions, key=lambda s: str(s.get("submitted_at", "")), reverse=True)
+
+                    st.caption(f"Respostas recebidas: {len(submissions)}/{len(alunos_turma)}")
+                    if not submissions:
+                        st.info("Ainda nao ha respostas para esta atividade.")
+                    else:
+                        for sub in submissions:
+                            sub_id = str(sub.get("id", "")).strip() or uuid.uuid4().hex
+                            aluno = str(sub.get("aluno", "")).strip() or "Aluno"
+                            nota_final = activity_submission_final_score(sub)
+                            nota_auto = _parse_float(sub.get("score_auto", 0), 0.0)
+                            nota_total = _parse_float(sub.get("score_total", total_pontos), 0.0)
+                            status_sub = str(sub.get("status", "Enviada")).strip() or "Enviada"
+
+                            st.markdown("---")
+                            st.markdown(f"### {aluno}")
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Status", status_sub)
+                            c2.metric("Nota final", f"{nota_final:.1f}/{nota_total:.1f}")
+                            c3.metric("Auto", f"{nota_auto:.1f}/{nota_total:.1f}")
+                            st.caption(f"Enviado em: {str(sub.get('submitted_at', '')).strip() or '-'}")
+
+                            with st.expander("Ver respostas"):
+                                respostas = sub.get("respostas", []) or []
+                                if not respostas:
+                                    st.caption("Sem respostas registradas.")
+                                for idx, resp in enumerate(respostas, start=1):
+                                    enunciado = str(resp.get("enunciado", "")).strip()
+                                    tipo_resp = str(resp.get("tipo", "")).strip()
+                                    st.markdown(f"**{idx}. {enunciado or 'Questao'}**")
+                                    if tipo_resp == "multipla_escolha":
+                                        st.write(f"Resposta: {str(resp.get('resposta_texto', '')).strip() or '(nao respondida)'}")
+                                        if resp.get("correta_idx", None) is not None:
+                                            st.caption(
+                                                "Correta: "
+                                                + (str(resp.get("correta_texto", "")).strip() or "(nao definida)")
+                                            )
+                                            acertou = resp.get("acertou", None)
+                                            if acertou is True:
+                                                st.success("Resposta correta.")
+                                            elif acertou is False:
+                                                st.error("Resposta incorreta.")
+                                    else:
+                                        st.write(str(resp.get("resposta_texto", "")).strip() or "(nao respondida)")
+
+                            with st.form(f"prof_grade_activity_{sub_id}"):
+                                nota_default = activity_submission_final_score(sub)
+                                nota_prof = st.number_input(
+                                    "Nota final do professor",
+                                    min_value=0.0,
+                                    max_value=float(nota_total if nota_total > 0 else 100.0),
+                                    value=float(min(max(nota_default, 0.0), nota_total if nota_total > 0 else 100.0)),
+                                    step=0.5,
+                                    key=f"prof_grade_value_{sub_id}",
+                                )
+                                feedback_prof = st.text_area(
+                                    "Feedback para o aluno",
+                                    value=str(sub.get("feedback_professor", "")).strip(),
+                                    key=f"prof_grade_feedback_{sub_id}",
+                                )
+                                if st.form_submit_button("Salvar avaliacao"):
+                                    sub["score_professor"] = float(nota_prof)
+                                    sub["feedback_professor"] = str(feedback_prof).strip()
+                                    sub["status"] = "Avaliada"
+                                    sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                                    save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+                                    st.success("Avaliacao salva.")
+                                    st.rerun()
+
     elif menu_prof == "Notas":
         st.markdown('<div class="main-header">Lancamento de Notas</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
@@ -4043,6 +5488,8 @@ elif st.session_state["role"] == "Professor":
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
 
+elif st.session_state["role"] == "Comercial":
+    run_commercial_panel()
 
 # ==============================================================================
 # COORDENADOR
@@ -5640,7 +7087,7 @@ elif st.session_state["role"] == "Coordenador":
                 total = atual
             return atual, total
 
-        tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
+        tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial"])
         with tab1:
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
@@ -6268,6 +7715,111 @@ elif st.session_state["role"] == "Coordenador":
                         st.success("Despesa excluida.")
                         st.rerun()
 
+        with tab3:
+            st.markdown("### Pagamentos de matricula enviados pelo Comercial")
+            pagamentos = st.session_state.get("sales_payments", [])
+            if not pagamentos:
+                st.info("Nenhum pagamento enviado pelo Comercial.")
+            else:
+                filtro_status = st.selectbox(
+                    "Status",
+                    ["Todos", "Pendente", "Aprovado", "Reprovado"],
+                    key="coord_sales_payments_filter_status",
+                )
+                pagamentos_filtrados = pagamentos
+                if filtro_status != "Todos":
+                    pagamentos_filtrados = [
+                        p for p in pagamentos_filtrados if str(p.get("status", "")).strip() == filtro_status
+                    ]
+
+                if pagamentos_filtrados:
+                    df_payments = pd.DataFrame(pagamentos_filtrados)
+                    col_order = [
+                        "created_at",
+                        "aluno",
+                        "telefone",
+                        "valor",
+                        "forma_pagamento",
+                        "data_pagamento",
+                        "vendedor",
+                        "status",
+                        "recibo_numero",
+                        "receivable_code",
+                    ]
+                    df_payments = df_payments[[c for c in col_order if c in df_payments.columns]]
+                    st.dataframe(df_payments, use_container_width=True)
+
+                    labels = [
+                        f"{str(p.get('created_at', '')).strip()} | {str(p.get('aluno', '')).strip()} | R$ {str(p.get('valor', '')).strip()} | {str(p.get('status', '')).strip()}"
+                        for p in pagamentos_filtrados
+                    ]
+                    pay_sel_label = st.selectbox("Selecionar pagamento", labels, key="coord_sales_payment_sel")
+                    pay_obj = pagamentos_filtrados[labels.index(pay_sel_label)]
+
+                    st.caption(
+                        f"Vendedor: {str(pay_obj.get('vendedor', '')).strip()} | Forma: {str(pay_obj.get('forma_pagamento', '')).strip()} | Data pagamento: {str(pay_obj.get('data_pagamento', '')).strip()}"
+                    )
+                    if str(pay_obj.get("observacao", "")).strip():
+                        st.write(f"Observacoes: {str(pay_obj.get('observacao', '')).strip()}")
+                    if str(pay_obj.get("reprovado_motivo", "")).strip():
+                        st.warning(f"Motivo da reprovacao: {str(pay_obj.get('reprovado_motivo', '')).strip()}")
+
+                    comprovante_bytes = _decode_sales_attachment(pay_obj)
+                    comprovante_mime = str(pay_obj.get("comprovante_mime", "")).strip().lower()
+                    comprovante_nome = str(pay_obj.get("comprovante_nome", "")).strip() or "comprovante"
+                    if comprovante_bytes:
+                        st.markdown("#### Comprovante anexado")
+                        if comprovante_mime.startswith("image/"):
+                            st.image(comprovante_bytes, caption=comprovante_nome)
+                        else:
+                            st.download_button(
+                                "Baixar comprovante",
+                                data=comprovante_bytes,
+                                file_name=comprovante_nome,
+                                mime=comprovante_mime or "application/octet-stream",
+                                key=f"coord_sales_down_{str(pay_obj.get('id', ''))}",
+                            )
+                    else:
+                        st.info("Sem comprovante anexado.")
+
+                    recibo_html = _sales_receipt_html(pay_obj)
+                    st.download_button(
+                        "Baixar recibo (HTML)",
+                        data=recibo_html,
+                        file_name=f"recibo_{str(pay_obj.get('aluno', 'aluno')).replace(' ', '_').lower()}.html",
+                        mime="text/html",
+                        key=f"coord_sales_receipt_{str(pay_obj.get('id', ''))}",
+                    )
+
+                    motivo_reprovacao = st.text_input(
+                        "Motivo da reprovacao (opcional)",
+                        value="",
+                        key=f"coord_sales_reject_reason_{str(pay_obj.get('id', ''))}",
+                    )
+
+                    c1, c2 = st.columns(2)
+                    if c1.button("Aprovar pagamento", type="primary", key=f"coord_sales_approve_{str(pay_obj.get('id', ''))}"):
+                        ok, msg = _approve_sales_payment(pay_obj, st.session_state.get("user_name", "Coordenacao"))
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+                    if c2.button("Reprovar pagamento", key=f"coord_sales_reject_{str(pay_obj.get('id', ''))}"):
+                        ok, msg = _reject_sales_payment(
+                            pay_obj,
+                            st.session_state.get("user_name", "Coordenacao"),
+                            motivo_reprovacao or "Nao informado",
+                        )
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                else:
+                    st.info("Nenhum pagamento encontrado para o filtro selecionado.")
+
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
@@ -6318,7 +7870,7 @@ elif st.session_state["role"] == "Coordenador":
                 c1, c2, c3 = st.columns(3)
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
-                with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
+                with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador"])
                 d1, d2, d3 = st.columns(3)
                 with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
                 with d2: u_email = st.text_input("E-mail (opcional)")
@@ -6355,7 +7907,12 @@ elif st.session_state["role"] == "Coordenador":
                     with st.form("edit_user"):
                         new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
-                        new_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"], index=["Aluno", "Professor", "Coordenador"].index(user_obj["perfil"]) if user_obj["perfil"] in ["Aluno", "Professor", "Coordenador"] else 0)
+                        role_opts = ["Aluno", "Professor", "Comercial", "Coordenador"]
+                        new_role = st.selectbox(
+                            "Perfil",
+                            role_opts,
+                            index=role_opts.index(user_obj["perfil"]) if user_obj["perfil"] in role_opts else 0,
+                        )
                         e1, e2, e3 = st.columns(3)
                         with e1: new_person = st.text_input("Pessoa", value=user_obj.get("pessoa", ""))
                         with e2: new_email = st.text_input("E-mail", value=user_obj.get("email", ""))
@@ -6956,6 +8513,11 @@ elif st.session_state["role"] == "Coordenador":
             ("messages.json", "messages", MESSAGES_FILE),
             ("challenges.json", "challenges", CHALLENGES_FILE),
             ("challenge_completions.json", "challenge_completions", CHALLENGE_COMPLETIONS_FILE),
+            ("activities.json", "activities", ACTIVITIES_FILE),
+            ("activity_submissions.json", "activity_submissions", ACTIVITY_SUBMISSIONS_FILE),
+            ("sales_leads.json", "sales_leads", SALES_LEADS_FILE),
+            ("sales_agenda.json", "sales_agenda", SALES_AGENDA_FILE),
+            ("sales_payments.json", "sales_payments", SALES_PAYMENTS_FILE),
             ("receivables.json", "receivables", RECEIVABLES_FILE),
             ("payables.json", "payables", PAYABLES_FILE),
             ("inventory.json", "inventory", INVENTORY_FILE),
