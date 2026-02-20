@@ -1726,7 +1726,7 @@ def infer_class_days_from_text(dias_texto):
 def format_class_schedule(dias_semana=None, hora_inicio="", hora_fim=""):
     dias_validos = [dia for dia in (dias_semana or []) if dia in WEEKDAY_OPTIONS_PT]
     if not dias_validos:
-        return "Hor?rio a definir"
+        return "Horário a definir"
     faixa = ""
     if hora_inicio and hora_fim:
         faixa = f" | {hora_inicio} - {hora_fim}"
@@ -3731,7 +3731,7 @@ elif st.session_state["role"] == "Professor":
                     str(turma_obj.get("hora_inicio", "")).strip(),
                     str(turma_obj.get("hora_fim", "")).strip(),
                 )
-            st.write(f"**Dias e Hor?rios:** {dias_turma_exibicao or 'Hor?rio a definir'}")
+            st.write(f"**Dias e Horários:** {dias_turma_exibicao or 'Horário a definir'}")
             st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
 
             st.markdown("### Aula ao Vivo")
@@ -4141,20 +4141,20 @@ elif st.session_state["role"] == "Coordenador":
                     dias_turma_default = [dia for dia in dias_turma_default if dia in WEEKDAY_OPTIONS_PT]
                     if not dias_turma_default:
                         dias_turma_default = infer_class_days_from_text(turma_obj.get("dias", ""))
-                    titulo = st.text_input("T?tulo", value="Aula ao vivo")
-                    descricao = st.text_area("Descri??o")
+                    titulo = st.text_input("Título", value="Aula ao vivo")
+                    descricao = st.text_area("Descrição")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
                     st.caption(f"Data selecionada: {format_date_br(data_aula)}")
                     hora_padrao = parse_time(str(turma_obj.get("hora_inicio", "19:00")).strip() or "19:00")
-                    hora_aula = st.time_input("Hor?rio", value=hora_padrao)
+                    hora_aula = st.time_input("Horário", value=hora_padrao)
 
                     rep_c1, rep_c2 = st.columns([2, 1])
                     with rep_c1:
                         repetir = st.checkbox("Repetir semanalmente", value=False)
                     with rep_c2:
-                        repetir_por_data = st.checkbox("Data", value=False, disabled=not repetir, help="Selecionar dias para repeti??o")
+                        repetir_por_data = st.checkbox("Data", value=False, disabled=not repetir, help="Selecionar dias para repetição")
 
-                    semanas = st.number_input("N?mero de semanas", min_value=1, max_value=52, value=4, disabled=not repetir)
+                    semanas = st.number_input("Número de semanas", min_value=1, max_value=52, value=4, disabled=not repetir)
                     dias_repeticao = []
                     if repetir and repetir_por_data:
                         dia_base = WEEKDAY_OPTIONS_PT[data_aula.weekday()] if data_aula else WEEKDAY_OPTIONS_PT[0]
@@ -4172,7 +4172,7 @@ elif st.session_state["role"] == "Coordenador":
                     enviar_email_convite = st.checkbox("Enviar email automatico para alunos da turma", value=True)
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
-                            st.error("Selecione pelo menos um dia para repeti??o por data.")
+                            st.error("Selecione pelo menos um dia para repetição por data.")
                         else:
                             datas_aulas = []
                             if repetir:
@@ -5452,7 +5452,7 @@ elif st.session_state["role"] == "Coordenador":
                                 st.rerun()
 
     elif menu_coord == "Turmas":
-        st.markdown('<div class="main-header">Gest?o de Turmas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
@@ -5468,10 +5468,10 @@ elif st.session_state["role"] == "Coordenador":
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
 
                 c5, c6 = st.columns(2)
-                with c5: hora_inicio = st.time_input("Hor?rio inicial", value=datetime.time(19, 0))
-                with c6: hora_fim = st.time_input("Hor?rio final", value=datetime.time(20, 0))
+                with c5: hora_inicio = st.time_input("Horário inicial", value=datetime.time(19, 0))
+                with c6: hora_fim = st.time_input("Horário final", value=datetime.time(20, 0))
 
-                livro = st.selectbox("Livro/N?vel da Turma", book_levels())
+                livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
                     nome = nome.strip()
                     dias_semana = [dia for dia in dias_semana if dia in WEEKDAY_OPTIONS_PT]
@@ -5483,7 +5483,7 @@ elif st.session_state["role"] == "Coordenador":
                     elif not dias_semana:
                         st.error("Selecione pelo menos um dia das aulas.")
                     elif hora_fim <= hora_inicio:
-                        st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                        st.error("O horário final precisa ser maior que o horário inicial.")
                     else:
                         st.session_state["classes"].append(
                             {
@@ -5552,19 +5552,19 @@ elif st.session_state["role"] == "Coordenador":
 
                         c_hora_1, c_hora_2 = st.columns(2)
                         with c_hora_1:
-                            new_hora_inicio = st.time_input("Hor?rio inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
+                            new_hora_inicio = st.time_input("Horário inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
                         with c_hora_2:
-                            new_hora_fim = st.time_input("Hor?rio final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
+                            new_hora_fim = st.time_input("Horário final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
 
                         livro_atual = turma_obj.get("livro", "")
                         livro_opts = book_levels()
                         if livro_atual and livro_atual not in livro_opts:
                             livro_opts.append(livro_atual)
-                        new_livro = st.selectbox("Livro/N?vel da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
+                        new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar Altera??es"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 new_nome = new_nome.strip()
                                 dias_limpos = [dia for dia in new_dias_semana if dia in WEEKDAY_OPTIONS_PT]
                                 new_hora_inicio_str = new_hora_inicio.strftime("%H:%M") if new_hora_inicio else ""
@@ -5575,7 +5575,7 @@ elif st.session_state["role"] == "Coordenador":
                                 elif not dias_limpos:
                                     st.error("Selecione pelo menos um dia das aulas.")
                                 elif new_hora_fim <= new_hora_inicio:
-                                    st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                                    st.error("O horário final precisa ser maior que o horário inicial.")
                                 else:
                                     old_nome = turma_obj.get("nome", "")
                                     turma_obj["nome"] = new_nome
@@ -5607,7 +5607,7 @@ elif st.session_state["role"] == "Coordenador":
                                     save_list(STUDENTS_FILE, st.session_state["students"])
                                 st.session_state["classes"].remove(turma_obj)
                                 save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.error("Turma exclu?da.")
+                                st.error("Turma excluída.")
                                 st.rerun()
 
     elif menu_coord == "Financeiro":
