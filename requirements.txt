@@ -1,2 +1,7 @@
 streamlit
 pandas
+openpyxl
+openai>=1.0
+fpdf2
+psycopg2-binary
+qrcode
