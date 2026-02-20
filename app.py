@@ -187,6 +187,99 @@ def _get_config_value(name, default=""):
         pass
     return default
 
+def _resolve_config_reference(value, max_depth=4):
+    current = str(value or "").strip().strip('"').strip("'")
+    if not current:
+        return ""
+    seen = set()
+    for _ in range(max_depth):
+        token = ""
+        match = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", current)
+        if match:
+            token = match.group(1)
+        else:
+            match = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", current)
+            if match:
+                token = match.group(1)
+            else:
+                match = re.fullmatch(r"%([A-Za-z_][A-Za-z0-9_]*)%", current)
+                if match:
+                    token = match.group(1)
+                elif re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", current):
+                    token = current
+        if not token or token in seen:
+            break
+        replacement = str(_get_config_value(token, "") or "").strip().strip('"').strip("'")
+        if not replacement or replacement == current:
+            break
+        seen.add(token)
+        current = replacement
+    return current
+
+def _resolve_inline_config_refs(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    def _replace(match):
+        token = match.group(1)
+        replacement = _resolve_config_reference(_get_config_value(token, ""))
+        return replacement if replacement else match.group(0)
+
+    text = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _replace, text)
+    text = re.sub(r"%([A-Za-z_][A-Za-z0-9_]*)%", _replace, text)
+    return text
+
+def _clean_config_value(value):
+    return _resolve_inline_config_refs(_resolve_config_reference(value)).strip().strip('"').strip("'")
+
+def _resolve_port_value(value):
+    candidate = _clean_config_value(value)
+    if candidate.isdigit():
+        port_num = int(candidate)
+        if 1 <= port_num <= 65535:
+            return str(port_num)
+    return ""
+
+def _pick_db_port(*values):
+    for value in values:
+        parsed = _resolve_port_value(value)
+        if parsed:
+            return parsed
+    return "5432"
+
+def _configured_db_port():
+    return _pick_db_port(
+        _get_config_value("PGPORT", ""),
+        _get_config_value("POSTGRES_PORT", ""),
+        _get_config_value("POSTGRESPORT", ""),
+        _get_config_value("DB_PORT", ""),
+        _get_config_value("DATABASE_PORT", ""),
+        _get_config_value("PORTA", ""),
+        _get_config_value("DB_PORTA", ""),
+        _get_config_value("DATABASE_PORTA", ""),
+    )
+
+def _normalize_db_url(raw_url):
+    url = _clean_config_value(raw_url)
+    if not url:
+        return ""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+
+    url = re.sub(
+        r"(?P<sep>:)(?P<token>[A-Za-z_][A-Za-z0-9_]{1,63})(?=(?:[/?#]|$))",
+        lambda m: f"{m.group('sep')}{_resolve_port_value(m.group('token')) or _configured_db_port()}",
+        url,
+        count=1,
+    )
+    url = re.sub(
+        r"(?i)(?P<prefix>[?&]port=)(?P<token>[A-Za-z_][A-Za-z0-9_]{1,63})(?=(?:[&#]|$))",
+        lambda m: f"{m.group('prefix')}{_resolve_port_value(m.group('token')) or _configured_db_port()}",
+        url,
+    )
+    return url
+
 def _evolution_base_url():
     url = _get_config_value("EVOLUTION_API_URL", "") or _get_config_value("EVOLUTION_URL", "")
     return str(url).strip().rstrip("/")
@@ -474,7 +567,7 @@ def _rotate_backups(path, keep=30):
             pass
 
 def _db_url():
-    raw_url = (
+    raw_url = _normalize_db_url(
         _get_config_value("ACTIVE_DATABASE_URL", "")
         or _get_config_value("DATABASE_URL", "")
         or _get_config_value("RAILWAY_DATABASE_URL", "")
@@ -484,41 +577,38 @@ def _db_url():
         or _get_config_value("POSTGRESQL_URL", "")
     )
     if not raw_url:
-        host = (
+        host = _clean_config_value(
             _get_config_value("PGHOST", "")
             or _get_config_value("POSTGRES_HOST", "")
             or _get_config_value("POSTGRESHOST", "")
             or _get_config_value("DB_HOST", "")
             or _get_config_value("DATABASE_HOST", "")
+            or _get_config_value("HOST_BANCO", "")
         )
-        port = (
-            _get_config_value("PGPORT", "")
-            or _get_config_value("POSTGRES_PORT", "")
-            or _get_config_value("POSTGRESPORT", "")
-            or _get_config_value("DB_PORT", "")
-            or _get_config_value("DATABASE_PORT", "")
-            or "5432"
-        )
-        user = (
+        port = _configured_db_port()
+        user = _clean_config_value(
             _get_config_value("PGUSER", "")
             or _get_config_value("POSTGRES_USER", "")
             or _get_config_value("POSTGRESUSER", "")
             or _get_config_value("DB_USER", "")
             or _get_config_value("DATABASE_USER", "")
+            or _get_config_value("USUARIO_BANCO", "")
         )
-        password = (
+        password = _clean_config_value(
             _get_config_value("PGPASSWORD", "")
             or _get_config_value("POSTGRES_PASSWORD", "")
             or _get_config_value("POSTGRESPASSWORD", "")
             or _get_config_value("DB_PASSWORD", "")
             or _get_config_value("DATABASE_PASSWORD", "")
+            or _get_config_value("SENHA_BANCO", "")
         )
-        database = (
+        database = _clean_config_value(
             _get_config_value("PGDATABASE", "")
             or _get_config_value("POSTGRES_DB", "")
             or _get_config_value("POSTGRESDATABASE", "")
             or _get_config_value("DB_NAME", "")
             or _get_config_value("DATABASE_NAME", "")
+            or _get_config_value("NOME_BANCO", "")
         )
         if host and user and database:
             user_enc = quote(str(user), safe="")
@@ -535,11 +625,7 @@ def _db_url():
             if ssl_mode:
                 sep = "&" if "?" in raw_url else "?"
                 raw_url = f"{raw_url}{sep}sslmode={ssl_mode}"
-    url = str(raw_url or "").strip().strip('"').strip("'")
-    if url.startswith("postgres://"):
-        # Normaliza para o esquema padrão aceito pelo driver.
-        url = "postgresql://" + url[len("postgres://"):]
-    return url
+    return _normalize_db_url(raw_url)
 
 def _db_key_for_path(path):
     return str(getattr(path, "stem", path)).strip()
