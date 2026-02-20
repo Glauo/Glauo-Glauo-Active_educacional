@@ -3370,8 +3370,7 @@ if not st.session_state.get("logged_in", False):
 <div class="hero-card">
   {logo_html}
   <div class="hero-title">Ativo<br>Sistema Educacional</div>
-  <div class="hero-meta">Escola de líderes e inglês Mister Wiz</div>
-  <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
+  <div class="hero-subtitle hero-tagline">Gestao academica, comunicacao e conteudo pedagogico.</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -3441,7 +3440,7 @@ if not st.session_state.get("logged_in", False):
     st.markdown(
         f"""
 <div class="feature-cta">
-  <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">ðŸ“± Falar com Suporte no WhatsApp</a>
+  <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">Falar com Suporte no WhatsApp</a>
 </div>
 """,
         unsafe_allow_html=True,
@@ -3485,7 +3484,7 @@ elif st.session_state["role"] == "Aluno":
         if turma_aluno:
             turma_obj = next((c for c in st.session_state["classes"] if c["nome"] == turma_aluno), None)
             if turma_obj and "link_zoom" in turma_obj: link_aula = turma_obj["link_zoom"]
-        st.error(f"ðŸ”´ AULA AO VIVO AGORA")
+        st.error("AULA AO VIVO AGORA")
         st.link_button("ENTRAR NA AULA (ZOOM)", link_aula, type="primary")
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
@@ -3677,7 +3676,7 @@ elif st.session_state["role"] == "Aluno":
             with st.container():
                 st.markdown(f"**{m['titulo']}**")
                 st.write(m['descricao'])
-                if m['link']: st.markdown(f"[ðŸ“¥ Baixar Arquivo]({m['link']})")
+                if m['link']: st.markdown(f"[Baixar Arquivo]({m['link']})")
                 st.markdown("---")
 
     elif menu_aluno == "Financeiro":
