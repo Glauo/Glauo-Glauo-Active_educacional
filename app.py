@@ -124,6 +124,9 @@ if "wiz_last_execution" not in st.session_state:
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "2523"
+VENDAS_USERNAME = str(os.getenv("ACTIVE_VENDAS_USERNAME", "vendas")).strip() or "vendas"
+VENDAS_PASSWORD = str(os.getenv("ACTIVE_VENDAS_PASSWORD", "2523")).strip() or "2523"
+VENDAS_PERSON_NAME = str(os.getenv("ACTIVE_VENDAS_NOME", "VENDAS")).strip() or "VENDAS"
 DATA_DIR = Path(os.getenv("ACTIVE_DATA_DIR", ".")).expanduser()
 BACKUP_DIR = DATA_DIR / "_data_backups"
 DATA_IO_LOCK = threading.Lock()
@@ -1536,6 +1539,19 @@ def ensure_admin_user(users):
             "perfil": "Admin",
             "pessoa": "Administrador",
         })
+
+    has_vendas_user = any(
+        str(u.get("usuario", "")).strip().lower() == VENDAS_USERNAME.lower()
+        for u in users
+    )
+    if not has_vendas_user:
+        users.append({
+            "usuario": VENDAS_USERNAME,
+            "senha": VENDAS_PASSWORD,
+            "perfil": "Coordenador",
+            "pessoa": VENDAS_PERSON_NAME,
+        })
+
     return users
 
 def find_user(username):
