@@ -519,7 +519,7 @@ def _db_url():
                 raw_url = f"{raw_url}{sep}sslmode={ssl_mode}"
     url = str(raw_url or "").strip().strip('"').strip("'")
     if url.startswith("postgres://"):
-        # Normaliza para o esquema padrÃ£o aceito pelo driver.
+        # Normaliza para o esquema padrão aceito pelo driver.
         url = "postgresql://" + url[len("postgres://"):]
     return url
 
@@ -673,7 +673,7 @@ def _load_json_list(path):
             st.session_state["_data_sources"][key] = "db"
             return data
         if data is None:
-            # Migra automaticamente caso a versÃ£o antiga tenha salvo com outra chave.
+            # Migra automaticamente caso a versão antiga tenha salvo com outra chave.
             for legacy_key in _db_legacy_keys_for_path(path):
                 if legacy_key == key:
                     continue
@@ -1155,8 +1155,8 @@ def notify_student_financial_event(aluno_nome, itens):
             f"- {item.get('descricao','Lancamento')} | Venc: {item.get('vencimento','')} | "
             f"Parcela: {item.get('parcela','')} | Valor: {item.get('valor_parcela', item.get('valor',''))}"
         )
-    assunto = "[Active] Novo lanÃ§amento financeiro"
-    corpo = "Foram lanÃ§ados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
+    assunto = "[Active] Novo lançamento financeiro"
+    corpo = "Foram lançados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
     return _notify_direct_contacts(
         student.get("nome", "Aluno"),
         _message_recipients_for_student(student),
@@ -1337,7 +1337,7 @@ def _wiz_execute_actions(actions):
                         "aluno": aluno,
                         "turma": str(data.get("turma", "")),
                         "disciplina": str(data.get("disciplina", "Ingles")),
-                        "avaliacao": str(data.get("avaliacao", "AvaliaÃ§Ã£o")),
+                        "avaliacao": str(data.get("avaliacao", "Avaliação")),
                         "nota": str(data.get("nota", "")),
                         "status": str(data.get("status", "Pendente")),
                         "data": datetime.date.today().strftime("%d/%m/%Y"),
@@ -1353,11 +1353,11 @@ def _wiz_execute_actions(actions):
 
 def run_wiz_assistant():
     st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
-    st.caption("AutomaÃ§Ã£o operacional com IA para CoordenaÃ§Ã£o/Admin.")
+    st.caption("Automação operacional com IA para Coordenação/Admin.")
     provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip() or "auto"
     st.caption(
         "WhatsApp provider: "
-        f"{provider} | W-API instance: {_wapi_instance_id() or '(nÃ£o definido)'}"
+        f"{provider} | W-API instance: {_wapi_instance_id() or '(não definido)'}"
     )
 
     role = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
@@ -1366,24 +1366,24 @@ def run_wiz_assistant():
         return
 
     settings = get_wiz_settings()
-    with st.expander("Configurar automaÃ§Ãµes", expanded=True):
+    with st.expander("Configurar automações", expanded=True):
         c1, c2, c3 = st.columns(3)
         with c1:
             enabled = st.checkbox("Assistente habilitado", value=bool(settings.get("enabled")), key="wiz_enabled")
             notify_email = st.checkbox("Enviar e-mail", value=bool(settings.get("notify_email")), key="wiz_notify_email")
             notify_whatsapp = st.checkbox("Enviar WhatsApp", value=bool(settings.get("notify_whatsapp")), key="wiz_notify_whatsapp")
-            auto_daily_backup = st.checkbox("Backup diÃ¡rio automÃ¡tico", value=bool(settings.get("auto_daily_backup", True)), key="wiz_auto_daily_backup")
+            auto_daily_backup = st.checkbox("Backup diário automático", value=bool(settings.get("auto_daily_backup", True)), key="wiz_auto_daily_backup")
         with c2:
             on_student_created = st.checkbox("Cadastro de alunos", value=bool(settings.get("on_student_created")), key="wiz_on_student_created")
             on_teacher_created = st.checkbox("Cadastro de professores", value=bool(settings.get("on_teacher_created")), key="wiz_on_teacher_created")
-            on_user_created = st.checkbox("Cadastro de usuÃ¡rios", value=bool(settings.get("on_user_created")), key="wiz_on_user_created")
-            on_news_posted = st.checkbox("PublicaÃ§Ã£o de notÃ­cias", value=bool(settings.get("on_news_posted")), key="wiz_on_news_posted")
+            on_user_created = st.checkbox("Cadastro de usuários", value=bool(settings.get("on_user_created")), key="wiz_on_user_created")
+            on_news_posted = st.checkbox("Publicação de notícias", value=bool(settings.get("on_news_posted")), key="wiz_on_news_posted")
         with c3:
-            on_grade_approved = st.checkbox("AprovaÃ§Ã£o de notas", value=bool(settings.get("on_grade_approved")), key="wiz_on_grade_approved")
+            on_grade_approved = st.checkbox("Aprovação de notas", value=bool(settings.get("on_grade_approved")), key="wiz_on_grade_approved")
             on_agenda_created = st.checkbox("Agendamento de aula", value=bool(settings.get("on_agenda_created")), key="wiz_on_agenda_created")
-            on_class_link_updated = st.checkbox("AlteraÃ§Ã£o de link de turma", value=bool(settings.get("on_class_link_updated")), key="wiz_on_class_link_updated")
-            on_financial_created = st.checkbox("LanÃ§amento financeiro", value=bool(settings.get("on_financial_created")), key="wiz_on_financial_created")
-        if st.button("Salvar configuraÃ§Ãµes do Assistente Wiz", type="primary"):
+            on_class_link_updated = st.checkbox("Alteração de link de turma", value=bool(settings.get("on_class_link_updated")), key="wiz_on_class_link_updated")
+            on_financial_created = st.checkbox("Lançamento financeiro", value=bool(settings.get("on_financial_created")), key="wiz_on_financial_created")
+        if st.button("Salvar configurações do Assistente Wiz", type="primary"):
             save_wiz_settings(
                 {
                     "enabled": enabled,
@@ -1400,10 +1400,10 @@ def run_wiz_assistant():
                     "on_financial_created": on_financial_created,
                 }
             )
-            st.success("ConfiguraÃ§Ãµes salvas.")
+            st.success("Configurações salvas.")
         backup_meta = _load_json_dict(BACKUP_META_FILE, {})
         st.caption(
-            "Ãšltimo backup diÃ¡rio: "
+            "Último backup diário: "
             f"{backup_meta.get('last_backup_at', 'nunca')} | "
             f"{backup_meta.get('last_backup_file', 'sem arquivo')}"
         )
@@ -1414,7 +1414,7 @@ def run_wiz_assistant():
             else:
                 st.warning(msg)
 
-    with st.expander("IntegraÃ§Ã£o WhatsApp (W-API / Evolution)", expanded=False):
+    with st.expander("Integração WhatsApp (W-API / Evolution)", expanded=False):
         diag = _whatsapp_config_diagnostics()
         st.write(
             "Status atual: "
@@ -1423,7 +1423,7 @@ def run_wiz_assistant():
             f"evolution_ready=`{diag.get('evolution_ready')}`"
         )
         st.caption(
-            "Configure via variÃ¡veis/secrets: "
+            "Configure via variáveis/secrets: "
             "`ACTIVE_WHATSAPP_PROVIDER` (`wapi`/`evolution`/`auto`), "
             "`WAPI_BASE_URL`, `WAPI_TOKEN`, `WAPI_INSTANCE_ID`."
         )
@@ -1440,7 +1440,7 @@ def run_wiz_assistant():
         t1, t2, t3 = st.columns([1.2, 2, 1])
         with t1:
             test_number = st.text_input(
-                "NÃºmero teste",
+                "Número teste",
                 value="",
                 placeholder="5516999999999",
                 key="wiz_test_wa_number",
@@ -1448,18 +1448,18 @@ def run_wiz_assistant():
         with t2:
             test_message = st.text_input(
                 "Mensagem teste",
-                value="Teste de integraÃ§Ã£o W-API no Active.",
+                value="Teste de integração W-API no Active.",
                 key="wiz_test_wa_message",
             )
         with t3:
             timeout_s = st.number_input("Timeout", min_value=5, max_value=60, value=20, step=1, key="wiz_test_wa_timeout")
         if st.button("Testar envio WhatsApp", key="wiz_test_wa_send"):
             if not str(test_number or "").strip():
-                st.error("Informe um nÃºmero para teste.")
+                st.error("Informe um número para teste.")
             else:
                 ok, status, attempts = _send_whatsapp_auto(test_number, test_message, timeout=int(timeout_s))
                 if ok:
-                    st.success(f"Envio concluÃ­do: {status}")
+                    st.success(f"Envio concluído: {status}")
                 else:
                     st.error(f"Falha no envio: {status}")
                 with st.expander("Debug do envio", expanded=not ok):
@@ -1468,8 +1468,8 @@ def run_wiz_assistant():
     st.markdown("### Comando operacional por IA")
     st.caption("Descreva o que o Wiz deve fazer. Ele retorna um plano JSON e executa no Active.")
     comando = st.text_area(
-        "InstruÃ§Ã£o",
-        placeholder="Ex: Cadastre o aluno JoÃ£o na turma Kids 2, lance mensalidade de 250 para 10/03/2026 e publique aviso para a turma.",
+        "Instrução",
+        placeholder="Ex: Cadastre o aluno João na turma Kids 2, lance mensalidade de 250 para 10/03/2026 e publique aviso para a turma.",
         height=110,
         key="wiz_command_text",
     )
@@ -1479,7 +1479,7 @@ def run_wiz_assistant():
         if not api_key:
             st.error("Configure GROQ_API_KEY para gerar o plano com IA.")
         elif not str(comando or "").strip():
-            st.error("Descreva uma instruÃ§Ã£o.")
+            st.error("Descreva uma instrução.")
         else:
             system = "\n".join(
                 [
@@ -1509,9 +1509,9 @@ def run_wiz_assistant():
                     actions = []
                 st.session_state["wiz_action_plan"] = actions
                 if actions:
-                    st.success(f"Plano gerado com {len(actions)} aÃ§Ã£o(Ãµes).")
+                    st.success(f"Plano gerado com {len(actions)} ação(ões).")
                 else:
-                    st.warning("A IA nÃ£o retornou aÃ§Ãµes executÃ¡veis.")
+                    st.warning("A IA não retornou ações executáveis.")
             except Exception as exc:
                 st.error(f"Falha ao gerar plano: {exc}")
 
@@ -1522,10 +1522,10 @@ def run_wiz_assistant():
         if st.button("Executar plano no sistema", type="primary", key="wiz_exec_plan"):
             reports = _wiz_execute_actions(plan)
             st.session_state["wiz_last_execution"] = reports
-            st.success("ExecuÃ§Ã£o concluÃ­da.")
+            st.success("Execução concluída.")
 
     if st.session_state.get("wiz_last_execution"):
-        st.markdown("### Ãšltima execuÃ§Ã£o")
+        st.markdown("### Última execução")
         st.dataframe(pd.DataFrame(st.session_state["wiz_last_execution"]), use_container_width=True)
 
 def ensure_admin_user(users):
@@ -1726,7 +1726,7 @@ def infer_class_days_from_text(dias_texto):
 def format_class_schedule(dias_semana=None, hora_inicio="", hora_fim=""):
     dias_validos = [dia for dia in (dias_semana or []) if dia in WEEKDAY_OPTIONS_PT]
     if not dias_validos:
-        return "Hor?rio a definir"
+        return "Horário a definir"
     faixa = ""
     if hora_inicio and hora_fim:
         faixa = f" | {hora_inicio} - {hora_fim}"
@@ -1886,7 +1886,7 @@ def has_completed_challenge(challenge_id, aluno_nome):
             if not status:
                 # Backward-compatible: old records had no status field.
                 return True
-            return status in ("aprovado", "concluido", "concluÃ­do", "ok", "done", "true", "1")
+            return status in ("aprovado", "concluido", "concluído", "ok", "done", "true", "1")
     return False
 
 def get_challenge_submission(challenge_id, aluno_nome):
@@ -1908,7 +1908,7 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
         return False, "Aluno invalido."
     existing = get_challenge_submission(cid, aluno_nome)
     existing_status = str((existing or {}).get("status", "")).strip().lower()
-    if existing and (not existing_status or existing_status in ("aprovado", "concluido", "concluÃ­do", "ok", "done", "true", "1")):
+    if existing and (not existing_status or existing_status in ("aprovado", "concluido", "concluído", "ok", "done", "true", "1")):
         return False, "Desafio ja concluido."
 
     pontos_base = int(challenge_obj.get("pontos") or 0)
@@ -2117,10 +2117,10 @@ def render_agenda(items, empty_message):
             st.link_button("Adicionar no Google Agenda", google_url)
         st.markdown("---")
 
-def render_books_section(books, title="Livros DidÃ¡ticos", key_prefix="books"):
+def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
     st.markdown(f"### {title}")
     if not books:
-        st.info("Nenhum livro disponÃ­vel.")
+        st.info("Nenhum livro disponível.")
         return
     for idx, b in enumerate(books):
         titulo = b.get("titulo") or b.get("nivel") or "Livro"
@@ -2141,7 +2141,7 @@ def render_books_section(books, title="Livros DidÃ¡ticos", key_prefix="books")
         else:
             c2.button("Abrir livro", disabled=True, key=f"{key_prefix}_open_disabled_{idx}")
         if not url and not (file_path and Path(file_path).exists()):
-            st.caption("Link/arquivo do livro nÃ£o configurado.")
+            st.caption("Link/arquivo do livro não configurado.")
         st.markdown("---")
 
 def build_certificate_html(data, logo_left_b64="", logo_right_b64=""):
@@ -2184,7 +2184,7 @@ def build_certificate_html(data, logo_left_b64="", logo_right_b64=""):
     <div class="name">{data.get("aluno","")}</div>
     <div class="text">
       concluiu o curso <strong>{data.get("curso","")}</strong>
-      com carga horÃ¡ria de <strong>{data.get("carga","")}</strong> horas,
+      com carga horária de <strong>{data.get("carga","")}</strong> horas,
       em {data.get("data","")}.
     </div>
     <div class="meta">
@@ -2194,11 +2194,11 @@ def build_certificate_html(data, logo_left_b64="", logo_right_b64=""):
     <div class="signature">
       <div class="sig-box">
         <div class="sig-line"></div>
-        <div>{data.get("assinatura1","CoordenaÃ§Ã£o")}</div>
+        <div>{data.get("assinatura1","Coordenação")}</div>
       </div>
       <div class="sig-box">
         <div class="sig-line"></div>
-        <div>{data.get("assinatura2","DireÃ§Ã£o")}</div>
+        <div>{data.get("assinatura2","Direção")}</div>
       </div>
     </div>
     <div class="foot">{data.get("observacao","")}</div>
@@ -2258,7 +2258,7 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
     pdf.set_font("Helvetica", "", 11)
     texto = (
         f"concluiu o curso {data.get('curso','')}, "
-        f"com carga horÃ¡ria de {data.get('carga','')} horas, "
+        f"com carga horária de {data.get('carga','')} horas, "
         f"em {data.get('data','')}."
     )
     pdf.multi_cell(0, 7, _safe(texto), align="C")
@@ -3354,8 +3354,8 @@ if not st.session_state.get("logged_in", False):
 <div class="hero-card">
   {logo_html}
   <div class="hero-title">Ativo<br>Sistema Educacional</div>
-  <div class="hero-meta">Escola de lÃ­deres e inglÃªs Mister Wiz</div>
-  <div class="hero-subtitle hero-tagline">GestÃ£o acadÃªmica, comunicaÃ§Ã£o e conteÃºdo pedagÃ³gico.</div>
+  <div class="hero-meta">Escola de líderes e inglês Mister Wiz</div>
+  <div class="hero-subtitle hero-tagline">Gestão acadêmica, comunicação e conteúdo pedagógico.</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -3376,7 +3376,7 @@ if not st.session_state.get("logged_in", False):
                     unidade = st.text_input("Digite o nome da unidade")
                 else:
                     unidade = unidade_sel
-                usuario = st.text_input("UsuÃ¡rio", placeholder="Seu usuÃ¡rio de acesso")
+                usuario = st.text_input("Usuário", placeholder="Seu usuário de acesso")
                 senha = st.text_input("Senha", type="password", placeholder="Sua senha")
                 entrar = st.form_submit_button("Entrar no Sistema")
 
@@ -3438,7 +3438,7 @@ elif st.session_state["role"] == "Aluno":
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        st.markdown(f"### OlÃ¡, {st.session_state['user_name']}")
+        st.markdown(f"### Olá, {st.session_state['user_name']}")
         if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
         st.markdown(
             f"""
@@ -3451,7 +3451,7 @@ elif st.session_state["role"] == "Aluno":
 """,
             unsafe_allow_html=True,
         )
-        st.info("NÃ­vel: IntermediÃ¡rio B1")
+        st.info("Nível: Intermediário B1")
         st.markdown("---")
         menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Professor Wiz"], "menu_aluno")
         st.markdown("---")
@@ -3473,9 +3473,9 @@ elif st.session_state["role"] == "Aluno":
         st.link_button("ENTRAR NA AULA (ZOOM)", link_aula, type="primary")
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
-        with col1: st.markdown("""<div class="dash-card"><div><div class="card-title">Aulas Assistidas</div><div class="card-value">24/30</div></div><div class="card-sub"><span class="trend-up">80%</span> <span class="trend-neutral">ConcluÃ­do</span></div></div>""", unsafe_allow_html=True)
-        with col2: st.markdown("""<div class="dash-card"><div><div class="card-title">MÃ©dia Geral</div><div class="card-value">8.5</div></div><div class="card-sub"><span class="trend-up">+0.5</span> <span class="trend-neutral">Ãšltimo mÃªs</span></div></div>""", unsafe_allow_html=True)
-        with col3: st.markdown("""<div class="dash-card"><div><div class="card-title">PrÃ³xima Prova</div><div class="card-value">15/02</div></div><div class="card-sub"><span style="color:#64748b">Oral Test - Unit 5</span></div></div>""", unsafe_allow_html=True)
+        with col1: st.markdown("""<div class="dash-card"><div><div class="card-title">Aulas Assistidas</div><div class="card-value">24/30</div></div><div class="card-sub"><span class="trend-up">80%</span> <span class="trend-neutral">Concluído</span></div></div>""", unsafe_allow_html=True)
+        with col2: st.markdown("""<div class="dash-card"><div><div class="card-title">Média Geral</div><div class="card-value">8.5</div></div><div class="card-sub"><span class="trend-up">+0.5</span> <span class="trend-neutral">Último mês</span></div></div>""", unsafe_allow_html=True)
+        with col3: st.markdown("""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">15/02</div></div><div class="card-sub"><span style="color:#64748b">Oral Test - Unit 5</span></div></div>""", unsafe_allow_html=True)
 
     elif menu_aluno == "Agenda":
         st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
@@ -3489,7 +3489,7 @@ elif st.session_state["role"] == "Aluno":
 
     elif menu_aluno == "Minhas Aulas":
         st.markdown('<div class="main-header">Grade Curricular</div>', unsafe_allow_html=True)
-        modules = {"MÃ³dulo 1: IntroduÃ§Ã£o": ["Aula 1.1 - Hello", "Aula 1.2 - Colors"], "MÃ³dulo 2: Verbos": ["Aula 2.1 - To Be", "Aula 2.2 - Can"]}
+        modules = {"Módulo 1: Introdução": ["Aula 1.1 - Hello", "Aula 1.2 - Colors"], "Módulo 2: Verbos": ["Aula 2.1 - To Be", "Aula 2.2 - Can"]}
         for mod, aulas in modules.items():
             with st.expander(mod):
                 for aula in aulas: st.checkbox(f"{aula}", value=True)
@@ -3529,14 +3529,14 @@ elif st.session_state["role"] == "Aluno":
             st.dataframe(df_hist, use_container_width=True)
 
     elif menu_aluno == "Boletim & Frequencia":
-        st.markdown('<div class="main-header">Desempenho AcadÃªmico</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Notas", "PresenÃ§a"])
+        st.markdown('<div class="main-header">Desempenho Acadêmico</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Notas", "Presença"])
         aluno_nome = st.session_state["user_name"]
         notas = [g for g in st.session_state["grades"] if g.get("aluno") == aluno_nome and g.get("status") == "Aprovado"]
         with tab1:
             if notas: st.dataframe(pd.DataFrame(notas), use_container_width=True)
-            else: st.info("Nenhuma nota lanÃ§ada.")
-        with tab2: st.info("FrequÃªncia: 92% de presenÃ§a.")
+            else: st.info("Nenhuma nota lançada.")
+        with tab2: st.info("Frequência: 92% de presença.")
 
     elif menu_aluno == "Mensagens":
         st.markdown('<div class="main-header">Mensagens</div>', unsafe_allow_html=True)
@@ -3640,9 +3640,9 @@ elif st.session_state["role"] == "Aluno":
 
     elif menu_aluno == "Aulas Gravadas":
         st.markdown('<div class="main-header">Aulas Gravadas</div>', unsafe_allow_html=True)
-        if not st.session_state["videos"]: st.info("Sem vÃ­deos.")
+        if not st.session_state["videos"]: st.info("Sem vídeos.")
         for v in reversed(st.session_state["videos"]):
-            with st.expander(f"ðŸŽ¥ {v['titulo']} ({v['data']})"):
+            with st.expander(f"🎥 {v['titulo']} ({v['data']})"):
                 if v['url']: st.video(v['url'])
             
     elif menu_aluno == "Materiais de Estudo":
@@ -3689,13 +3689,22 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu("Gestao", ["Minhas Turmas", "Agenda", "Mensagens", "Lancar Notas", "Livros", "Professor Wiz"], "menu_prof")
+        menu_prof_label = sidebar_menu("Gestão", ["Minhas Turmas", "Agenda", "Mensagens", "Lançar Notas", "Biblioteca", "Professor Wiz"], "menu_prof")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_prof_map = {"Minhas Turmas": "Minhas Turmas", "Agenda": "Agenda", "Mensagens": "Mensagens", "Lancar Notas": "Notas", "Livros": "Livros", "Professor Wiz": "Assistente IA"}
+    menu_prof_map = {
+        "Minhas Turmas": "Minhas Turmas",
+        "Agenda": "Agenda",
+        "Mensagens": "Mensagens",
+        "Lançar Notas": "Notas",
+        "Lancar Notas": "Notas",
+        "Biblioteca": "Livros",
+        "Livros": "Livros",
+        "Professor Wiz": "Assistente IA",
+    }
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
     if menu_prof == "Minhas Turmas":
@@ -3706,7 +3715,7 @@ elif st.session_state["role"] == "Professor":
             if str(c.get("professor", "")).strip().lower() == prof_nome
         ]
         if not minhas_turmas:
-            st.info("Nenhuma turma atribuÃ­da a vocÃª.")
+            st.info("Nenhuma turma atribuída a você.")
         else:
             turma_options = [t["nome"] for t in minhas_turmas]
             turma_selecionada = st.selectbox("Selecione a Turma", turma_options)
@@ -3722,8 +3731,8 @@ elif st.session_state["role"] == "Professor":
                     str(turma_obj.get("hora_inicio", "")).strip(),
                     str(turma_obj.get("hora_fim", "")).strip(),
                 )
-            st.write(f"**Dias e Hor?rios:** {dias_turma_exibicao or 'Hor?rio a definir'}")
-            st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'NÃ£o informado')}")
+            st.write(f"**Dias e Horários:** {dias_turma_exibicao or 'Horário a definir'}")
+            st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
 
             st.markdown("### Aula ao Vivo")
             with st.form("prof_update_link"):
@@ -3736,8 +3745,8 @@ elif st.session_state["role"] == "Professor":
 
             st.markdown("### Material de Estudo")
             with st.form("prof_add_material"):
-                titulo = st.text_input("TÃ­tulo do material")
-                descricao = st.text_area("DescriÃ§Ã£o")
+                titulo = st.text_input("Título do material")
+                descricao = st.text_area("Descrição")
                 link_mat = st.text_input("Link do material (Drive, PDF, etc.)")
                 turma_material = st.selectbox(
                     "Turma",
@@ -3746,7 +3755,7 @@ elif st.session_state["role"] == "Professor":
                 )
                 if st.form_submit_button("Publicar material"):
                     if not titulo.strip():
-                        st.error("Informe o tÃ­tulo do material.")
+                        st.error("Informe o título do material.")
                     else:
                         st.session_state["materials"].append(
                             {
@@ -3783,7 +3792,7 @@ elif st.session_state["role"] == "Professor":
             if str(c.get("professor", "")).strip().lower() == prof_nome
         ]
         if not turmas_prof:
-            st.info("Nenhuma turma atribuÃ­da a vocÃª.")
+            st.info("Nenhuma turma atribuída a você.")
         else:
             tab_agenda, tab_controle = st.tabs(["Agenda da Turma", "Iniciar / Fechar Aula"])
 
@@ -3911,7 +3920,7 @@ elif st.session_state["role"] == "Professor":
             if str(c.get("professor", "")).strip().lower() == prof_nome
         ]
         if not turmas_prof:
-            st.info("Nenhuma turma atribuÃ­da a vocÃª.")
+            st.info("Nenhuma turma atribuída a você.")
         else:
             with st.form("prof_publish_message", clear_on_submit=True):
                 turma_msg = st.selectbox("Turma", turmas_prof)
@@ -4014,7 +4023,7 @@ elif st.session_state["role"] == "Professor":
                         df_pend = df_pend[col_order]
                     st.dataframe(df_pend, use_container_width=True)
     elif menu_prof == "Livros":
-        st.markdown('<div class="main-header">Livros DidÃ¡ticos</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Biblioteca</div>', unsafe_allow_html=True)
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
@@ -4041,21 +4050,21 @@ elif st.session_state["role"] == "Coordenador":
         )
         st.markdown("---")
         menu_coord_label = sidebar_menu(
-            "AdministraÃ§Ã£o",
+            "Administração",
             [
                 "Dashboard",
                 "Agenda",
                 "Links Ao Vivo",
                 "Alunos",
                 "Professores",
-                "UsuÃ¡rios",
+                "Usuários",
                 "Turmas",
                 "Financeiro",
                 "Estoque",
                 "Certificados",
-                "Livros",
-                "AprovaÃ§Ã£o Notas",
-                "ConteÃºdos",
+                "Biblioteca",
+                "Aprovação Notas",
+                "Caixa de Entrada",
                 "Desafios",
                 "WhatsApp (Evolution)",
                 "ASSISTENTE WIZ",
@@ -4075,14 +4084,16 @@ elif st.session_state["role"] == "Coordenador":
         "Links Ao Vivo": "Links",
         "Alunos": "Alunos",
         "Professores": "Professores",
-        "UsuÃ¡rios": "Usuarios",
+        "Usuários": "Usuarios",
         "Turmas": "Turmas",
         "Financeiro": "Financeiro",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
+        "Biblioteca": "Livros",
         "Livros": "Livros",
-        "AprovaÃ§Ã£o Notas": "Notas",
-        "ConteÃºdos": "Conteudos",
+        "Aprovação Notas": "Notas",
+        "Caixa de Entrada": "Conteudos",
+        "Conteúdos": "Conteudos",
         "Desafios": "Desafios",
         "WhatsApp (Evolution)": "WhatsApp",
         "ASSISTENTE WIZ": "Assistente Wiz",
@@ -4130,20 +4141,20 @@ elif st.session_state["role"] == "Coordenador":
                     dias_turma_default = [dia for dia in dias_turma_default if dia in WEEKDAY_OPTIONS_PT]
                     if not dias_turma_default:
                         dias_turma_default = infer_class_days_from_text(turma_obj.get("dias", ""))
-                    titulo = st.text_input("T?tulo", value="Aula ao vivo")
-                    descricao = st.text_area("Descri??o")
+                    titulo = st.text_input("Título", value="Aula ao vivo")
+                    descricao = st.text_area("Descrição")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
                     st.caption(f"Data selecionada: {format_date_br(data_aula)}")
                     hora_padrao = parse_time(str(turma_obj.get("hora_inicio", "19:00")).strip() or "19:00")
-                    hora_aula = st.time_input("Hor?rio", value=hora_padrao)
+                    hora_aula = st.time_input("Horário", value=hora_padrao)
 
                     rep_c1, rep_c2 = st.columns([2, 1])
                     with rep_c1:
                         repetir = st.checkbox("Repetir semanalmente", value=False)
                     with rep_c2:
-                        repetir_por_data = st.checkbox("Data", value=False, disabled=not repetir, help="Selecionar dias para repeti??o")
+                        repetir_por_data = st.checkbox("Data", value=False, disabled=not repetir, help="Selecionar dias para repetição")
 
-                    semanas = st.number_input("N?mero de semanas", min_value=1, max_value=52, value=4, disabled=not repetir)
+                    semanas = st.number_input("Número de semanas", min_value=1, max_value=52, value=4, disabled=not repetir)
                     dias_repeticao = []
                     if repetir and repetir_por_data:
                         dia_base = WEEKDAY_OPTIONS_PT[data_aula.weekday()] if data_aula else WEEKDAY_OPTIONS_PT[0]
@@ -4161,7 +4172,7 @@ elif st.session_state["role"] == "Coordenador":
                     enviar_email_convite = st.checkbox("Enviar email automatico para alunos da turma", value=True)
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
-                            st.error("Selecione pelo menos um dia para repeti??o por data.")
+                            st.error("Selecione pelo menos um dia para repetição por data.")
                         else:
                             datas_aulas = []
                             if repetir:
@@ -4235,7 +4246,7 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Links":
         st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
-        st.info("Aqui vocÃª define o link da aula ao vivo para cada turma. Esse link aparecerÃ¡ automaticamente para todos os alunos.")
+        st.info("Aqui você define o link da aula ao vivo para cada turma. Esse link aparecerá automaticamente para todos os alunos.")
         turmas_disponiveis = [t["nome"] for t in st.session_state["classes"]]
         if not turmas_disponiveis:
             st.warning("Cadastre turmas primeiro na aba 'Turmas'.")
@@ -4265,14 +4276,14 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Estoque":
         st.markdown('<div class="main-header">Controle de Estoque</div>', unsafe_allow_html=True)
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Itens", "Novo Item", "Movimentar", "MovimentaÃ§Ãµes", "Pedidos"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Itens", "Novo Item", "Movimentar", "Movimentações", "Pedidos"])
 
         with tab1:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: filtro_desc = st.text_input("DescriÃ§Ã£o")
-            with c2: filtro_cod = st.text_input("CÃ³digo do produto")
-            with c3: filtro_final = st.selectbox("Finalidade", ["Todos", "Venda", "Uso Interno", "Material DidÃ¡tico"])
-            with c4: filtro_status = st.selectbox("SituaÃ§Ã£o", ["Todos", "Ativo", "Inativo"])
+            with c1: filtro_desc = st.text_input("Descrição")
+            with c2: filtro_cod = st.text_input("Código do produto")
+            with c3: filtro_final = st.selectbox("Finalidade", ["Todos", "Venda", "Uso Interno", "Material Didático"])
+            with c4: filtro_status = st.selectbox("Situação", ["Todos", "Ativo", "Inativo"])
 
             itens = st.session_state["inventory"]
             if filtro_desc:
@@ -4331,28 +4342,28 @@ elif st.session_state["role"] == "Coordenador":
                 item_obj = next((i for i in st.session_state["inventory"] if str(i.get("codigo", "")).strip() == item_sel), None)
                 if item_obj:
                     with st.form("edit_item"):
-                        codigo = st.text_input("CÃ³digo", value=item_obj.get("codigo", ""))
-                        descricao = st.text_input("DescriÃ§Ã£o", value=item_obj.get("descricao", ""))
-                        finalidade = st.selectbox("Finalidade", ["Venda", "Uso Interno", "Material DidÃ¡tico"], index=["Venda", "Uso Interno", "Material DidÃ¡tico"].index(item_obj.get("finalidade", "Venda")) if item_obj.get("finalidade") in ["Venda", "Uso Interno", "Material DidÃ¡tico"] else 0)
+                        codigo = st.text_input("Código", value=item_obj.get("codigo", ""))
+                        descricao = st.text_input("Descrição", value=item_obj.get("descricao", ""))
+                        finalidade = st.selectbox("Finalidade", ["Venda", "Uso Interno", "Material Didático"], index=["Venda", "Uso Interno", "Material Didático"].index(item_obj.get("finalidade", "Venda")) if item_obj.get("finalidade") in ["Venda", "Uso Interno", "Material Didático"] else 0)
                         unidade = st.selectbox("Unidade", ["Unidade", "Kit", "Pacote", "Caixa"], index=["Unidade", "Kit", "Pacote", "Caixa"].index(item_obj.get("unidade", "Unidade")) if item_obj.get("unidade") in ["Unidade", "Kit", "Pacote", "Caixa"] else 0)
                         saldo = st.number_input("Saldo", min_value=0, step=1, value=parse_int(item_obj.get("saldo", 0)))
                         custo = st.text_input("Custo", value=str(item_obj.get("custo", "")))
-                        preco = st.text_input("PreÃ§o (parcela)", value=str(item_obj.get("preco", "")))
+                        preco = st.text_input("Preço (parcela)", value=str(item_obj.get("preco", "")))
                         parcelas = st.number_input("Parcelas (qtd)", min_value=1, max_value=6, step=1, value=min(6, max(1, parse_int(item_obj.get("parcelas", 1)))))
-                        minimo = st.number_input("MÃ­nimo", min_value=0, step=1, value=parse_int(item_obj.get("minimo", 0)))
-                        maximo = st.number_input("MÃ¡ximo", min_value=0, step=1, value=parse_int(item_obj.get("maximo", 0)))
+                        minimo = st.number_input("Mínimo", min_value=0, step=1, value=parse_int(item_obj.get("minimo", 0)))
+                        maximo = st.number_input("Máximo", min_value=0, step=1, value=parse_int(item_obj.get("maximo", 0)))
                         empresa = st.text_input("Empresa", value=item_obj.get("empresa", ""))
                         ativo = st.checkbox("Ativo", value=bool(item_obj.get("ativo", True)))
                         c_save, c_del = st.columns(2)
                         with c_save:
-                            if st.form_submit_button("Salvar alteraÃ§Ãµes"):
+                            if st.form_submit_button("Salvar alterações"):
                                 codigo_norm = codigo.strip()
                                 if not codigo_norm or not descricao.strip():
-                                    st.error("Informe cÃ³digo e descriÃ§Ã£o.")
+                                    st.error("Informe código e descrição.")
                                 else:
                                     if codigo_norm != str(item_obj.get("codigo", "")).strip():
                                         if any(str(i.get("codigo", "")).strip() == codigo_norm for i in st.session_state["inventory"]):
-                                            st.error("CÃ³digo jÃ¡ existe.")
+                                            st.error("Código já existe.")
                                             st.stop()
                                     item_obj.update(
                                         {
@@ -4377,29 +4388,29 @@ elif st.session_state["role"] == "Coordenador":
                             if st.form_submit_button("Excluir item", type="primary"):
                                 st.session_state["inventory"].remove(item_obj)
                                 save_list(INVENTORY_FILE, st.session_state["inventory"])
-                                st.success("Item excluÃ­do.")
+                                st.success("Item excluído.")
                                 st.rerun()
 
         with tab2:
             with st.form("add_item", clear_on_submit=True):
-                codigo = st.text_input("CÃ³digo do produto *")
-                descricao = st.text_input("DescriÃ§Ã£o *")
-                finalidade = st.selectbox("Finalidade", ["Venda", "Uso Interno", "Material DidÃ¡tico"])
+                codigo = st.text_input("Código do produto *")
+                descricao = st.text_input("Descrição *")
+                finalidade = st.selectbox("Finalidade", ["Venda", "Uso Interno", "Material Didático"])
                 unidade = st.selectbox("Unidade", ["Unidade", "Kit", "Pacote", "Caixa"])
                 saldo = st.number_input("Saldo inicial", min_value=0, step=1, value=0)
                 custo = st.text_input("Custo")
-                preco = st.text_input("PreÃ§o (parcela)")
+                preco = st.text_input("Preço (parcela)")
                 parcelas = st.number_input("Parcelas (qtd)", min_value=1, max_value=6, step=1, value=1)
-                minimo = st.number_input("MÃ­nimo", min_value=0, step=1, value=0)
-                maximo = st.number_input("MÃ¡ximo", min_value=0, step=1, value=0)
+                minimo = st.number_input("Mínimo", min_value=0, step=1, value=0)
+                maximo = st.number_input("Máximo", min_value=0, step=1, value=0)
                 empresa = st.text_input("Empresa")
                 ativo = st.checkbox("Ativo", value=True)
                 if st.form_submit_button("Incluir item"):
                     codigo_norm = codigo.strip()
                     if not codigo_norm or not descricao.strip():
-                        st.error("Informe cÃ³digo e descriÃ§Ã£o.")
+                        st.error("Informe código e descrição.")
                     elif any(str(i.get("codigo", "")).strip() == codigo_norm for i in st.session_state["inventory"]):
-                        st.error("CÃ³digo jÃ¡ existe.")
+                        st.error("Código já existe.")
                     else:
                         st.session_state["inventory"].append(
                             {
@@ -4429,13 +4440,13 @@ elif st.session_state["role"] == "Coordenador":
                 item_obj = next((i for i in st.session_state["inventory"] if str(i.get("codigo", "")).strip() == item_sel), None)
                 if item_obj:
                     with st.form("move_item"):
-                        tipo = st.selectbox("Tipo de movimentaÃ§Ã£o", ["Entrada", "SaÃ­da"])
+                        tipo = st.selectbox("Tipo de movimentação", ["Entrada", "Saída"])
                         quantidade = st.number_input("Quantidade", min_value=1, step=1, value=1)
-                        motivo = st.text_input("Motivo/ObservaÃ§Ã£o")
-                        if st.form_submit_button("Registrar movimentaÃ§Ã£o"):
+                        motivo = st.text_input("Motivo/Observação")
+                        if st.form_submit_button("Registrar movimentação"):
                             saldo_atual = parse_int(item_obj.get("saldo", 0))
-                            if tipo == "SaÃ­da" and quantidade > saldo_atual:
-                                st.error("Quantidade maior que o saldo disponÃ­vel.")
+                            if tipo == "Saída" and quantidade > saldo_atual:
+                                st.error("Quantidade maior que o saldo disponível.")
                             else:
                                 novo_saldo = saldo_atual + quantidade if tipo == "Entrada" else saldo_atual - quantidade
                                 item_obj["saldo"] = int(novo_saldo)
@@ -4455,13 +4466,13 @@ elif st.session_state["role"] == "Coordenador":
                                 )
                                 save_list(INVENTORY_MOVES_FILE, st.session_state["inventory_moves"])
                                 save_list(INVENTORY_FILE, st.session_state["inventory"])
-                                st.success("MovimentaÃ§Ã£o registrada!")
+                                st.success("Movimentação registrada!")
                                 st.rerun()
 
         with tab4:
             moves = st.session_state["inventory_moves"]
             if not moves:
-                st.info("Nenhuma movimentaÃ§Ã£o registrada.")
+                st.info("Nenhuma movimentação registrada.")
             else:
                 codigos = sorted({str(m.get("codigo", "")).strip() for m in moves if m.get("codigo")})
                 filtro_item = st.selectbox("Filtrar por item", ["Todos"] + codigos)
@@ -4475,7 +4486,7 @@ elif st.session_state["role"] == "Coordenador":
             st.markdown("### Novo Pedido de Material")
             with st.form("add_material_order", clear_on_submit=True):
                 solicitante = st.text_input("Solicitante", value=st.session_state.get("user_name", ""))
-                tipo = st.selectbox("Tipo", ["Material", "Livro didÃ¡tico", "Outro"])
+                tipo = st.selectbox("Tipo", ["Material", "Livro didático", "Outro"])
                 item_codigo = ""
                 item_desc = ""
                 if tipo == "Material":
@@ -4484,14 +4495,14 @@ elif st.session_state["role"] == "Coordenador":
                     if item_sel:
                         item_codigo = item_sel.split(" - ")[0].strip()
                         item_desc = " - ".join(item_sel.split(" - ")[1:]).strip()
-                elif tipo == "Livro didÃ¡tico":
-                    nivel = st.selectbox("Livro/NÃ­vel", book_levels())
+                elif tipo == "Livro didático":
+                    nivel = st.selectbox("Livro/Nível", book_levels())
                     item_codigo = nivel
-                    item_desc = f"Livro didÃ¡tico {nivel}"
+                    item_desc = f"Livro didático {nivel}"
                 else:
-                    item_desc = st.text_input("DescriÃ§Ã£o do pedido")
+                    item_desc = st.text_input("Descrição do pedido")
                 quantidade = st.number_input("Quantidade", min_value=1, step=1, value=1)
-                observacao = st.text_area("ObservaÃ§Ãµes")
+                observacao = st.text_area("Observações")
                 if st.form_submit_button("Registrar pedido"):
                     st.session_state["material_orders"].append(
                         {
@@ -4521,9 +4532,9 @@ elif st.session_state["role"] == "Coordenador":
                 i for i in st.session_state["inventory"]
                 if parse_int(i.get("saldo", 0)) < parse_int(i.get("minimo", 0)) and bool(i.get("ativo", True))
             ]
-            if st.button("Gerar pedido automÃ¡tico (IA)"):
+            if st.button("Gerar pedido automático (IA)"):
                 if not itens_baixo:
-                    st.info("Nenhum item abaixo do mÃ­nimo.")
+                    st.info("Nenhum item abaixo do mínimo.")
                 else:
                     for item in itens_baixo:
                         saldo = parse_int(item.get("saldo", 0))
@@ -4541,17 +4552,17 @@ elif st.session_state["role"] == "Coordenador":
                                 "item": item.get("descricao", ""),
                                 "quantidade": int(qtd),
                                 "status": "Sugerido",
-                                "observacao": "Pedido automÃ¡tico por estoque abaixo do mÃ­nimo.",
+                                "observacao": "Pedido automático por estoque abaixo do mínimo.",
                             }
                         )
                     save_list(MATERIAL_ORDERS_FILE, st.session_state["material_orders"])
 
                     api_key = get_groq_api_key()
                     if not api_key:
-                        st.warning("Configure GROQ_API_KEY para gerar resumo automÃ¡tico do pedido.")
+                        st.warning("Configure GROQ_API_KEY para gerar resumo automático do pedido.")
                     else:
                         resumo_itens = [
-                            f"{i.get('codigo','')}: {i.get('descricao','')} (saldo {i.get('saldo','')}, mÃ­nimo {i.get('minimo','')})"
+                            f"{i.get('codigo','')}: {i.get('descricao','')} (saldo {i.get('saldo','')}, mínimo {i.get('minimo','')})"
                             for i in itens_baixo
                         ]
                         system_prompt = (
@@ -4592,7 +4603,7 @@ elif st.session_state["role"] == "Coordenador":
             if mister_logo_path:
                 mister_b64 = base64.b64encode(mister_logo_path.read_bytes()).decode("utf-8")
 
-            tab1, tab2 = st.tabs(["Gerar", "HistÃ³rico"])
+            tab1, tab2 = st.tabs(["Gerar", "Histórico"])
 
             with tab1:
                 with st.form("cert_form", clear_on_submit=True):
@@ -4605,12 +4616,12 @@ elif st.session_state["role"] == "Coordenador":
                         turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
                         prof = turma_obj.get("professor", "")
 
-                    curso = st.text_input("Curso", value="InglÃªs - Mister Wiz")
-                    carga = st.text_input("Carga horÃ¡ria (horas)", value="60")
-                    data_cert = st.date_input("Data de conclusÃ£o", value=datetime.date.today(), format="DD/MM/YYYY")
-                    assinatura1 = st.text_input("Assinatura 1", value="CoordenaÃ§Ã£o")
-                    assinatura2 = st.text_input("Assinatura 2", value="DireÃ§Ã£o")
-                    observacao = st.text_input("ObservaÃ§Ã£o", value="Certificado vÃ¡lido em todo territÃ³rio nacional.")
+                    curso = st.text_input("Curso", value="Inglês - Mister Wiz")
+                    carga = st.text_input("Carga horária (horas)", value="60")
+                    data_cert = st.date_input("Data de conclusão", value=datetime.date.today(), format="DD/MM/YYYY")
+                    assinatura1 = st.text_input("Assinatura 1", value="Coordenação")
+                    assinatura2 = st.text_input("Assinatura 2", value="Direção")
+                    observacao = st.text_input("Observação", value="Certificado válido em todo território nacional.")
                     gerar = st.form_submit_button("Gerar certificado")
 
                 if gerar:
@@ -4665,7 +4676,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.info("Nenhum certificado encontrado.")
 
             if st.session_state.get("cert_preview_html"):
-                st.markdown("### PrÃ©-visualizaÃ§Ã£o")
+                st.markdown("### Pré-visualização")
                 st.components.v1.html(st.session_state["cert_preview_html"], height=820, scrolling=True)
                 name_base = st.session_state.get("cert_preview_data", {}).get("aluno", "certificado")
                 name_base = name_base.replace(" ", "_").lower() if name_base else "certificado"
@@ -4686,7 +4697,7 @@ elif st.session_state["role"] == "Coordenador":
                     st.warning("Para gerar PDF, instale a biblioteca reportlab.")
 
     elif menu_coord == "Livros":
-        st.markdown('<div class="main-header">Livros DidÃ¡ticos</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Biblioteca</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Biblioteca", "Configurar Links"])
         with tab1:
             render_books_section(st.session_state.get("books", []), "Todos os Livros", key_prefix="coord_livros")
@@ -4695,7 +4706,7 @@ elif st.session_state["role"] == "Coordenador":
                 updated = []
                 for idx, b in enumerate(st.session_state.get("books", [])):
                     st.markdown(f"### {b.get('nivel','Livro')}")
-                    titulo = st.text_input("TÃ­tulo", value=b.get("titulo", ""), key=f"book_title_{idx}")
+                    titulo = st.text_input("Título", value=b.get("titulo", ""), key=f"book_title_{idx}")
                     url = st.text_input("Link para download/abrir", value=b.get("url", ""), key=f"book_url_{idx}")
                     file_path = st.text_input("Arquivo local (opcional)", value=b.get("file_path", ""), key=f"book_file_{idx}")
                     updated.append(
@@ -4707,13 +4718,13 @@ elif st.session_state["role"] == "Coordenador":
                         }
                     )
                     st.markdown("---")
-                if st.form_submit_button("Salvar configuraÃ§Ãµes"):
+                if st.form_submit_button("Salvar configurações"):
                     st.session_state["books"] = updated
                     save_list(BOOKS_FILE, st.session_state["books"])
-                    st.success("Livros atualizados!")
+                    st.success("Biblioteca atualizada!")
 
     elif menu_coord == "Alunos":
-        st.markdown('<div class="main-header">GestÃ£o de Alunos</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
         tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
@@ -4754,7 +4765,7 @@ elif st.session_state["role"] == "Coordenador":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 with col_imp:
-                    st.caption("Importa um Excel no padrÃƒÂ£o do modelo.")
+                    st.caption("Importa um Excel no padrão do modelo.")
                     upload = st.file_uploader(
                         "Arquivo Excel",
                         type=["xlsx", "xls"],
@@ -4849,7 +4860,7 @@ elif st.session_state["role"] == "Coordenador":
                                     if new_users:
                                         save_users(st.session_state["users"])
                                     st.success(
-                                        f"ImportaÃƒÂ§ÃƒÂ£o concluÃƒÂ­da: {added} adicionados, {updated} atualizados, {skipped} ignorados."
+                                        f"Importação concluída: {added} adicionados, {updated} atualizados, {skipped} ignorados."
                                     )
                                     st.rerun()
                                 else:
@@ -4914,7 +4925,7 @@ elif st.session_state["role"] == "Coordenador":
                     ]
                     colunas = list(df_alunos.columns)
                     colunas_sel = st.multiselect(
-                        "Colunas visÃ­veis",
+                        "Colunas visíveis",
                         colunas,
                         default=[c for c in col_default if c in colunas],
                     )
@@ -5160,7 +5171,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.session_state["add_student_feedback"] = {
                             "success": "Cadastro realizado com sucesso!",
                             "info": (
-                                "Disparos automÃ¡ticos: "
+                                "Disparos automáticos: "
                                 f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
                                 f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
                             ),
@@ -5192,7 +5203,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.subheader(f"Editando: {aluno_obj['nome']}")
                         new_nome = st.text_input("Nome", value=aluno_obj.get("nome", ""))
                         matricula_atual = aluno_obj.get("matricula", "") or _next_student_matricula(st.session_state["students"])
-                        st.text_input("NÂº da MatrÃ­cula", value=matricula_atual, disabled=True)
+                        st.text_input("Nº da Matrícula", value=matricula_atual, disabled=True)
 
                         c1, c2 = st.columns(2)
                         with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
@@ -5226,16 +5237,16 @@ elif st.session_state["role"] == "Coordenador":
                         if modulo_atual not in modulos and modulo_atual:
                             modulos.append(modulo_atual)
                         new_modulo = st.selectbox(
-                            "MÃ³dulo do curso",
+                            "Módulo do curso",
                             modulos,
                             index=modulos.index(modulo_atual) if modulo_atual in modulos else 0,
                         )
                         livro_atual = aluno_obj.get("livro", "")
-                        livro_opts = ["AutomÃ¡tico (Turma)"] + book_levels()
+                        livro_opts = ["Automático (Turma)"] + book_levels()
                         if livro_atual and livro_atual not in livro_opts:
                             livro_opts.append(livro_atual)
                         livro_index = livro_opts.index(livro_atual) if livro_atual in livro_opts else 0
-                        new_livro = st.selectbox("Livro/NÃ­vel", livro_opts, index=livro_index)
+                        new_livro = st.selectbox("Livro/Nível", livro_opts, index=livro_index)
 
                         st.markdown("### Acesso do Aluno")
                         c5, c6 = st.columns(2)
@@ -5244,13 +5255,13 @@ elif st.session_state["role"] == "Coordenador":
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar AlteraÃ§Ãµes"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_login = aluno_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or aluno_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("ERRO: Este login jÃ¡ existe.")
+                                    st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -5272,7 +5283,7 @@ elif st.session_state["role"] == "Coordenador":
 
                                     turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == new_turma), {})
                                     livro_turma = turma_obj.get("livro", "")
-                                    livro_final = livro_turma if new_livro == "AutomÃ¡tico (Turma)" else new_livro
+                                    livro_final = livro_turma if new_livro == "Automático (Turma)" else new_livro
 
                                     aluno_obj["nome"] = new_nome
                                     aluno_obj["matricula"] = matricula_atual
@@ -5301,11 +5312,11 @@ elif st.session_state["role"] == "Coordenador":
                                         save_users(st.session_state["users"])
                                 st.session_state["students"].remove(aluno_obj)
                                 save_list(STUDENTS_FILE, st.session_state["students"])
-                                st.error("Aluno excluÃ­do permanentemente.")
+                                st.error("Aluno excluído permanentemente.")
                                 st.rerun()
 
     elif menu_coord == "Professores":
-        st.markdown('<div class="main-header">GestÃ£o de Professores</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Novo Professor", "Gerenciar / Excluir"])
         with tab1:
             with st.form("add_prof", clear_on_submit=True):
@@ -5322,9 +5333,9 @@ elif st.session_state["role"] == "Coordenador":
 
                 if st.form_submit_button("Cadastrar"):
                     if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                        st.error("ERRO: Para criar o login, informe usuÃ¡rio e senha.")
+                        st.error("ERRO: Para criar o login, informe usuário e senha.")
                     elif login_prof and find_user(login_prof):
-                        st.error("ERRO: Este login jÃ¡ existe.")
+                        st.error("ERRO: Este login já existe.")
                     else:
                         st.session_state["teachers"].append(
                             {
@@ -5354,8 +5365,8 @@ elif st.session_state["role"] == "Coordenador":
                                 nome or "Professor",
                                 [email_prof],
                                 [celular_prof],
-                                "[Active] Cadastro de professor concluÃ­do",
-                                "Seu acesso de professor foi cadastrado no Active. Em caso de dÃºvidas, procure a coordenaÃ§Ã£o.",
+                                "[Active] Cadastro de professor concluído",
+                                "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
                                 "Cadastro Professor",
                             )
                         st.success("Cadastro realizado com sucesso!")
@@ -5380,13 +5391,13 @@ elif st.session_state["role"] == "Coordenador":
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar AlteraÃ§Ãµes"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_login = prof_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or prof_obj.get("senha", "")
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
-                                    st.error("ERRO: Este login jÃ¡ existe.")
+                                    st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
                                         user_obj = find_user(old_login) if old_login else None
@@ -5437,11 +5448,11 @@ elif st.session_state["role"] == "Coordenador":
 
                                 st.session_state["teachers"].remove(prof_obj)
                                 save_list(TEACHERS_FILE, st.session_state["teachers"])
-                                st.error("Professor excluÃ­do.")
+                                st.error("Professor excluído.")
                                 st.rerun()
 
     elif menu_coord == "Turmas":
-        st.markdown('<div class="main-header">Gest?o de Turmas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
@@ -5457,10 +5468,10 @@ elif st.session_state["role"] == "Coordenador":
                 with c4: link = st.text_input("Link do Zoom (Inicial)")
 
                 c5, c6 = st.columns(2)
-                with c5: hora_inicio = st.time_input("Hor?rio inicial", value=datetime.time(19, 0))
-                with c6: hora_fim = st.time_input("Hor?rio final", value=datetime.time(20, 0))
+                with c5: hora_inicio = st.time_input("Horário inicial", value=datetime.time(19, 0))
+                with c6: hora_fim = st.time_input("Horário final", value=datetime.time(20, 0))
 
-                livro = st.selectbox("Livro/N?vel da Turma", book_levels())
+                livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
                     nome = nome.strip()
                     dias_semana = [dia for dia in dias_semana if dia in WEEKDAY_OPTIONS_PT]
@@ -5472,7 +5483,7 @@ elif st.session_state["role"] == "Coordenador":
                     elif not dias_semana:
                         st.error("Selecione pelo menos um dia das aulas.")
                     elif hora_fim <= hora_inicio:
-                        st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                        st.error("O horário final precisa ser maior que o horário inicial.")
                     else:
                         st.session_state["classes"].append(
                             {
@@ -5541,19 +5552,19 @@ elif st.session_state["role"] == "Coordenador":
 
                         c_hora_1, c_hora_2 = st.columns(2)
                         with c_hora_1:
-                            new_hora_inicio = st.time_input("Hor?rio inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
+                            new_hora_inicio = st.time_input("Horário inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
                         with c_hora_2:
-                            new_hora_fim = st.time_input("Hor?rio final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
+                            new_hora_fim = st.time_input("Horário final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
 
                         livro_atual = turma_obj.get("livro", "")
                         livro_opts = book_levels()
                         if livro_atual and livro_atual not in livro_opts:
                             livro_opts.append(livro_atual)
-                        new_livro = st.selectbox("Livro/N?vel da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
+                        new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar Altera??es"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 new_nome = new_nome.strip()
                                 dias_limpos = [dia for dia in new_dias_semana if dia in WEEKDAY_OPTIONS_PT]
                                 new_hora_inicio_str = new_hora_inicio.strftime("%H:%M") if new_hora_inicio else ""
@@ -5564,7 +5575,7 @@ elif st.session_state["role"] == "Coordenador":
                                 elif not dias_limpos:
                                     st.error("Selecione pelo menos um dia das aulas.")
                                 elif new_hora_fim <= new_hora_inicio:
-                                    st.error("O hor?rio final precisa ser maior que o hor?rio inicial.")
+                                    st.error("O horário final precisa ser maior que o horário inicial.")
                                 else:
                                     old_nome = turma_obj.get("nome", "")
                                     turma_obj["nome"] = new_nome
@@ -5596,7 +5607,7 @@ elif st.session_state["role"] == "Coordenador":
                                     save_list(STUDENTS_FILE, st.session_state["students"])
                                 st.session_state["classes"].remove(turma_obj)
                                 save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.error("Turma exclu?da.")
+                                st.error("Turma excluída.")
                                 st.rerun()
 
     elif menu_coord == "Financeiro":
@@ -5617,7 +5628,7 @@ elif st.session_state["role"] == "Coordenador":
         tab1, tab2 = st.tabs(["Contas a Receber", "Contas a Pagar"])
         with tab1:
             with st.form("add_rec"):
-                st.markdown("### LanÃ§ar Recebimento")
+                st.markdown("### Lançar Recebimento")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
                 with c2: val = st.text_input("Valor total (Ex: 150,00)")
@@ -5643,7 +5654,7 @@ elif st.session_state["role"] == "Coordenador":
                     }.get(categoria_lancamento, "Referencia")
                     aluno = st.text_input(f"{ref_label} *")
                 c4, c5, c6 = st.columns(3)
-                with c4: data_lanc = st.date_input("Data do lanÃ§amento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                 with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
                 material_payment = "A vista"
                 if categoria == "Material":
@@ -5654,7 +5665,7 @@ elif st.session_state["role"] == "Coordenador":
                         )
                     cobranca = material_payment
                 else:
-                    with c6: cobranca = st.selectbox("CobranÃ§a", ["Boleto", "Pix", "Cartao", "Dinheiro"])
+                    with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
                 c7, c8 = st.columns(2)
                 is_material = categoria == "Material"
                 with c7:
@@ -5776,7 +5787,7 @@ elif st.session_state["role"] == "Coordenador":
             with c_f5:
                 item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
                 item_sel = st.selectbox("Item (Codigo)", item_opts)
-            busca = st.text_input("Buscar por descriÃ§Ã£o")
+            busca = st.text_input("Buscar por descrição")
 
             recebimentos_filtrados = recebimentos
             if status_sel != "Todos":
@@ -5930,7 +5941,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.success("Recebimento excluido.")
                         st.rerun()
 
-            st.markdown("### LanÃ§ar Material do Estoque")
+            st.markdown("### Lançar Material do Estoque")
             itens_estoque = st.session_state["inventory"]
             if not itens_estoque:
                 st.info("Nenhum item de estoque cadastrado.")
@@ -5945,7 +5956,7 @@ elif st.session_state["role"] == "Coordenador":
                         aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
                     else:
                         turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                    data_lanc = st.date_input("Data do lanÃ§amento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                     venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
                     material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
                     material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
@@ -5957,7 +5968,7 @@ elif st.session_state["role"] == "Coordenador":
                         disabled=not material_parcelado,
                         key="parcelas_mat_fin",
                     )
-                    if st.form_submit_button("LanÃ§ar material"):
+                    if st.form_submit_button("Lançar material"):
                         item_obj = itens_estoque[opcoes.index(item_sel)]
                         preco = parse_money(item_obj.get("preco", 0))
                         parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
@@ -5996,7 +6007,7 @@ elif st.session_state["role"] == "Coordenador":
                                     categoria_lancamento="Aluno",
                                 )
                                 count += 1
-                        st.success(f"Material lanÃ§ado no financeiro! ({count} parcelas)")
+                        st.success(f"Material lançado no financeiro! ({count} parcelas)")
                         st.rerun()
 
             st.markdown("### Baixa de Recebimentos")
@@ -6007,13 +6018,13 @@ elif st.session_state["role"] == "Coordenador":
                 cba1, cba2 = st.columns(2)
                 with cba1:
                     alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
-                    aluno_baixa = st.selectbox("Aluno (baixa automÃ¡tica)", alunos)
+                    aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
                 with cba2:
-                    modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "AutomÃ¡tica"])
+                    modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
 
                 if modo_baixa == "Manual":
                     opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
-                    item_sel = st.selectbox("Selecione o lanÃ§amento", opcoes)
+                    item_sel = st.selectbox("Selecione o lançamento", opcoes)
                     if st.button("Dar baixa manual"):
                         item_obj = abertos[opcoes.index(item_sel)]
                         item_obj["status"] = "Pago"
@@ -6032,10 +6043,10 @@ elif st.session_state["role"] == "Coordenador":
                                 if vencimento and vencimento <= hoje:
                                     r["status"] = "Pago"
                                     r["baixa_data"] = hoje.strftime("%d/%m/%Y")
-                                    r["baixa_tipo"] = "AutomÃ¡tica"
+                                    r["baixa_tipo"] = "Automática"
                                     count += 1
                         save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.success(f"Baixa automÃ¡tica realizada: {count} lanÃ§amento(s).")
+                        st.success(f"Baixa automática realizada: {count} lançamento(s).")
                         st.rerun()
         with tab2:
             with st.form("add_pag"):
@@ -6243,7 +6254,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.rerun()
 
     elif menu_coord == "Notas":
-        st.markdown('<div class="main-header">AprovaÃ§Ã£o de Notas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
         if pendentes:
             st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
@@ -6265,8 +6276,8 @@ elif st.session_state["role"] == "Coordenador":
                         linhas = []
                         for n in notas[:12]:
                             linhas.append(
-                                f"- {n.get('avaliacao','AvaliaÃ§Ã£o')}: nota {n.get('nota','')} "
-                                f"({n.get('disciplina','InglÃªs')})"
+                                f"- {n.get('avaliacao','Avaliação')}: nota {n.get('nota','')} "
+                                f"({n.get('disciplina','Inglês')})"
                             )
                         _notify_direct_contacts(
                             student.get("nome", "Aluno"),
@@ -6278,19 +6289,19 @@ elif st.session_state["role"] == "Coordenador":
                         )
                         sent_students += 1
                     if sent_students:
-                        st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovaÃ§Ã£o de notas.")
+                        st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
                 st.success("Notas aprovadas!")
                 st.rerun()
         else:
             st.info("Nenhuma nota pendente.")
 
     elif menu_coord == "Usuarios":
-        st.markdown('<div class="main-header">Controle de UsuÃ¡rios (Login)</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Novo UsuÃ¡rio", "Gerenciar / Excluir"])
+        st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
             with st.form("new_user", clear_on_submit=True):
                 c1, c2, c3 = st.columns(3)
-                with c1: u_user = st.text_input("UsuÃ¡rio")
+                with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
                 with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"])
                 d1, d2, d3 = st.columns(3)
@@ -6311,23 +6322,23 @@ elif st.session_state["role"] == "Coordenador":
                     save_users(st.session_state["users"])
                     if wiz_event_enabled("on_user_created"):
                         _notify_direct_contacts(
-                            u_pessoa.strip() or u_user.strip() or "UsuÃ¡rio",
+                            u_pessoa.strip() or u_user.strip() or "Usuário",
                             [u_email],
                             [u_cel],
                             "[Active] Acesso criado",
-                            f"Seu acesso ao Active foi criado.\nPerfil: {u_role}\nUsuÃ¡rio: {u_user}",
-                            "Cadastro UsuÃ¡rio",
+                            f"Seu acesso ao Active foi criado.\nPerfil: {u_role}\nUsuário: {u_user}",
+                            "Cadastro Usuário",
                         )
-                    st.success("UsuÃ¡rio criado!")
+                    st.success("Usuário criado!")
         with tab2:
-            if not st.session_state["users"]: st.info("Nenhum usuÃ¡rio cadastrado.")
+            if not st.session_state["users"]: st.info("Nenhum usuário cadastrado.")
             else:
                 user_list = [u["usuario"] for u in st.session_state["users"]]
-                user_sel = st.selectbox("Selecione o UsuÃ¡rio", user_list)
+                user_sel = st.selectbox("Selecione o Usuário", user_list)
                 user_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_sel), None)
                 if user_obj:
                     with st.form("edit_user"):
-                        new_user = st.text_input("UsuÃ¡rio (Login)", value=user_obj["usuario"])
+                        new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
                         new_role = st.selectbox("Perfil", ["Aluno", "Professor", "Coordenador"], index=["Aluno", "Professor", "Coordenador"].index(user_obj["perfil"]) if user_obj["perfil"] in ["Aluno", "Professor", "Coordenador"] else 0)
                         e1, e2, e3 = st.columns(3)
@@ -6336,7 +6347,7 @@ elif st.session_state["role"] == "Coordenador":
                         with e3: new_cel = st.text_input("Celular", value=user_obj.get("celular", ""))
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar AlteraÃ§Ãµes"):
+                            if st.form_submit_button("Salvar Alterações"):
                                 user_obj["usuario"] = new_user
                                 user_obj["senha"] = new_pass
                                 user_obj["perfil"] = new_role
@@ -6344,19 +6355,19 @@ elif st.session_state["role"] == "Coordenador":
                                 user_obj["email"] = new_email.strip().lower()
                                 user_obj["celular"] = new_cel.strip()
                                 save_users(st.session_state["users"])
-                                st.success("UsuÃ¡rio atualizado!")
+                                st.success("Usuário atualizado!")
                                 st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
-                                if user_obj["usuario"] == "admin": st.error("NÃ£o Ã© possÃ­vel excluir o Admin principal.")
+                                if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")
                                 else:
                                     st.session_state["users"].remove(user_obj)
                                     save_users(st.session_state["users"])
-                                    st.success("UsuÃ¡rio excluÃ­do.")
+                                    st.success("Usuário excluído.")
                                     st.rerun()
 
     elif menu_coord == "Conteudos":
-        st.markdown('<div class="main-header">Conteudos</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Caixa de Entrada</div>', unsafe_allow_html=True)
         tab_msg, tab_hist = st.tabs(["Publicar Mensagem", "Historico"])
         with tab_msg:
             turmas_msg = ["Todas"] + class_names()
@@ -7013,7 +7024,3 @@ elif st.session_state["role"] == "Coordenador":
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
-
-
-
-
