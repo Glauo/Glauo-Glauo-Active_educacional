@@ -105,6 +105,12 @@ if "active_chat_mode" not in st.session_state:
     st.session_state["active_chat_mode"] = "Atendimento"
 if "active_chat_temp" not in st.session_state:
     st.session_state["active_chat_temp"] = 0.3
+if "_data_sources" not in st.session_state:
+    st.session_state["_data_sources"] = {}
+if "_db_last_error" not in st.session_state:
+    st.session_state["_db_last_error"] = ""
+if "_persistence_alert" not in st.session_state:
+    st.session_state["_persistence_alert"] = ""
 if "evo_instances_cache" not in st.session_state:
     st.session_state["evo_instances_cache"] = []
 if "evo_instances_cache_error" not in st.session_state:
@@ -453,11 +459,64 @@ def _db_url():
     raw_url = (
         _get_config_value("ACTIVE_DATABASE_URL", "")
         or _get_config_value("DATABASE_URL", "")
+        or _get_config_value("RAILWAY_DATABASE_URL", "")
         or _get_config_value("URL_DO_BANCO_DE_DADOS", "")
         or _get_config_value("URL_BANCO_DADOS", "")
         or _get_config_value("POSTGRES_URL", "")
         or _get_config_value("POSTGRESQL_URL", "")
     )
+    if not raw_url:
+        host = (
+            _get_config_value("PGHOST", "")
+            or _get_config_value("POSTGRES_HOST", "")
+            or _get_config_value("POSTGRESHOST", "")
+            or _get_config_value("DB_HOST", "")
+            or _get_config_value("DATABASE_HOST", "")
+        )
+        port = (
+            _get_config_value("PGPORT", "")
+            or _get_config_value("POSTGRES_PORT", "")
+            or _get_config_value("POSTGRESPORT", "")
+            or _get_config_value("DB_PORT", "")
+            or _get_config_value("DATABASE_PORT", "")
+            or "5432"
+        )
+        user = (
+            _get_config_value("PGUSER", "")
+            or _get_config_value("POSTGRES_USER", "")
+            or _get_config_value("POSTGRESUSER", "")
+            or _get_config_value("DB_USER", "")
+            or _get_config_value("DATABASE_USER", "")
+        )
+        password = (
+            _get_config_value("PGPASSWORD", "")
+            or _get_config_value("POSTGRES_PASSWORD", "")
+            or _get_config_value("POSTGRESPASSWORD", "")
+            or _get_config_value("DB_PASSWORD", "")
+            or _get_config_value("DATABASE_PASSWORD", "")
+        )
+        database = (
+            _get_config_value("PGDATABASE", "")
+            or _get_config_value("POSTGRES_DB", "")
+            or _get_config_value("POSTGRESDATABASE", "")
+            or _get_config_value("DB_NAME", "")
+            or _get_config_value("DATABASE_NAME", "")
+        )
+        if host and user and database:
+            user_enc = quote(str(user), safe="")
+            pass_enc = quote(str(password), safe="") if password else ""
+            auth = f"{user_enc}:{pass_enc}" if pass_enc else user_enc
+            raw_url = f"postgresql://{auth}@{host}:{port}/{database}"
+            ssl_mode = (
+                _get_config_value("PGSSLMODE", "")
+                or _get_config_value("DB_SSLMODE", "")
+                or _get_config_value("DATABASE_SSLMODE", "")
+            )
+            if not ssl_mode and str(host).strip() not in ("localhost", "127.0.0.1"):
+                ssl_mode = "require"
+            if ssl_mode:
+                sep = "&" if "?" in raw_url else "?"
+                raw_url = f"{raw_url}{sep}sslmode={ssl_mode}"
     url = str(raw_url or "").strip().strip('"').strip("'")
     if url.startswith("postgres://"):
         # Normaliza para o esquema padrÃ£o aceito pelo driver.
@@ -522,8 +581,10 @@ def _db_get(key):
             with conn.cursor() as cur:
                 cur.execute("SELECT value FROM active_kv WHERE key = %s", (key,))
                 row = cur.fetchone()
+                st.session_state["_db_last_error"] = ""
                 return row[0] if row else None
-    except Exception:
+    except Exception as exc:
+        st.session_state["_db_last_error"] = str(exc)
         return _DB_UNAVAILABLE
 
 def _db_set(key, value):
@@ -540,8 +601,10 @@ def _db_set(key, value):
                     """,
                     (key, payload),
                 )
+        st.session_state["_db_last_error"] = ""
         return True
-    except Exception:
+    except Exception as exc:
+        st.session_state["_db_last_error"] = str(exc)
         return False
 
 def _load_latest_backup_list(path):
@@ -559,9 +622,11 @@ def _load_latest_backup_list(path):
             continue
     return None
 
-def _load_json_list_file(path):
+def _load_json_list_file(path, create_if_missing=True):
     with DATA_IO_LOCK:
         if not path.exists():
+            if not create_if_missing:
+                return None
             _atomic_write_json(path, [])
             return []
         try:
@@ -597,9 +662,15 @@ def _load_json_list(path):
     if _db_enabled():
         data = _db_get(key)
         if data is _DB_UNAVAILABLE:
-            # Se o banco estiver indisponÃ­vel, evita sobrescrever com vazio.
-            return _load_json_list_file(path)
+            # Banco indisponivel: nao cria arquivo vazio automaticamente.
+            local_data = _load_json_list_file(path, create_if_missing=False)
+            if isinstance(local_data, list) and local_data:
+                st.session_state["_data_sources"][key] = "local_fallback_nonempty"
+                return local_data
+            st.session_state["_data_sources"][key] = "db_unavailable"
+            return local_data if isinstance(local_data, list) else []
         if isinstance(data, list):
+            st.session_state["_data_sources"][key] = "db"
             return data
         if data is None:
             # Migra automaticamente caso a versÃ£o antiga tenha salvo com outra chave.
@@ -608,23 +679,41 @@ def _load_json_list(path):
                     continue
                 legacy_data = _db_get(legacy_key)
                 if legacy_data is _DB_UNAVAILABLE:
-                    return _load_json_list_file(path)
+                    local_data = _load_json_list_file(path, create_if_missing=False)
+                    st.session_state["_data_sources"][key] = "db_unavailable"
+                    return local_data if isinstance(local_data, list) else []
                 if isinstance(legacy_data, list):
                     _db_set(key, legacy_data)
+                    st.session_state["_data_sources"][key] = "db_legacy_migrated"
                     return legacy_data
             # First run with DB: seed from local file if exists.
             seeded = _load_json_list_file(path)
             if seeded:
                 _db_set(key, seeded)
+                st.session_state["_data_sources"][key] = "db_seeded_from_file"
+            else:
+                st.session_state["_data_sources"][key] = "db_empty"
             return seeded
+        st.session_state["_data_sources"][key] = "db_invalid"
         return []
-    return _load_json_list_file(path)
+    file_data = _load_json_list_file(path)
+    st.session_state["_data_sources"][key] = "file"
+    return file_data if isinstance(file_data, list) else []
 
 def _save_json_list(path, data):
     key = _db_key_for_path(path)
     safe_data = data if isinstance(data, list) else []
     if _db_enabled():
+        source = st.session_state.get("_data_sources", {}).get(key, "")
+        if source == "db_unavailable":
+            # Evita sobrescrever dados do banco quando a carga inicial nao foi confiavel.
+            _save_json_list_file(path, safe_data)
+            return False
         ok = _db_set(key, safe_data)
+        if ok:
+            st.session_state["_data_sources"][key] = "db"
+        else:
+            st.session_state["_data_sources"][key] = "db_unavailable"
         mirror = os.getenv("ACTIVE_MIRROR_FILES", "0").strip().lower() in ("1", "true", "yes")
         # Se falhar no banco, salva localmente para nao perder alteracoes da sessao.
         if mirror or not ok:
@@ -3219,18 +3308,35 @@ if not st.session_state["books"]:
         {"nivel": "Livro 3", "titulo": "Livro 3", "url": "", "file_path": ""},
         {"nivel": "Livro 4", "titulo": "Livro 4", "url": "", "file_path": ""},
     ]
-    save_list(BOOKS_FILE, st.session_state["books"])
+    books_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(BOOKS_FILE), "")
+    if books_source != "db_unavailable":
+        save_list(BOOKS_FILE, st.session_state["books"])
 
 st.session_state["users"] = load_users()
+users_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(USERS_FILE), "")
 st.session_state["users"] = ensure_admin_user(st.session_state["users"])
 st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
-save_users(st.session_state["users"])
+if users_source != "db_unavailable":
+    save_users(st.session_state["users"])
+else:
+    st.session_state["_persistence_alert"] = (
+        "Banco de dados indisponivel no carregamento inicial. O sistema entrou em modo de protecao para nao sobrescrever dados."
+    )
 st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
 if "wiz_daily_backup_checked" not in st.session_state:
     st.session_state["wiz_daily_backup_checked"] = False
 if not st.session_state["wiz_daily_backup_checked"]:
     _run_wiz_daily_backup(force=False)
     st.session_state["wiz_daily_backup_checked"] = True
+
+if not _db_enabled() and not st.session_state.get("_persistence_alert"):
+    st.session_state["_persistence_alert"] = (
+        "Persistencia local ativa. Em hospedagem temporaria os dados podem sumir apos reinicio/deploy. "
+        "Configure ACTIVE_DATABASE_URL ou variaveis PG* para persistencia real."
+    )
+
+if st.session_state.get("_persistence_alert"):
+    st.warning(st.session_state.get("_persistence_alert"))
 
 # ==============================================================================
 # TELA DE LOGIN
@@ -6806,6 +6912,8 @@ elif st.session_state["role"] == "Coordenador":
         st.markdown('<div class="main-header">Backup</div>', unsafe_allow_html=True)
         storage_mode = "Banco de Dados (persistente)" if _db_enabled() else "Arquivos locais (pode apagar em hospedagens temporarias)"
         st.write(f"**Armazenamento atual:** {storage_mode}")
+        if _db_enabled() and st.session_state.get("_db_last_error"):
+            st.error(f"Falha de conexao com banco detectada: {st.session_state.get('_db_last_error')}")
         if not _db_enabled():
             st.warning(
                 "Se voce usa Streamlit Cloud, os arquivos locais podem ser apagados quando o app reinicia/atualiza. "
