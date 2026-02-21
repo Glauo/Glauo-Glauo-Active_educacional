@@ -937,7 +937,7 @@ DEFAULT_WIZ_SETTINGS = {
     "enabled": True,
     "notify_email": True,
     "notify_whatsapp": True,
-    "auto_daily_backup": True,
+    "auto_daily_backup": False,
     "on_student_created": True,
     "on_teacher_created": True,
     "on_user_created": True,
@@ -1034,7 +1034,7 @@ def _build_backup_zip_bytes():
 
 def _run_wiz_daily_backup(force=False):
     settings = get_wiz_settings()
-    if not force and not bool(settings.get("auto_daily_backup", True)):
+    if not force and not bool(settings.get("auto_daily_backup", False)):
         return False, "backup diario desativado", None
 
     meta = _load_json_dict(BACKUP_META_FILE, {})
@@ -1576,7 +1576,7 @@ def run_wiz_assistant():
             enabled = st.checkbox("Assistente habilitado", value=bool(settings.get("enabled")), key="wiz_enabled")
             notify_email = st.checkbox("Enviar e-mail", value=bool(settings.get("notify_email")), key="wiz_notify_email")
             notify_whatsapp = st.checkbox("Enviar WhatsApp", value=bool(settings.get("notify_whatsapp")), key="wiz_notify_whatsapp")
-            auto_daily_backup = st.checkbox("Backup diário automático", value=bool(settings.get("auto_daily_backup", True)), key="wiz_auto_daily_backup")
+            auto_daily_backup = st.checkbox("Backup diário automático", value=bool(settings.get("auto_daily_backup", False)), key="wiz_auto_daily_backup")
         with c2:
             on_student_created = st.checkbox("Cadastro de alunos", value=bool(settings.get("on_student_created")), key="wiz_on_student_created")
             on_teacher_created = st.checkbox("Cadastro de professores", value=bool(settings.get("on_teacher_created")), key="wiz_on_teacher_created")
@@ -4538,10 +4538,6 @@ st.session_state["users"] = ensure_admin_user(st.session_state["users"])
 st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
 if users_source != "db_unavailable":
     save_users(st.session_state["users"])
-else:
-    st.session_state["_persistence_alert"] = (
-        "Banco de dados indisponivel no carregamento inicial. O sistema entrou em modo de protecao para nao sobrescrever dados."
-    )
 st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
 if "wiz_daily_backup_checked" not in st.session_state:
     st.session_state["wiz_daily_backup_checked"] = False
@@ -4549,11 +4545,22 @@ if not st.session_state["wiz_daily_backup_checked"]:
     _run_wiz_daily_backup(force=False)
     st.session_state["wiz_daily_backup_checked"] = True
 
-if not _db_enabled() and not st.session_state.get("_persistence_alert"):
+_db_sources = st.session_state.get("_data_sources", {}) or {}
+_db_has_unavailable = any(str(src).strip() == "db_unavailable" for src in _db_sources.values())
+_db_last_error = str(st.session_state.get("_db_last_error", "") or "").strip()
+if _db_has_unavailable:
+    st.session_state["_persistence_alert"] = (
+        "Banco de dados indisponivel no carregamento inicial. O sistema entrou em modo de protecao para nao sobrescrever dados."
+    )
+    if _db_last_error:
+        st.session_state["_persistence_alert"] += f" Erro: {_db_last_error}"
+elif not _db_enabled():
     st.session_state["_persistence_alert"] = (
         "Persistencia local ativa. Em hospedagem temporaria os dados podem sumir apos reinicio/deploy. "
         "Configure ACTIVE_DATABASE_URL ou variaveis PG* para persistencia real."
     )
+else:
+    st.session_state["_persistence_alert"] = ""
 
 if st.session_state.get("_persistence_alert"):
     st.warning(st.session_state.get("_persistence_alert"))
