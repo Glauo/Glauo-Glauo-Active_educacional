@@ -174,6 +174,24 @@ WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
 WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
+_PLACEHOLDER_CONFIG_TOKENS = {
+    "HOST",
+    "PORT",
+    "PORTA",
+    "USER",
+    "USERNAME",
+    "USUARIO",
+    "PASSWORD",
+    "SENHA",
+    "DATABASE",
+    "DB",
+    "NOME_BANCO",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGDATABASE",
+}
 
 def _get_config_value(name, default=""):
     env_val = os.getenv(name, None)
@@ -230,8 +248,24 @@ def _resolve_inline_config_refs(value):
     text = re.sub(r"%([A-Za-z_][A-Za-z0-9_]*)%", _replace, text)
     return text
 
+def _is_placeholder_config_value(value):
+    text = str(value or "").strip().strip('"').strip("'")
+    if not text:
+        return False
+    upper = text.upper()
+    if upper in _PLACEHOLDER_CONFIG_TOKENS:
+        return True
+    if text.startswith("<") and text.endswith(">"):
+        return True
+    if text.startswith("[") and text.endswith("]"):
+        return True
+    if "SEU_" in upper or "SUA_" in upper:
+        return True
+    return False
+
 def _clean_config_value(value):
-    return _resolve_inline_config_refs(_resolve_config_reference(value)).strip().strip('"').strip("'")
+    cleaned = _resolve_inline_config_refs(_resolve_config_reference(value)).strip().strip('"').strip("'")
+    return "" if _is_placeholder_config_value(cleaned) else cleaned
 
 def _resolve_port_value(value):
     candidate = _clean_config_value(value)
@@ -278,6 +312,12 @@ def _normalize_db_url(raw_url):
         lambda m: f"{m.group('prefix')}{_resolve_port_value(m.group('token')) or _configured_db_port()}",
         url,
     )
+    try:
+        parsed = urlsplit(url)
+        if _is_placeholder_config_value(parsed.hostname):
+            return ""
+    except Exception:
+        pass
     return url
 
 def _evolution_base_url():
@@ -571,6 +611,8 @@ def _db_url():
         _get_config_value("ACTIVE_DATABASE_URL", "")
         or _get_config_value("DATABASE_URL", "")
         or _get_config_value("RAILWAY_DATABASE_URL", "")
+        or _get_config_value("URL_DO_BANCO_DE_DADOS_ATIVO", "")
+        or _get_config_value("URL_BANCO_DADOS_ATIVO", "")
         or _get_config_value("URL_DO_BANCO_DE_DADOS", "")
         or _get_config_value("URL_BANCO_DADOS", "")
         or _get_config_value("POSTGRES_URL", "")
