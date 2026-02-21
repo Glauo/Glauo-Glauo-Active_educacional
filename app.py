@@ -7,6 +7,7 @@ import re
 import smtplib
 import shutil
 import threading
+import time
 import uuid
 import calendar
 import unicodedata
@@ -119,6 +120,8 @@ if "_data_sources" not in st.session_state:
     st.session_state["_data_sources"] = {}
 if "_db_last_error" not in st.session_state:
     st.session_state["_db_last_error"] = ""
+if "_db_circuit_open_until" not in st.session_state:
+    st.session_state["_db_circuit_open_until"] = 0.0
 if "_persistence_alert" not in st.session_state:
     st.session_state["_persistence_alert"] = ""
 if "evo_instances_cache" not in st.session_state:
@@ -693,14 +696,27 @@ def _db_legacy_keys_for_path(path):
     return out
 
 _DB_UNAVAILABLE = object()
+DB_CONNECT_TIMEOUT_SECONDS = 4
+DB_FAILURE_COOLDOWN_SECONDS = 25
+
+def _db_circuit_is_open():
+    until = float(st.session_state.get("_db_circuit_open_until", 0.0) or 0.0)
+    return until > time.time()
+
+def _db_open_circuit(exc):
+    st.session_state["_db_circuit_open_until"] = time.time() + float(DB_FAILURE_COOLDOWN_SECONDS)
+    st.session_state["_db_last_error"] = str(exc)
+
+def _db_close_circuit():
+    st.session_state["_db_circuit_open_until"] = 0.0
 
 def _db_enabled():
-    return bool(_db_url()) and psycopg2 is not None
+    return bool(_db_url()) and psycopg2 is not None and not _db_circuit_is_open()
 
 def _db_connect():
     # New connection per operation keeps behavior predictable across Streamlit reruns.
     url = _db_url()
-    conn = psycopg2.connect(url, connect_timeout=8)
+    conn = psycopg2.connect(url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS)
     try:
         psycopg2.extras.register_default_json(conn, loads=json.loads)
         psycopg2.extras.register_default_jsonb(conn, loads=json.loads)
@@ -728,9 +744,10 @@ def _db_get(key):
                 cur.execute("SELECT value FROM active_kv WHERE key = %s", (key,))
                 row = cur.fetchone()
                 st.session_state["_db_last_error"] = ""
+                _db_close_circuit()
                 return row[0] if row else None
     except Exception as exc:
-        st.session_state["_db_last_error"] = str(exc)
+        _db_open_circuit(exc)
         return _DB_UNAVAILABLE
 
 def _db_set(key, value):
@@ -748,9 +765,10 @@ def _db_set(key, value):
                     (key, payload),
                 )
         st.session_state["_db_last_error"] = ""
+        _db_close_circuit()
         return True
     except Exception as exc:
-        st.session_state["_db_last_error"] = str(exc)
+        _db_open_circuit(exc)
         return False
 
 def _load_latest_backup_list(path):
