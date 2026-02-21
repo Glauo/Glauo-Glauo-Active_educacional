@@ -122,6 +122,10 @@ if "_db_last_error" not in st.session_state:
     st.session_state["_db_last_error"] = ""
 if "_db_circuit_open_until" not in st.session_state:
     st.session_state["_db_circuit_open_until"] = 0.0
+if "_db_cache_loaded" not in st.session_state:
+    st.session_state["_db_cache_loaded"] = False
+if "_db_cache" not in st.session_state:
+    st.session_state["_db_cache"] = {}
 if "_persistence_alert" not in st.session_state:
     st.session_state["_persistence_alert"] = ""
 if "evo_instances_cache" not in st.session_state:
@@ -301,6 +305,8 @@ def _normalize_db_url(raw_url):
     url = _clean_config_value(raw_url)
     if not url:
         return ""
+    # Streamlit secrets may include accidental line breaks/spaces when editing long URLs.
+    url = re.sub(r"\s+", "", url)
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
 
@@ -710,6 +716,10 @@ def _db_open_circuit(exc):
 def _db_close_circuit():
     st.session_state["_db_circuit_open_until"] = 0.0
 
+def _db_reset_cache():
+    st.session_state["_db_cache_loaded"] = False
+    st.session_state["_db_cache"] = {}
+
 def _db_enabled():
     return bool(_db_url()) and psycopg2 is not None and not _db_circuit_is_open()
 
@@ -736,21 +746,41 @@ def _db_init(conn):
             """
         )
 
-def _db_get(key):
+def _db_load_cache():
+    if st.session_state.get("_db_cache_loaded", False):
+        return True
     try:
         with _db_connect() as conn:
             _db_init(conn)
             with conn.cursor() as cur:
-                cur.execute("SELECT value FROM active_kv WHERE key = %s", (key,))
-                row = cur.fetchone()
-                st.session_state["_db_last_error"] = ""
-                _db_close_circuit()
-                return row[0] if row else None
+                cur.execute("SELECT key, value FROM active_kv")
+                rows = cur.fetchall() or []
+        cache = {}
+        for row in rows:
+            if not isinstance(row, (tuple, list)) or len(row) < 2:
+                continue
+            cache[str(row[0])] = row[1]
+        st.session_state["_db_cache"] = cache
+        st.session_state["_db_cache_loaded"] = True
+        st.session_state["_db_last_error"] = ""
+        _db_close_circuit()
+        return True
     except Exception as exc:
         _db_open_circuit(exc)
+        _db_reset_cache()
+        return False
+
+def _db_get(key):
+    if not _db_enabled():
         return _DB_UNAVAILABLE
+    if not _db_load_cache():
+        return _DB_UNAVAILABLE
+    cache = st.session_state.get("_db_cache", {}) or {}
+    return cache.get(str(key))
 
 def _db_set(key, value):
+    if not _db_enabled():
+        return False
     try:
         with _db_connect() as conn:
             _db_init(conn)
@@ -765,10 +795,15 @@ def _db_set(key, value):
                     (key, payload),
                 )
         st.session_state["_db_last_error"] = ""
+        if st.session_state.get("_db_cache_loaded", False):
+            cache = st.session_state.get("_db_cache", {}) or {}
+            cache[str(key)] = value
+            st.session_state["_db_cache"] = cache
         _db_close_circuit()
         return True
     except Exception as exc:
         _db_open_circuit(exc)
+        _db_reset_cache()
         return False
 
 def _load_latest_backup_list(path):
@@ -4568,7 +4603,6 @@ if not st.session_state.get("logged_in", False):
             st.session_state["users"] = load_users()
             st.session_state["users"] = ensure_admin_user(st.session_state["users"])
             st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
-            save_users(st.session_state["users"])
             user = find_user(usuario.strip())
             if not usuario.strip() or not senha.strip():
                 st.error("Informe usuario e senha.")
