@@ -1996,7 +1996,10 @@ def build_google_calendar_event_link(event):
     if not data:
         return ""
     inicio = datetime.datetime.combine(data, hora)
-    fim = inicio + datetime.timedelta(minutes=60)
+    duracao = parse_int(event.get("duracao_minutos", 60))
+    if duracao <= 0:
+        duracao = 60
+    fim = inicio + datetime.timedelta(minutes=duracao)
     text = event.get("titulo", "Aula")
     details_lines = []
     turma = str(event.get("turma", "")).strip()
@@ -2024,6 +2027,33 @@ def build_google_calendar_event_link(event):
     if link:
         params.append(f"location={quote(link)}")
     return "https://calendar.google.com/calendar/render?" + "&".join(params)
+
+def build_sales_google_calendar_event_link(schedule_obj):
+    schedule_obj = schedule_obj if isinstance(schedule_obj, dict) else {}
+    lead_nome = str(schedule_obj.get("lead_nome", "")).strip() or "Lead"
+    tipo = str(schedule_obj.get("tipo", "Agendamento")).strip() or "Agendamento"
+    vendedor = str(schedule_obj.get("vendedor", "")).strip()
+    telefone = str(schedule_obj.get("lead_telefone", "")).strip()
+    detalhes = str(schedule_obj.get("detalhes", "")).strip()
+    meeting_link = str(schedule_obj.get("meeting_link", "")).strip() or str(_get_config_value("ACTIVE_COMERCIAL_MEETING_LINK", "")).strip()
+    descricao_linhas = [f"Tipo: {tipo}", f"Lead: {lead_nome}"]
+    if telefone:
+        descricao_linhas.append(f"Telefone: {telefone}")
+    if vendedor:
+        descricao_linhas.append(f"Consultor: {vendedor}")
+    if detalhes:
+        descricao_linhas.append(f"Detalhes: {detalhes}")
+    event = {
+        "data": str(schedule_obj.get("data", "")).strip(),
+        "hora": str(schedule_obj.get("hora", "")).strip(),
+        "duracao_minutos": parse_int(schedule_obj.get("duracao_minutos", 45)) or 45,
+        "titulo": f"Comercial Active - {tipo} ({lead_nome})",
+        "turma": "Comercial",
+        "professor": vendedor,
+        "descricao": "\n".join(descricao_linhas).strip(),
+        "link": meeting_link,
+    }
+    return build_google_calendar_event_link(event)
 
 def book_levels():
     books = st.session_state.get("books", [])
@@ -2696,6 +2726,8 @@ def _send_sales_schedule_whatsapp(lead_obj, schedule_obj):
     data = str(schedule_obj.get("data", "")).strip()
     hora = str(schedule_obj.get("hora", "")).strip()
     detalhes = str(schedule_obj.get("detalhes", "")).strip()
+    meeting_link = str(schedule_obj.get("meeting_link", "")).strip()
+    google_link = str(schedule_obj.get("google_calendar_link", "")).strip() or build_sales_google_calendar_event_link(schedule_obj)
     mensagem = (
         f"Ola, {nome}.\n"
         f"Seu agendamento foi registrado no Active.\n"
@@ -2705,6 +2737,10 @@ def _send_sales_schedule_whatsapp(lead_obj, schedule_obj):
     )
     if detalhes:
         mensagem += f"Detalhes: {detalhes}\n"
+    if meeting_link:
+        mensagem += f"Link da reuniao: {meeting_link}\n"
+    if google_link:
+        mensagem += f"Google Agenda: {google_link}\n"
     mensagem += "\nQualquer ajuste, responda esta mensagem."
     return _send_whatsapp_auto(number, mensagem)
 
@@ -4158,13 +4194,21 @@ def run_commercial_panel():
                     lead_label = st.selectbox("Lead", lead_labels)
                     lead_obj = leads[lead_labels.index(lead_label)]
                     tipo = st.selectbox("Tipo", sales_agenda_type_options())
-                    c1, c2 = st.columns(2)
+                    c1, c2, c3 = st.columns(3)
                     with c1:
-                        data_ag = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
+                        data_ag = st.date_input("Data (DD/MM/AAAA)", value=datetime.date.today(), format="DD/MM/YYYY")
                     with c2:
-                        hora_ag = st.time_input("Horario", value=datetime.time(10, 0))
+                        hora_ag = st.time_input("Horario inicial", value=datetime.time(10, 0))
+                    with c3:
+                        duracao_min = st.number_input("Duracao (min)", min_value=30, max_value=240, value=45, step=15)
+                    st.caption(f"Data selecionada: {format_date_br(data_ag)}")
+                    meeting_link = st.text_input("Link da reuniao (Google Meet/Zoom) - opcional")
                     detalhes = st.text_area("Detalhes")
-                    send_auto = st.checkbox("Enviar no WhatsApp automaticamente ao salvar", value=True)
+                    c4, c5 = st.columns(2)
+                    with c4:
+                        send_auto = st.checkbox("Enviar no WhatsApp automaticamente ao salvar", value=True)
+                    with c5:
+                        add_google = st.checkbox("Gerar link no Google Agenda", value=True)
                     if st.form_submit_button("Salvar agendamento", type="primary"):
                         item = {
                             "id": uuid.uuid4().hex,
@@ -4174,13 +4218,17 @@ def run_commercial_panel():
                             "tipo": tipo,
                             "data": data_ag.strftime("%d/%m/%Y") if data_ag else "",
                             "hora": hora_ag.strftime("%H:%M") if hora_ag else "",
+                            "duracao_minutos": int(duracao_min or 45),
                             "detalhes": str(detalhes or "").strip(),
+                            "meeting_link": str(meeting_link or "").strip(),
                             "status": "Agendado",
                             "vendedor": vendedor_atual,
                             "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
                             "whatsapp_sent": False,
                             "whatsapp_status": "",
                         }
+                        if add_google:
+                            item["google_calendar_link"] = build_sales_google_calendar_event_link(item)
                         if send_auto:
                             ok, status, _ = _send_sales_schedule_whatsapp(lead_obj, item)
                             item["whatsapp_sent"] = bool(ok)
@@ -4188,20 +4236,88 @@ def run_commercial_panel():
                         st.session_state["sales_agenda"].append(item)
                         save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
                         st.success("Agendamento salvo.")
-                        st.rerun()
+                        gcal = str(item.get("google_calendar_link", "")).strip()
+                        if gcal:
+                            st.link_button("Abrir no Google Agenda", gcal, key=f"sales_new_ag_gcal_{item.get('id', uuid.uuid4().hex)}")
 
         with tab_list:
             agenda = st.session_state.get("sales_agenda", [])
             if not agenda:
                 st.info("Nenhum agendamento cadastrado.")
             else:
-                tipo_filtro = st.selectbox("Filtrar por tipo", ["Todos"] + sales_agenda_type_options())
-                status_filtro = st.selectbox("Filtrar por status", ["Todos", "Agendado", "Concluido", "Cancelado"])
-                agenda_filtrada = agenda
-                if tipo_filtro != "Todos":
-                    agenda_filtrada = [a for a in agenda_filtrada if str(a.get("tipo", "")).strip() == tipo_filtro]
-                if status_filtro != "Todos":
-                    agenda_filtrada = [a for a in agenda_filtrada if str(a.get("status", "")).strip() == status_filtro]
+                agenda_changed = False
+                for item in agenda:
+                    if not isinstance(item, dict):
+                        continue
+                    if parse_int(item.get("duracao_minutos", 0)) <= 0:
+                        item["duracao_minutos"] = 45
+                        agenda_changed = True
+                    if "meeting_link" not in item:
+                        item["meeting_link"] = ""
+                        agenda_changed = True
+                    if not str(item.get("google_calendar_link", "")).strip():
+                        item["google_calendar_link"] = build_sales_google_calendar_event_link(item)
+                        agenda_changed = True
+                if agenda_changed:
+                    save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+
+                hoje = datetime.date.today()
+                semana_ini = hoje - datetime.timedelta(days=hoje.weekday())
+                semana_fim = semana_ini + datetime.timedelta(days=6)
+                total_itens = len(agenda)
+                total_hoje = sum(1 for a in agenda if (parse_date(a.get("data", "")) == hoje))
+                total_semana = sum(
+                    1 for a in agenda
+                    if (parse_date(a.get("data", "")) is not None and semana_ini <= parse_date(a.get("data", "")) <= semana_fim)
+                )
+                total_pendentes = sum(1 for a in agenda if str(a.get("status", "")).strip() == "Agendado")
+
+                m1, m2, m3, m4 = st.columns(4)
+                with m1:
+                    st.markdown(f"**Total**  \n### {total_itens}")
+                with m2:
+                    st.markdown(f"**Hoje**  \n### {total_hoje}")
+                with m3:
+                    st.markdown(f"**Esta semana**  \n### {total_semana}")
+                with m4:
+                    st.markdown(f"**Pendentes**  \n### {total_pendentes}")
+
+                f1, f2, f3, f4 = st.columns(4)
+                with f1:
+                    tipo_filtro = st.selectbox("Tipo", ["Todos"] + sales_agenda_type_options(), key="sales_agenda_tipo_filtro")
+                with f2:
+                    status_filtro = st.selectbox("Status", ["Todos", "Agendado", "Concluido", "Cancelado"], key="sales_agenda_status_filtro")
+                with f3:
+                    data_ini = st.date_input("De (DD/MM/AAAA)", value=hoje - datetime.timedelta(days=7), format="DD/MM/YYYY", key="sales_agenda_data_ini")
+                with f4:
+                    data_fim = st.date_input("Ate (DD/MM/AAAA)", value=hoje + datetime.timedelta(days=30), format="DD/MM/YYYY", key="sales_agenda_data_fim")
+                busca = st.text_input("Buscar por lead, telefone ou detalhes", key="sales_agenda_busca")
+                st.caption(f"Periodo aplicado: {format_date_br(data_ini)} ate {format_date_br(data_fim)}")
+
+                agenda_filtrada = []
+                busca_norm = normalize_text(busca)
+                for a in agenda:
+                    if not isinstance(a, dict):
+                        continue
+                    if tipo_filtro != "Todos" and str(a.get("tipo", "")).strip() != tipo_filtro:
+                        continue
+                    if status_filtro != "Todos" and str(a.get("status", "")).strip() != status_filtro:
+                        continue
+                    dt_item = parse_date(a.get("data", ""))
+                    if dt_item and (dt_item < data_ini or dt_item > data_fim):
+                        continue
+                    texto_busca = " ".join(
+                        [
+                            str(a.get("lead_nome", "")),
+                            str(a.get("lead_telefone", "")),
+                            str(a.get("tipo", "")),
+                            str(a.get("detalhes", "")),
+                        ]
+                    )
+                    if busca_norm and busca_norm not in normalize_text(texto_busca):
+                        continue
+                    agenda_filtrada.append(a)
+
                 agenda_filtrada = sorted(
                     agenda_filtrada,
                     key=lambda a: (
@@ -4209,56 +4325,103 @@ def run_commercial_panel():
                         parse_time(a.get("hora", "00:00")),
                     ),
                 )
-                if agenda_filtrada:
-                    df_ag = pd.DataFrame(agenda_filtrada)
-                    col_order = [
-                        "data",
-                        "hora",
-                        "lead_nome",
-                        "lead_telefone",
-                        "tipo",
-                        "status",
-                        "whatsapp_sent",
-                        "whatsapp_status",
-                        "detalhes",
-                        "vendedor",
-                    ]
-                    df_ag = df_ag[[c for c in col_order if c in df_ag.columns]]
-                    st.dataframe(df_ag, use_container_width=True)
 
-                    labels = [
-                        f"{a.get('data','')} {a.get('hora','')} | {a.get('lead_nome','')} | {a.get('tipo','')}"
-                        for a in agenda_filtrada
-                    ]
-                    ag_sel = st.selectbox("Selecionar item da agenda", labels)
-                    ag_obj = agenda_filtrada[labels.index(ag_sel)]
-                    c1, c2, c3 = st.columns(3)
-                    if c1.button("Marcar como concluido", key=f"sales_ag_done_{ag_obj.get('id','')}"):
-                        ag_obj["status"] = "Concluido"
-                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
-                        st.success("Agenda atualizada.")
-                        st.rerun()
-                    if c2.button("Cancelar", key=f"sales_ag_cancel_{ag_obj.get('id','')}"):
-                        ag_obj["status"] = "Cancelado"
-                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
-                        st.success("Agenda atualizada.")
-                        st.rerun()
-                    if c3.button("Reenviar WhatsApp", key=f"sales_ag_wa_{ag_obj.get('id','')}"):
-                        lead_ref = next(
-                            (l for l in st.session_state.get("sales_leads", []) if str(l.get("id", "")).strip() == str(ag_obj.get("lead_id", "")).strip()),
-                            {"nome": ag_obj.get("lead_nome", ""), "telefone": ag_obj.get("lead_telefone", "")},
-                        )
-                        ok, status, _ = _send_sales_schedule_whatsapp(lead_ref, ag_obj)
-                        ag_obj["whatsapp_sent"] = bool(ok)
-                        ag_obj["whatsapp_status"] = str(status or "")
-                        save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
-                        if ok:
-                            st.success("Mensagem enviada no WhatsApp.")
-                        else:
-                            st.error("Falha ao enviar WhatsApp.")
-                        st.rerun()
-                else:
+                if not agenda_filtrada:
                     st.info("Nenhum item na agenda para os filtros selecionados.")
+                else:
+                    st.caption(f"Exibindo {len(agenda_filtrada)} agendamento(s).")
+                    status_colors = {
+                        "Agendado": "#1e3a8a",
+                        "Concluido": "#15803d",
+                        "Cancelado": "#c2410c",
+                    }
+                    for ag_obj in agenda_filtrada:
+                        ag_id = str(ag_obj.get("id", "")).strip() or uuid.uuid4().hex
+                        status = str(ag_obj.get("status", "Agendado")).strip() or "Agendado"
+                        cor = status_colors.get(status, "#334155")
+                        data_txt = format_date_br(ag_obj.get("data", ""))
+                        hora_txt = str(ag_obj.get("hora", "")).strip() or "--:--"
+                        duracao_txt = parse_int(ag_obj.get("duracao_minutos", 45)) or 45
+                        lead_nome = str(ag_obj.get("lead_nome", "")).strip() or "Lead"
+                        lead_tel = str(ag_obj.get("lead_telefone", "")).strip()
+                        tipo_txt = str(ag_obj.get("tipo", "Agendamento")).strip()
+                        detalhes_txt = str(ag_obj.get("detalhes", "")).strip()
+                        vendedor_txt = str(ag_obj.get("vendedor", "")).strip()
+                        meeting_link = str(ag_obj.get("meeting_link", "")).strip()
+                        google_link = str(ag_obj.get("google_calendar_link", "")).strip() or build_sales_google_calendar_event_link(ag_obj)
+                        if google_link and not str(ag_obj.get("google_calendar_link", "")).strip():
+                            ag_obj["google_calendar_link"] = google_link
+                            save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+
+                        st.markdown(
+                            f"""
+<div style="border:1px solid #dbe7f6;border-left:6px solid {cor};border-radius:12px;padding:14px 16px;margin:10px 0;background:#ffffff;">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+    <div style="font-weight:700;color:#0f172a;">{tipo_txt} - {lead_nome}</div>
+    <div style="font-weight:700;color:{cor};">{status}</div>
+  </div>
+  <div style="margin-top:4px;color:#334155;">{data_txt} | {hora_txt} | {duracao_txt} min</div>
+  <div style="margin-top:4px;color:#475569;">Telefone: {lead_tel or "-"}</div>
+  <div style="margin-top:4px;color:#475569;">Vendedor: {vendedor_txt or "-"}</div>
+  <div style="margin-top:4px;color:#475569;">Detalhes: {detalhes_txt or "-"}</div>
+</div>
+""",
+                            unsafe_allow_html=True,
+                        )
+
+                        a1, a2, a3, a4, a5 = st.columns([1, 1, 1.1, 1.2, 1.2])
+                        if a1.button("Concluir", key=f"sales_ag_done_{ag_id}"):
+                            ag_obj["status"] = "Concluido"
+                            save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                            st.success("Agenda atualizada.")
+                            st.rerun()
+                        if a2.button("Cancelar", key=f"sales_ag_cancel_{ag_id}"):
+                            ag_obj["status"] = "Cancelado"
+                            save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                            st.success("Agenda atualizada.")
+                            st.rerun()
+                        if a3.button("Reenviar WhatsApp", key=f"sales_ag_wa_{ag_id}"):
+                            lead_ref = next(
+                                (l for l in st.session_state.get("sales_leads", []) if str(l.get("id", "")).strip() == str(ag_obj.get("lead_id", "")).strip()),
+                                {"nome": ag_obj.get("lead_nome", ""), "telefone": ag_obj.get("lead_telefone", "")},
+                            )
+                            ok, status_wa, _ = _send_sales_schedule_whatsapp(lead_ref, ag_obj)
+                            ag_obj["whatsapp_sent"] = bool(ok)
+                            ag_obj["whatsapp_status"] = str(status_wa or "")
+                            save_list(SALES_AGENDA_FILE, st.session_state["sales_agenda"])
+                            if ok:
+                                st.success("Mensagem enviada no WhatsApp.")
+                            else:
+                                st.error(f"Falha ao enviar WhatsApp: {status_wa}")
+                            st.rerun()
+                        if meeting_link:
+                            a4.link_button("Abrir reuniao", meeting_link, key=f"sales_ag_meet_{ag_id}")
+                        else:
+                            a4.button("Abrir reuniao", disabled=True, key=f"sales_ag_meet_disabled_{ag_id}")
+                        if google_link:
+                            a5.link_button("Google Agenda", google_link, key=f"sales_ag_gcal_{ag_id}")
+                        else:
+                            a5.button("Google Agenda", disabled=True, key=f"sales_ag_gcal_disabled_{ag_id}")
+
+                    with st.expander("Ver tabela completa", expanded=False):
+                        df_ag = pd.DataFrame(agenda_filtrada)
+                        col_order = [
+                            "data",
+                            "hora",
+                            "duracao_minutos",
+                            "lead_nome",
+                            "lead_telefone",
+                            "tipo",
+                            "status",
+                            "whatsapp_sent",
+                            "whatsapp_status",
+                            "meeting_link",
+                            "google_calendar_link",
+                            "detalhes",
+                            "vendedor",
+                        ]
+                        df_ag = df_ag[[c for c in col_order if c in df_ag.columns]]
+                        st.dataframe(df_ag, use_container_width=True)
 
     elif menu_sales == "Financeiro Matricula":
         st.markdown('<div class="main-header">Financeiro de Matricula (Comercial)</div>', unsafe_allow_html=True)
