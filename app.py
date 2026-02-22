@@ -1180,23 +1180,37 @@ def _send_whatsapp_wapi(number, text, timeout=20):
         return False, "wapi nao configurado", []
 
     split = urlsplit(base_url)
-    direct_endpoint = "send-text" in str(split.path or "").lower()
+    path_lower = str(split.path or "").lower()
+    direct_endpoint = any(token in path_lower for token in ("send-text", "sendtext", "send-message", "sendmessage"))
     endpoint_urls = []
     if direct_endpoint:
         qs = dict(parse_qsl(split.query, keep_blank_values=True))
-        if "instanceId" not in qs and "instance_id" not in qs:
-            qs["instanceId"] = instance_id
-        direct_url = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs), split.fragment))
-        endpoint_urls = [direct_url]
+        qs_with_instance = dict(qs)
+        if "instanceId" not in qs_with_instance and "instance_id" not in qs_with_instance:
+            qs_with_instance["instanceId"] = instance_id
+        direct_url_a = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_with_instance), split.fragment))
+        direct_url_b = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs), split.fragment))
+        endpoint_urls = [u for u in (direct_url_a, direct_url_b) if str(u).strip()]
     else:
-        endpoint_urls = [base_url.rstrip("/") + p for p in [
+        host_root = urlunsplit((split.scheme, split.netloc, "", "", "")).rstrip("/")
+        base_root = base_url.rstrip("/")
+        roots = []
+        for r in (base_root, host_root):
+            r = str(r).rstrip("/")
+            if r and r not in roots:
+                roots.append(r)
+        path_candidates = [
+            "/v1/message/send-text",
+            "/v1/messages/send-text",
+            "/v1/message/sendText",
             "/api/v1/message/send-text",
             "/api/v1/messages/send-text",
             "/message/send-text",
             "/message/sendText",
             f"/api/v1/instances/{quote(instance_id, safe='')}/send-text",
             f"/instance/{quote(instance_id, safe='')}/send-text",
-        ]]
+        ]
+        endpoint_urls = [root + path for root in roots for path in path_candidates]
 
     headers_list = [
         {"Authorization": token if token.lower().startswith("bearer ") else f"Bearer {token}"},
@@ -1204,6 +1218,10 @@ def _send_whatsapp_wapi(number, text, timeout=20):
         {"x-api-key": token},
     ]
     payloads = [
+        {"phone": number, "message": message_text},
+        {"number": number, "message": message_text},
+        {"to": number, "message": message_text},
+        {"to": number, "text": message_text},
         {"instanceId": instance_id, "phone": number, "message": message_text},
         {"instanceId": instance_id, "number": number, "text": message_text},
         {"instance_id": instance_id, "phone": number, "message": message_text},
@@ -1213,7 +1231,7 @@ def _send_whatsapp_wapi(number, text, timeout=20):
     attempts = []
     for url in endpoint_urls:
         for auth_headers in headers_list:
-            headers = {"Accept": "application/json", "User-Agent": "Active-Wiz-Automation/1.0"}
+            headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Active-Wiz-Automation/1.0"}
             headers.update(auth_headers)
             for payload in payloads:
                 status, ct, body, err = _http_request(
@@ -1242,7 +1260,10 @@ def _send_whatsapp_wapi(number, text, timeout=20):
                     if msg and ("sent" in msg.lower() or "sucesso" in msg.lower() or "success" in msg.lower()):
                         return True, msg, attempts
     last = attempts[-1] if attempts else {}
-    return False, f"falha wapi (HTTP {last.get('status')})", attempts
+    detail = str(last.get("preview", "") or last.get("error", "")).strip()
+    if detail:
+        detail = detail[:120]
+    return False, f"falha wapi (HTTP {last.get('status')}) {detail}".strip(), attempts
 
 def _has_wapi_config():
     return bool(_wapi_base_url() and _wapi_token() and _wapi_instance_id())
@@ -4370,23 +4391,44 @@ def run_commercial_panel():
                     total = 0
                     ok_count = 0
                     fail_count = 0
+                    fail_details = []
                     for label in selected:
                         lead_obj = leads_filtrados[labels.index(label)]
                         number = _lead_phone_for_whatsapp(lead_obj)
                         if not number:
                             fail_count += 1
+                            fail_details.append(
+                                {
+                                    "lead": str(lead_obj.get("nome", "")).strip() or "(sem nome)",
+                                    "telefone": str(lead_obj.get("telefone", "")).strip(),
+                                    "erro": "telefone invalido ou ausente",
+                                }
+                            )
                             continue
                         total += 1
-                        ok, status, _ = _send_whatsapp_auto(number, str(mensagem).strip())
+                        ok, status, attempts = _send_whatsapp_auto(number, str(mensagem).strip())
                         if ok:
                             ok_count += 1
                             lead_obj["ultimo_contato"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             lead_obj["updated_at"] = lead_obj["ultimo_contato"]
+                            lead_obj["ultimo_erro_whatsapp"] = ""
                         else:
                             fail_count += 1
                             lead_obj["ultimo_erro_whatsapp"] = str(status or "")
+                            last_attempt = attempts[-1] if isinstance(attempts, list) and attempts else {}
+                            fail_details.append(
+                                {
+                                    "lead": str(lead_obj.get("nome", "")).strip() or "(sem nome)",
+                                    "telefone": number,
+                                    "erro": str(status or "falha desconhecida"),
+                                    "http": str(last_attempt.get("status", "") or ""),
+                                }
+                            )
                     save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
                     st.success(f"Envio concluido. Sucesso: {ok_count} | Falhas: {fail_count} | Tentativas: {total}")
+                    if fail_details:
+                        st.warning("Alguns envios falharam. Veja os detalhes abaixo.")
+                        st.dataframe(pd.DataFrame(fail_details), use_container_width=True)
 
     elif menu_sales == "Professor Wiz":
         run_active_chatbot()
