@@ -1185,12 +1185,22 @@ def _send_whatsapp_wapi(number, text, timeout=20):
     endpoint_urls = []
     if direct_endpoint:
         qs = dict(parse_qsl(split.query, keep_blank_values=True))
-        qs_with_instance = dict(qs)
-        if "instanceId" not in qs_with_instance and "instance_id" not in qs_with_instance:
-            qs_with_instance["instanceId"] = instance_id
-        direct_url_a = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_with_instance), split.fragment))
-        direct_url_b = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs), split.fragment))
-        endpoint_urls = [u for u in (direct_url_a, direct_url_b) if str(u).strip()]
+        # Try multiple variants to avoid stale instanceId in URL query.
+        qs_forced = dict(qs)
+        if instance_id:
+            qs_forced["instanceId"] = instance_id
+            if "instance_id" in qs_forced:
+                qs_forced["instance_id"] = instance_id
+        qs_original = dict(qs)
+        qs_without_instance = {k: v for k, v in qs.items() if str(k) not in ("instanceId", "instance_id")}
+        direct_url_forced = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_forced), split.fragment))
+        direct_url_original = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_original), split.fragment))
+        direct_url_no_instance = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_without_instance), split.fragment))
+        endpoint_urls = []
+        for u in (direct_url_forced, direct_url_original, direct_url_no_instance):
+            u = str(u).strip()
+            if u and u not in endpoint_urls:
+                endpoint_urls.append(u)
     else:
         host_root = urlunsplit((split.scheme, split.netloc, "", "", "")).rstrip("/")
         base_root = base_url.rstrip("/")
