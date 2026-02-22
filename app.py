@@ -1209,14 +1209,27 @@ def _send_whatsapp_wapi(number, text, timeout=20):
             r = str(r).rstrip("/")
             if r and r not in roots:
                 roots.append(r)
+        inst_q = quote(instance_id, safe="")
         path_candidates = [
             "/v1/message/send-text",
+            f"/v1/message/send-text?instanceId={inst_q}",
+            f"/v1/message/send-text?instance_id={inst_q}",
             "/v1/messages/send-text",
+            f"/v1/messages/send-text?instanceId={inst_q}",
+            f"/v1/messages/send-text?instance_id={inst_q}",
             "/v1/message/sendText",
+            f"/v1/message/sendText?instanceId={inst_q}",
             "/api/v1/message/send-text",
+            f"/api/v1/message/send-text?instanceId={inst_q}",
+            f"/api/v1/message/send-text?instance_id={inst_q}",
             "/api/v1/messages/send-text",
+            f"/api/v1/messages/send-text?instanceId={inst_q}",
+            f"/api/v1/messages/send-text?instance_id={inst_q}",
             "/message/send-text",
+            f"/message/send-text?instanceId={inst_q}",
+            f"/message/send-text?instance_id={inst_q}",
             "/message/sendText",
+            f"/message/sendText?instanceId={inst_q}",
             f"/api/v1/instances/{quote(instance_id, safe='')}/send-text",
             f"/instance/{quote(instance_id, safe='')}/send-text",
         ]
@@ -4432,6 +4445,7 @@ def run_commercial_panel():
                                     "telefone": number,
                                     "erro": str(status or "falha desconhecida"),
                                     "http": str(last_attempt.get("status", "") or ""),
+                                    "endpoint": str(last_attempt.get("url", last_attempt.get("path", "")) or "")[:120],
                                 }
                             )
                     save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
