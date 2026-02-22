@@ -4421,8 +4421,11 @@ if not st.session_state.get("logged_in", False):
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
         .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
         .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(16,185,129,0.16)) !important; border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(34,197,94,0.45); box-shadow: 0 12px 26px rgba(5, 46, 22, 0.35) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-        .feature-card:hover { transform: translateY(-2px); border-color: rgba(34,197,94,0.7); box-shadow: 0 16px 30px rgba(5, 46, 22, 0.45) !important; }
+        .feature-card { border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.3) !important; }
+        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.34), rgba(30,58,138,0.28)) !important; border-color: rgba(37,99,235,0.55); }
+        .feature-card.feature-green { background: linear-gradient(135deg, rgba(34,197,94,0.3), rgba(22,163,74,0.24)) !important; border-color: rgba(22,163,74,0.55); }
+        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(251,146,60,0.34), rgba(234,88,12,0.25)) !important; border-color: rgba(234,88,12,0.55); }
         .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
         .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
         .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
@@ -4456,7 +4459,11 @@ else:
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton > button { background: #f6f9ff; border: 1px solid #dbe7f6; color: #475569; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        section[data-testid="stSidebar"] .stButton { --menu-accent: #1e3a8a; --menu-accent-soft: rgba(30,58,138,0.14); --menu-accent-strong: #2563eb; }
+        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+1) { --menu-accent: #1e3a8a; --menu-accent-soft: rgba(30,58,138,0.14); --menu-accent-strong: #2563eb; }
+        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+2) { --menu-accent: #15803d; --menu-accent-soft: rgba(22,163,74,0.15); --menu-accent-strong: #16a34a; }
+        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+3) { --menu-accent: #c2410c; --menu-accent-soft: rgba(249,115,22,0.16); --menu-accent-strong: #ea580c; }
+        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%); border: 1px solid var(--menu-accent-soft); border-left: 6px solid var(--menu-accent); color: #334155; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 56px !important; }
@@ -4467,8 +4474,8 @@ else:
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
-        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25) !important; }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28); }
+        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, var(--menu-accent) 0%, var(--menu-accent-strong) 100%) !important; border-color: var(--menu-accent) !important; border-left-color: var(--menu-accent) !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, var(--menu-accent) 0%, var(--menu-accent-strong) 100%); color: #ffffff; border: none; border-left: 6px solid var(--menu-accent) !important; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
@@ -4633,14 +4640,16 @@ if not st.session_state.get("logged_in", False):
         ("Agenda + Google", "Aulas com link para incluir direto no Google Agenda."),
         ("Financeiro", "Controle de matriculas, parcelas e recebimentos."),
     ]
+    feature_palette = ["feature-blue", "feature-green", "feature-orange"]
     for i in range(0, len(feature_cards), 3):
         cols = st.columns(3, gap="large")
-        for col, card in zip(cols, feature_cards[i:i+3]):
+        for offset, (col, card) in enumerate(zip(cols, feature_cards[i:i+3])):
             title, sub = card
+            feature_class = feature_palette[(i + offset) % len(feature_palette)]
             with col:
                 st.markdown(
                     f"""
-<div class="feature-card">
+<div class="feature-card {feature_class}">
   <div class="feature-text">{title}</div>
   <div class="feature-sub">{sub}</div>
 </div>
