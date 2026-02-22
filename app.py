@@ -1555,182 +1555,171 @@ def _wiz_execute_actions(actions):
             reports.append({"type": kind, "ok": False, "message": f"falha: {exc}"})
     return reports
 
+def _wiz_attachment_kind(uploaded_file):
+    name = str(getattr(uploaded_file, "name", "") or "").lower()
+    mime = str(getattr(uploaded_file, "type", "") or "").lower()
+    ext = Path(name).suffix.lower()
+    if mime.startswith("image/") or ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
+        return "image"
+    if ext in (".txt", ".md", ".json", ".log", ".py", ".sql", ".yaml", ".yml", ".ini"):
+        return "text"
+    if ext == ".csv":
+        return "csv"
+    if ext in (".xlsx", ".xls"):
+        return "sheet"
+    if ext == ".pdf":
+        return "pdf"
+    return "file"
+
+def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
+    summaries = []
+    blocks = []
+    for up in uploaded_files or []:
+        name = str(getattr(up, "name", "arquivo")).strip() or "arquivo"
+        kind = _wiz_attachment_kind(up)
+        try:
+            raw = up.getvalue() if hasattr(up, "getvalue") else b""
+        except Exception:
+            raw = b""
+        size_kb = (len(raw) / 1024.0) if isinstance(raw, (bytes, bytearray)) else 0.0
+        summaries.append(f"- {name} ({kind}, {size_kb:.1f} KB)")
+        text = ""
+        try:
+            if kind == "text" and raw:
+                text = raw.decode("utf-8", errors="replace")
+            elif kind == "csv" and raw:
+                try:
+                    text = pd.read_csv(io.BytesIO(raw)).head(20).to_csv(index=False)
+                except Exception:
+                    text = raw.decode("utf-8", errors="replace")
+            elif kind == "sheet" and raw:
+                text = pd.read_excel(io.BytesIO(raw)).head(20).to_csv(index=False)
+            elif kind == "pdf" and raw:
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(io.BytesIO(raw))
+                    parts = []
+                    for page in reader.pages[:3]:
+                        parts.append((page.extract_text() or "").strip())
+                    text = "\n".join([p for p in parts if p])
+                except Exception:
+                    text = ""
+        except Exception:
+            text = ""
+        if text:
+            clean = str(text).strip()
+            if len(clean) > max_chars:
+                clean = clean[:max_chars] + "..."
+            blocks.append(f"[{name}]\n{clean}")
+    return summaries, blocks
+
 def run_wiz_assistant():
     st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
-    st.caption("Automação operacional com IA para Coordenação/Admin.")
-    provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip() or "auto"
-    st.caption(
-        "WhatsApp provider: "
-        f"{provider} | W-API instance: {_wapi_instance_id() or '(não definido)'}"
-    )
+    st.caption("Conversa simples com o Wiz para Coordenação/Admin. Anexe arquivo/imagem e escreva seu pedido.")
 
-    role = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-    if role not in ("Admin", "Coordenador"):
+    account_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+    if account_profile not in ("Admin", "Coordenador"):
         st.error("Acesso restrito para Coordenador/Admin.")
         return
 
-    settings = get_wiz_settings()
-    with st.expander("Configurar automações", expanded=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            enabled = st.checkbox("Assistente habilitado", value=bool(settings.get("enabled")), key="wiz_enabled")
-            notify_email = st.checkbox("Enviar e-mail", value=bool(settings.get("notify_email")), key="wiz_notify_email")
-            notify_whatsapp = st.checkbox("Enviar WhatsApp", value=bool(settings.get("notify_whatsapp")), key="wiz_notify_whatsapp")
-            auto_daily_backup = st.checkbox("Backup diário automático", value=bool(settings.get("auto_daily_backup", False)), key="wiz_auto_daily_backup")
-        with c2:
-            on_student_created = st.checkbox("Cadastro de alunos", value=bool(settings.get("on_student_created")), key="wiz_on_student_created")
-            on_teacher_created = st.checkbox("Cadastro de professores", value=bool(settings.get("on_teacher_created")), key="wiz_on_teacher_created")
-            on_user_created = st.checkbox("Cadastro de usuários", value=bool(settings.get("on_user_created")), key="wiz_on_user_created")
-            on_news_posted = st.checkbox("Publicação de notícias", value=bool(settings.get("on_news_posted")), key="wiz_on_news_posted")
-        with c3:
-            on_grade_approved = st.checkbox("Aprovação de notas", value=bool(settings.get("on_grade_approved")), key="wiz_on_grade_approved")
-            on_agenda_created = st.checkbox("Agendamento de aula", value=bool(settings.get("on_agenda_created")), key="wiz_on_agenda_created")
-            on_class_link_updated = st.checkbox("Alteração de link de turma", value=bool(settings.get("on_class_link_updated")), key="wiz_on_class_link_updated")
-            on_financial_created = st.checkbox("Lançamento financeiro", value=bool(settings.get("on_financial_created")), key="wiz_on_financial_created")
-        if st.button("Salvar configurações do Assistente Wiz", type="primary"):
-            save_wiz_settings(
-                {
-                    "enabled": enabled,
-                    "notify_email": notify_email,
-                    "notify_whatsapp": notify_whatsapp,
-                    "auto_daily_backup": auto_daily_backup,
-                    "on_student_created": on_student_created,
-                    "on_teacher_created": on_teacher_created,
-                    "on_user_created": on_user_created,
-                    "on_news_posted": on_news_posted,
-                    "on_grade_approved": on_grade_approved,
-                    "on_agenda_created": on_agenda_created,
-                    "on_class_link_updated": on_class_link_updated,
-                    "on_financial_created": on_financial_created,
-                }
-            )
-            st.success("Configurações salvas.")
-        backup_meta = _load_json_dict(BACKUP_META_FILE, {})
-        st.caption(
-            "Último backup diário: "
-            f"{backup_meta.get('last_backup_at', 'nunca')} | "
-            f"{backup_meta.get('last_backup_file', 'sem arquivo')}"
-        )
-        if st.button("Executar backup agora", key="wiz_run_backup_now"):
-            ok, msg, file_path = _run_wiz_daily_backup(force=True)
-            if ok:
-                st.success(f"{msg}: {file_path}")
-            else:
-                st.warning(msg)
+    chat_key = f"wiz:{(st.session_state.get('user_name') or '').strip().lower()}"
+    if chat_key not in st.session_state["active_chat_histories"]:
+        st.session_state["active_chat_histories"][chat_key] = []
+    chat_history = st.session_state["active_chat_histories"][chat_key]
 
-    with st.expander("Integração WhatsApp (W-API / Evolution)", expanded=False):
-        diag = _whatsapp_config_diagnostics()
-        st.write(
-            "Status atual: "
-            f"provider=`{diag.get('provider')}` | "
-            f"wapi_ready=`{diag.get('wapi_ready')}` | "
-            f"evolution_ready=`{diag.get('evolution_ready')}`"
-        )
-        st.caption(
-            "Configure via variáveis/secrets: "
-            "`ACTIVE_WHATSAPP_PROVIDER` (`wapi`/`evolution`/`auto`), "
-            "`WAPI_BASE_URL`, `WAPI_TOKEN`, `WAPI_INSTANCE_ID`."
-        )
-        st.code(
-            "\n".join(
-                [
-                    f"WAPI_INSTANCE_ID (lido): {diag.get('wapi_instance_id') or '(vazio)'}",
-                    f"WAPI_BASE_URL: {'OK' if diag.get('wapi_base_url') else 'FALTA'}",
-                    f"WAPI_TOKEN: {'OK' if diag.get('wapi_token') else 'FALTA'}",
-                ]
-            ),
-            language="text",
-        )
-        t1, t2, t3 = st.columns([1.2, 2, 1])
-        with t1:
-            test_number = st.text_input(
-                "Número teste",
-                value="",
-                placeholder="5516999999999",
-                key="wiz_test_wa_number",
-            )
-        with t2:
-            test_message = st.text_input(
-                "Mensagem teste",
-                value="Teste de integração W-API no Active.",
-                key="wiz_test_wa_message",
-            )
-        with t3:
-            timeout_s = st.number_input("Timeout", min_value=5, max_value=60, value=20, step=1, key="wiz_test_wa_timeout")
-        if st.button("Testar envio WhatsApp", key="wiz_test_wa_send"):
-            if not str(test_number or "").strip():
-                st.error("Informe um número para teste.")
-            else:
-                ok, status, attempts = _send_whatsapp_auto(test_number, test_message, timeout=int(timeout_s))
-                if ok:
-                    st.success(f"Envio concluído: {status}")
-                else:
-                    st.error(f"Falha no envio: {status}")
-                with st.expander("Debug do envio", expanded=not ok):
-                    st.json(attempts[-8:] if isinstance(attempts, list) else attempts)
-
-    st.markdown("### Comando operacional por IA")
-    st.caption("Descreva o que o Wiz deve fazer. Ele retorna um plano JSON e executa no Active.")
-    comando = st.text_area(
-        "Instrução",
-        placeholder="Ex: Cadastre o aluno João na turma Kids 2, lance mensalidade de 250 para 10/03/2026 e publique aviso para a turma.",
-        height=110,
-        key="wiz_command_text",
+    st.markdown("### Anexos")
+    uploaded_files = st.file_uploader(
+        "Anexar arquivo(s) e imagem(ns)",
+        accept_multiple_files=True,
+        type=["png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "txt", "md", "csv", "json", "xlsx", "xls"],
+        key="wiz_simple_uploads",
     )
 
-    if st.button("Gerar plano com IA", key="wiz_plan_ai"):
-        api_key = get_groq_api_key()
-        if not api_key:
-            st.error("Configure GROQ_API_KEY para gerar o plano com IA.")
-        elif not str(comando or "").strip():
-            st.error("Descreva uma instrução.")
-        else:
-            system = "\n".join(
-                [
-                    "Voce transforma comandos administrativos em JSON executavel.",
-                    "Responda SOMENTE JSON valido, sem markdown.",
-                    "Formato: {\"actions\":[{\"type\":\"...\",\"data\":{...}}]}",
-                    "Acoes permitidas: cadastrar_aluno, cadastrar_professor, cadastrar_usuario, agendar_aula, atualizar_link_turma, publicar_noticia, lancar_recebivel, lancar_nota.",
-                    "Use poucos campos, apenas o necessario.",
-                ]
-            )
-            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-            model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
-            try:
-                result = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": comando},
-                    ],
-                    temperature=0.1,
-                    max_tokens=1200,
-                )
-                raw = (result.choices[0].message.content or "").strip()
-                parsed = _extract_first_json(raw)
-                actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
-                if not isinstance(actions, list):
-                    actions = []
-                st.session_state["wiz_action_plan"] = actions
-                if actions:
-                    st.success(f"Plano gerado com {len(actions)} ação(ões).")
+    summaries, content_blocks = _wiz_extract_attachment_context(uploaded_files)
+    if uploaded_files:
+        with st.expander("Arquivos anexados", expanded=True):
+            for up in uploaded_files:
+                name = str(getattr(up, "name", "arquivo"))
+                kind = _wiz_attachment_kind(up)
+                if kind == "image":
+                    st.image(up, caption=name, width=240)
                 else:
-                    st.warning("A IA não retornou ações executáveis.")
-            except Exception as exc:
-                st.error(f"Falha ao gerar plano: {exc}")
+                    st.caption(f"{name} ({kind})")
 
-    plan = st.session_state.get("wiz_action_plan") or []
-    if plan:
-        st.markdown("### Plano atual")
-        st.json(plan)
-        if st.button("Executar plano no sistema", type="primary", key="wiz_exec_plan"):
-            reports = _wiz_execute_actions(plan)
-            st.session_state["wiz_last_execution"] = reports
-            st.success("Execução concluída.")
+    st.markdown("### Conversa com o Wiz")
+    for msg in chat_history:
+        with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
+            st.markdown(msg["content"])
 
-    if st.session_state.get("wiz_last_execution"):
-        st.markdown("### Última execução")
-        st.dataframe(pd.DataFrame(st.session_state["wiz_last_execution"]), use_container_width=True)
+    a1, a2 = st.columns([1, 1])
+    if a1.button("Limpar conversa", key="wiz_simple_clear"):
+        st.session_state["active_chat_histories"][chat_key] = []
+        st.rerun()
+    if a2.button("Salvar conversa", key="wiz_simple_save"):
+        st.session_state["chatbot_log"].append(
+            {
+                "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "usuario": st.session_state.get("user_name", ""),
+                "perfil": st.session_state.get("account_profile") or st.session_state.get("role", ""),
+                "mensagens": chat_history,
+                "canal": "Assistente Wiz",
+            }
+        )
+        save_list(CHATBOT_LOG_FILE, st.session_state["chatbot_log"])
+        st.success("Conversa salva.")
+
+    user_text = st.chat_input("Digite o que você precisa no sistema (cadastro, agenda, financeiro, comunicados, etc.)")
+    if not user_text:
+        return
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.error("Configure GROQ_API_KEY para usar o Assistente Wiz.")
+        return
+
+    full_user_text = str(user_text or "").strip()
+    if summaries:
+        full_user_text += "\n\nAnexos recebidos:\n" + "\n".join(summaries)
+    if content_blocks:
+        full_user_text += "\n\nConteúdo lido dos anexos:\n" + "\n\n".join(content_blocks)
+
+    chat_history.append({"role": "user", "content": str(user_text).strip()})
+
+    system_prompt = "\n".join(
+        [
+            "Você é o Assistente Wiz da Active Educacional para Coordenador/Admin.",
+            "Responda em português do Brasil, de forma simples, direta e útil.",
+            "Nunca responda com JSON, código ou estrutura técnica.",
+            "Quando o pedido envolver operação interna, devolva: resumo do pedido, passos práticos e dados faltantes.",
+            "Se houver anexo, use o conteúdo anexado como base da resposta.",
+            "Nunca mencione DietHealth.",
+            get_active_context_text(),
+        ]
+    )
+
+    request_messages = [{"role": "system", "content": system_prompt}]
+    request_messages += chat_history[-12:]
+    request_messages.append({"role": "user", "content": full_user_text})
+
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+    model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+    with st.spinner("Wiz está pensando..."):
+        try:
+            result = client.chat.completions.create(
+                model=model_name,
+                messages=request_messages,
+                temperature=0.2,
+                max_tokens=1200,
+            )
+            answer = (result.choices[0].message.content or "").strip()
+            if not answer:
+                answer = "Não consegui responder agora. Tente novamente com mais detalhes."
+        except Exception as exc:
+            answer = f"Falha ao consultar IA: {exc}"
+
+    chat_history.append({"role": "assistant", "content": answer})
+    st.session_state["active_chat_histories"][chat_key] = chat_history
+    st.rerun()
 
 def ensure_admin_user(users):
     if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
@@ -5707,30 +5696,30 @@ elif st.session_state["role"] == "Coordenador":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_coord_label = sidebar_menu(
-            "Administração",
-            [
-                "Dashboard",
-                "Agenda",
-                "Links Ao Vivo",
-                "Alunos",
-                "Professores",
-                "Usuários",
-                "Turmas",
-                "Financeiro",
-                "Estoque",
-                "Certificados",
-                "Biblioteca",
-                "Aprovação Notas",
-                "Caixa de Entrada",
-                "Desafios",
-                "WhatsApp (Evolution)",
-                "ASSISTENTE WIZ",
-                "Backup",
-                "Professor Wiz",
-            ],
-            "menu_coord",
-        )
+        coord_menu_options = [
+            "Dashboard",
+            "Agenda",
+            "Links Ao Vivo",
+            "Alunos",
+            "Professores",
+            "Usuários",
+            "Turmas",
+            "Financeiro",
+            "Estoque",
+            "Certificados",
+            "Biblioteca",
+            "Aprovação Notas",
+            "Caixa de Entrada",
+            "Desafios",
+            "WhatsApp (Evolution)",
+            "Backup",
+            "Professor Wiz",
+        ]
+        coord_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+        if coord_profile in ("Admin", "Coordenador"):
+            insert_at = coord_menu_options.index("Backup")
+            coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
+        menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
