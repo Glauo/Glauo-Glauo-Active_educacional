@@ -138,6 +138,10 @@ if "wiz_action_plan" not in st.session_state:
     st.session_state["wiz_action_plan"] = []
 if "wiz_last_execution" not in st.session_state:
     st.session_state["wiz_last_execution"] = []
+if "_active_users_loaded" not in st.session_state:
+    st.session_state["_active_users_loaded"] = False
+if "_active_runtime_loaded" not in st.session_state:
+    st.session_state["_active_runtime_loaded"] = False
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "2523"
@@ -4448,11 +4452,7 @@ else:
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton { --menu-accent: #1e3a8a; --menu-accent-soft: rgba(30,58,138,0.14); --menu-accent-strong: #2563eb; }
-        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+1) { --menu-accent: #1e3a8a; --menu-accent-soft: rgba(30,58,138,0.14); --menu-accent-strong: #2563eb; }
-        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+2) { --menu-accent: #15803d; --menu-accent-soft: rgba(22,163,74,0.15); --menu-accent-strong: #16a34a; }
-        section[data-testid="stSidebar"] .stButton:nth-of-type(3n+3) { --menu-accent: #c2410c; --menu-accent-soft: rgba(249,115,22,0.16); --menu-accent-strong: #ea580c; }
-        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%); border: 1px solid var(--menu-accent-soft); border-left: 6px solid var(--menu-accent); color: #334155; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(30,58,138,0.08) 0%, rgba(22,163,74,0.08) 52%, rgba(234,88,12,0.08) 100%); border: 1px solid #d7e3f5; color: #334155; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 56px !important; }
@@ -4463,8 +4463,8 @@ else:
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
-        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, var(--menu-accent) 0%, var(--menu-accent-strong) 100%) !important; border-color: var(--menu-accent) !important; border-left-color: var(--menu-accent) !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, var(--menu-accent) 0%, var(--menu-accent-strong) 100%); color: #ffffff; border: none; border-left: 6px solid var(--menu-accent) !important; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
+        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
@@ -4486,60 +4486,66 @@ else:
 # ==============================================================================
 # LOGICA DE INICIALIZACAO DE DADOS
 # ==============================================================================
-st.session_state["messages"] = load_list(MESSAGES_FILE)
-st.session_state["videos"] = load_list(VIDEOS_FILE)
-st.session_state["materials"] = load_list(MATERIALS_FILE)
-st.session_state["grades"] = load_list(GRADES_FILE)
-st.session_state["students"] = load_list(STUDENTS_FILE)
-st.session_state["teachers"] = load_list(TEACHERS_FILE)
-st.session_state["classes"] = load_list(CLASSES_FILE)
-st.session_state["receivables"] = load_list(RECEIVABLES_FILE)
-st.session_state["payables"] = load_list(PAYABLES_FILE)
-st.session_state["fee_templates"] = load_list(FEE_TEMPLATES_FILE)
-st.session_state["email_log"] = load_list(EMAIL_LOG_FILE)
-st.session_state["chatbot_log"] = load_list(CHATBOT_LOG_FILE)
-st.session_state["agenda"] = load_list(AGENDA_FILE)
-st.session_state["class_sessions"] = load_list(CLASS_SESSIONS_FILE)
-st.session_state["inventory"] = load_list(INVENTORY_FILE)
-st.session_state["inventory_moves"] = load_list(INVENTORY_MOVES_FILE)
-st.session_state["certificates"] = load_list(CERTIFICATES_FILE)
-st.session_state["books"] = load_list(BOOKS_FILE)
-st.session_state["material_orders"] = load_list(MATERIAL_ORDERS_FILE)
-st.session_state["challenges"] = load_list(CHALLENGES_FILE)
-st.session_state["challenge_completions"] = load_list(CHALLENGE_COMPLETIONS_FILE)
-st.session_state["activities"] = load_list(ACTIVITIES_FILE)
-st.session_state["activity_submissions"] = load_list(ACTIVITY_SUBMISSIONS_FILE)
-st.session_state["sales_leads"] = load_list(SALES_LEADS_FILE)
-st.session_state["sales_agenda"] = load_list(SALES_AGENDA_FILE)
-st.session_state["sales_payments"] = load_list(SALES_PAYMENTS_FILE)
+if not st.session_state.get("_active_users_loaded", False):
+    st.session_state["users"] = load_users()
+    users_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(USERS_FILE), "")
+    st.session_state["users"] = ensure_admin_user(st.session_state["users"])
+    st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
+    if users_source != "db_unavailable":
+        save_users(st.session_state["users"])
+    st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
+    st.session_state["_active_users_loaded"] = True
 
-_ensure_challenge_store_ids()
-_ensure_activity_store_ids()
-_ensure_sales_store_defaults()
+if st.session_state.get("logged_in", False) and not st.session_state.get("_active_runtime_loaded", False):
+    st.session_state["messages"] = load_list(MESSAGES_FILE)
+    st.session_state["videos"] = load_list(VIDEOS_FILE)
+    st.session_state["materials"] = load_list(MATERIALS_FILE)
+    st.session_state["grades"] = load_list(GRADES_FILE)
+    st.session_state["students"] = load_list(STUDENTS_FILE)
+    st.session_state["teachers"] = load_list(TEACHERS_FILE)
+    st.session_state["classes"] = load_list(CLASSES_FILE)
+    st.session_state["receivables"] = load_list(RECEIVABLES_FILE)
+    st.session_state["payables"] = load_list(PAYABLES_FILE)
+    st.session_state["fee_templates"] = load_list(FEE_TEMPLATES_FILE)
+    st.session_state["email_log"] = load_list(EMAIL_LOG_FILE)
+    st.session_state["chatbot_log"] = load_list(CHATBOT_LOG_FILE)
+    st.session_state["agenda"] = load_list(AGENDA_FILE)
+    st.session_state["class_sessions"] = load_list(CLASS_SESSIONS_FILE)
+    st.session_state["inventory"] = load_list(INVENTORY_FILE)
+    st.session_state["inventory_moves"] = load_list(INVENTORY_MOVES_FILE)
+    st.session_state["certificates"] = load_list(CERTIFICATES_FILE)
+    st.session_state["books"] = load_list(BOOKS_FILE)
+    st.session_state["material_orders"] = load_list(MATERIAL_ORDERS_FILE)
+    st.session_state["challenges"] = load_list(CHALLENGES_FILE)
+    st.session_state["challenge_completions"] = load_list(CHALLENGE_COMPLETIONS_FILE)
+    st.session_state["activities"] = load_list(ACTIVITIES_FILE)
+    st.session_state["activity_submissions"] = load_list(ACTIVITY_SUBMISSIONS_FILE)
+    st.session_state["sales_leads"] = load_list(SALES_LEADS_FILE)
+    st.session_state["sales_agenda"] = load_list(SALES_AGENDA_FILE)
+    st.session_state["sales_payments"] = load_list(SALES_PAYMENTS_FILE)
 
-if not st.session_state["books"]:
-    st.session_state["books"] = [
-        {"nivel": "Livro 1", "titulo": "Livro 1", "url": "", "file_path": ""},
-        {"nivel": "Livro 2", "titulo": "Livro 2", "url": "", "file_path": ""},
-        {"nivel": "Livro 3", "titulo": "Livro 3", "url": "", "file_path": ""},
-        {"nivel": "Livro 4", "titulo": "Livro 4", "url": "", "file_path": ""},
-    ]
-    books_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(BOOKS_FILE), "")
-    if books_source != "db_unavailable":
-        save_list(BOOKS_FILE, st.session_state["books"])
+    _ensure_challenge_store_ids()
+    _ensure_activity_store_ids()
+    _ensure_sales_store_defaults()
 
-st.session_state["users"] = load_users()
-users_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(USERS_FILE), "")
-st.session_state["users"] = ensure_admin_user(st.session_state["users"])
-st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
-if users_source != "db_unavailable":
-    save_users(st.session_state["users"])
-st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
-if "wiz_daily_backup_checked" not in st.session_state:
-    st.session_state["wiz_daily_backup_checked"] = False
-if not st.session_state["wiz_daily_backup_checked"]:
-    _run_wiz_daily_backup(force=False)
-    st.session_state["wiz_daily_backup_checked"] = True
+    if not st.session_state["books"]:
+        st.session_state["books"] = [
+            {"nivel": "Livro 1", "titulo": "Livro 1", "url": "", "file_path": ""},
+            {"nivel": "Livro 2", "titulo": "Livro 2", "url": "", "file_path": ""},
+            {"nivel": "Livro 3", "titulo": "Livro 3", "url": "", "file_path": ""},
+            {"nivel": "Livro 4", "titulo": "Livro 4", "url": "", "file_path": ""},
+        ]
+        books_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(BOOKS_FILE), "")
+        if books_source != "db_unavailable":
+            save_list(BOOKS_FILE, st.session_state["books"])
+
+    if "wiz_daily_backup_checked" not in st.session_state:
+        st.session_state["wiz_daily_backup_checked"] = False
+    if not st.session_state["wiz_daily_backup_checked"]:
+        _run_wiz_daily_backup(force=False)
+        st.session_state["wiz_daily_backup_checked"] = True
+
+    st.session_state["_active_runtime_loaded"] = True
 
 _db_sources = st.session_state.get("_data_sources", {}) or {}
 _db_has_unavailable = any(str(src).strip() == "db_unavailable" for src in _db_sources.values())
