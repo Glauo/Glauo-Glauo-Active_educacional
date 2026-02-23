@@ -12,6 +12,7 @@ import uuid
 import calendar
 import unicodedata
 import zipfile
+from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
@@ -2654,10 +2655,33 @@ def _sales_extract_text_candidates(normalized_row):
         items.append((key_norm, text))
     return items
 
+def _sales_numeric_token_to_digits(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    token = raw.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    if not re.fullmatch(r"[+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?", token):
+        return ""
+    try:
+        dec_value = Decimal(token)
+    except InvalidOperation:
+        return ""
+    if dec_value <= 0:
+        return ""
+    dec_int = dec_value.to_integral_value()
+    if dec_value != dec_int:
+        return ""
+    return re.sub(r"\D", "", format(dec_int, "f"))
+
 def _sales_guess_phone_from_text(text):
     raw = str(text or "").strip()
     if not raw:
         return ""
+    from_numeric_token = _sales_numeric_token_to_digits(raw)
+    if len(from_numeric_token) >= 10:
+        normalized_num = _normalize_whatsapp_number(from_numeric_token)
+        if normalized_num:
+            return normalized_num
     # Prioriza padrao brasileiro com DDD + numero (10/11 digitos), com ou sem +55.
     pattern = re.compile(r"(?:\+?55[\s\-\.]?)?(?:\(?\d{2}\)?[\s\-\.]?)?(?:9?\d{4})[\s\-\.]?\d{4}")
     matches = pattern.findall(raw)
@@ -2665,6 +2689,12 @@ def _sales_guess_phone_from_text(text):
         normalized = _normalize_whatsapp_number(match)
         if normalized:
             return normalized
+    # Sequencias separadas por texto (evita juntar campos diferentes).
+    number_chunks = re.findall(r"\d{10,16}", raw)
+    for chunk in number_chunks:
+        normalized_chunk = _normalize_whatsapp_number(chunk)
+        if normalized_chunk:
+            return normalized_chunk
     # Fallback por sequencia de digitos.
     digits = re.sub(r"\D+", "", raw)
     if len(digits) >= 10:
@@ -2698,13 +2728,22 @@ def _sales_guess_name_from_candidates(candidates):
             continue
         if any(block in key_norm for block in blocked_keywords):
             continue
-        letters = len(re.findall(r"[A-Za-zÀ-ÿ]", text))
-        digits = len(re.findall(r"\d", text))
+        text_for_name = re.sub(
+            r"(?:\+?55[\s\-\.]?)?(?:\(?\d{2}\)?[\s\-\.]?)?(?:9?\d{4})[\s\-\.]?\d{4}",
+            " ",
+            text,
+        )
+        text_for_name = re.sub(r"\d+", " ", text_for_name)
+        text_for_name = " ".join(text_for_name.split())
+        if not text_for_name:
+            continue
+        letters = len(re.findall(r"[A-Za-zÀ-ÿ]", text_for_name))
+        digits = len(re.findall(r"\d", text_for_name))
         if letters < 2:
             continue
         if digits > 0 and digits >= letters:
             continue
-        words = [w for w in re.split(r"\s+", text) if w]
+        words = [w for w in re.split(r"\s+", text_for_name) if w]
         if not words:
             continue
         score = letters + len(words) * 4
@@ -2712,12 +2751,125 @@ def _sales_guess_name_from_candidates(candidates):
             score -= digits * 2
         if len(words) >= 2:
             score += 12
-        if len(text) > 60:
+        if len(text_for_name) > 60:
             score -= 10
         if score > best_score:
-            best = text
+            best = text_for_name
             best_score = score
     return best
+
+def _sales_reconcile_lead_record(lead_obj):
+    if not isinstance(lead_obj, dict):
+        return False
+
+    changed = False
+
+    old_nome = str(lead_obj.get("nome", "")).strip()
+    old_telefone = str(lead_obj.get("telefone", "")).strip()
+    old_celular = str(lead_obj.get("celular", "")).strip()
+    old_email = str(lead_obj.get("email", "")).strip().lower()
+
+    candidates = []
+    for key in ["nome", "telefone", "celular", "email", "observacao", "interesse", "cargo", "empresa", "origem"]:
+        value = str(lead_obj.get(key, "")).strip()
+        if value:
+            candidates.append((_sales_import_normalize_key(key), value))
+
+    custom_fields = lead_obj.get("campos_personalizados", {})
+    if isinstance(custom_fields, dict):
+        for k, v in custom_fields.items():
+            value = str(v or "").strip()
+            if value:
+                candidates.append((_sales_import_normalize_key(k), value))
+
+    nome = old_nome
+    telefone = _sales_guess_phone_from_text(old_telefone) if old_telefone else ""
+    celular = _sales_guess_phone_from_text(old_celular) if old_celular else ""
+    email_val = _sales_guess_email_from_text(old_email) if old_email else ""
+
+    if not telefone and nome:
+        telefone = _sales_guess_phone_from_text(nome)
+    if not celular and nome:
+        celular = _sales_guess_phone_from_text(nome)
+    if not email_val and nome:
+        email_val = _sales_guess_email_from_text(nome)
+
+    if not telefone:
+        blocked_for_phone = ["cpf", "cnpj", "rg", "cep", "idade", "nascimento", "matricula"]
+        for key_norm, candidate_text in candidates:
+            if any(k in key_norm for k in blocked_for_phone):
+                continue
+            guessed = _sales_guess_phone_from_text(candidate_text)
+            if guessed:
+                telefone = guessed
+                break
+
+    if not celular:
+        preferred_mobile_keys = ["celular", "whatsapp", "mobile", "phone", "telefone", "fone", "numero"]
+        for key_norm, candidate_text in candidates:
+            if not any(k in key_norm for k in preferred_mobile_keys):
+                continue
+            guessed = _sales_guess_phone_from_text(candidate_text)
+            if guessed:
+                celular = guessed
+                break
+        if not celular:
+            blocked_for_phone = ["cpf", "cnpj", "rg", "cep", "idade", "nascimento", "matricula"]
+            for key_norm, candidate_text in candidates:
+                if any(k in key_norm for k in blocked_for_phone):
+                    continue
+                guessed = _sales_guess_phone_from_text(candidate_text)
+                if guessed:
+                    celular = guessed
+                    break
+        if not celular and telefone:
+            celular = telefone
+
+    if not telefone and celular:
+        telefone = celular
+
+    if not email_val:
+        for _, candidate_text in candidates:
+            guessed = _sales_guess_email_from_text(candidate_text)
+            if guessed:
+                email_val = guessed
+                break
+
+    if nome:
+        nome_limpo = _sales_guess_name_from_candidates([("nome", nome)])
+    else:
+        preferred_name = [
+            (k, v)
+            for k, v in candidates
+            if any(tag in k for tag in ["nome", "name", "lead", "contato", "cliente"])
+        ]
+        nome_limpo = _sales_guess_name_from_candidates(preferred_name or candidates)
+    if nome_limpo:
+        nome = nome_limpo
+
+    if not nome and email_val:
+        local = str(email_val).split("@", 1)[0].replace(".", " ").replace("_", " ").replace("-", " ")
+        local = " ".join(w for w in local.split() if w)
+        if local:
+            nome = local.title()
+    if not nome and (telefone or celular):
+        base_num = celular or telefone
+        nome = f"Lead {str(base_num)[-4:]}"
+
+    if nome != old_nome:
+        lead_obj["nome"] = nome
+        changed = True
+    if telefone != old_telefone:
+        lead_obj["telefone"] = telefone
+        changed = True
+    if celular != old_celular:
+        lead_obj["celular"] = celular
+        changed = True
+    if email_val != old_email:
+        lead_obj["email"] = email_val
+        changed = True
+
+    return changed
 
 def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_detect=True):
     if not isinstance(row_obj, dict):
@@ -2743,21 +2895,33 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
     nome = pick("nome", "nome completo", "primeiro nome", "first name", "name", "lead", "contato", "cliente")
     telefone = pick(
         "telefone",
-        "telefone whatsapp",
-        "telefone celular",
         "telefone principal",
-        "whatsapp",
-        "celular",
         "fone",
         "phone",
         "phone number",
-        "mobile",
-        "numero",
+        "telefone 1",
+        "telefone 2",
+        "fone 1",
+        "fone 2",
         "numero telefone",
+    )
+    celular = pick(
+        "celular",
+        "telefone celular",
+        "telefone whatsapp",
+        "whatsapp",
+        "mobile",
+        "cel",
+        "celular whatsapp",
+        "whats",
+        "numero",
     )
     telefone_guess_from_alias = _sales_guess_phone_from_text(telefone)
     if telefone_guess_from_alias:
         telefone = telefone_guess_from_alias
+    celular_guess_from_alias = _sales_guess_phone_from_text(celular)
+    if celular_guess_from_alias:
+        celular = celular_guess_from_alias
     email_val = pick("email", "e-mail", "mail")
 
     candidates = _sales_extract_text_candidates(normalized)
@@ -2767,6 +2931,20 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
             if guessed_email:
                 email_val = guessed_email
                 break
+
+    if usar_wiz_detect and nome:
+        if not telefone:
+            guessed_from_nome = _sales_guess_phone_from_text(nome)
+            if guessed_from_nome:
+                telefone = guessed_from_nome
+        if not celular:
+            guessed_from_nome = _sales_guess_phone_from_text(nome)
+            if guessed_from_nome:
+                celular = guessed_from_nome
+        if not email_val:
+            guessed_email_from_nome = _sales_guess_email_from_text(nome)
+            if guessed_email_from_nome:
+                email_val = guessed_email_from_nome
 
     if usar_wiz_detect and not telefone:
         # 1) tenta apenas campos de telefone/contato
@@ -2789,6 +2967,16 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
                     telefone = guessed_phone
                     break
 
+    if usar_wiz_detect and not celular:
+        preferred_mobile_keys = ["celular", "whatsapp", "mobile", "phone", "telefone", "fone", "numero"]
+        for key_norm, candidate_text in candidates:
+            if not any(k in key_norm for k in preferred_mobile_keys):
+                continue
+            guessed_mobile = _sales_guess_phone_from_text(candidate_text)
+            if guessed_mobile:
+                celular = guessed_mobile
+                break
+
     if usar_wiz_detect and not nome:
         # 1) tenta extrair nome de campos usuais
         preferred_name_keys = ["nome", "name", "lead", "contato", "cliente"]
@@ -2807,12 +2995,23 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
             local = " ".join(w for w in local.split() if w)
             if local:
                 nome = local.title()
+    elif usar_wiz_detect and nome:
+        nome_limpo = _sales_guess_name_from_candidates([("nome", nome)])
+        if nome_limpo:
+            nome = nome_limpo
+
+    if not telefone and celular:
+        telefone = celular
+    if not celular and telefone:
+        celular = telefone
 
     # Regra solicitada: mesmo incompleto, cadastra com o que tiver.
-    if not nome and not telefone and not email_val:
+    if not nome and not telefone and not celular and not email_val:
         return {}, "Linha sem informacao minima para cadastro."
     if not nome and telefone:
         nome = f"Lead {str(telefone)[-4:]}"
+    if not nome and celular:
+        nome = f"Lead {str(celular)[-4:]}"
     if not nome and email_val:
         nome = "Lead sem nome"
 
@@ -2827,7 +3026,7 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
     mapped = {
         "nome": nome,
         "telefone": telefone,
-        "celular": telefone,
+        "celular": celular,
         "email": str(email_val or "").lower(),
         "status": status,
         "estagio_funil": estagio,
@@ -2914,12 +3113,18 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             else:
                 erros.append({"linha": idx, "erro": map_err})
             continue
+        _sales_reconcile_lead_record(mapped)
 
         phone_digits = re.sub(r"\D", "", str(mapped.get("telefone", "") or ""))
+        cell_digits = re.sub(r"\D", "", str(mapped.get("celular", "") or ""))
+        if not phone_digits and cell_digits:
+            phone_digits = cell_digits
         email_key = str(mapped.get("email", "") or "").strip().lower()
         existing = None
         if phone_digits and phone_digits in by_phone:
             existing = by_phone[phone_digits]
+        elif cell_digits and cell_digits in by_phone:
+            existing = by_phone[cell_digits]
         elif email_key and email_key in by_email:
             existing = by_email[email_key]
         else:
@@ -2947,6 +3152,7 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             custom_new = mapped.get("campos_personalizados", {}) if isinstance(mapped.get("campos_personalizados"), dict) else {}
             custom_existing.update(custom_new)
             existing["campos_personalizados"] = custom_existing
+            _sales_reconcile_lead_record(existing)
             existing.setdefault("interacoes", []).append(
                 {
                     "data_hora": now,
@@ -2957,6 +3163,12 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
                 }
             )
             existing["updated_at"] = now
+            existing_phone_digits = re.sub(r"\D", "", str(existing.get("telefone", "") or ""))
+            existing_cell_digits = re.sub(r"\D", "", str(existing.get("celular", "") or ""))
+            if existing_phone_digits:
+                by_phone[existing_phone_digits] = existing
+            if existing_cell_digits:
+                by_phone[existing_cell_digits] = existing
             atualizados += 1
             continue
 
@@ -2993,6 +3205,7 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             "landing_pages": [],
             "conversoes": [],
         }
+        _sales_reconcile_lead_record(novo)
         leads_store.append(novo)
         if phone_digits:
             by_phone[phone_digits] = novo
@@ -3040,6 +3253,8 @@ def _ensure_sales_store_defaults():
             continue
         if not lead.get("id"):
             lead["id"] = uuid.uuid4().hex
+            leads_changed = True
+        if _sales_reconcile_lead_record(lead):
             leads_changed = True
         if "status" not in lead or not str(lead.get("status", "")).strip():
             lead["status"] = "Novo contato"
@@ -3844,15 +4059,11 @@ STUDENT_IMPORT_COLUMNS = [
 ]
 
 def _normalize_excel_column(value):
-    return (
-        str(value or "")
-        .strip()
-        .lower()
-        .replace(" ", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-        .replace(".", "_")
-    )
+    raw = str(value or "").strip().lower()
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
+    raw = re.sub(r"[^a-z0-9]+", "_", raw)
+    return raw.strip("_")
 
 def _safe_str(value):
     if value is None:
@@ -3951,6 +4162,8 @@ def _normalize_import_df(df):
     aliases = {
         "nome": "nome",
         "aluno": "nome",
+        "nome_aluno": "nome",
+        "nome_completo": "nome",
         "matricula": "matricula",
         "numero_matricula": "matricula",
         "numero_da_matricula": "matricula",
@@ -3960,6 +4173,9 @@ def _normalize_import_df(df):
         "e_mail": "email",
         "celular": "celular",
         "telefone": "celular",
+        "telefone_celular": "celular",
+        "celular_whatsapp": "celular",
+        "whatsapp": "celular",
         "data_nascimento": "data_nascimento",
         "nascimento": "data_nascimento",
         "idade": "idade",
@@ -3968,14 +4184,26 @@ def _normalize_import_df(df):
         "rg": "rg",
         "cpf": "cpf",
         "cidade": "cidade",
+        "cidade_endereco": "cidade",
         "bairro": "bairro",
+        "bairro_endereco": "bairro",
         "cidade_natal": "cidade_natal",
         "pais": "pais",
         "cep": "cep",
+        "codigo_postal": "cep",
         "rua": "rua",
+        "endereco": "rua",
+        "logradouro": "rua",
+        "endereco_rua": "rua",
         "numero": "numero",
+        "numero_endereco": "numero",
+        "n_numero": "numero",
         "complemento": "complemento",
+        "complemento_endereco": "complemento",
+        "endereco_completo": "complemento",
         "observacao_endereco": "complemento",
+        "observacoes_endereco": "complemento",
+        "obs_endereco": "complemento",
         "apto": "complemento",
         "modulo": "modulo",
         "livro": "livro",
@@ -3983,8 +4211,10 @@ def _normalize_import_df(df):
         "login": "usuario",
         "senha": "senha",
         "responsavel_nome": "responsavel_nome",
+        "nome_responsavel": "responsavel_nome",
         "responsavel_cpf": "responsavel_cpf",
         "responsavel_celular": "responsavel_celular",
+        "nome_do_responsavel": "responsavel_nome",
         "responsavel_email": "responsavel_email",
         "responsavel_cel": "responsavel_celular",
         "responsavel_telefone": "responsavel_celular",
@@ -4578,6 +4808,17 @@ def render_sales_leads_manage(vendedor_atual):
     if not leads:
         st.info("Nenhum lead cadastrado.")
         return
+    leads_changed_runtime = False
+    for lead in leads:
+        if not isinstance(lead, dict):
+            continue
+        if not str(lead.get("id", "")).strip():
+            lead["id"] = uuid.uuid4().hex
+            leads_changed_runtime = True
+        if _sales_reconcile_lead_record(lead):
+            leads_changed_runtime = True
+    if leads_changed_runtime:
+        save_list(SALES_LEADS_FILE, st.session_state.get("sales_leads", []))
 
     st.markdown("### Base de Leads (dinamica e personalizavel)")
     all_origens = sorted(
@@ -4728,11 +4969,14 @@ def render_sales_leads_manage(vendedor_atual):
 
     rows = []
     for lead in filtrados:
+        lead_id = str(lead.get("id", "")).strip() or uuid.uuid4().hex
+        show_cell = str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip()
         rows.append(
             {
+                "ID": lead_id,
                 "Nome": str(lead.get("nome", "")).strip(),
                 "Email": str(lead.get("email", "")).strip(),
-                "Celular": str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip(),
+                "Celular": show_cell,
                 "Telefone": str(lead.get("telefone", "")).strip(),
                 "Cargo": str(lead.get("cargo", "")).strip(),
                 "Cidade": str(lead.get("cidade", "")).strip(),
@@ -4790,7 +5034,28 @@ def render_sales_leads_manage(vendedor_atual):
         with s2:
             sort_desc = st.checkbox("Ordem decrescente", value=False)
         df_show = df_leads.sort_values(by=[sort_col], ascending=not sort_desc, na_position="last")
-        st.dataframe(df_show[visible_cols], use_container_width=True, height=420)
+        column_cfg = {
+            "Nome": st.column_config.TextColumn("Nome", width="medium"),
+            "Email": st.column_config.TextColumn("Email", width="medium"),
+            "Celular": st.column_config.TextColumn("Celular", width="small"),
+            "Telefone": st.column_config.TextColumn("Telefone", width="small"),
+            "Cargo": st.column_config.TextColumn("Cargo", width="small"),
+            "Cidade": st.column_config.TextColumn("Cidade", width="small"),
+            "Estado": st.column_config.TextColumn("Estado", width="small"),
+            "Origem": st.column_config.TextColumn("Origem", width="small"),
+            "Estagio no Funil": st.column_config.TextColumn("Estagio no Funil", width="small"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+            "Interacoes": st.column_config.NumberColumn("Interacoes", width="small"),
+            "Conversoes": st.column_config.NumberColumn("Conversoes", width="small"),
+            "ID": st.column_config.TextColumn("ID", width="small"),
+        }
+        st.dataframe(
+            df_show[visible_cols],
+            use_container_width=True,
+            height=420,
+            hide_index=True,
+            column_config=column_cfg,
+        )
 
         csv_bytes = df_show.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
@@ -4801,21 +5066,71 @@ def render_sales_leads_manage(vendedor_atual):
             key="sales_leads_export_filtered",
         )
 
-    st.markdown("### Acoes em massa")
-    labels_map = {}
-    labels = []
+    lead_labels_by_id = {}
     for lead in filtrados:
-        lead_id = str(lead.get("id", "")).strip() or uuid.uuid4().hex
-        show_cell = str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip()
-        label = f"{str(lead.get('nome', '')).strip()} | {show_cell} | {str(lead.get('estagio_funil', '')).strip()} | {lead_id}"
-        labels.append(label)
-        labels_map[label] = lead
-    selected_labels = st.multiselect("Selecionar leads", labels, key="sales_leads_bulk_selected")
-    selected_ids = {
-        str(labels_map[label].get("id", "")).strip()
-        for label in selected_labels
-        if label in labels_map
-    }
+        lead_id = str(lead.get("id", "")).strip()
+        if not lead_id:
+            continue
+        show_cell = str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip() or "-"
+        show_mail = str(lead.get("email", "")).strip() or "-"
+        lead_labels_by_id[lead_id] = f"{str(lead.get('nome', '')).strip()} | {show_cell} | {show_mail}"
+
+    if lead_labels_by_id:
+        st.markdown("#### Acoes rapidas por lead")
+        q1, q2, q3, q4 = st.columns([4, 1.5, 1.5, 2])
+        quick_ids = list(lead_labels_by_id.keys())
+        quick_default = st.session_state.get("sales_lead_quick_pick", "")
+        if quick_default not in quick_ids:
+            st.session_state["sales_lead_quick_pick"] = quick_ids[0]
+        with q1:
+            quick_lead_id = st.selectbox(
+                "Lead para acao rapida",
+                quick_ids,
+                key="sales_lead_quick_pick",
+                format_func=lambda lid: lead_labels_by_id.get(lid, lid),
+            )
+        quick_lead = next(
+            (
+                l
+                for l in filtrados
+                if str(l.get("id", "")).strip() == str(quick_lead_id).strip()
+            ),
+            None,
+        )
+        quick_phone_digits = ""
+        if isinstance(quick_lead, dict):
+            quick_phone_raw = str(quick_lead.get("celular", "")).strip() or str(quick_lead.get("telefone", "")).strip()
+            quick_phone_digits = re.sub(r"\D", "", quick_phone_raw)
+        with q2:
+            if st.button("Abrir ficha", key="sales_quick_open_detail_btn"):
+                st.session_state["sales_lead_detail_id"] = str(quick_lead_id).strip()
+                st.rerun()
+        with q3:
+            if quick_phone_digits:
+                st.link_button(
+                    "WhatsApp",
+                    f"https://wa.me/{quick_phone_digits}",
+                    key=f"sales_quick_wa_{quick_lead_id}",
+                )
+            else:
+                st.caption("Sem celular")
+        with q4:
+            selected_quick_ids = st.session_state.get("sales_leads_bulk_selected_ids", [])
+            if st.button("Selecionar em massa", key="sales_quick_add_bulk_btn"):
+                updated = [sid for sid in selected_quick_ids if str(sid).strip() in lead_labels_by_id]
+                if str(quick_lead_id).strip() not in updated:
+                    updated.append(str(quick_lead_id).strip())
+                st.session_state["sales_leads_bulk_selected_ids"] = updated
+                st.rerun()
+
+    st.markdown("### Acoes em massa")
+    bulk_ids = [str(lead.get("id", "")).strip() for lead in filtrados if str(lead.get("id", "")).strip()]
+    selected_ids = st.multiselect(
+        "Selecionar leads",
+        bulk_ids,
+        key="sales_leads_bulk_selected_ids",
+        format_func=lambda lid: lead_labels_by_id.get(str(lid).strip(), str(lid).strip()),
+    )
 
     b1, b2 = st.columns(2)
     with b1:
@@ -4914,18 +5229,27 @@ def render_sales_leads_manage(vendedor_atual):
             )
 
     st.markdown("### Ficha completa do lead")
-    detail_options = [
-        f"{str(l.get('nome', '')).strip()} | {str(l.get('celular', '')).strip() or str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()} | {str(l.get('id', '')).strip()}"
+    detail_by_id = {
+        str(l.get("id", "")).strip(): l
         for l in filtrados
-    ]
-    if not detail_options:
+        if str(l.get("id", "")).strip()
+    }
+    detail_ids = list(detail_by_id.keys())
+    if not detail_ids:
         st.info("Sem lead para detalhar com os filtros atuais.")
         return
 
-    detail_label = st.selectbox("Selecionar lead", detail_options, key="sales_lead_detail_select")
-    detail_idx = detail_options.index(detail_label)
-    lead_obj = filtrados[detail_idx]
-    lead_id = str(lead_obj.get("id", "")).strip() or uuid.uuid4().hex
+    current_detail_id = str(st.session_state.get("sales_lead_detail_id", "")).strip()
+    if current_detail_id not in detail_ids:
+        st.session_state["sales_lead_detail_id"] = detail_ids[0]
+    detail_id = st.selectbox(
+        "Selecionar lead",
+        detail_ids,
+        key="sales_lead_detail_id",
+        format_func=lambda lid: lead_labels_by_id.get(str(lid).strip(), str(lid).strip()),
+    )
+    lead_id = str(detail_id).strip()
+    lead_obj = detail_by_id.get(lead_id, detail_by_id[detail_ids[0]])
 
     d1, d2, d3, d4 = st.columns(4)
     d1.metric("Status", str(lead_obj.get("status", "")).strip() or "-")
@@ -5174,9 +5498,35 @@ def run_commercial_panel():
 
     if menu_sales == "Leads":
         st.markdown('<div class="main-header">Leads</div>', unsafe_allow_html=True)
-        tab_new, tab_manage = st.tabs(["Novo Lead", "Base de Leads (Dinamica)"])
+        lead_views = ["Novo Lead", "Base de Leads (Dinamica)"]
+        if st.session_state.get("sales_leads_view", "") not in lead_views:
+            st.session_state["sales_leads_view"] = "Novo Lead"
+        lead_view = st.radio(
+            "Visualizacao",
+            lead_views,
+            horizontal=True,
+            key="sales_leads_view",
+        )
 
-        with tab_new:
+        import_flash = st.session_state.pop("sales_leads_import_flash", None)
+        if isinstance(import_flash, dict) and bool(import_flash.get("ok")):
+            stats_import = import_flash.get("stats", {}) if isinstance(import_flash.get("stats"), dict) else {}
+            st.success(
+                f"{str(import_flash.get('message', 'Importacao concluida.')).strip()} Linhas: {stats_import.get('total_linhas', 0)} | "
+                f"Novos: {stats_import.get('cadastrados', 0)} | "
+                f"Atualizados: {stats_import.get('atualizados', 0)} | "
+                f"Ignorados: {stats_import.get('ignorados', 0)} | "
+                f"Vazias: {stats_import.get('linhas_sem_dados', 0)}"
+            )
+            linhas_sem_dados = int(stats_import.get("linhas_sem_dados", 0) or 0)
+            if linhas_sem_dados > 0:
+                st.info(f"{linhas_sem_dados} linha(s) vazia(s) foram ignoradas automaticamente.")
+            erros_import = import_flash.get("errors", [])
+            if isinstance(erros_import, list) and erros_import:
+                st.warning("Algumas linhas tiveram erro real de importacao.")
+                st.dataframe(pd.DataFrame(erros_import), use_container_width=True)
+
+        if lead_view == "Novo Lead":
             with st.expander("Importar lista de leads (cadastro automatico)", expanded=False):
                 st.caption("Envie CSV, XLSX ou JSON para cadastrar leads em lote.")
                 import_file = st.file_uploader(
@@ -5215,19 +5565,14 @@ def run_commercial_panel():
                             usar_wiz_detect=usar_wiz_detect,
                         )
                         if ok_import:
-                            st.success(
-                                f"{msg_import} Linhas: {stats_import.get('total_linhas', 0)} | "
-                                f"Novos: {stats_import.get('cadastrados', 0)} | "
-                                f"Atualizados: {stats_import.get('atualizados', 0)} | "
-                                f"Ignorados: {stats_import.get('ignorados', 0)} | "
-                                f"Vazias: {stats_import.get('linhas_sem_dados', 0)}"
-                            )
-                            linhas_sem_dados = int(stats_import.get("linhas_sem_dados", 0) or 0)
-                            if linhas_sem_dados > 0:
-                                st.info(f"{linhas_sem_dados} linha(s) vazia(s) foram ignoradas automaticamente.")
-                            if erros_import:
-                                st.warning("Algumas linhas tiveram erro real de importacao.")
-                                st.dataframe(pd.DataFrame(erros_import), use_container_width=True)
+                            st.session_state["sales_leads_import_flash"] = {
+                                "ok": True,
+                                "message": str(msg_import or "Importacao concluida."),
+                                "stats": stats_import,
+                                "errors": erros_import,
+                            }
+                            st.session_state["sales_leads_view"] = "Base de Leads (Dinamica)"
+                            st.rerun()
                         else:
                             st.error(msg_import)
             st.markdown("---")
@@ -5318,7 +5663,7 @@ def run_commercial_panel():
                         st.success("Lead cadastrado com sucesso.")
                         st.rerun()
 
-        with tab_manage:
+        else:
             render_sales_leads_manage(vendedor_atual)
 
     elif menu_sales == "Agenda":
@@ -7978,6 +8323,10 @@ elif st.session_state["role"] == "Coordenador":
                         "idade",
                         "rg",
                         "cpf",
+                        "cep",
+                        "rua",
+                        "numero",
+                        "complemento",
                         "cidade",
                         "bairro",
                         "responsavel.nome",
@@ -8262,31 +8611,76 @@ elif st.session_state["role"] == "Coordenador":
 
                     with st.form("edit_student"):
                         st.subheader(f"Editando: {aluno_obj['nome']}")
-                        new_nome = st.text_input("Nome", value=aluno_obj.get("nome", ""))
+                        st.markdown("### Dados Pessoais")
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            new_nome = st.text_input("Nome Completo *", value=aluno_obj.get("nome", ""))
                         matricula_atual = aluno_obj.get("matricula", "") or _next_student_matricula(st.session_state["students"])
-                        st.text_input("Nº da Matrícula", value=matricula_atual, disabled=True)
-
-                        c1, c2 = st.columns(2)
-                        with c1: new_cel = st.text_input("Celular", value=aluno_obj.get("celular", ""))
-                        with c2: new_email = st.text_input("Email", value=aluno_obj.get("email", ""))
-
-                        c3, c4 = st.columns(2)
-                        with c3: new_dn = st.date_input("Data de Nascimento", value=current_dn, format="DD/MM/YYYY", help="Formato: DD/MM/AAAA", min_value=datetime.date(1900, 1, 1), max_value=datetime.date(2036, 12, 31))
+                        with c2:
+                            st.text_input("No. da Matricula", value=matricula_atual, disabled=True)
+                        with c3:
+                            new_dn = st.date_input(
+                                "Data de Nascimento *",
+                                value=current_dn,
+                                format="DD/MM/YYYY",
+                                help="Formato: DD/MM/AAAA",
+                                min_value=datetime.date(1900, 1, 1),
+                                max_value=datetime.date(2036, 12, 31),
+                            )
                         idade_edit_auto = _calc_age_from_date_obj(new_dn) or current_idade
-                        with c4: st.number_input("Idade", min_value=1, max_value=120, step=1, value=idade_edit_auto, disabled=True)
-                        generos = ["Masculino", "Feminino"]
-                        genero_atual = str(aluno_obj.get("genero", "Masculino")).strip()
-                        if genero_atual not in generos:
-                            genero_atual = "Masculino"
-                        new_genero = st.radio(
-                            "Sexo",
-                            generos,
-                            index=generos.index(genero_atual),
-                            horizontal=True,
-                            key=f"edit_student_genero_{aluno_sel}",
-                        )
+                        with c4:
+                            st.number_input("Idade *", min_value=1, max_value=120, step=1, value=idade_edit_auto, disabled=True)
 
-                        new_turma = st.selectbox("Turma", turmas, index=turmas.index(current_turma))
+                        c5, c6, c7 = st.columns(3)
+                        with c5:
+                            new_cel = st.text_input("Celular/WhatsApp *", value=aluno_obj.get("celular", ""))
+                        with c6:
+                            new_email = st.text_input("E-mail do Aluno *", value=aluno_obj.get("email", ""))
+                        with c7:
+                            new_rg = st.text_input("RG", value=aluno_obj.get("rg", ""))
+
+                        c8, c9, c10, c11 = st.columns(4)
+                        with c8:
+                            new_cpf = st.text_input("CPF", value=aluno_obj.get("cpf", ""))
+                        with c9:
+                            new_natal = st.text_input("Cidade Natal", value=aluno_obj.get("cidade_natal", ""))
+                        with c10:
+                            new_pais = st.text_input("Pais de Origem", value=aluno_obj.get("pais", "Brasil"))
+                        with c11:
+                            generos = ["Masculino", "Feminino"]
+                            genero_atual = str(aluno_obj.get("genero", "Masculino")).strip()
+                            if genero_atual not in generos:
+                                generos.append(genero_atual)
+                            new_genero = st.selectbox(
+                                "Sexo",
+                                generos,
+                                index=generos.index(genero_atual) if genero_atual in generos else 0,
+                            )
+
+                        st.divider()
+                        st.markdown("### Endereco")
+                        ce1, ce2, ce3 = st.columns(3)
+                        with ce1:
+                            new_cep = st.text_input("CEP", value=aluno_obj.get("cep", ""))
+                        with ce2:
+                            new_cidade = st.text_input("Cidade", value=aluno_obj.get("cidade", ""))
+                        with ce3:
+                            new_bairro = st.text_input("Bairro", value=aluno_obj.get("bairro", ""))
+
+                        ce4, ce5, ce6 = st.columns([3, 1, 2])
+                        with ce4:
+                            new_rua = st.text_input("Rua", value=aluno_obj.get("rua", ""))
+                        with ce5:
+                            new_numero = st.text_input("Numero", value=aluno_obj.get("numero", ""))
+                        with ce6:
+                            new_complemento = st.text_input(
+                                "Observacao (Apto, Bloco, Casa)",
+                                value=aluno_obj.get("complemento", ""),
+                            )
+
+                        st.divider()
+                        st.markdown("### Turma")
+                        new_turma = st.selectbox("Vincular a Turma", turmas, index=turmas.index(current_turma))
                         modulos = [
                             "Presencial em Turma",
                             "Turma online",
@@ -8298,21 +8692,40 @@ elif st.session_state["role"] == "Coordenador":
                         if modulo_atual not in modulos and modulo_atual:
                             modulos.append(modulo_atual)
                         new_modulo = st.selectbox(
-                            "Módulo do curso",
+                            "Modulo do curso",
                             modulos,
                             index=modulos.index(modulo_atual) if modulo_atual in modulos else 0,
                         )
                         livro_atual = aluno_obj.get("livro", "")
-                        livro_opts = ["Automático (Turma)"] + book_levels()
+                        livro_opts = ["Automatico (Turma)"] + book_levels()
                         if livro_atual and livro_atual not in livro_opts:
                             livro_opts.append(livro_atual)
                         livro_index = livro_opts.index(livro_atual) if livro_atual in livro_opts else 0
-                        new_livro = st.selectbox("Livro/Nível", livro_opts, index=livro_index)
+                        new_livro = st.selectbox("Livro/Nivel", livro_opts, index=livro_index)
 
-                        st.markdown("### Acesso do Aluno")
-                        c5, c6 = st.columns(2)
-                        with c5: new_login = st.text_input("Login do Aluno", value=aluno_obj.get("usuario", ""))
-                        with c6: new_senha = st.text_input("Senha do Aluno", value=aluno_obj.get("senha", ""), type="password")
+                        st.divider()
+                        st.markdown("### Acesso do Aluno (opcional)")
+                        ca1, ca2 = st.columns(2)
+                        with ca1:
+                            new_login = st.text_input("Login do Aluno", value=aluno_obj.get("usuario", ""))
+                        with ca2:
+                            new_senha = st.text_input("Senha do Aluno", value=aluno_obj.get("senha", ""), type="password")
+
+                        st.divider()
+                        st.markdown("### Responsavel Legal / Financeiro")
+                        resp_atual = aluno_obj.get("responsavel", {})
+                        if not isinstance(resp_atual, dict):
+                            resp_atual = {}
+                        cr1, cr2 = st.columns(2)
+                        with cr1:
+                            new_resp_nome = st.text_input("Nome do Responsavel", value=resp_atual.get("nome", ""))
+                        with cr2:
+                            new_resp_cpf = st.text_input("CPF do Responsavel", value=resp_atual.get("cpf", ""))
+                        cr3, cr4 = st.columns(2)
+                        with cr3:
+                            new_resp_cel = st.text_input("Celular do Responsavel", value=resp_atual.get("celular", ""))
+                        with cr4:
+                            new_resp_email = st.text_input("E-mail do Responsavel", value=resp_atual.get("email", ""))
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
@@ -8324,45 +8737,67 @@ elif st.session_state["role"] == "Coordenador":
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
                                     st.error("ERRO: Este login já existe.")
                                 else:
-                                    if login:
-                                        user_obj = find_user(old_login) if old_login else None
-                                        if user_obj:
-                                            user_obj["usuario"] = login
-                                            user_obj["senha"] = senha
-                                            user_obj["perfil"] = "Aluno"
-                                            user_obj["pessoa"] = new_nome
-                                        else:
-                                            st.session_state["users"].append(
-                                                {
-                                                    "usuario": login,
-                                                    "senha": senha,
-                                                    "perfil": "Aluno",
-                                                    "pessoa": new_nome,
-                                                }
-                                            )
-                                        save_users(st.session_state["users"])
+                                    idade_final = _calc_age_from_date_obj(new_dn) or current_idade
+                                    if idade_final < 18 and (not str(new_resp_nome).strip() or not str(new_resp_cpf).strip()):
+                                        st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
+                                    elif not str(new_nome).strip() or not str(new_email).strip():
+                                        st.error("ERRO: Nome e E-mail sao obrigatorios.")
+                                    else:
+                                        if login:
+                                            user_obj = find_user(old_login) if old_login else None
+                                            if user_obj:
+                                                user_obj["usuario"] = login
+                                                user_obj["senha"] = senha
+                                                user_obj["perfil"] = "Aluno"
+                                                user_obj["pessoa"] = str(new_nome or "").strip()
+                                            else:
+                                                st.session_state["users"].append(
+                                                    {
+                                                        "usuario": login,
+                                                        "senha": senha,
+                                                        "perfil": "Aluno",
+                                                        "pessoa": str(new_nome or "").strip(),
+                                                    }
+                                                )
+                                            save_users(st.session_state["users"])
 
-                                    turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == new_turma), {})
-                                    livro_turma = turma_obj.get("livro", "")
-                                    livro_final = livro_turma if new_livro == "Automático (Turma)" else new_livro
+                                        turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == new_turma), {})
+                                        livro_turma = turma_obj.get("livro", "")
+                                        livro_final = livro_turma if new_livro == "Automatico (Turma)" else new_livro
 
-                                    aluno_obj["nome"] = new_nome
-                                    aluno_obj["matricula"] = matricula_atual
-                                    aluno_obj["celular"] = new_cel
-                                    aluno_obj["turma"] = new_turma
-                                    aluno_obj["email"] = new_email
-                                    aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
-                                    aluno_obj["idade"] = _calc_age_from_date_obj(new_dn) or current_idade
-                                    aluno_obj["genero"] = new_genero
-                                    aluno_obj["modulo"] = new_modulo
-                                    aluno_obj["livro"] = livro_final
-                                    aluno_obj["usuario"] = login
-                                    aluno_obj["senha"] = senha
-                                    aluno_obj.pop("nascimento", None)
+                                        aluno_obj["nome"] = str(new_nome or "").strip()
+                                        aluno_obj["matricula"] = matricula_atual
+                                        aluno_obj["celular"] = str(new_cel or "").strip()
+                                        aluno_obj["turma"] = str(new_turma or "").strip()
+                                        aluno_obj["email"] = str(new_email or "").strip().lower()
+                                        aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
+                                        aluno_obj["idade"] = idade_final
+                                        aluno_obj["genero"] = str(new_genero or "").strip()
+                                        aluno_obj["rg"] = str(new_rg or "").strip()
+                                        aluno_obj["cpf"] = str(new_cpf or "").strip()
+                                        aluno_obj["cidade_natal"] = str(new_natal or "").strip()
+                                        aluno_obj["pais"] = str(new_pais or "").strip()
+                                        aluno_obj["cep"] = str(new_cep or "").strip()
+                                        aluno_obj["cidade"] = str(new_cidade or "").strip()
+                                        aluno_obj["bairro"] = str(new_bairro or "").strip()
+                                        aluno_obj["rua"] = str(new_rua or "").strip()
+                                        aluno_obj["numero"] = str(new_numero or "").strip()
+                                        aluno_obj["complemento"] = str(new_complemento or "").strip()
+                                        aluno_obj["modulo"] = str(new_modulo or "").strip()
+                                        aluno_obj["livro"] = str(livro_final or "").strip()
+                                        aluno_obj["usuario"] = str(login or "").strip()
+                                        aluno_obj["senha"] = str(senha or "").strip()
+                                        aluno_obj["responsavel"] = {
+                                            "nome": str(new_resp_nome or "").strip(),
+                                            "cpf": str(new_resp_cpf or "").strip(),
+                                            "celular": str(new_resp_cel or "").strip(),
+                                            "email": str(new_resp_email or "").strip().lower(),
+                                        }
+                                        aluno_obj.pop("nascimento", None)
 
-                                    save_list(STUDENTS_FILE, st.session_state["students"])
-                                    st.success("Dados atualizados!")
-                                    st.rerun()
+                                        save_list(STUDENTS_FILE, st.session_state["students"])
+                                        st.success("Dados atualizados!")
+                                        st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR ALUNO", type="primary"):
                                 login = aluno_obj.get("usuario", "").strip()
