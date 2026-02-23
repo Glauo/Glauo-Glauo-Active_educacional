@@ -4846,7 +4846,7 @@ def run_commercial_panel():
                         st.success("Agendamento salvo.")
                         gcal = str(item.get("google_calendar_link", "")).strip()
                         if gcal:
-                            st.link_button("Abrir no Google Agenda", gcal, key=f"sales_new_ag_gcal_{item.get('id', uuid.uuid4().hex)}")
+                            st.markdown(f"[Abrir no Google Agenda]({gcal})")
 
         with tab_list:
             agenda = st.session_state.get("sales_agenda", [])
@@ -5039,11 +5039,11 @@ def run_commercial_panel():
                                 st.error(f"Falha ao enviar WhatsApp: {status_wa}")
                             st.rerun()
                         if meeting_link:
-                            a4.link_button("Abrir reuniao", meeting_link, key=f"sales_ag_meet_{ag_id}")
+                            a4.markdown(f"[Abrir reuniao]({meeting_link})")
                         else:
                             a4.button("Abrir reuniao", disabled=True, key=f"sales_ag_meet_disabled_{ag_id}")
                         if google_link:
-                            a5.link_button("Google Agenda", google_link, key=f"sales_ag_gcal_{ag_id}")
+                            a5.markdown(f"[Google Agenda]({google_link})")
                         else:
                             a5.button("Google Agenda", disabled=True, key=f"sales_ag_gcal_disabled_{ag_id}")
 
