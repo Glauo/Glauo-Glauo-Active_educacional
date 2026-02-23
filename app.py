@@ -4773,6 +4773,12 @@ def render_sales_leads_manage(vendedor_atual):
         )
         if not visible_cols:
             visible_cols = ["Nome", "Email", "Celular", "Status"]
+        if "Celular" in all_cols and "Celular" not in visible_cols:
+            if "Email" in visible_cols:
+                idx_email = visible_cols.index("Email") + 1
+                visible_cols = visible_cols[:idx_email] + ["Celular"] + visible_cols[idx_email:]
+            else:
+                visible_cols = ["Celular"] + visible_cols
         s1, s2 = st.columns(2)
         with s1:
             sort_col = st.selectbox("Ordenar por", all_cols, index=all_cols.index("Nome") if "Nome" in all_cols else 0)
