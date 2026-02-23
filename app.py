@@ -2482,6 +2482,99 @@ def sales_lead_status_options():
         "Indicacao de alunos",
     ]
 
+def sales_pipeline_stage_options():
+    return [
+        "Descoberta",
+        "Contato inicial",
+        "Qualificacao",
+        "Apresentacao",
+        "Negociacao",
+        "Fechamento",
+        "Pos-venda",
+        "Descartado",
+    ]
+
+def sales_state_options():
+    return [
+        "",
+        "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
+        "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
+        "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+    ]
+
+def _lead_tags_list(raw_value):
+    items = []
+    if isinstance(raw_value, (list, tuple, set)):
+        items = [str(v).strip() for v in raw_value]
+    else:
+        text = str(raw_value or "").strip()
+        if text:
+            text = text.replace(";", ",").replace("\n", ",")
+            items = [p.strip() for p in text.split(",")]
+    tags = []
+    seen = set()
+    for item in items:
+        if not item:
+            continue
+        key = normalize_text(item)
+        if key and key not in seen:
+            tags.append(item)
+            seen.add(key)
+    return tags
+
+def _lead_tags_text(lead_obj):
+    if not isinstance(lead_obj, dict):
+        return ""
+    return ", ".join(_lead_tags_list(lead_obj.get("tags", [])))
+
+def _lead_custom_fields_to_text(custom_obj):
+    if not isinstance(custom_obj, dict):
+        return ""
+    lines = []
+    for key, value in custom_obj.items():
+        k = str(key or "").strip()
+        v = str(value or "").strip()
+        if k:
+            lines.append(f"{k}: {v}")
+    return "\n".join(lines)
+
+def _lead_custom_fields_from_text(raw_text):
+    custom = {}
+    for raw_line in str(raw_text or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        if ":" in line:
+            key, val = line.split(":", 1)
+        elif "=" in line:
+            key, val = line.split("=", 1)
+        else:
+            key, val = line, ""
+        key = str(key or "").strip()
+        val = str(val or "").strip()
+        if key:
+            custom[key] = val
+    return custom
+
+def _lead_last_contact_date(lead_obj):
+    if not isinstance(lead_obj, dict):
+        return None
+    raw_contact = str(lead_obj.get("ultimo_contato", "")).strip()
+    if raw_contact:
+        dt = parse_date(raw_contact.split(" ")[0])
+        if dt:
+            return dt
+    for inter in reversed(lead_obj.get("interacoes", [])):
+        if not isinstance(inter, dict):
+            continue
+        raw_dt = str(inter.get("data_hora", "")).strip()
+        if not raw_dt:
+            continue
+        dt = parse_date(raw_dt.split(" ")[0])
+        if dt:
+            return dt
+    return None
+
 def sales_agenda_type_options():
     return [
         "Ligacao a fazer",
@@ -2513,6 +2606,51 @@ def _ensure_sales_store_defaults():
             leads_changed = True
         if "updated_at" not in lead:
             lead["updated_at"] = ""
+            leads_changed = True
+        if "estagio_funil" not in lead or not str(lead.get("estagio_funil", "")).strip():
+            status_atual = str(lead.get("status", "")).strip()
+            if status_atual == "Fechado":
+                lead["estagio_funil"] = "Fechamento"
+            elif status_atual == "Desistir":
+                lead["estagio_funil"] = "Descartado"
+            elif status_atual == "Leads quentes":
+                lead["estagio_funil"] = "Negociacao"
+            elif status_atual == "Leads frios":
+                lead["estagio_funil"] = "Contato inicial"
+            else:
+                lead["estagio_funil"] = "Qualificacao"
+            leads_changed = True
+        if "cargo" not in lead:
+            lead["cargo"] = ""
+            leads_changed = True
+        if "cidade" not in lead:
+            lead["cidade"] = ""
+            leads_changed = True
+        if "estado" not in lead:
+            lead["estado"] = ""
+            leads_changed = True
+        if "empresa" not in lead:
+            lead["empresa"] = ""
+            leads_changed = True
+        if "tags" not in lead:
+            lead["tags"] = []
+            leads_changed = True
+        else:
+            tags_norm = _lead_tags_list(lead.get("tags", []))
+            if tags_norm != lead.get("tags", []):
+                lead["tags"] = tags_norm
+                leads_changed = True
+        if "campos_personalizados" not in lead or not isinstance(lead.get("campos_personalizados"), dict):
+            lead["campos_personalizados"] = {}
+            leads_changed = True
+        if "interacoes" not in lead or not isinstance(lead.get("interacoes"), list):
+            lead["interacoes"] = []
+            leads_changed = True
+        if "landing_pages" not in lead or not isinstance(lead.get("landing_pages"), list):
+            lead["landing_pages"] = []
+            leads_changed = True
+        if "conversoes" not in lead or not isinstance(lead.get("conversoes"), list):
+            lead["conversoes"] = []
             leads_changed = True
 
     for item in st.session_state.get("sales_agenda", []):
@@ -3983,6 +4121,538 @@ def run_student_finance_assistant():
         with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
             st.markdown(msg["content"])
 
+def render_sales_leads_manage(vendedor_atual):
+    leads = st.session_state.get("sales_leads", [])
+    if not leads:
+        st.info("Nenhum lead cadastrado.")
+        return
+
+    st.markdown("### Base de Leads (dinamica e personalizavel)")
+    all_origens = sorted(
+        {
+            str(l.get("origem", "")).strip()
+            for l in leads
+            if str(l.get("origem", "")).strip()
+        }
+    )
+    all_estados = sorted(
+        {
+            str(l.get("estado", "")).strip().upper()
+            for l in leads
+            if str(l.get("estado", "")).strip()
+        }
+    )
+    all_vendedores = sorted(
+        {
+            str(l.get("vendedor", "")).strip()
+            for l in leads
+            if str(l.get("vendedor", "")).strip()
+        }
+    )
+    all_tags = sorted(
+        {
+            tag
+            for l in leads
+            for tag in _lead_tags_list(l.get("tags", []))
+        }
+    )
+
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        segmento = st.selectbox(
+            "Segmentacao",
+            [
+                "Todos",
+                "Sem contato ha 7 dias",
+                "Leads quentes sem agendamento",
+                "Com conversoes",
+                "Sem e-mail",
+            ],
+            key="sales_lead_segmento",
+        )
+    with f2:
+        busca = st.text_input("Busca rapida", key="sales_lead_busca")
+    with f3:
+        status_filter = st.multiselect("Status", sales_lead_status_options(), key="sales_lead_status_filter")
+    with f4:
+        estagio_filter = st.multiselect("Estagio no funil", sales_pipeline_stage_options(), key="sales_lead_estagio_filter")
+
+    f5, f6, f7, f8 = st.columns(4)
+    with f5:
+        origem_filter = st.multiselect("Origem", all_origens, key="sales_lead_origem_filter")
+    with f6:
+        estado_filter = st.multiselect("Estado (UF)", all_estados, key="sales_lead_estado_filter")
+    with f7:
+        tag_filter = st.multiselect("Tags", all_tags, key="sales_lead_tag_filter")
+    with f8:
+        vendedor_filter = st.multiselect("Consultor", all_vendedores, key="sales_lead_vendedor_filter")
+
+    agenda = st.session_state.get("sales_agenda", [])
+    lead_ids_com_agenda = {
+        str(a.get("lead_id", "")).strip()
+        for a in agenda
+        if isinstance(a, dict) and str(a.get("status", "")).strip() == "Agendado"
+    }
+
+    filtrados = []
+    busca_norm = normalize_text(busca)
+    hoje = datetime.date.today()
+    for lead in leads:
+        if not isinstance(lead, dict):
+            continue
+        lead_status = str(lead.get("status", "")).strip()
+        lead_estagio = str(lead.get("estagio_funil", "")).strip()
+        lead_origem = str(lead.get("origem", "")).strip()
+        lead_estado = str(lead.get("estado", "")).strip().upper()
+        lead_vendedor = str(lead.get("vendedor", "")).strip()
+        lead_tags = _lead_tags_list(lead.get("tags", []))
+        lead_id = str(lead.get("id", "")).strip()
+
+        if status_filter and lead_status not in status_filter:
+            continue
+        if estagio_filter and lead_estagio not in estagio_filter:
+            continue
+        if origem_filter and lead_origem not in origem_filter:
+            continue
+        if estado_filter and lead_estado not in estado_filter:
+            continue
+        if vendedor_filter and lead_vendedor not in vendedor_filter:
+            continue
+        if tag_filter and not any(tag in lead_tags for tag in tag_filter):
+            continue
+
+        if busca_norm:
+            lead_texto = " ".join(
+                [
+                    str(lead.get("nome", "")),
+                    str(lead.get("email", "")),
+                    str(lead.get("telefone", "")),
+                    str(lead.get("cargo", "")),
+                    str(lead.get("cidade", "")),
+                    str(lead.get("estado", "")),
+                    str(lead.get("origem", "")),
+                    str(lead.get("estagio_funil", "")),
+                    str(lead.get("interesse", "")),
+                    str(lead.get("vendedor", "")),
+                    _lead_tags_text(lead),
+                ]
+            )
+            if busca_norm not in normalize_text(lead_texto):
+                continue
+
+        if segmento == "Sem contato ha 7 dias":
+            last_contact_dt = _lead_last_contact_date(lead)
+            if last_contact_dt is not None and (hoje - last_contact_dt).days < 7:
+                continue
+        elif segmento == "Leads quentes sem agendamento":
+            if lead_status != "Leads quentes":
+                continue
+            if lead_id in lead_ids_com_agenda:
+                continue
+        elif segmento == "Com conversoes":
+            if not lead.get("conversoes", []):
+                continue
+        elif segmento == "Sem e-mail":
+            if str(lead.get("email", "")).strip():
+                continue
+
+        filtrados.append(lead)
+
+    total = len(filtrados)
+    quentes = len([l for l in filtrados if str(l.get("status", "")).strip() == "Leads quentes"])
+    fechados = len([l for l in filtrados if str(l.get("status", "")).strip() == "Fechado"])
+    sem_contato_7 = len(
+        [
+            l for l in filtrados
+            if (_lead_last_contact_date(l) is None or (hoje - _lead_last_contact_date(l)).days >= 7)
+        ]
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total de leads", str(total))
+    m2.metric("Leads quentes", str(quentes))
+    m3.metric("Fechados", str(fechados))
+    m4.metric("Sem contato >= 7 dias", str(sem_contato_7))
+
+    rows = []
+    for lead in filtrados:
+        rows.append(
+            {
+                "Nome": str(lead.get("nome", "")).strip(),
+                "Email": str(lead.get("email", "")).strip(),
+                "Cargo": str(lead.get("cargo", "")).strip(),
+                "Cidade": str(lead.get("cidade", "")).strip(),
+                "Estado": str(lead.get("estado", "")).strip(),
+                "Origem": str(lead.get("origem", "")).strip(),
+                "Estagio no Funil": str(lead.get("estagio_funil", "")).strip(),
+                "Tags": _lead_tags_text(lead),
+                "Telefone": str(lead.get("telefone", "")).strip(),
+                "Status": str(lead.get("status", "")).strip(),
+                "Interesse": str(lead.get("interesse", "")).strip(),
+                "Empresa": str(lead.get("empresa", "")).strip(),
+                "Consultor": str(lead.get("vendedor", "")).strip(),
+                "Ultimo Contato": str(lead.get("ultimo_contato", "")).strip(),
+                "Interacoes": len(lead.get("interacoes", [])),
+                "Conversoes": len(lead.get("conversoes", [])),
+                "Criado em": str(lead.get("created_at", "")).strip(),
+            }
+        )
+
+    if not rows:
+        st.info("Nenhum lead encontrado com os filtros aplicados.")
+    else:
+        df_leads = pd.DataFrame(rows)
+        all_cols = list(df_leads.columns)
+        default_cols = [
+            "Nome",
+            "Email",
+            "Cargo",
+            "Cidade",
+            "Estado",
+            "Origem",
+            "Estagio no Funil",
+            "Tags",
+            "Status",
+            "Consultor",
+            "Ultimo Contato",
+        ]
+        visible_cols = st.multiselect(
+            "Colunas visiveis",
+            all_cols,
+            default=[c for c in default_cols if c in all_cols],
+            key="sales_lead_visible_cols",
+        )
+        if not visible_cols:
+            visible_cols = ["Nome", "Telefone", "Status"]
+        s1, s2 = st.columns(2)
+        with s1:
+            sort_col = st.selectbox("Ordenar por", all_cols, index=all_cols.index("Nome") if "Nome" in all_cols else 0)
+        with s2:
+            sort_desc = st.checkbox("Ordem decrescente", value=False)
+        df_show = df_leads.sort_values(by=[sort_col], ascending=not sort_desc, na_position="last")
+        st.dataframe(df_show[visible_cols], use_container_width=True, height=420)
+
+        csv_bytes = df_show.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "Exportar base filtrada (CSV)",
+            data=csv_bytes,
+            file_name=f"base_leads_{datetime.date.today().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key="sales_leads_export_filtered",
+        )
+
+    st.markdown("### Acoes em massa")
+    labels_map = {}
+    labels = []
+    for lead in filtrados:
+        lead_id = str(lead.get("id", "")).strip() or uuid.uuid4().hex
+        label = f"{str(lead.get('nome', '')).strip()} | {str(lead.get('telefone', '')).strip()} | {str(lead.get('estagio_funil', '')).strip()} | {lead_id}"
+        labels.append(label)
+        labels_map[label] = lead
+    selected_labels = st.multiselect("Selecionar leads", labels, key="sales_leads_bulk_selected")
+    selected_ids = {
+        str(labels_map[label].get("id", "")).strip()
+        for label in selected_labels
+        if label in labels_map
+    }
+
+    b1, b2 = st.columns(2)
+    with b1:
+        bulk_action = st.selectbox(
+            "Acao",
+            [
+                "Atualizar status",
+                "Atualizar estagio no funil",
+                "Adicionar tag",
+                "Remover tag",
+                "Definir consultor",
+                "Excluir selecionados",
+            ],
+            key="sales_leads_bulk_action",
+        )
+    with b2:
+        if bulk_action == "Atualizar status":
+            bulk_value = st.selectbox("Novo status", sales_lead_status_options(), key="sales_leads_bulk_value_status")
+        elif bulk_action == "Atualizar estagio no funil":
+            bulk_value = st.selectbox("Novo estagio", sales_pipeline_stage_options(), key="sales_leads_bulk_value_stage")
+        elif bulk_action in ("Adicionar tag", "Remover tag"):
+            bulk_value = st.text_input("Tag", key="sales_leads_bulk_value_tag")
+        elif bulk_action == "Definir consultor":
+            bulk_value = st.text_input("Nome do consultor", key="sales_leads_bulk_value_consultor")
+        else:
+            bulk_value = st.checkbox("Confirmo exclusao em massa", value=False, key="sales_leads_bulk_delete_confirm")
+
+    if st.button("Aplicar acao em massa", type="primary", key="sales_leads_bulk_apply"):
+        if not selected_ids:
+            st.error("Selecione ao menos um lead.")
+        else:
+            changes = 0
+            for lead in st.session_state.get("sales_leads", []):
+                lead_id = str(lead.get("id", "")).strip()
+                if lead_id not in selected_ids:
+                    continue
+                if bulk_action == "Atualizar status":
+                    lead["status"] = str(bulk_value or "").strip()
+                elif bulk_action == "Atualizar estagio no funil":
+                    lead["estagio_funil"] = str(bulk_value or "").strip()
+                elif bulk_action == "Adicionar tag":
+                    tag_txt = str(bulk_value or "").strip()
+                    if tag_txt:
+                        lead["tags"] = _lead_tags_list(list(_lead_tags_list(lead.get("tags", []))) + [tag_txt])
+                elif bulk_action == "Remover tag":
+                    tag_txt = normalize_text(str(bulk_value or "").strip())
+                    lead["tags"] = [t for t in _lead_tags_list(lead.get("tags", [])) if normalize_text(t) != tag_txt]
+                elif bulk_action == "Definir consultor":
+                    lead["vendedor"] = str(bulk_value or "").strip()
+                elif bulk_action == "Excluir selecionados":
+                    continue
+                lead["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                changes += 1
+
+            if bulk_action == "Excluir selecionados":
+                if bulk_value is not True:
+                    st.error("Marque a confirmacao para excluir.")
+                else:
+                    st.session_state["sales_leads"] = [
+                        l for l in st.session_state.get("sales_leads", [])
+                        if str(l.get("id", "")).strip() not in selected_ids
+                    ]
+                    save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                    st.success(f"{len(selected_ids)} lead(s) excluido(s).")
+                    st.rerun()
+            elif changes > 0:
+                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                st.success("Acoes em massa aplicadas com sucesso.")
+                st.rerun()
+            else:
+                st.warning("Nenhuma alteracao aplicada.")
+
+    if selected_ids:
+        selected_rows = []
+        for lead in st.session_state.get("sales_leads", []):
+            if str(lead.get("id", "")).strip() in selected_ids:
+                selected_rows.append(
+                    {
+                        "Nome": str(lead.get("nome", "")).strip(),
+                        "Telefone": str(lead.get("telefone", "")).strip(),
+                        "Email": str(lead.get("email", "")).strip(),
+                        "Status": str(lead.get("status", "")).strip(),
+                        "Estagio no Funil": str(lead.get("estagio_funil", "")).strip(),
+                        "Tags": _lead_tags_text(lead),
+                    }
+                )
+        if selected_rows:
+            selected_csv = pd.DataFrame(selected_rows).to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "Exportar selecionados (CSV)",
+                data=selected_csv,
+                file_name=f"leads_selecionados_{datetime.date.today().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="sales_leads_export_selected",
+            )
+
+    st.markdown("### Ficha completa do lead")
+    detail_options = [
+        f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()} | {str(l.get('id', '')).strip()}"
+        for l in filtrados
+    ]
+    if not detail_options:
+        st.info("Sem lead para detalhar com os filtros atuais.")
+        return
+
+    detail_label = st.selectbox("Selecionar lead", detail_options, key="sales_lead_detail_select")
+    detail_idx = detail_options.index(detail_label)
+    lead_obj = filtrados[detail_idx]
+    lead_id = str(lead_obj.get("id", "")).strip() or uuid.uuid4().hex
+
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric("Status", str(lead_obj.get("status", "")).strip() or "-")
+    d2.metric("Estagio", str(lead_obj.get("estagio_funil", "")).strip() or "-")
+    d3.metric("Interacoes", str(len(lead_obj.get("interacoes", []))))
+    d4.metric("Conversoes", str(len(lead_obj.get("conversoes", []))))
+
+    info_tab, inter_tab, conv_tab = st.tabs(["Dados do lead", "Historico de interacoes", "Conversoes e paginas"])
+
+    with info_tab:
+        with st.form(f"sales_edit_lead_{lead_id}"):
+            e1, e2 = st.columns(2)
+            with e1:
+                new_nome = st.text_input("Nome", value=str(lead_obj.get("nome", "")).strip())
+            with e2:
+                new_tel = st.text_input("Telefone", value=str(lead_obj.get("telefone", "")).strip())
+            e3, e4 = st.columns(2)
+            with e3:
+                new_email = st.text_input("E-mail", value=str(lead_obj.get("email", "")).strip())
+            with e4:
+                status_atual = str(lead_obj.get("status", "Novo contato")).strip()
+                new_status = st.selectbox(
+                    "Status",
+                    sales_lead_status_options(),
+                    index=sales_lead_status_options().index(status_atual) if status_atual in sales_lead_status_options() else 0,
+                )
+            e5, e6 = st.columns(2)
+            with e5:
+                estagio_atual = str(lead_obj.get("estagio_funil", "Contato inicial")).strip()
+                new_stage = st.selectbox(
+                    "Estagio no funil",
+                    sales_pipeline_stage_options(),
+                    index=sales_pipeline_stage_options().index(estagio_atual) if estagio_atual in sales_pipeline_stage_options() else 0,
+                )
+            with e6:
+                new_origem = st.text_input("Origem", value=str(lead_obj.get("origem", "")).strip())
+
+            e7, e8, e9 = st.columns(3)
+            with e7:
+                new_cargo = st.text_input("Cargo", value=str(lead_obj.get("cargo", "")).strip())
+            with e8:
+                new_empresa = st.text_input("Empresa", value=str(lead_obj.get("empresa", "")).strip())
+            with e9:
+                new_interesse = st.text_input("Interesse", value=str(lead_obj.get("interesse", "")).strip())
+
+            e10, e11, e12 = st.columns(3)
+            with e10:
+                new_cidade = st.text_input("Cidade", value=str(lead_obj.get("cidade", "")).strip())
+            with e11:
+                estado_atual = str(lead_obj.get("estado", "")).strip()
+                new_estado = st.selectbox(
+                    "Estado (UF)",
+                    sales_state_options(),
+                    index=sales_state_options().index(estado_atual) if estado_atual in sales_state_options() else 0,
+                )
+            with e12:
+                new_consultor = st.text_input("Consultor", value=str(lead_obj.get("vendedor", "")).strip())
+
+            new_tags = st.text_input("Tags", value=_lead_tags_text(lead_obj))
+            new_obs = st.text_area("Observacoes", value=str(lead_obj.get("observacao", "")).strip())
+            custom_txt = st.text_area(
+                "Campos personalizados",
+                value=_lead_custom_fields_to_text(lead_obj.get("campos_personalizados", {})),
+                placeholder="campo: valor",
+            )
+
+            c_save, c_del = st.columns(2)
+            with c_save:
+                save_lead = st.form_submit_button("Salvar alteracoes")
+            with c_del:
+                delete_lead = st.form_submit_button("Excluir lead", type="primary")
+
+            if save_lead:
+                if not new_nome.strip() or not new_tel.strip():
+                    st.error("Nome e telefone sao obrigatorios.")
+                else:
+                    lead_obj["nome"] = new_nome.strip()
+                    lead_obj["telefone"] = new_tel.strip()
+                    lead_obj["email"] = new_email.strip().lower()
+                    lead_obj["status"] = new_status
+                    lead_obj["estagio_funil"] = new_stage
+                    lead_obj["origem"] = new_origem.strip()
+                    lead_obj["cargo"] = new_cargo.strip()
+                    lead_obj["empresa"] = new_empresa.strip()
+                    lead_obj["interesse"] = new_interesse.strip()
+                    lead_obj["cidade"] = new_cidade.strip()
+                    lead_obj["estado"] = new_estado.strip()
+                    lead_obj["vendedor"] = new_consultor.strip()
+                    lead_obj["tags"] = _lead_tags_list(new_tags)
+                    lead_obj["observacao"] = new_obs.strip()
+                    lead_obj["campos_personalizados"] = _lead_custom_fields_from_text(custom_txt)
+                    lead_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                    save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                    st.success("Lead atualizado.")
+                    st.rerun()
+            if delete_lead:
+                st.session_state["sales_leads"] = [
+                    l for l in st.session_state.get("sales_leads", [])
+                    if str(l.get("id", "")).strip() != lead_id
+                ]
+                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                st.success("Lead excluido.")
+                st.rerun()
+
+    with inter_tab:
+        interacoes = lead_obj.get("interacoes", [])
+        if interacoes:
+            df_inter = pd.DataFrame(interacoes)
+            col_order_inter = ["data_hora", "canal", "acao", "descricao", "pagina"]
+            df_inter = df_inter[[c for c in col_order_inter if c in df_inter.columns]]
+            st.dataframe(df_inter, use_container_width=True)
+        else:
+            st.info("Nenhuma interacao registrada para este lead.")
+
+        with st.form(f"sales_add_interaction_{lead_id}", clear_on_submit=True):
+            i1, i2, i3 = st.columns(3)
+            with i1:
+                data_inter = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
+            with i2:
+                hora_inter = st.time_input("Horario", value=datetime.datetime.now().time().replace(second=0, microsecond=0))
+            with i3:
+                canal_inter = st.selectbox("Canal", ["WhatsApp", "Ligacao", "E-mail", "Reuniao", "Landing Page", "Outro"])
+            acao_inter = st.text_input("Acao", placeholder="Ex: Follow-up, envio de proposta, retorno do lead")
+            desc_inter = st.text_area("Resumo da interacao")
+            pagina_inter = st.text_input("Landing page visitada (opcional)")
+            if st.form_submit_button("Registrar interacao", type="primary"):
+                data_hora_inter = datetime.datetime.combine(data_inter, hora_inter).strftime("%d/%m/%Y %H:%M")
+                if not str(acao_inter).strip():
+                    st.error("Informe a acao da interacao.")
+                else:
+                    lead_obj.setdefault("interacoes", []).append(
+                        {
+                            "data_hora": data_hora_inter,
+                            "canal": str(canal_inter or "").strip(),
+                            "acao": str(acao_inter or "").strip(),
+                            "descricao": str(desc_inter or "").strip(),
+                            "pagina": str(pagina_inter or "").strip(),
+                        }
+                    )
+                    page_clean = str(pagina_inter or "").strip()
+                    if page_clean and page_clean not in lead_obj.get("landing_pages", []):
+                        lead_obj.setdefault("landing_pages", []).append(page_clean)
+                    lead_obj["ultimo_contato"] = data_hora_inter
+                    lead_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                    save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                    st.success("Interacao registrada.")
+                    st.rerun()
+
+    with conv_tab:
+        conversoes = lead_obj.get("conversoes", [])
+        if conversoes:
+            df_conv = pd.DataFrame(conversoes)
+            col_order_conv = ["data", "tipo", "origem", "valor", "descricao"]
+            df_conv = df_conv[[c for c in col_order_conv if c in df_conv.columns]]
+            st.dataframe(df_conv, use_container_width=True)
+        else:
+            st.info("Nenhuma conversao registrada para este lead.")
+
+        with st.form(f"sales_add_conversion_{lead_id}", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                conv_data = st.date_input("Data da conversao", value=datetime.date.today(), format="DD/MM/YYYY")
+            with c2:
+                conv_tipo = st.selectbox("Tipo", ["Matricula", "Aula experimental", "Retorno", "Reuniao", "Outro"])
+            with c3:
+                conv_origem = st.text_input("Origem", value=str(lead_obj.get("origem", "")).strip())
+            conv_valor = st.text_input("Valor (opcional)")
+            conv_desc = st.text_area("Descricao")
+            if st.form_submit_button("Registrar conversao", type="primary"):
+                lead_obj.setdefault("conversoes", []).append(
+                    {
+                        "data": conv_data.strftime("%d/%m/%Y") if conv_data else "",
+                        "tipo": str(conv_tipo or "").strip(),
+                        "origem": str(conv_origem or "").strip(),
+                        "valor": str(conv_valor or "").strip(),
+                        "descricao": str(conv_desc or "").strip(),
+                    }
+                )
+                lead_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                st.success("Conversao registrada.")
+                st.rerun()
+
+        st.markdown("#### Landing pages visitadas")
+        pages = [str(p).strip() for p in lead_obj.get("landing_pages", []) if str(p).strip()]
+        if pages:
+            st.dataframe(pd.DataFrame({"landing_page": pages}), use_container_width=True)
+        else:
+            st.caption("Sem landing pages registradas para este lead.")
+
 def run_commercial_panel():
     with st.sidebar:
         logo_path = get_logo_path()
@@ -4032,7 +4702,7 @@ def run_commercial_panel():
 
     if menu_sales == "Leads":
         st.markdown('<div class="main-header">Leads</div>', unsafe_allow_html=True)
-        tab_new, tab_manage = st.tabs(["Novo Lead", "Pipeline / Gerenciar"])
+        tab_new, tab_manage = st.tabs(["Novo Lead", "Base de Leads (Dinamica)"])
 
         with tab_new:
             with st.form("sales_new_lead", clear_on_submit=True):
@@ -4046,16 +4716,35 @@ def run_commercial_panel():
                     email = st.text_input("E-mail")
                 with c4:
                     status = st.selectbox("Status", sales_lead_status_options(), index=0)
-                c5, c6 = st.columns(2)
+                c5, c6, c7 = st.columns(3)
                 with c5:
                     origem = st.text_input("Origem do lead (Instagram, indicacao, etc.)")
                 with c6:
+                    estagio_funil = st.selectbox("Estagio no funil", sales_pipeline_stage_options(), index=1)
+                with c7:
                     interesse = st.text_input("Interesse / curso")
+                c8, c9, c10, c11 = st.columns(4)
+                with c8:
+                    cargo = st.text_input("Cargo")
+                with c9:
+                    empresa = st.text_input("Empresa")
+                with c10:
+                    cidade = st.text_input("Cidade")
+                with c11:
+                    estado = st.selectbox("Estado (UF)", sales_state_options(), index=0)
+                tags_raw = st.text_input("Tags (separadas por virgula)")
                 observacao = st.text_area("Observacoes")
+                campos_personalizados_txt = st.text_area(
+                    "Campos personalizados (1 por linha: campo: valor)",
+                    placeholder="Ex: faixa_etaria: adulto\ncanal_preferido: WhatsApp",
+                )
                 if st.form_submit_button("Cadastrar lead", type="primary"):
                     if not nome.strip() or not telefone.strip():
                         st.error("Informe nome e telefone do lead.")
                     else:
+                        created_at = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                        tags_list = _lead_tags_list(tags_raw)
+                        custom_fields = _lead_custom_fields_from_text(campos_personalizados_txt)
                         st.session_state["sales_leads"].append(
                             {
                                 "id": uuid.uuid4().hex,
@@ -4063,13 +4752,31 @@ def run_commercial_panel():
                                 "telefone": telefone.strip(),
                                 "email": email.strip().lower(),
                                 "status": status,
+                                "estagio_funil": estagio_funil,
                                 "origem": origem.strip(),
                                 "interesse": interesse.strip(),
+                                "cargo": cargo.strip(),
+                                "empresa": empresa.strip(),
+                                "cidade": cidade.strip(),
+                                "estado": estado.strip(),
+                                "tags": tags_list,
+                                "campos_personalizados": custom_fields,
                                 "observacao": observacao.strip(),
                                 "vendedor": vendedor_atual,
-                                "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "created_at": created_at,
                                 "updated_at": "",
                                 "ultimo_contato": "",
+                                "interacoes": [
+                                    {
+                                        "data_hora": created_at,
+                                        "canal": "Sistema",
+                                        "acao": "Lead cadastrado",
+                                        "descricao": "Registro inicial criado no Comercial.",
+                                        "pagina": "",
+                                    }
+                                ],
+                                "landing_pages": [],
+                                "conversoes": [],
                             }
                         )
                         save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
@@ -4077,106 +4784,7 @@ def run_commercial_panel():
                         st.rerun()
 
         with tab_manage:
-            leads = st.session_state.get("sales_leads", [])
-            if not leads:
-                st.info("Nenhum lead cadastrado.")
-            else:
-                status_filter = st.selectbox("Filtrar por status", ["Todos"] + sales_lead_status_options())
-                busca = st.text_input("Buscar por nome, telefone ou e-mail")
-                filtrados = leads
-                if status_filter != "Todos":
-                    filtrados = [l for l in filtrados if str(l.get("status", "")).strip() == status_filter]
-                if busca.strip():
-                    termo = busca.strip().lower()
-                    filtrados = [
-                        l
-                        for l in filtrados
-                        if termo in str(l.get("nome", "")).lower()
-                        or termo in str(l.get("telefone", "")).lower()
-                        or termo in str(l.get("email", "")).lower()
-                    ]
-
-                total = len(filtrados)
-                quentes = len([l for l in filtrados if str(l.get("status", "")).strip() == "Leads quentes"])
-                fechados = len([l for l in filtrados if str(l.get("status", "")).strip() == "Fechado"])
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Leads", str(total))
-                c2.metric("Quentes", str(quentes))
-                c3.metric("Fechados", str(fechados))
-
-                if filtrados:
-                    df_leads = pd.DataFrame(filtrados)
-                    col_order = [
-                        "nome",
-                        "telefone",
-                        "email",
-                        "status",
-                        "origem",
-                        "interesse",
-                        "vendedor",
-                        "ultimo_contato",
-                        "created_at",
-                    ]
-                    df_leads = df_leads[[c for c in col_order if c in df_leads.columns]]
-                    st.dataframe(df_leads, use_container_width=True)
-
-                    labels = [
-                        f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()}"
-                        for l in filtrados
-                    ]
-                    lead_sel_label = st.selectbox("Selecionar lead para editar", labels)
-                    lead_obj = filtrados[labels.index(lead_sel_label)]
-                    with st.form(f"sales_edit_lead_{lead_obj.get('id', uuid.uuid4().hex)}"):
-                        e1, e2 = st.columns(2)
-                        with e1:
-                            new_nome = st.text_input("Nome", value=str(lead_obj.get("nome", "")).strip())
-                        with e2:
-                            new_tel = st.text_input("Telefone", value=str(lead_obj.get("telefone", "")).strip())
-                        e3, e4 = st.columns(2)
-                        with e3:
-                            new_email = st.text_input("E-mail", value=str(lead_obj.get("email", "")).strip())
-                        with e4:
-                            new_status = st.selectbox(
-                                "Status",
-                                sales_lead_status_options(),
-                                index=sales_lead_status_options().index(str(lead_obj.get("status", "Novo contato")).strip())
-                                if str(lead_obj.get("status", "Novo contato")).strip() in sales_lead_status_options()
-                                else 0,
-                            )
-                        e5, e6 = st.columns(2)
-                        with e5:
-                            new_origem = st.text_input("Origem", value=str(lead_obj.get("origem", "")).strip())
-                        with e6:
-                            new_interesse = st.text_input("Interesse", value=str(lead_obj.get("interesse", "")).strip())
-                        new_obs = st.text_area("Observacoes", value=str(lead_obj.get("observacao", "")).strip())
-                        c_save, c_del = st.columns(2)
-                        with c_save:
-                            save_lead = st.form_submit_button("Salvar alteracoes")
-                        with c_del:
-                            delete_lead = st.form_submit_button("Excluir lead", type="primary")
-
-                        if save_lead:
-                            if not new_nome.strip() or not new_tel.strip():
-                                st.error("Nome e telefone sao obrigatorios.")
-                            else:
-                                lead_obj["nome"] = new_nome.strip()
-                                lead_obj["telefone"] = new_tel.strip()
-                                lead_obj["email"] = new_email.strip().lower()
-                                lead_obj["status"] = new_status
-                                lead_obj["origem"] = new_origem.strip()
-                                lead_obj["interesse"] = new_interesse.strip()
-                                lead_obj["observacao"] = new_obs.strip()
-                                lead_obj["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-                                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
-                                st.success("Lead atualizado.")
-                                st.rerun()
-                        if delete_lead:
-                            st.session_state["sales_leads"].remove(lead_obj)
-                            save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
-                            st.success("Lead excluido.")
-                            st.rerun()
-                else:
-                    st.info("Nenhum lead encontrado com os filtros aplicados.")
+            render_sales_leads_manage(vendedor_atual)
 
     elif menu_sales == "Agenda":
         st.markdown('<div class="main-header">Agenda Comercial</div>', unsafe_allow_html=True)
@@ -4325,6 +4933,42 @@ def run_commercial_panel():
                         parse_time(a.get("hora", "00:00")),
                     ),
                 )
+
+                with st.expander("Visao dinamica da agenda (Google integrado)", expanded=True):
+                    if agenda_filtrada:
+                        view_rows = []
+                        for ag in agenda_filtrada:
+                            view_rows.append(
+                                {
+                                    "Data": format_date_br(ag.get("data", "")),
+                                    "Horario": str(ag.get("hora", "")).strip(),
+                                    "Duracao (min)": parse_int(ag.get("duracao_minutos", 45)) or 45,
+                                    "Lead": str(ag.get("lead_nome", "")).strip(),
+                                    "Telefone": str(ag.get("lead_telefone", "")).strip(),
+                                    "Tipo": str(ag.get("tipo", "")).strip(),
+                                    "Status": str(ag.get("status", "")).strip(),
+                                    "Reuniao": str(ag.get("meeting_link", "")).strip(),
+                                    "Google Agenda": str(ag.get("google_calendar_link", "")).strip(),
+                                    "Consultor": str(ag.get("vendedor", "")).strip(),
+                                }
+                            )
+                        df_agenda_view = pd.DataFrame(view_rows)
+                        if hasattr(st, "column_config"):
+                            st.data_editor(
+                                df_agenda_view,
+                                use_container_width=True,
+                                hide_index=True,
+                                disabled=True,
+                                column_config={
+                                    "Reuniao": st.column_config.LinkColumn("Reuniao"),
+                                    "Google Agenda": st.column_config.LinkColumn("Google Agenda"),
+                                },
+                                key="sales_agenda_dynamic_table",
+                            )
+                        else:
+                            st.dataframe(df_agenda_view, use_container_width=True)
+                    else:
+                        st.caption("Sem registros para a grade dinamica.")
 
                 if not agenda_filtrada:
                     st.info("Nenhum item na agenda para os filtros selecionados.")
