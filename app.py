@@ -8355,6 +8355,8 @@ elif st.session_state["role"] == "Coordenador":
             # Em vez disso, usamos chaves versionadas e incrementamos a versao apenas quando o cadastro
             # for concluido com sucesso, o que faz o formulario "limpar" sem mexer nos widgets atuais.
             st.session_state.setdefault("add_student_form_version", 0)
+            st.session_state.setdefault("add_student_edit_idx", -1)
+            st.session_state.setdefault("add_student_edit_matricula", "")
             form_ver = int(st.session_state["add_student_form_version"])
 
             def _sfk(name: str) -> str:
@@ -8414,12 +8416,84 @@ elif st.session_state["role"] == "Coordenador":
                 if info_msg:
                     st.info(info_msg)
 
+            if st.session_state.get("students"):
+                st.markdown("### Puxar Aluno Cadastrado")
+                alunos_pull = st.session_state.get("students", [])
+                pull_options = list(range(len(alunos_pull)))
+                selected_pull_idx = st.selectbox(
+                    "Selecione um aluno para carregar no formulario",
+                    pull_options,
+                    format_func=lambda i: (
+                        f"{str(alunos_pull[i].get('nome', '')).strip()} | "
+                        f"Matricula: {str(alunos_pull[i].get('matricula', '')).strip() or '-'} | "
+                        f"Celular: {str(alunos_pull[i].get('celular', '')).strip() or '-'}"
+                    ),
+                    key=f"add_student_pull_idx__v{form_ver}",
+                )
+                p1, p2 = st.columns(2)
+                with p1:
+                    if st.button("Puxar para corrigir neste formulario", key=f"add_student_pull_btn__v{form_ver}"):
+                        aluno_src = alunos_pull[int(selected_pull_idx)]
+                        resp_src = aluno_src.get("responsavel", {})
+                        if not isinstance(resp_src, dict):
+                            resp_src = {}
+                        dn_src = parse_date(
+                            str(aluno_src.get("data_nascimento", "")).strip()
+                            or str(aluno_src.get("nascimento", "")).strip()
+                        ) or datetime.date.today()
+
+                        st.session_state["add_student_edit_idx"] = int(selected_pull_idx)
+                        st.session_state["add_student_edit_matricula"] = str(aluno_src.get("matricula", "")).strip()
+                        st.session_state[_sfk("add_student_nome")] = str(aluno_src.get("nome", "")).strip()
+                        st.session_state[_sfk("add_student_data_nascimento")] = dn_src
+                        st.session_state[_sfk("add_student_genero")] = str(aluno_src.get("genero", "Masculino")).strip() or "Masculino"
+                        st.session_state[_sfk("add_student_celular")] = str(aluno_src.get("celular", "")).strip()
+                        st.session_state[_sfk("add_student_email")] = str(aluno_src.get("email", "")).strip()
+                        st.session_state[_sfk("add_student_rg")] = str(aluno_src.get("rg", "")).strip()
+                        st.session_state[_sfk("add_student_cpf")] = str(aluno_src.get("cpf", "")).strip()
+                        st.session_state[_sfk("add_student_natal")] = str(aluno_src.get("cidade_natal", "")).strip()
+                        st.session_state[_sfk("add_student_pais")] = str(aluno_src.get("pais", "Brasil")).strip() or "Brasil"
+                        st.session_state[_sfk("add_student_cep")] = str(aluno_src.get("cep", "")).strip()
+                        st.session_state[_sfk("add_student_cidade")] = str(aluno_src.get("cidade", "")).strip()
+                        st.session_state[_sfk("add_student_bairro")] = str(aluno_src.get("bairro", "")).strip()
+                        st.session_state[_sfk("add_student_rua")] = str(aluno_src.get("rua", "")).strip()
+                        st.session_state[_sfk("add_student_numero")] = str(aluno_src.get("numero", "")).strip()
+                        st.session_state[_sfk("add_student_complemento")] = str(aluno_src.get("complemento", "")).strip()
+                        st.session_state[_sfk("add_student_turma")] = str(aluno_src.get("turma", "Sem Turma")).strip() or "Sem Turma"
+                        st.session_state[_sfk("add_student_modulo")] = str(aluno_src.get("modulo", modulos[0])).strip() or modulos[0]
+                        st.session_state[_sfk("add_student_livro")] = str(aluno_src.get("livro", "Automatico (Turma)")).strip() or "Automatico (Turma)"
+                        st.session_state[_sfk("add_student_login")] = str(aluno_src.get("usuario", "")).strip()
+                        st.session_state[_sfk("add_student_senha")] = str(aluno_src.get("senha", "")).strip()
+                        st.session_state[_sfk("add_student_resp_nome")] = str(resp_src.get("nome", "")).strip()
+                        st.session_state[_sfk("add_student_resp_cpf")] = str(resp_src.get("cpf", "")).strip()
+                        st.session_state[_sfk("add_student_resp_cel")] = str(resp_src.get("celular", "")).strip()
+                        st.session_state[_sfk("add_student_resp_email")] = str(resp_src.get("email", "")).strip()
+                        st.rerun()
+                with p2:
+                    if st.button("Novo cadastro (limpar formulario)", key=f"add_student_new_btn__v{form_ver}"):
+                        st.session_state["add_student_edit_idx"] = -1
+                        st.session_state["add_student_edit_matricula"] = ""
+                        st.session_state["add_student_form_version"] = form_ver + 1
+                        st.rerun()
+
+            edit_idx_active = int(st.session_state.get("add_student_edit_idx", -1) or -1)
+            edit_student_active = None
+            if 0 <= edit_idx_active < len(st.session_state.get("students", [])):
+                edit_student_active = st.session_state["students"][edit_idx_active]
+                st.info(
+                    "Modo correcao ativo para: "
+                    f"{str(edit_student_active.get('nome', '')).strip()} "
+                    f"(Matricula {str(edit_student_active.get('matricula', '')).strip() or '-'})"
+                )
+
             with st.form("add_student_full", clear_on_submit=False):
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: nome = st.text_input("Nome Completo *", key=_sfk("add_student_nome"))
                 matricula_auto = _next_student_matricula(st.session_state["students"])
-                with c2: st.text_input("No. da Matricula", value=matricula_auto, disabled=True)
+                matricula_edicao = str(st.session_state.get("add_student_edit_matricula", "")).strip()
+                matricula_view = matricula_edicao or matricula_auto
+                with c2: st.text_input("No. da Matricula", value=matricula_view, disabled=True)
                 with c3:
                     data_nascimento = st.date_input(
                         "Data de Nascimento *",
@@ -8479,9 +8553,18 @@ elif st.session_state["role"] == "Coordenador":
                 with cr3: resp_cel = st.text_input("Celular do Responsavel", key=_sfk("add_student_resp_cel"))
                 with cr4: resp_email = st.text_input("E-mail do Responsavel", key=_sfk("add_student_resp_email"))
 
-                if st.form_submit_button("Cadastrar Aluno"):
+                submit_label = "Salvar Correcao do Aluno" if edit_student_active else "Cadastrar Aluno"
+                if st.form_submit_button(submit_label):
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
-                    matricula_final = _next_student_matricula(st.session_state["students"])
+                    edit_idx_submit = int(st.session_state.get("add_student_edit_idx", -1) or -1)
+                    edit_obj_submit = None
+                    if 0 <= edit_idx_submit < len(st.session_state.get("students", [])):
+                        edit_obj_submit = st.session_state["students"][edit_idx_submit]
+                    matricula_final = (
+                        str(st.session_state.get("add_student_edit_matricula", "")).strip()
+                        or str((edit_obj_submit or {}).get("matricula", "")).strip()
+                        or _next_student_matricula(st.session_state["students"])
+                    )
                     nome = nome.strip()
                     email = email.strip()
                     login_aluno = login_aluno.strip()
@@ -8489,105 +8572,143 @@ elif st.session_state["role"] == "Coordenador":
                     resp_nome = resp_nome.strip()
                     resp_cpf = resp_cpf.strip()
                     resp_email = resp_email.strip()
+                    old_login = str((edit_obj_submit or {}).get("usuario", "")).strip()
+                    old_senha = str((edit_obj_submit or {}).get("senha", "")).strip()
+                    login_final = login_aluno or old_login
+                    senha_final = senha_aluno or old_senha
 
                     if idade_final < 18 and (not resp_nome or not resp_cpf):
                         st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
                     elif not nome or not email:
                         st.error("ERRO: Nome e E-mail sao obrigatorios.")
-                    elif (login_aluno and not senha_aluno) or (senha_aluno and not login_aluno):
+                    elif not edit_obj_submit and ((login_final and not senha_final) or (senha_final and not login_final)):
                         st.error("ERRO: Para criar o login, informe usuario e senha.")
-                    elif login_aluno and find_user(login_aluno):
-                        st.error("ERRO: Este login ja existe.")
                     else:
-                        turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
-                        livro_turma = turma_obj.get("livro", "")
-                        livro_final = livro_turma if livro_sel == "Automatico (Turma)" else livro_sel
-                        novo_aluno = {
-                            "nome": nome,
-                            "matricula": matricula_final,
-                            "idade": idade_final,
-                            "genero": genero,
-                            "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
-                            "celular": celular,
-                            "email": email,
-                            "rg": rg,
-                            "cpf": cpf,
-                            "cidade_natal": natal,
-                            "pais": pais,
-                            "cep": cep,
-                            "cidade": cidade,
-                            "bairro": bairro,
-                            "rua": rua,
-                            "numero": numero,
-                            "complemento": complemento,
-                            "turma": turma,
-                            "modulo": modulo_sel,
-                            "livro": livro_final,
-                            "usuario": login_aluno,
-                            "senha": senha_aluno,
-                            "responsavel": {
-                                "nome": resp_nome,
-                                "cpf": resp_cpf,
-                                "celular": resp_cel,
-                                "email": resp_email,
-                            },
-                        }
-                        st.session_state["students"].append(novo_aluno)
-                        save_list(STUDENTS_FILE, st.session_state["students"])
+                        login_conflict = find_user(login_final) if login_final else None
+                        if login_conflict and (not old_login or str(login_final).strip().lower() != str(old_login).strip().lower()):
+                            st.error("ERRO: Este login ja existe.")
+                        else:
+                            turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
+                            livro_turma = turma_obj.get("livro", "")
+                            livro_final = livro_turma if livro_sel == "Automatico (Turma)" else livro_sel
+                            aluno_payload = {
+                                "nome": nome,
+                                "matricula": matricula_final,
+                                "idade": idade_final,
+                                "genero": genero,
+                                "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
+                                "celular": celular,
+                                "email": email,
+                                "rg": rg,
+                                "cpf": cpf,
+                                "cidade_natal": natal,
+                                "pais": pais,
+                                "cep": cep,
+                                "cidade": cidade,
+                                "bairro": bairro,
+                                "rua": rua,
+                                "numero": numero,
+                                "complemento": complemento,
+                                "turma": turma,
+                                "modulo": modulo_sel,
+                                "livro": livro_final,
+                                "usuario": login_final,
+                                "senha": senha_final,
+                                "responsavel": {
+                                    "nome": resp_nome,
+                                    "cpf": resp_cpf,
+                                    "celular": resp_cel,
+                                    "email": resp_email.lower(),
+                                },
+                            }
+                            if edit_obj_submit:
+                                edit_obj_submit.update(aluno_payload)
+                                edit_obj_submit.pop("nascimento", None)
+                                save_list(STUDENTS_FILE, st.session_state["students"])
 
-                        if login_aluno and senha_aluno:
-                            st.session_state["users"].append(
-                                {
-                                    "usuario": login_aluno,
-                                    "senha": senha_aluno,
-                                    "perfil": "Aluno",
-                                    "pessoa": nome,
+                                if login_final:
+                                    user_obj = find_user(old_login) if old_login else None
+                                    if user_obj:
+                                        user_obj["usuario"] = login_final
+                                        user_obj["senha"] = senha_final
+                                        user_obj["perfil"] = "Aluno"
+                                        user_obj["pessoa"] = nome
+                                    elif not find_user(login_final):
+                                        st.session_state["users"].append(
+                                            {
+                                                "usuario": login_final,
+                                                "senha": senha_final,
+                                                "perfil": "Aluno",
+                                                "pessoa": nome,
+                                            }
+                                        )
+                                    save_users(st.session_state["users"])
+
+                                st.session_state["add_student_feedback"] = {
+                                    "success": "Aluno atualizado com sucesso no Cadastro Completo!",
+                                    "info": "Os dados foram carregados e corrigidos sem duplicar cadastro.",
                                 }
-                            )
-                            save_users(st.session_state["users"])
+                            else:
+                                novo_aluno = dict(aluno_payload)
+                                st.session_state["students"].append(novo_aluno)
+                                save_list(STUDENTS_FILE, st.session_state["students"])
 
-                        turma_link = str(turma_obj.get("link_zoom", "")).strip() if isinstance(turma_obj, dict) else ""
-                        portal_url = _student_portal_url()
-                        login_info = login_aluno or "Nao informado"
-                        senha_info = senha_aluno or "Nao informada"
-                        assunto_auto = "[Active] Boas-vindas e acesso inicial"
-                        corpo_auto = (
-                            f"Ola, {nome}! Seja muito bem-vindo(a) a Mister Wiz! \U0001F389\n\n"
-                            f"Seu cadastro foi concluido no Active.\n"
-                            f"Turma: {turma}\n"
-                            f"Livro/Nivel: {livro_final or 'A definir'}\n"
-                            f"Matricula: {matricula_final}\n"
-                            f"Login: {login_info}\n"
-                            f"Senha: {senha_info}\n"
-                        )
-                        if portal_url:
-                            corpo_auto += f"Portal do aluno: {portal_url}\n"
-                        if turma_link:
-                            corpo_auto += f"Link da aula: {turma_link}\n"
-                        corpo_auto += (
-                            "\nFinanceiro, boletos e materiais ficam disponiveis no portal do aluno.\n"
-                            "Em caso de duvidas, responda esta mensagem."
-                        )
-                        notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
-                        if wiz_event_enabled("on_student_created"):
-                            notify_stats = _notify_direct_contacts(
-                                nome,
-                                _message_recipients_for_student(novo_aluno),
-                                _student_whatsapp_recipients(novo_aluno),
-                                assunto_auto,
-                                corpo_auto,
-                                "Cadastro Aluno",
-                            )
-                        st.session_state["add_student_feedback"] = {
-                            "success": "Cadastro realizado com sucesso!",
-                            "info": (
-                                "Disparos automáticos: "
-                                f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
-                                f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
-                            ),
-                        }
-                        st.session_state["add_student_form_version"] = form_ver + 1
-                        st.rerun()
+                                if login_final and senha_final:
+                                    st.session_state["users"].append(
+                                        {
+                                            "usuario": login_final,
+                                            "senha": senha_final,
+                                            "perfil": "Aluno",
+                                            "pessoa": nome,
+                                        }
+                                    )
+                                    save_users(st.session_state["users"])
+
+                                turma_link = str(turma_obj.get("link_zoom", "")).strip() if isinstance(turma_obj, dict) else ""
+                                portal_url = _student_portal_url()
+                                login_info = login_final or "Nao informado"
+                                senha_info = senha_final or "Nao informada"
+                                assunto_auto = "[Active] Boas-vindas e acesso inicial"
+                                corpo_auto = (
+                                    f"Ola, {nome}! Seja muito bem-vindo(a) a Mister Wiz! \U0001F389\n\n"
+                                    f"Seu cadastro foi concluido no Active.\n"
+                                    f"Turma: {turma}\n"
+                                    f"Livro/Nivel: {livro_final or 'A definir'}\n"
+                                    f"Matricula: {matricula_final}\n"
+                                    f"Login: {login_info}\n"
+                                    f"Senha: {senha_info}\n"
+                                )
+                                if portal_url:
+                                    corpo_auto += f"Portal do aluno: {portal_url}\n"
+                                if turma_link:
+                                    corpo_auto += f"Link da aula: {turma_link}\n"
+                                corpo_auto += (
+                                    "\nFinanceiro, boletos e materiais ficam disponiveis no portal do aluno.\n"
+                                    "Em caso de duvidas, responda esta mensagem."
+                                )
+                                notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                                if wiz_event_enabled("on_student_created"):
+                                    notify_stats = _notify_direct_contacts(
+                                        nome,
+                                        _message_recipients_for_student(novo_aluno),
+                                        _student_whatsapp_recipients(novo_aluno),
+                                        assunto_auto,
+                                        corpo_auto,
+                                        "Cadastro Aluno",
+                                    )
+                                st.session_state["add_student_feedback"] = {
+                                    "success": "Cadastro realizado com sucesso!",
+                                    "info": (
+                                        "Disparos automáticos: "
+                                        f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
+                                        f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
+                                    ),
+                                }
+
+                            st.session_state["add_student_edit_idx"] = -1
+                            st.session_state["add_student_edit_matricula"] = ""
+                            st.session_state["add_student_form_version"] = form_ver + 1
+                            st.rerun()
 
         with tab3:
             if not st.session_state["students"]:
