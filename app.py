@@ -5451,6 +5451,49 @@ def render_sales_leads_manage(vendedor_atual):
         format_func=lambda lid: lead_labels_by_id.get(str(lid).strip(), str(lid).strip()),
     )
 
+    qbulk1, qbulk2, qbulk3 = st.columns(3)
+    with qbulk1:
+        if st.button("Selecionar todos filtrados", key="sales_leads_bulk_select_all"):
+            st.session_state["sales_leads_bulk_selected_ids"] = list(bulk_ids)
+            st.rerun()
+    with qbulk2:
+        if st.button("Limpar selecao", key="sales_leads_bulk_clear"):
+            st.session_state["sales_leads_bulk_selected_ids"] = []
+            st.rerun()
+    with qbulk3:
+        st.caption(f"{len(selected_ids)} lead(s) selecionado(s)")
+
+    st.markdown("#### Exclusao rapida em massa")
+    d1, d2, d3 = st.columns([1.3, 1.2, 1.5])
+    with d1:
+        quick_delete_confirm = st.checkbox(
+            "Confirmar exclusao",
+            value=False,
+            key="sales_leads_bulk_quick_delete_confirm",
+        )
+    with d2:
+        st.caption("Acao permanente")
+    with d3:
+        if st.button(
+            "Excluir selecionados agora",
+            type="primary",
+            key="sales_leads_bulk_quick_delete_btn",
+            disabled=not bool(selected_ids),
+        ):
+            if not quick_delete_confirm:
+                st.error("Marque a confirmacao para excluir.")
+            else:
+                before = len(st.session_state.get("sales_leads", []))
+                st.session_state["sales_leads"] = [
+                    l for l in st.session_state.get("sales_leads", [])
+                    if str(l.get("id", "")).strip() not in selected_ids
+                ]
+                removed = before - len(st.session_state.get("sales_leads", []))
+                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                st.session_state["sales_leads_bulk_selected_ids"] = []
+                st.success(f"{removed} lead(s) excluido(s).")
+                st.rerun()
+
     b1, b2 = st.columns(2)
     with b1:
         bulk_action = st.selectbox(
