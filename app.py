@@ -5494,6 +5494,37 @@ def render_sales_leads_manage(vendedor_atual):
                 st.success(f"{removed} lead(s) excluido(s).")
                 st.rerun()
 
+    st.markdown("#### Limpeza total da base")
+    t1, t2, t3 = st.columns([1.4, 1.2, 1.6])
+    with t1:
+        wipe_all_confirm = st.checkbox(
+            "Confirmo apagar TODOS os leads",
+            value=False,
+            key="sales_leads_wipe_all_confirm",
+        )
+    with t2:
+        wipe_all_confirm_2 = st.checkbox(
+            "Confirmacao final",
+            value=False,
+            key="sales_leads_wipe_all_confirm_2",
+        )
+    with t3:
+        if st.button(
+            "Excluir TODOS os leads",
+            type="primary",
+            key="sales_leads_wipe_all_btn",
+            disabled=not bool(st.session_state.get("sales_leads", [])),
+        ):
+            if not (wipe_all_confirm and wipe_all_confirm_2):
+                st.error("Marque as duas confirmacoes para excluir todos os leads.")
+            else:
+                total_before = len(st.session_state.get("sales_leads", []))
+                st.session_state["sales_leads"] = []
+                st.session_state["sales_leads_bulk_selected_ids"] = []
+                save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+                st.success(f"Base zerada com sucesso. {total_before} lead(s) excluido(s).")
+                st.rerun()
+
     b1, b2 = st.columns(2)
     with b1:
         bulk_action = st.selectbox(
