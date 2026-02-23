@@ -2575,6 +2575,265 @@ def _lead_last_contact_date(lead_obj):
             return dt
     return None
 
+def _sales_stage_from_status(status_txt):
+    status_txt = normalize_text(status_txt)
+    if status_txt == normalize_text("Fechado"):
+        return "Fechamento"
+    if status_txt == normalize_text("Desistir"):
+        return "Descartado"
+    if status_txt == normalize_text("Leads quentes"):
+        return "Negociacao"
+    if status_txt == normalize_text("Leads frios"):
+        return "Contato inicial"
+    return "Qualificacao"
+
+def _sales_match_option(raw_value, options, default_value):
+    value = str(raw_value or "").strip()
+    if not value:
+        return default_value
+    norm = normalize_text(value)
+    for opt in options:
+        if normalize_text(opt) == norm:
+            return opt
+    return default_value
+
+def _sales_import_normalize_key(key):
+    text = normalize_text(key).replace("_", " ").replace("-", " ").replace("/", " ")
+    return " ".join(text.split())
+
+def _sales_import_parse_rows(uploaded_file):
+    if not uploaded_file:
+        return [], "Arquivo nao enviado."
+    name = str(getattr(uploaded_file, "name", "") or "").strip()
+    ext = Path(name).suffix.lower()
+    raw = uploaded_file.getvalue()
+    if not raw:
+        return [], "Arquivo vazio."
+    try:
+        if ext in (".csv", ".txt"):
+            text = raw.decode("utf-8-sig", errors="ignore")
+            df = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str)
+        elif ext in (".xlsx", ".xls"):
+            df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        elif ext == ".json":
+            parsed = json.loads(raw.decode("utf-8-sig", errors="ignore"))
+            if isinstance(parsed, list):
+                rows = parsed
+            elif isinstance(parsed, dict):
+                if isinstance(parsed.get("leads"), list):
+                    rows = parsed.get("leads", [])
+                elif isinstance(parsed.get("data"), list):
+                    rows = parsed.get("data", [])
+                else:
+                    rows = [parsed]
+            else:
+                return [], "JSON invalido para importacao de leads."
+            clean_rows = [r for r in rows if isinstance(r, dict)]
+            return clean_rows, ""
+        else:
+            return [], "Formato nao suportado. Use CSV, XLSX ou JSON."
+    except Exception as ex:
+        return [], f"Falha ao ler arquivo: {ex}"
+    if df is None or df.empty:
+        return [], "Arquivo sem linhas para importar."
+    df = df.fillna("")
+    return df.to_dict("records"), ""
+
+def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
+    if not isinstance(row_obj, dict):
+        return {}, "Linha invalida."
+    normalized = {}
+    original_by_norm = {}
+    for raw_key, raw_val in row_obj.items():
+        key_norm = _sales_import_normalize_key(raw_key)
+        if not key_norm:
+            continue
+        value = str(raw_val or "").strip()
+        if key_norm not in normalized or (not normalized.get(key_norm) and value):
+            normalized[key_norm] = value
+            original_by_norm[key_norm] = str(raw_key or "").strip()
+
+    def pick(*aliases):
+        for alias in aliases:
+            alias_norm = _sales_import_normalize_key(alias)
+            if alias_norm in normalized and str(normalized.get(alias_norm, "")).strip():
+                return str(normalized.get(alias_norm, "")).strip()
+        return ""
+
+    nome = pick("nome", "nome completo", "name", "lead", "contato", "cliente")
+    telefone = pick("telefone", "telefone whatsapp", "telefone celular", "whatsapp", "celular", "fone", "phone", "numero")
+    if not nome or not telefone:
+        return {}, "Linha sem nome ou telefone."
+
+    status = _sales_match_option(pick("status", "situacao"), sales_lead_status_options(), "Novo contato")
+    estagio_raw = pick("estagio", "estagio funil", "estagio no funil", "funil", "pipeline", "etapa")
+    estagio = _sales_match_option(estagio_raw, sales_pipeline_stage_options(), _sales_stage_from_status(status))
+
+    origem = pick("origem", "source", "canal")
+    if not origem:
+        origem = str(origem_padrao or "").strip()
+
+    mapped = {
+        "nome": nome,
+        "telefone": telefone,
+        "email": pick("email", "e-mail", "mail").lower(),
+        "status": status,
+        "estagio_funil": estagio,
+        "origem": origem,
+        "interesse": pick("interesse", "curso", "produto"),
+        "cargo": pick("cargo", "profissao", "profissao cargo"),
+        "empresa": pick("empresa", "company", "organizacao"),
+        "cidade": pick("cidade", "city"),
+        "estado": pick("estado", "uf", "state").upper(),
+        "tags": _lead_tags_list(pick("tags", "tag", "etiquetas", "labels")),
+        "observacao": pick("observacao", "observacoes", "obs", "anotacoes", "comentarios", "descricao"),
+        "vendedor": pick("vendedor", "consultor", "responsavel", "owner") or vendedor_atual,
+    }
+
+    used_aliases = {
+        _sales_import_normalize_key(a)
+        for a in [
+            "nome", "nome completo", "name", "lead", "contato", "cliente",
+            "telefone", "telefone whatsapp", "telefone celular", "whatsapp", "celular", "fone", "phone", "numero",
+            "email", "e-mail", "mail", "status", "situacao",
+            "estagio", "estagio funil", "estagio no funil", "funil", "pipeline", "etapa",
+            "origem", "source", "canal", "interesse", "curso", "produto",
+            "cargo", "profissao", "profissao cargo", "empresa", "company", "organizacao",
+            "cidade", "city", "estado", "uf", "state",
+            "tags", "tag", "etiquetas", "labels",
+            "observacao", "observacoes", "obs", "anotacoes", "comentarios", "descricao",
+            "vendedor", "consultor", "responsavel", "owner",
+        ]
+    }
+    custom_fields = {}
+    for key_norm, val in normalized.items():
+        if key_norm in used_aliases:
+            continue
+        k_raw = original_by_norm.get(key_norm, key_norm).strip()
+        v_raw = str(val or "").strip()
+        if k_raw and v_raw:
+            custom_fields[k_raw] = v_raw
+    mapped["campos_personalizados"] = custom_fields
+    return mapped, ""
+
+def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao="", atualizar_existentes=True):
+    rows, err = _sales_import_parse_rows(uploaded_file)
+    if err:
+        return False, err, {"total_linhas": 0, "cadastrados": 0, "atualizados": 0, "ignorados": 0}, []
+
+    leads_store = st.session_state.get("sales_leads", [])
+    by_phone = {}
+    by_email = {}
+    for lead in leads_store:
+        if not isinstance(lead, dict):
+            continue
+        phone_digits = re.sub(r"\D", "", str(lead.get("telefone", "") or ""))
+        email_key = str(lead.get("email", "") or "").strip().lower()
+        if phone_digits:
+            by_phone[phone_digits] = lead
+        if email_key:
+            by_email[email_key] = lead
+
+    now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    cadastrados = 0
+    atualizados = 0
+    ignorados = 0
+    erros = []
+
+    for idx, row in enumerate(rows, start=1):
+        mapped, map_err = _sales_import_map_row(row, vendedor_atual=vendedor_atual, origem_padrao=origem_padrao)
+        if map_err:
+            ignorados += 1
+            erros.append({"linha": idx, "erro": map_err})
+            continue
+
+        phone_digits = re.sub(r"\D", "", str(mapped.get("telefone", "") or ""))
+        email_key = str(mapped.get("email", "") or "").strip().lower()
+        existing = None
+        if phone_digits and phone_digits in by_phone:
+            existing = by_phone[phone_digits]
+        elif email_key and email_key in by_email:
+            existing = by_email[email_key]
+
+        if existing and not atualizar_existentes:
+            ignorados += 1
+            erros.append({"linha": idx, "erro": "Lead ja existe (telefone/e-mail)."})
+            continue
+
+        if existing:
+            for field in ["nome", "telefone", "email", "status", "estagio_funil", "origem", "interesse", "cargo", "empresa", "cidade", "estado", "observacao", "vendedor"]:
+                value = str(mapped.get(field, "")).strip()
+                if value:
+                    existing[field] = value
+            existing_tags = _lead_tags_list(existing.get("tags", []))
+            existing["tags"] = _lead_tags_list(existing_tags + _lead_tags_list(mapped.get("tags", [])))
+            custom_existing = existing.get("campos_personalizados", {}) if isinstance(existing.get("campos_personalizados"), dict) else {}
+            custom_new = mapped.get("campos_personalizados", {}) if isinstance(mapped.get("campos_personalizados"), dict) else {}
+            custom_existing.update(custom_new)
+            existing["campos_personalizados"] = custom_existing
+            existing.setdefault("interacoes", []).append(
+                {
+                    "data_hora": now,
+                    "canal": "Importacao",
+                    "acao": "Lead atualizado por importacao",
+                    "descricao": "Atualizacao automatica via arquivo de leads.",
+                    "pagina": "",
+                }
+            )
+            existing["updated_at"] = now
+            atualizados += 1
+            continue
+
+        novo = {
+            "id": uuid.uuid4().hex,
+            "nome": str(mapped.get("nome", "")).strip(),
+            "telefone": str(mapped.get("telefone", "")).strip(),
+            "email": str(mapped.get("email", "")).strip().lower(),
+            "status": str(mapped.get("status", "Novo contato")).strip() or "Novo contato",
+            "estagio_funil": str(mapped.get("estagio_funil", "Qualificacao")).strip() or "Qualificacao",
+            "origem": str(mapped.get("origem", "")).strip(),
+            "interesse": str(mapped.get("interesse", "")).strip(),
+            "cargo": str(mapped.get("cargo", "")).strip(),
+            "empresa": str(mapped.get("empresa", "")).strip(),
+            "cidade": str(mapped.get("cidade", "")).strip(),
+            "estado": str(mapped.get("estado", "")).strip(),
+            "tags": _lead_tags_list(mapped.get("tags", [])),
+            "campos_personalizados": mapped.get("campos_personalizados", {}) if isinstance(mapped.get("campos_personalizados"), dict) else {},
+            "observacao": str(mapped.get("observacao", "")).strip(),
+            "vendedor": str(mapped.get("vendedor", "")).strip() or vendedor_atual,
+            "created_at": now,
+            "updated_at": "",
+            "ultimo_contato": "",
+            "interacoes": [
+                {
+                    "data_hora": now,
+                    "canal": "Importacao",
+                    "acao": "Lead importado",
+                    "descricao": "Cadastro automatizado via arquivo de leads.",
+                    "pagina": "",
+                }
+            ],
+            "landing_pages": [],
+            "conversoes": [],
+        }
+        leads_store.append(novo)
+        if phone_digits:
+            by_phone[phone_digits] = novo
+        if email_key:
+            by_email[email_key] = novo
+        cadastrados += 1
+
+    if cadastrados > 0 or atualizados > 0:
+        save_list(SALES_LEADS_FILE, st.session_state["sales_leads"])
+
+    stats = {
+        "total_linhas": len(rows),
+        "cadastrados": cadastrados,
+        "atualizados": atualizados,
+        "ignorados": ignorados,
+    }
+    return True, "Importacao concluida.", stats, erros
+
 def sales_agenda_type_options():
     return [
         "Ligacao a fazer",
@@ -4705,6 +4964,48 @@ def run_commercial_panel():
         tab_new, tab_manage = st.tabs(["Novo Lead", "Base de Leads (Dinamica)"])
 
         with tab_new:
+            with st.expander("Importar lista de leads (cadastro automatico)", expanded=False):
+                st.caption("Envie CSV, XLSX ou JSON para cadastrar leads em lote.")
+                import_file = st.file_uploader(
+                    "Arquivo da lista de leads",
+                    type=["csv", "xlsx", "xls", "json"],
+                    key="sales_leads_import_file",
+                )
+                i1, i2 = st.columns(2)
+                with i1:
+                    origem_padrao_import = st.text_input(
+                        "Origem padrao para linhas sem origem (opcional)",
+                        key="sales_leads_import_origem_padrao",
+                    )
+                with i2:
+                    atualizar_existentes = st.checkbox(
+                        "Atualizar lead existente (telefone/e-mail)",
+                        value=True,
+                        key="sales_leads_import_update_existing",
+                    )
+                if st.button("Importar e cadastrar leads automaticamente", type="primary", key="sales_leads_import_btn"):
+                    if not import_file:
+                        st.error("Selecione um arquivo para importar.")
+                    else:
+                        ok_import, msg_import, stats_import, erros_import = _sales_import_register_leads(
+                            import_file,
+                            vendedor_atual=vendedor_atual,
+                            origem_padrao=origem_padrao_import,
+                            atualizar_existentes=atualizar_existentes,
+                        )
+                        if ok_import:
+                            st.success(
+                                f"{msg_import} Linhas: {stats_import.get('total_linhas', 0)} | "
+                                f"Novos: {stats_import.get('cadastrados', 0)} | "
+                                f"Atualizados: {stats_import.get('atualizados', 0)} | "
+                                f"Ignorados: {stats_import.get('ignorados', 0)}"
+                            )
+                            if erros_import:
+                                st.warning("Algumas linhas foram ignoradas.")
+                                st.dataframe(pd.DataFrame(erros_import), use_container_width=True)
+                        else:
+                            st.error(msg_import)
+            st.markdown("---")
             with st.form("sales_new_lead", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 with c1:
