@@ -135,6 +135,8 @@ if "evo_instances_cache_error" not in st.session_state:
     st.session_state["evo_instances_cache_error"] = ""
 if "wiz_settings" not in st.session_state:
     st.session_state["wiz_settings"] = {}
+if "finance_settings" not in st.session_state:
+    st.session_state["finance_settings"] = {}
 if "wiz_action_plan" not in st.session_state:
     st.session_state["wiz_action_plan"] = []
 if "wiz_last_execution" not in st.session_state:
@@ -183,6 +185,7 @@ SALES_LEADS_FILE = DATA_DIR / "sales_leads.json"
 SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
+FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
 WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
@@ -953,6 +956,21 @@ DEFAULT_WIZ_SETTINGS = {
     "on_financial_created": True,
 }
 
+DEFAULT_FINANCE_SETTINGS = {
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_user": "",
+    "smtp_pass": "",
+    "smtp_tls": "1",
+    "smtp_from": "",
+    "boleto_provider": "link",
+    "boleto_base_url": "",
+    "boleto_link_template": "",
+    "boleto_api_url": "",
+    "boleto_api_key": "",
+    "boleto_api_auth_header": "Authorization",
+}
+
 def _load_json_dict(path, default_obj=None):
     default_obj = dict(default_obj or {})
     with DATA_IO_LOCK:
@@ -989,6 +1007,34 @@ def save_wiz_settings(settings):
     st.session_state["wiz_settings"] = merged
     _save_json_dict(WIZ_SETTINGS_FILE, merged)
     return merged
+
+def get_finance_settings():
+    raw = st.session_state.get("finance_settings") or {}
+    merged = dict(DEFAULT_FINANCE_SETTINGS)
+    if isinstance(raw, dict):
+        for key in merged:
+            val = raw.get(key, None)
+            if val is not None:
+                merged[key] = str(val)
+    return merged
+
+def save_finance_settings(settings):
+    merged = dict(DEFAULT_FINANCE_SETTINGS)
+    if isinstance(settings, dict):
+        for key in merged:
+            if key in settings:
+                merged[key] = str(settings.get(key, ""))
+    st.session_state["finance_settings"] = merged
+    _save_json_dict(FINANCE_SETTINGS_FILE, merged)
+    return merged
+
+def _finance_config_value(env_key, settings_key, default=""):
+    env_val = _get_config_value(env_key, "")
+    if str(env_val).strip():
+        return str(env_val).strip()
+    settings = get_finance_settings()
+    val = str(settings.get(settings_key, "")).strip()
+    return val or default
 
 def _backup_datasets():
     return [
@@ -1404,10 +1450,13 @@ def notify_student_financial_event(aluno_nome, itens):
         return {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     lines = []
     for item in itens[:12]:
-        lines.append(
+        item_line = (
             f"- {item.get('descricao','Lancamento')} | Venc: {item.get('vencimento','')} | "
             f"Parcela: {item.get('parcela','')} | Valor: {item.get('valor_parcela', item.get('valor',''))}"
         )
+        if item.get("boleto_url"):
+            item_line += f" | Boleto: {item.get('boleto_url')}"
+        lines.append(item_line)
     assunto = "[Active] Novo lançamento financeiro"
     corpo = "Foram lançados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
     return _notify_direct_contacts(
@@ -1418,6 +1467,267 @@ def notify_student_financial_event(aluno_nome, itens):
         corpo,
         "Financeiro",
     )
+
+def _smtp_config_diagnostics():
+    host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "")
+    port = _finance_config_value("ACTIVE_SMTP_PORT", "smtp_port", "587")
+    user = _finance_config_value("ACTIVE_SMTP_USER", "smtp_user", "")
+    sender = _finance_config_value("ACTIVE_EMAIL_FROM", "smtp_from", "")
+    return {
+        "host_ok": bool(str(host).strip()),
+        "port_ok": bool(str(port).strip()),
+        "user_ok": bool(str(user).strip()),
+        "pass_ok": bool(_finance_config_value("ACTIVE_SMTP_PASS", "smtp_pass", "")),
+        "from_ok": bool(str(sender).strip() or str(user).strip()),
+        "tls_on": str(_finance_config_value("ACTIVE_SMTP_TLS", "smtp_tls", "1")).strip().lower() not in ("0", "false", "no"),
+    }
+
+def _boleto_config_diagnostics():
+    provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
+    return {
+        "provider": provider,
+        "base_url_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_BASE_URL", "boleto_base_url", "")).strip()),
+        "template_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_LINK_TEMPLATE", "boleto_link_template", "")).strip()),
+        "api_url_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()),
+        "api_key_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()),
+    }
+
+def _find_student_by_name(name):
+    target = str(name or "").strip().lower()
+    if not target:
+        return {}
+    for student in st.session_state.get("students", []):
+        if str(student.get("nome", "")).strip().lower() == target:
+            return student
+    return {}
+
+def _format_boleto_linha(raw_digits):
+    digits = re.sub(r"\D+", "", str(raw_digits or ""))
+    if not digits:
+        return ""
+    groups = [digits[i:i + 5] for i in range(0, len(digits), 5)]
+    return " ".join(groups).strip()
+
+def _default_boleto_linha(rec_obj):
+    codigo = re.sub(r"\D+", "", str(rec_obj.get("codigo", "")))
+    valor_cent = int(round(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) * 100))
+    venc = parse_date(rec_obj.get("vencimento", ""))
+    venc_token = venc.strftime("%d%m%Y") if venc else datetime.date.today().strftime("%d%m%Y")
+    base = f"{codigo}{venc_token}{valor_cent:010d}"
+    if len(base) < 47:
+        base = (base + ("0" * 47))[:47]
+    else:
+        base = base[:47]
+    return _format_boleto_linha(base)
+
+def _build_boleto_link_from_template(template, rec_obj, student):
+    venc = parse_date(rec_obj.get("vencimento", ""))
+    valor_num = parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", "")))
+    raw_map = {
+        "codigo": str(rec_obj.get("codigo", "")).strip(),
+        "aluno": str(rec_obj.get("aluno", "")).strip(),
+        "descricao": str(rec_obj.get("descricao", "")).strip(),
+        "vencimento": str(rec_obj.get("vencimento", "")).strip(),
+        "vencimento_iso": venc.strftime("%Y-%m-%d") if venc else "",
+        "valor": f"{valor_num:.2f}",
+        "valor_centavos": str(int(round(valor_num * 100))),
+        "parcela": str(rec_obj.get("parcela", "")).strip(),
+        "categoria": str(rec_obj.get("categoria", "")).strip(),
+        "cpf": str((student or {}).get("cpf", "")).strip(),
+        "email": str((student or {}).get("email", "")).strip().lower(),
+    }
+    mapping = {}
+    for key, val in raw_map.items():
+        val_txt = str(val)
+        mapping[key] = quote(val_txt, safe="")
+        mapping[f"{key}_raw"] = val_txt
+
+    def _replace(match):
+        token = str(match.group(1))
+        return str(mapping.get(token, ""))
+
+    return re.sub(r"\{([A-Za-z0-9_]+)\}", _replace, str(template or "")).strip()
+
+def _extract_boleto_info_from_json(payload):
+    if not isinstance(payload, dict):
+        return "", ""
+    url_keys = [
+        "boleto_url",
+        "url_boleto",
+        "link_boleto",
+        "payment_url",
+        "invoice_url",
+        "bank_slip_url",
+        "url",
+        "link",
+    ]
+    linha_keys = [
+        "linha_digitavel",
+        "linha",
+        "bar_code",
+        "barcode",
+        "digitable_line",
+    ]
+    boleto_url = ""
+    linha = ""
+    for key in url_keys:
+        val = str(payload.get(key, "")).strip()
+        if val and val.lower().startswith(("http://", "https://")):
+            boleto_url = val
+            break
+    for key in linha_keys:
+        val = str(payload.get(key, "")).strip()
+        if val:
+            linha = _format_boleto_linha(val)
+            break
+    if not boleto_url:
+        for val in payload.values():
+            if isinstance(val, dict):
+                nested_url, nested_linha = _extract_boleto_info_from_json(val)
+                if nested_url and not boleto_url:
+                    boleto_url = nested_url
+                if nested_linha and not linha:
+                    linha = nested_linha
+            if boleto_url and linha:
+                break
+    return boleto_url, linha
+
+def generate_boleto_for_receivable(rec_obj, force=False):
+    if not isinstance(rec_obj, dict):
+        return False, "recebimento invalido"
+    if rec_obj.get("boleto_url") and not force:
+        return True, "boleto ja gerado"
+
+    student = _find_student_by_name(rec_obj.get("aluno", ""))
+    api_url = str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()
+    api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
+    boleto_url = ""
+    linha = ""
+    erro_api = ""
+
+    if api_url:
+        payload = {
+            "codigo": str(rec_obj.get("codigo", "")).strip(),
+            "aluno": str(rec_obj.get("aluno", "")).strip(),
+            "descricao": str(rec_obj.get("descricao", "")).strip(),
+            "valor": parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))),
+            "valor_formatado": str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip(),
+            "vencimento": str(rec_obj.get("vencimento", "")).strip(),
+            "categoria": str(rec_obj.get("categoria", "")).strip(),
+            "parcela": str(rec_obj.get("parcela", "")).strip(),
+            "cobranca": str(rec_obj.get("cobranca", "")).strip(),
+            "aluno_cpf": str(student.get("cpf", "")).strip() if isinstance(student, dict) else "",
+            "aluno_email": str(student.get("email", "")).strip() if isinstance(student, dict) else "",
+        }
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Active-Wiz-Automation/1.0",
+        }
+        if api_key:
+            auth_header = str(_finance_config_value("ACTIVE_BOLETO_API_AUTH_HEADER", "boleto_api_auth_header", "Authorization")).strip() or "Authorization"
+            if auth_header.lower() == "authorization":
+                headers["Authorization"] = api_key if api_key.lower().startswith("bearer ") else f"Bearer {api_key}"
+            else:
+                headers[auth_header] = api_key
+        status, ct, body, err = _http_request(
+            "POST",
+            api_url,
+            headers=headers,
+            json_payload=payload,
+            timeout=20,
+        )
+        parsed, preview = _try_parse_json(ct, body)
+        ok_http = status is not None and 200 <= int(status) < 300
+        if ok_http and isinstance(parsed, dict):
+            boleto_url, linha = _extract_boleto_info_from_json(parsed)
+        if not ok_http:
+            erro_api = f"falha api boleto (HTTP {status})"
+            if err:
+                erro_api += f" {err}"
+            elif preview:
+                erro_api += f" {preview[:120]}"
+
+    if not boleto_url:
+        template = str(_finance_config_value("ACTIVE_BOLETO_LINK_TEMPLATE", "boleto_link_template", "")).strip()
+        base_url = str(_finance_config_value("ACTIVE_BOLETO_BASE_URL", "boleto_base_url", "")).strip()
+        if template:
+            boleto_url = _build_boleto_link_from_template(template, rec_obj, student)
+        elif base_url:
+            params = {
+                "codigo": str(rec_obj.get("codigo", "")).strip(),
+                "aluno": str(rec_obj.get("aluno", "")).strip(),
+                "valor": str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip(),
+                "vencimento": str(rec_obj.get("vencimento", "")).strip(),
+                "parcela": str(rec_obj.get("parcela", "")).strip(),
+            }
+            sep = "&" if "?" in base_url else "?"
+            boleto_url = f"{base_url}{sep}{urlencode(params)}"
+
+    if not linha:
+        linha = _default_boleto_linha(rec_obj)
+
+    if not boleto_url and not linha:
+        msg = "configure ACTIVE_BOLETO_LINK_TEMPLATE ou ACTIVE_BOLETO_BASE_URL para gerar boleto"
+        if erro_api:
+            msg = f"{msg} ({erro_api})"
+        return False, msg
+
+    rec_obj["boleto_url"] = str(boleto_url).strip()
+    rec_obj["boleto_linha_digitavel"] = str(linha).strip()
+    rec_obj["boleto_status"] = "Gerado"
+    rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    if erro_api and not rec_obj.get("boleto_url"):
+        return True, f"boleto gerado por link local ({erro_api})"
+    return True, "boleto gerado"
+
+def send_receivable_boleto_to_student(rec_obj):
+    if not isinstance(rec_obj, dict):
+        return False, "recebimento invalido", {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    if str(rec_obj.get("categoria_lancamento", "Aluno")).strip() != "Aluno":
+        return False, "envio automatico disponivel apenas para lancamentos de aluno", {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    student = _find_student_by_name(rec_obj.get("aluno", ""))
+    if not student:
+        return False, "aluno nao encontrado para envio", {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+
+    ok_gen, status_gen = generate_boleto_for_receivable(rec_obj, force=False)
+    if not ok_gen:
+        return False, status_gen, {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+
+    valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
+    assunto = f"[Active] Boleto {rec_obj.get('descricao', 'Mensalidade')} - {rec_obj.get('vencimento', '')}"
+    corpo = (
+        f"Ola, {student.get('nome', 'Aluno')}.\n\n"
+        f"Seu boleto esta disponivel.\n"
+        f"Descricao: {rec_obj.get('descricao', '')}\n"
+        f"Valor: {valor}\n"
+        f"Vencimento: {rec_obj.get('vencimento', '')}\n"
+        f"Parcela: {rec_obj.get('parcela', '')}\n"
+        f"Codigo: {rec_obj.get('codigo', '')}\n"
+    )
+    if rec_obj.get("boleto_linha_digitavel"):
+        corpo += f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}\n"
+    if rec_obj.get("boleto_url"):
+        corpo += f"Boleto: {rec_obj.get('boleto_url')}\n"
+
+    stats = _notify_direct_contacts(
+        student.get("nome", "Aluno"),
+        _message_recipients_for_student(student),
+        _student_whatsapp_recipients(student),
+        assunto,
+        corpo,
+        "Financeiro Boleto",
+    )
+
+    rec_obj["boleto_enviado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    rec_obj["boleto_enviado_canais"] = (
+        f"email {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+        f"whatsapp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}"
+    )
+    save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+
+    return True, "boleto enviado", stats
 
 def _extract_first_json(text):
     raw = str(text or "").strip()
@@ -3909,6 +4219,12 @@ def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, dat
         "item_codigo": str(item_codigo).strip(),
         "vencimento": vencimento.strftime("%d/%m/%Y"),
         "status": "Aberto",
+        "boleto_url": "",
+        "boleto_linha_digitavel": "",
+        "boleto_status": "Nao Gerado",
+        "boleto_gerado_em": "",
+        "boleto_enviado_em": "",
+        "boleto_enviado_canais": "",
     })
     save_list(RECEIVABLES_FILE, st.session_state["receivables"])
     return codigo
@@ -3922,14 +4238,17 @@ def allowed_portals(profile):
     return []
 
 def _send_email_smtp(to_email, subject, body):
-    host = os.getenv("ACTIVE_SMTP_HOST", "").strip()
+    host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "").strip()
     if not host:
         return False, "SMTP nao configurado"
-    port = int(os.getenv("ACTIVE_SMTP_PORT", "587"))
-    user = os.getenv("ACTIVE_SMTP_USER", "").strip()
-    password = os.getenv("ACTIVE_SMTP_PASS", "").strip()
-    use_tls = os.getenv("ACTIVE_SMTP_TLS", "1").strip() not in ("0", "false", "False")
-    sender = os.getenv("ACTIVE_EMAIL_FROM", user or "noreply@active.local").strip()
+    try:
+        port = int(_finance_config_value("ACTIVE_SMTP_PORT", "smtp_port", "587"))
+    except Exception:
+        port = 587
+    user = _finance_config_value("ACTIVE_SMTP_USER", "smtp_user", "").strip()
+    password = _finance_config_value("ACTIVE_SMTP_PASS", "smtp_pass", "").strip()
+    use_tls = _finance_config_value("ACTIVE_SMTP_TLS", "smtp_tls", "1").strip().lower() not in ("0", "false", "no")
+    sender = _finance_config_value("ACTIVE_EMAIL_FROM", "smtp_from", user or "noreply@active.local").strip()
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -6247,6 +6566,7 @@ if not st.session_state.get("_active_users_loaded", False):
     if users_source != "db_unavailable":
         save_users(st.session_state["users"])
     st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
+    st.session_state["finance_settings"] = _load_json_dict(FINANCE_SETTINGS_FILE, DEFAULT_FINANCE_SETTINGS)
     st.session_state["_active_users_loaded"] = True
 
 if st.session_state.get("logged_in", False) and not st.session_state.get("_active_runtime_loaded", False):
@@ -9244,11 +9564,105 @@ elif st.session_state["role"] == "Coordenador":
 
         tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial"])
         with tab1:
+            with st.expander("Configuracao automatica de e-mail e boleto", expanded=False):
+                smtp_diag = _smtp_config_diagnostics()
+                boleto_diag = _boleto_config_diagnostics()
+                whatsapp_diag = _whatsapp_config_diagnostics()
+                smtp_ready = smtp_diag["host_ok"] and smtp_diag["port_ok"] and smtp_diag["from_ok"]
+                boleto_ready = boleto_diag["template_ok"] or boleto_diag["base_url_ok"] or boleto_diag["api_url_ok"]
+
+                d1, d2, d3 = st.columns(3)
+                with d1:
+                    st.metric("SMTP", "Configurado" if smtp_ready else "Pendente")
+                with d2:
+                    st.metric("Boleto", "Configurado" if boleto_ready else "Pendente")
+                with d3:
+                    st.metric("WhatsApp", "Configurado" if whatsapp_diag.get("wapi_ready") or whatsapp_diag.get("evolution_ready") else "Pendente")
+
+                st.caption(
+                    "Se variaveis de ambiente estiverem definidas (ACTIVE_*), elas tem prioridade sobre os campos abaixo."
+                )
+
+                current_cfg = get_finance_settings()
+                with st.form("finance_auto_cfg_form"):
+                    st.markdown("#### SMTP (envio de e-mail)")
+                    sm1, sm2, sm3 = st.columns(3)
+                    with sm1:
+                        cfg_smtp_host = st.text_input("Servidor SMTP", value=str(current_cfg.get("smtp_host", "")))
+                    with sm2:
+                        cfg_smtp_port = st.text_input("Porta SMTP", value=str(current_cfg.get("smtp_port", "587")))
+                    with sm3:
+                        cfg_smtp_tls = st.selectbox(
+                            "TLS",
+                            ["1", "0"],
+                            index=0 if str(current_cfg.get("smtp_tls", "1")) != "0" else 1,
+                            format_func=lambda v: "Ativo" if str(v) == "1" else "Desativado",
+                        )
+                    sm4, sm5, sm6 = st.columns(3)
+                    with sm4:
+                        cfg_smtp_user = st.text_input("Usuario SMTP", value=str(current_cfg.get("smtp_user", "")))
+                    with sm5:
+                        cfg_smtp_pass = st.text_input("Senha SMTP", value=str(current_cfg.get("smtp_pass", "")), type="password")
+                    with sm6:
+                        cfg_smtp_from = st.text_input("E-mail remetente", value=str(current_cfg.get("smtp_from", "")))
+
+                    st.markdown("#### Boleto")
+                    bl1, bl2 = st.columns(2)
+                    with bl1:
+                        cfg_boleto_provider = st.selectbox(
+                            "Provedor",
+                            ["link", "api"],
+                            index=0 if str(current_cfg.get("boleto_provider", "link")).strip().lower() != "api" else 1,
+                        )
+                    with bl2:
+                        cfg_boleto_base_url = st.text_input(
+                            "Base URL do boleto (opcional)",
+                            value=str(current_cfg.get("boleto_base_url", "")),
+                            help="Se informar somente a base URL, o sistema adiciona os parametros automaticamente.",
+                        )
+                    cfg_boleto_template = st.text_input(
+                        "Template do link (opcional)",
+                        value=str(current_cfg.get("boleto_link_template", "")),
+                        help="Exemplo: https://provedor.com/boleto/{codigo}?aluno={aluno}",
+                    )
+                    bl3, bl4, bl5 = st.columns(3)
+                    with bl3:
+                        cfg_boleto_api_url = st.text_input("API URL (opcional)", value=str(current_cfg.get("boleto_api_url", "")))
+                    with bl4:
+                        cfg_boleto_api_key = st.text_input("API Key (opcional)", value=str(current_cfg.get("boleto_api_key", "")), type="password")
+                    with bl5:
+                        cfg_boleto_api_auth = st.text_input(
+                            "Header da API Key",
+                            value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
+                            help="Exemplo: Authorization ou apikey",
+                        )
+
+                    salvar_fin_cfg = st.form_submit_button("Salvar configuracoes automaticas")
+                    if salvar_fin_cfg:
+                        save_finance_settings(
+                            {
+                                "smtp_host": cfg_smtp_host,
+                                "smtp_port": cfg_smtp_port,
+                                "smtp_user": cfg_smtp_user,
+                                "smtp_pass": cfg_smtp_pass,
+                                "smtp_tls": cfg_smtp_tls,
+                                "smtp_from": cfg_smtp_from,
+                                "boleto_provider": cfg_boleto_provider,
+                                "boleto_base_url": cfg_boleto_base_url,
+                                "boleto_link_template": cfg_boleto_template,
+                                "boleto_api_url": cfg_boleto_api_url,
+                                "boleto_api_key": cfg_boleto_api_key,
+                                "boleto_api_auth_header": cfg_boleto_api_auth,
+                            }
+                        )
+                        st.success("Configuracoes financeiras salvas.")
+                        st.rerun()
+
             with st.form("add_rec"):
                 st.markdown("### Lançar Recebimento")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
-                with c2: val = st.text_input("Valor total (Ex: 150,00)")
+                with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
                 with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
                 with c4:
                     categoria_lancamento = st.selectbox(
@@ -9283,59 +9697,55 @@ elif st.session_state["role"] == "Coordenador":
                     cobranca = material_payment
                 else:
                     with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
-                c7, c8 = st.columns(2)
+                c7, c8, c9 = st.columns(3)
                 is_material = categoria == "Material"
                 with c7:
                     parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
                 material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
                 if categoria == "Mensalidade":
-                    gerar_12 = st.checkbox("Gerar mensalidades em serie", value=True)
-                    qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=12)
+                    qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
                 elif categoria == "Material":
-                    gerar_12 = False
                     qtd_meses = st.number_input(
-                        "Parcelamento do material (maximo 6x)",
+                        "Parcelas *",
                         min_value=1,
                         max_value=6,
                         value=2 if material_parcelado else 1,
                         disabled=not material_parcelado,
                     )
                 else:
-                    gerar_12 = False
-                    qtd_meses = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1)
+                    qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
 
-                if categoria == "Mensalidade" and not gerar_12:
-                    qtd_parcelas_calc = 1
-                elif categoria == "Material" and not material_parcelado:
+                if categoria == "Material" and not material_parcelado:
                     qtd_parcelas_calc = 1
                 else:
                     qtd_parcelas_calc = max(1, int(qtd_meses))
 
-                valor_total_num = parse_money(val)
-                valor_parcela_num = (valor_total_num / qtd_parcelas_calc) if valor_total_num > 0 else 0.0
-                valor_parcela_auto = f"{valor_parcela_num:.2f}".replace(".", ",")
-                with c8:
-                    st.text_input("Valor da parcela (automatico)", value=valor_parcela_auto, disabled=True, key="rec_valor_parcela_auto")
+                valor_parcela_num = parse_money(val_parcela_input)
+                valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
+                valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
+                valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
+                with c9:
+                    st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
 
                 if st.form_submit_button("Lancar"):
-                    if not str(aluno).strip() or valor_total_num <= 0:
-                        st.error("Informe referencia e valor total valido.")
+                    if not str(aluno).strip() or valor_parcela_num <= 0:
+                        st.error("Informe referencia e valor da parcela valido.")
                     else:
                         before_count = len(st.session_state.get("receivables", []))
                         total_lancados = 0
-                        if categoria == "Mensalidade" and gerar_12:
+                        if categoria == "Mensalidade":
                             for i in range(qtd_parcelas_calc):
                                 data_venc = add_months(venc, i)
                                 parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}"
                                 add_receivable(
                                     aluno,
                                     desc,
-                                    val,
+                                    valor_total_auto,
                                     data_venc,
                                     cobranca,
                                     categoria,
                                     data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_auto,
+                                    valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
                                 )
@@ -9349,12 +9759,12 @@ elif st.session_state["role"] == "Coordenador":
                                 add_receivable(
                                     aluno,
                                     desc or "Material",
-                                    val,
+                                    valor_total_auto,
                                     data_venc,
                                     cobranca,
                                     categoria,
                                     data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_auto,
+                                    valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
                                 )
@@ -9367,12 +9777,12 @@ elif st.session_state["role"] == "Coordenador":
                                 add_receivable(
                                     aluno,
                                     desc,
-                                    val,
+                                    valor_total_auto,
                                     data_venc,
                                     cobranca,
                                     categoria,
                                     data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_auto,
+                                    valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
                                 )
@@ -9437,6 +9847,8 @@ elif st.session_state["role"] == "Coordenador":
                     "vencimento",
                     "status",
                     "cobranca",
+                    "boleto_status",
+                    "boleto_enviado_em",
                 ]
                 df_rec = df_rec[[c for c in col_order if c in df_rec.columns]]
                 st.dataframe(df_rec, use_container_width=True)
@@ -9458,6 +9870,12 @@ elif st.session_state["role"] == "Coordenador":
                     key="manage_rec_idx",
                 )
                 rec_obj = recebimentos[idx_rec]
+                rec_obj.setdefault("boleto_url", "")
+                rec_obj.setdefault("boleto_linha_digitavel", "")
+                rec_obj.setdefault("boleto_status", "Nao Gerado")
+                rec_obj.setdefault("boleto_gerado_em", "")
+                rec_obj.setdefault("boleto_enviado_em", "")
+                rec_obj.setdefault("boleto_enviado_canais", "")
                 parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
                 venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
 
@@ -9527,6 +9945,12 @@ elif st.session_state["role"] == "Coordenador":
                     new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
                     st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
 
+                    mb1, mb2 = st.columns(2)
+                    with mb1:
+                        new_boleto_url = st.text_input("Link do boleto", value=str(rec_obj.get("boleto_url", "")))
+                    with mb2:
+                        new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
+
                     mc1, mc2 = st.columns(2)
                     with mc1:
                         salvar_rec = st.form_submit_button("Salvar alteracoes")
@@ -9548,6 +9972,14 @@ elif st.session_state["role"] == "Coordenador":
                             rec_obj["status"] = new_status_rec
                             rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
                             rec_obj["numero_pedido"] = ""
+                            rec_obj["boleto_url"] = str(new_boleto_url).strip()
+                            rec_obj["boleto_linha_digitavel"] = _format_boleto_linha(new_boleto_linha)
+                            if rec_obj["boleto_url"] or rec_obj["boleto_linha_digitavel"]:
+                                rec_obj["boleto_status"] = "Gerado"
+                                if not rec_obj.get("boleto_gerado_em"):
+                                    rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            else:
+                                rec_obj["boleto_status"] = "Nao Gerado"
                             save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                             st.success("Recebimento atualizado!")
                             st.rerun()
@@ -9557,6 +9989,45 @@ elif st.session_state["role"] == "Coordenador":
                         save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                         st.success("Recebimento excluido.")
                         st.rerun()
+
+                aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                st.caption("Boleto automatico: gere o boleto e envie diretamente por e-mail e WhatsApp.")
+                rb1, rb2, rb3 = st.columns([1, 1, 2])
+                with rb1:
+                    if st.button("Gerar boleto", key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}"):
+                        ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
+                        if ok_bol:
+                            st.success(f"Boleto gerado: {status_bol}.")
+                        else:
+                            st.error(f"Falha ao gerar boleto: {status_bol}.")
+                        st.rerun()
+                with rb2:
+                    if st.button(
+                        "Gerar e enviar",
+                        key=f"fin_send_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
+                        disabled=not aluno_lancamento,
+                        help="Disponivel somente para lancamentos com categoria 'Aluno'.",
+                    ):
+                        ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                        if ok_send:
+                            st.success(
+                                "Boleto enviado. "
+                                f"E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                            )
+                        else:
+                            st.error(f"Falha no envio: {status_send}.")
+                        st.rerun()
+                with rb3:
+                    if rec_obj.get("boleto_url"):
+                        st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
+                    if rec_obj.get("boleto_linha_digitavel"):
+                        st.caption(f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}")
+                    if rec_obj.get("boleto_enviado_em"):
+                        st.caption(
+                            f"Enviado em {rec_obj.get('boleto_enviado_em')} "
+                            f"({rec_obj.get('boleto_enviado_canais', '')})"
+                        )
 
             st.markdown("### Lançar Material do Estoque")
             itens_estoque = st.session_state["inventory"]
@@ -9672,7 +10143,7 @@ elif st.session_state["role"] == "Coordenador":
                 with c1:
                     desc = st.text_input("Descricao")
                 with c2:
-                    val = st.text_input("Valor total")
+                    val_parcela_pag_input = st.text_input("Valor Parcela *")
                 with c3:
                     categoria_lancamento_pag = st.selectbox(
                         "Categoria do lancamento",
@@ -9695,12 +10166,14 @@ elif st.session_state["role"] == "Coordenador":
 
                 c7, c8, c9 = st.columns(3)
                 with c7:
-                    qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=1, step=1)
-                val_total_pag_num = parse_money(val)
+                    qtd_pag = st.number_input("Parcelas *", min_value=1, max_value=24, value=1, step=1)
+                val_parcela_pag_num = parse_money(val_parcela_pag_input)
                 qtd_pag_int = max(1, int(qtd_pag))
-                valor_parcela_pag = f"{(val_total_pag_num / qtd_pag_int):.2f}".replace(".", ",") if val_total_pag_num > 0 else "0,00"
+                valor_parcela_pag = f"{val_parcela_pag_num:.2f}".replace(".", ",") if val_parcela_pag_num > 0 else "0,00"
+                val_total_pag_num = val_parcela_pag_num * qtd_pag_int
+                valor_total_pag_txt = f"{val_total_pag_num:.2f}".replace(".", ",")
                 with c8:
-                    st.text_input("Valor da parcela (automatico)", value=valor_parcela_pag, disabled=True, key="pag_valor_parcela_auto")
+                    st.text_input("Valor Total * (automatico)", value=valor_total_pag_txt, disabled=True, key="pag_valor_total_auto")
                 with c9:
                     numero_pedido_pag = st.text_input("Numero do pedido")
 
@@ -9711,8 +10184,8 @@ elif st.session_state["role"] == "Coordenador":
                     status_pag = st.selectbox("Status", ["Aberto", "Pago"])
 
                 if st.form_submit_button("Lancar"):
-                    if not desc.strip() or not forn.strip() or val_total_pag_num <= 0:
-                        st.error("Informe descricao, referencia e valor total valido.")
+                    if not desc.strip() or not forn.strip() or val_parcela_pag_num <= 0:
+                        st.error("Informe descricao, referencia e valor da parcela valido.")
                     else:
                         for i in range(qtd_pag_int):
                             venc_item = add_months(venc_pag, i) if qtd_pag_int > 1 else venc_pag
@@ -9721,7 +10194,7 @@ elif st.session_state["role"] == "Coordenador":
                                 {
                                     "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
                                     "descricao": desc.strip(),
-                                    "valor": val.strip(),
+                                    "valor": valor_total_pag_txt,
                                     "valor_parcela": valor_parcela_pag,
                                     "parcela": parcela_txt,
                                     "fornecedor": forn.strip(),
