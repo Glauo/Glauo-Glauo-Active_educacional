@@ -2827,6 +2827,7 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_de
     mapped = {
         "nome": nome,
         "telefone": telefone,
+        "celular": telefone,
         "email": str(email_val or "").lower(),
         "status": status,
         "estagio_funil": estagio,
@@ -2880,10 +2881,13 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
         if not isinstance(lead, dict):
             continue
         phone_digits = re.sub(r"\D", "", str(lead.get("telefone", "") or ""))
+        cell_digits = re.sub(r"\D", "", str(lead.get("celular", "") or ""))
         email_key = str(lead.get("email", "") or "").strip().lower()
         name_key = normalize_text(lead.get("nome", ""))
         if phone_digits:
             by_phone[phone_digits] = lead
+        if cell_digits:
+            by_phone[cell_digits] = lead
         if email_key:
             by_email[email_key] = lead
         if name_key:
@@ -2925,10 +2929,14 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             continue
 
         if existing:
-            for field in ["nome", "telefone", "email", "status", "estagio_funil", "origem", "interesse", "cargo", "empresa", "cidade", "estado", "observacao", "vendedor"]:
+            for field in ["nome", "telefone", "celular", "email", "status", "estagio_funil", "origem", "interesse", "cargo", "empresa", "cidade", "estado", "observacao", "vendedor"]:
                 value = str(mapped.get(field, "")).strip()
                 if value:
                     existing[field] = value
+            if not str(existing.get("celular", "")).strip() and str(existing.get("telefone", "")).strip():
+                existing["celular"] = str(existing.get("telefone", "")).strip()
+            if not str(existing.get("telefone", "")).strip() and str(existing.get("celular", "")).strip():
+                existing["telefone"] = str(existing.get("celular", "")).strip()
             existing_tags = _lead_tags_list(existing.get("tags", []))
             existing["tags"] = _lead_tags_list(existing_tags + _lead_tags_list(mapped.get("tags", [])))
             custom_existing = existing.get("campos_personalizados", {}) if isinstance(existing.get("campos_personalizados"), dict) else {}
@@ -2952,6 +2960,7 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             "id": uuid.uuid4().hex,
             "nome": str(mapped.get("nome", "")).strip(),
             "telefone": str(mapped.get("telefone", "")).strip(),
+            "celular": str(mapped.get("celular", "")).strip() or str(mapped.get("telefone", "")).strip(),
             "email": str(mapped.get("email", "")).strip().lower(),
             "status": str(mapped.get("status", "Novo contato")).strip() or "Novo contato",
             "estagio_funil": str(mapped.get("estagio_funil", "Qualificacao")).strip() or "Qualificacao",
@@ -2983,6 +2992,9 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
         leads_store.append(novo)
         if phone_digits:
             by_phone[phone_digits] = novo
+        new_cell_digits = re.sub(r"\D", "", str(novo.get("celular", "") or ""))
+        if new_cell_digits:
+            by_phone[new_cell_digits] = novo
         if email_key:
             by_email[email_key] = novo
         name_key = normalize_text(novo.get("nome", ""))
@@ -3057,6 +3069,15 @@ def _ensure_sales_store_defaults():
             leads_changed = True
         if "empresa" not in lead:
             lead["empresa"] = ""
+            leads_changed = True
+        if "celular" not in lead:
+            lead["celular"] = str(lead.get("telefone", "")).strip()
+            leads_changed = True
+        elif not str(lead.get("celular", "")).strip() and str(lead.get("telefone", "")).strip():
+            lead["celular"] = str(lead.get("telefone", "")).strip()
+            leads_changed = True
+        elif not str(lead.get("telefone", "")).strip() and str(lead.get("celular", "")).strip():
+            lead["telefone"] = str(lead.get("celular", "")).strip()
             leads_changed = True
         if "tags" not in lead:
             lead["tags"] = []
@@ -4652,6 +4673,7 @@ def render_sales_leads_manage(vendedor_atual):
                 [
                     str(lead.get("nome", "")),
                     str(lead.get("email", "")),
+                    str(lead.get("celular", "")),
                     str(lead.get("telefone", "")),
                     str(lead.get("cargo", "")),
                     str(lead.get("cidade", "")),
@@ -4705,13 +4727,14 @@ def render_sales_leads_manage(vendedor_atual):
             {
                 "Nome": str(lead.get("nome", "")).strip(),
                 "Email": str(lead.get("email", "")).strip(),
+                "Celular": str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip(),
+                "Telefone": str(lead.get("telefone", "")).strip(),
                 "Cargo": str(lead.get("cargo", "")).strip(),
                 "Cidade": str(lead.get("cidade", "")).strip(),
                 "Estado": str(lead.get("estado", "")).strip(),
                 "Origem": str(lead.get("origem", "")).strip(),
                 "Estagio no Funil": str(lead.get("estagio_funil", "")).strip(),
                 "Tags": _lead_tags_text(lead),
-                "Telefone": str(lead.get("telefone", "")).strip(),
                 "Status": str(lead.get("status", "")).strip(),
                 "Interesse": str(lead.get("interesse", "")).strip(),
                 "Empresa": str(lead.get("empresa", "")).strip(),
@@ -4731,6 +4754,7 @@ def render_sales_leads_manage(vendedor_atual):
         default_cols = [
             "Nome",
             "Email",
+            "Celular",
             "Cargo",
             "Cidade",
             "Estado",
@@ -4748,7 +4772,7 @@ def render_sales_leads_manage(vendedor_atual):
             key="sales_lead_visible_cols",
         )
         if not visible_cols:
-            visible_cols = ["Nome", "Telefone", "Status"]
+            visible_cols = ["Nome", "Email", "Celular", "Status"]
         s1, s2 = st.columns(2)
         with s1:
             sort_col = st.selectbox("Ordenar por", all_cols, index=all_cols.index("Nome") if "Nome" in all_cols else 0)
@@ -4771,7 +4795,8 @@ def render_sales_leads_manage(vendedor_atual):
     labels = []
     for lead in filtrados:
         lead_id = str(lead.get("id", "")).strip() or uuid.uuid4().hex
-        label = f"{str(lead.get('nome', '')).strip()} | {str(lead.get('telefone', '')).strip()} | {str(lead.get('estagio_funil', '')).strip()} | {lead_id}"
+        show_cell = str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip()
+        label = f"{str(lead.get('nome', '')).strip()} | {show_cell} | {str(lead.get('estagio_funil', '')).strip()} | {lead_id}"
         labels.append(label)
         labels_map[label] = lead
     selected_labels = st.multiselect("Selecionar leads", labels, key="sales_leads_bulk_selected")
@@ -4859,6 +4884,7 @@ def render_sales_leads_manage(vendedor_atual):
                 selected_rows.append(
                     {
                         "Nome": str(lead.get("nome", "")).strip(),
+                        "Celular": str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip(),
                         "Telefone": str(lead.get("telefone", "")).strip(),
                         "Email": str(lead.get("email", "")).strip(),
                         "Status": str(lead.get("status", "")).strip(),
@@ -4878,7 +4904,7 @@ def render_sales_leads_manage(vendedor_atual):
 
     st.markdown("### Ficha completa do lead")
     detail_options = [
-        f"{str(l.get('nome', '')).strip()} | {str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()} | {str(l.get('id', '')).strip()}"
+        f"{str(l.get('nome', '')).strip()} | {str(l.get('celular', '')).strip() or str(l.get('telefone', '')).strip()} | {str(l.get('status', '')).strip()} | {str(l.get('id', '')).strip()}"
         for l in filtrados
     ]
     if not detail_options:
@@ -4904,11 +4930,13 @@ def render_sales_leads_manage(vendedor_atual):
             with e1:
                 new_nome = st.text_input("Nome", value=str(lead_obj.get("nome", "")).strip())
             with e2:
-                new_tel = st.text_input("Telefone", value=str(lead_obj.get("telefone", "")).strip())
-            e3, e4 = st.columns(2)
+                new_tel = st.text_input("Telefone", value=str(lead_obj.get("telefone", "")).strip() or str(lead_obj.get("celular", "")).strip())
+            e3, e4, e5 = st.columns(3)
             with e3:
                 new_email = st.text_input("E-mail", value=str(lead_obj.get("email", "")).strip())
             with e4:
+                new_celular = st.text_input("Celular", value=str(lead_obj.get("celular", "")).strip() or str(lead_obj.get("telefone", "")).strip())
+            with e5:
                 status_atual = str(lead_obj.get("status", "Novo contato")).strip()
                 new_status = st.selectbox(
                     "Status",
@@ -4962,11 +4990,18 @@ def render_sales_leads_manage(vendedor_atual):
                 delete_lead = st.form_submit_button("Excluir lead", type="primary")
 
             if save_lead:
-                if not new_nome.strip() or not new_tel.strip():
-                    st.error("Nome e telefone sao obrigatorios.")
+                if not new_nome.strip() or (not str(new_tel or "").strip() and not str(new_celular or "").strip()):
+                    st.error("Nome e celular/telefone sao obrigatorios.")
                 else:
+                    tel_final = str(new_tel or "").strip()
+                    cel_final = str(new_celular or "").strip()
+                    if not tel_final and cel_final:
+                        tel_final = cel_final
+                    if not cel_final and tel_final:
+                        cel_final = tel_final
                     lead_obj["nome"] = new_nome.strip()
-                    lead_obj["telefone"] = new_tel.strip()
+                    lead_obj["telefone"] = tel_final
+                    lead_obj["celular"] = cel_final
                     lead_obj["email"] = new_email.strip().lower()
                     lead_obj["status"] = new_status
                     lead_obj["estagio_funil"] = new_stage
@@ -5187,10 +5222,12 @@ def run_commercial_panel():
                     nome = st.text_input("Nome completo *")
                 with c2:
                     telefone = st.text_input("Telefone / WhatsApp *")
-                c3, c4 = st.columns(2)
+                c3, c4, c5s = st.columns(3)
                 with c3:
                     email = st.text_input("E-mail")
                 with c4:
+                    celular = st.text_input("Celular")
+                with c5s:
                     status = st.selectbox("Status", sales_lead_status_options(), index=0)
                 c5, c6, c7 = st.columns(3)
                 with c5:
@@ -5215,8 +5252,14 @@ def run_commercial_panel():
                     placeholder="Ex: faixa_etaria: adulto\ncanal_preferido: WhatsApp",
                 )
                 if st.form_submit_button("Cadastrar lead", type="primary"):
-                    if not nome.strip() or not telefone.strip():
-                        st.error("Informe nome e telefone do lead.")
+                    tel_final = str(telefone or "").strip()
+                    cel_final = str(celular or "").strip()
+                    if not tel_final and cel_final:
+                        tel_final = cel_final
+                    if not cel_final and tel_final:
+                        cel_final = tel_final
+                    if not nome.strip() or (not tel_final and not cel_final):
+                        st.error("Informe nome e celular/telefone do lead.")
                     else:
                         created_at = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                         tags_list = _lead_tags_list(tags_raw)
@@ -5225,7 +5268,8 @@ def run_commercial_panel():
                             {
                                 "id": uuid.uuid4().hex,
                                 "nome": nome.strip(),
-                                "telefone": telefone.strip(),
+                                "telefone": tel_final,
+                                "celular": cel_final,
                                 "email": email.strip().lower(),
                                 "status": status,
                                 "estagio_funil": estagio_funil,
