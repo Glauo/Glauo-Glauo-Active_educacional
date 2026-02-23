@@ -2613,8 +2613,14 @@ def _sales_import_parse_rows(uploaded_file):
         if ext in (".csv", ".txt"):
             text = raw.decode("utf-8-sig", errors="ignore")
             df = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str)
-        elif ext in (".xlsx", ".xls"):
-            df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        elif ext in (".xlsx", ".xls", ".xlsb"):
+            if ext == ".xlsb":
+                try:
+                    df = pd.read_excel(io.BytesIO(raw), dtype=str, engine="pyxlsb")
+                except Exception:
+                    df = pd.read_excel(io.BytesIO(raw), dtype=str)
+            else:
+                df = pd.read_excel(io.BytesIO(raw), dtype=str)
         elif ext == ".json":
             parsed = json.loads(raw.decode("utf-8-sig", errors="ignore"))
             if isinstance(parsed, list):
@@ -2639,7 +2645,81 @@ def _sales_import_parse_rows(uploaded_file):
     df = df.fillna("")
     return df.to_dict("records"), ""
 
-def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
+def _sales_extract_text_candidates(normalized_row):
+    items = []
+    for key_norm, value in (normalized_row or {}).items():
+        text = str(value or "").strip()
+        if not text:
+            continue
+        items.append((key_norm, text))
+    return items
+
+def _sales_guess_phone_from_text(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    # Prioriza padrao brasileiro com DDD + numero (10/11 digitos), com ou sem +55.
+    pattern = re.compile(r"(?:\+?55[\s\-\.]?)?(?:\(?\d{2}\)?[\s\-\.]?)?(?:9?\d{4})[\s\-\.]?\d{4}")
+    matches = pattern.findall(raw)
+    for match in matches:
+        normalized = _normalize_whatsapp_number(match)
+        if normalized:
+            return normalized
+    # Fallback por sequencia de digitos.
+    digits = re.sub(r"\D+", "", raw)
+    if len(digits) >= 10:
+        return _normalize_whatsapp_number(digits)
+    return ""
+
+def _sales_guess_email_from_text(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw)
+    if not m:
+        return ""
+    return str(m.group(0)).strip().lower()
+
+def _sales_guess_name_from_candidates(candidates):
+    best = ""
+    best_score = -1
+    blocked_keywords = {
+        "telefone", "fone", "celular", "whatsapp", "email", "e mail",
+        "origem", "status", "estagio", "funil", "cidade", "estado",
+        "empresa", "cargo", "interesse", "cpf", "cnpj", "rg", "cep",
+        "observacao", "descricao", "comentario", "anotacao",
+    }
+    for key_norm, value in candidates:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        low = normalize_text(text)
+        if "@" in text or "http://" in low or "https://" in low:
+            continue
+        if any(block in key_norm for block in blocked_keywords):
+            continue
+        letters = len(re.findall(r"[A-Za-zÀ-ÿ]", text))
+        digits = len(re.findall(r"\d", text))
+        if letters < 2:
+            continue
+        if digits > 0 and digits >= letters:
+            continue
+        words = [w for w in re.split(r"\s+", text) if w]
+        if not words:
+            continue
+        score = letters + len(words) * 4
+        if digits > 0:
+            score -= digits * 2
+        if len(words) >= 2:
+            score += 12
+        if len(text) > 60:
+            score -= 10
+        if score > best_score:
+            best = text
+            best_score = score
+    return best
+
+def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao="", usar_wiz_detect=True):
     if not isinstance(row_obj, dict):
         return {}, "Linha invalida."
     normalized = {}
@@ -2660,10 +2740,81 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
                 return str(normalized.get(alias_norm, "")).strip()
         return ""
 
-    nome = pick("nome", "nome completo", "name", "lead", "contato", "cliente")
-    telefone = pick("telefone", "telefone whatsapp", "telefone celular", "whatsapp", "celular", "fone", "phone", "numero")
-    if not nome or not telefone:
-        return {}, "Linha sem nome ou telefone."
+    nome = pick("nome", "nome completo", "primeiro nome", "first name", "name", "lead", "contato", "cliente")
+    telefone = pick(
+        "telefone",
+        "telefone whatsapp",
+        "telefone celular",
+        "telefone principal",
+        "whatsapp",
+        "celular",
+        "fone",
+        "phone",
+        "phone number",
+        "mobile",
+        "numero",
+        "numero telefone",
+    )
+    telefone_guess_from_alias = _sales_guess_phone_from_text(telefone)
+    if telefone_guess_from_alias:
+        telefone = telefone_guess_from_alias
+    email_val = pick("email", "e-mail", "mail")
+
+    candidates = _sales_extract_text_candidates(normalized)
+    if usar_wiz_detect and not email_val:
+        for _, candidate_text in candidates:
+            guessed_email = _sales_guess_email_from_text(candidate_text)
+            if guessed_email:
+                email_val = guessed_email
+                break
+
+    if usar_wiz_detect and not telefone:
+        # 1) tenta apenas campos de telefone/contato
+        preferred_phone_keys = ["telefone", "fone", "celular", "whatsapp", "phone", "mobile", "numero"]
+        for key_norm, candidate_text in candidates:
+            if not any(k in key_norm for k in preferred_phone_keys):
+                continue
+            guessed_phone = _sales_guess_phone_from_text(candidate_text)
+            if guessed_phone:
+                telefone = guessed_phone
+                break
+        # 2) fallback: varre campos gerais, ignorando campos sabidamente nao-telefone
+        if not telefone:
+            blocked_for_phone = ["cpf", "cnpj", "rg", "cep", "idade", "nascimento", "matricula"]
+            for key_norm, candidate_text in candidates:
+                if any(k in key_norm for k in blocked_for_phone):
+                    continue
+                guessed_phone = _sales_guess_phone_from_text(candidate_text)
+                if guessed_phone:
+                    telefone = guessed_phone
+                    break
+
+    if usar_wiz_detect and not nome:
+        # 1) tenta extrair nome de campos usuais
+        preferred_name_keys = ["nome", "name", "lead", "contato", "cliente"]
+        for key_norm, candidate_text in candidates:
+            if any(k in key_norm for k in preferred_name_keys):
+                maybe_name = _sales_guess_name_from_candidates([(key_norm, candidate_text)])
+                if maybe_name:
+                    nome = maybe_name
+                    break
+        # 2) fallback geral com heuristica
+        if not nome:
+            nome = _sales_guess_name_from_candidates(candidates)
+        # 3) fallback do e-mail
+        if not nome and email_val:
+            local = str(email_val).split("@", 1)[0].replace(".", " ").replace("_", " ").replace("-", " ")
+            local = " ".join(w for w in local.split() if w)
+            if local:
+                nome = local.title()
+
+    # Regra solicitada: mesmo incompleto, cadastra com o que tiver.
+    if not nome and not telefone and not email_val:
+        return {}, "Linha sem informacao minima para cadastro."
+    if not nome and telefone:
+        nome = f"Lead {str(telefone)[-4:]}"
+    if not nome and email_val:
+        nome = "Lead sem nome"
 
     status = _sales_match_option(pick("status", "situacao"), sales_lead_status_options(), "Novo contato")
     estagio_raw = pick("estagio", "estagio funil", "estagio no funil", "funil", "pipeline", "etapa")
@@ -2676,7 +2827,7 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
     mapped = {
         "nome": nome,
         "telefone": telefone,
-        "email": pick("email", "e-mail", "mail").lower(),
+        "email": str(email_val or "").lower(),
         "status": status,
         "estagio_funil": estagio,
         "origem": origem,
@@ -2693,8 +2844,8 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
     used_aliases = {
         _sales_import_normalize_key(a)
         for a in [
-            "nome", "nome completo", "name", "lead", "contato", "cliente",
-            "telefone", "telefone whatsapp", "telefone celular", "whatsapp", "celular", "fone", "phone", "numero",
+            "nome", "nome completo", "primeiro nome", "first name", "name", "lead", "contato", "cliente",
+            "telefone", "telefone whatsapp", "telefone celular", "telefone principal", "whatsapp", "celular", "fone", "phone", "phone number", "mobile", "numero", "numero telefone",
             "email", "e-mail", "mail", "status", "situacao",
             "estagio", "estagio funil", "estagio no funil", "funil", "pipeline", "etapa",
             "origem", "source", "canal", "interesse", "curso", "produto",
@@ -2716,7 +2867,7 @@ def _sales_import_map_row(row_obj, vendedor_atual, origem_padrao=""):
     mapped["campos_personalizados"] = custom_fields
     return mapped, ""
 
-def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao="", atualizar_existentes=True):
+def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao="", atualizar_existentes=True, usar_wiz_detect=True):
     rows, err = _sales_import_parse_rows(uploaded_file)
     if err:
         return False, err, {"total_linhas": 0, "cadastrados": 0, "atualizados": 0, "ignorados": 0}, []
@@ -2724,15 +2875,19 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
     leads_store = st.session_state.get("sales_leads", [])
     by_phone = {}
     by_email = {}
+    by_name = {}
     for lead in leads_store:
         if not isinstance(lead, dict):
             continue
         phone_digits = re.sub(r"\D", "", str(lead.get("telefone", "") or ""))
         email_key = str(lead.get("email", "") or "").strip().lower()
+        name_key = normalize_text(lead.get("nome", ""))
         if phone_digits:
             by_phone[phone_digits] = lead
         if email_key:
             by_email[email_key] = lead
+        if name_key:
+            by_name[name_key] = lead
 
     now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     cadastrados = 0
@@ -2741,7 +2896,12 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
     erros = []
 
     for idx, row in enumerate(rows, start=1):
-        mapped, map_err = _sales_import_map_row(row, vendedor_atual=vendedor_atual, origem_padrao=origem_padrao)
+        mapped, map_err = _sales_import_map_row(
+            row,
+            vendedor_atual=vendedor_atual,
+            origem_padrao=origem_padrao,
+            usar_wiz_detect=usar_wiz_detect,
+        )
         if map_err:
             ignorados += 1
             erros.append({"linha": idx, "erro": map_err})
@@ -2754,6 +2914,10 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             existing = by_phone[phone_digits]
         elif email_key and email_key in by_email:
             existing = by_email[email_key]
+        else:
+            name_key = normalize_text(mapped.get("nome", ""))
+            if name_key and name_key in by_name:
+                existing = by_name[name_key]
 
         if existing and not atualizar_existentes:
             ignorados += 1
@@ -2821,6 +2985,9 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
             by_phone[phone_digits] = novo
         if email_key:
             by_email[email_key] = novo
+        name_key = normalize_text(novo.get("nome", ""))
+        if name_key:
+            by_name[name_key] = novo
         cadastrados += 1
 
     if cadastrados > 0 or atualizados > 0:
@@ -4968,10 +5135,10 @@ def run_commercial_panel():
                 st.caption("Envie CSV, XLSX ou JSON para cadastrar leads em lote.")
                 import_file = st.file_uploader(
                     "Arquivo da lista de leads",
-                    type=["csv", "xlsx", "xls", "json"],
+                    type=["csv", "xlsx", "xls", "xlsb", "json"],
                     key="sales_leads_import_file",
                 )
-                i1, i2 = st.columns(2)
+                i1, i2, i3 = st.columns(3)
                 with i1:
                     origem_padrao_import = st.text_input(
                         "Origem padrao para linhas sem origem (opcional)",
@@ -4983,6 +5150,13 @@ def run_commercial_panel():
                         value=True,
                         key="sales_leads_import_update_existing",
                     )
+                with i3:
+                    usar_wiz_detect = st.checkbox(
+                        "Wiz identificar nome/telefone",
+                        value=True,
+                        key="sales_leads_import_wiz_detect",
+                    )
+                st.caption("Importacao parcial habilitada: se vier nome, telefone ou e-mail, o lead sera cadastrado e voce pode completar depois.")
                 if st.button("Importar e cadastrar leads automaticamente", type="primary", key="sales_leads_import_btn"):
                     if not import_file:
                         st.error("Selecione um arquivo para importar.")
@@ -4992,6 +5166,7 @@ def run_commercial_panel():
                             vendedor_atual=vendedor_atual,
                             origem_padrao=origem_padrao_import,
                             atualizar_existentes=atualizar_existentes,
+                            usar_wiz_detect=usar_wiz_detect,
                         )
                         if ok_import:
                             st.success(
