@@ -2897,6 +2897,7 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
     cadastrados = 0
     atualizados = 0
     ignorados = 0
+    ignorados_sem_dados = 0
     erros = []
 
     for idx, row in enumerate(rows, start=1):
@@ -2908,7 +2909,10 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
         )
         if map_err:
             ignorados += 1
-            erros.append({"linha": idx, "erro": map_err})
+            if str(map_err).strip().lower() == "linha sem informacao minima para cadastro.":
+                ignorados_sem_dados += 1
+            else:
+                erros.append({"linha": idx, "erro": map_err})
             continue
 
         phone_digits = re.sub(r"\D", "", str(mapped.get("telefone", "") or ""))
@@ -3010,6 +3014,7 @@ def _sales_import_register_leads(uploaded_file, vendedor_atual, origem_padrao=""
         "cadastrados": cadastrados,
         "atualizados": atualizados,
         "ignorados": ignorados,
+        "linhas_sem_dados": ignorados_sem_dados,
     }
     return True, "Importacao concluida.", stats, erros
 
@@ -5214,10 +5219,14 @@ def run_commercial_panel():
                                 f"{msg_import} Linhas: {stats_import.get('total_linhas', 0)} | "
                                 f"Novos: {stats_import.get('cadastrados', 0)} | "
                                 f"Atualizados: {stats_import.get('atualizados', 0)} | "
-                                f"Ignorados: {stats_import.get('ignorados', 0)}"
+                                f"Ignorados: {stats_import.get('ignorados', 0)} | "
+                                f"Vazias: {stats_import.get('linhas_sem_dados', 0)}"
                             )
+                            linhas_sem_dados = int(stats_import.get("linhas_sem_dados", 0) or 0)
+                            if linhas_sem_dados > 0:
+                                st.info(f"{linhas_sem_dados} linha(s) vazia(s) foram ignoradas automaticamente.")
                             if erros_import:
-                                st.warning("Algumas linhas foram ignoradas.")
+                                st.warning("Algumas linhas tiveram erro real de importacao.")
                                 st.dataframe(pd.DataFrame(erros_import), use_container_width=True)
                         else:
                             st.error(msg_import)
