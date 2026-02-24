@@ -3881,15 +3881,17 @@ def book_levels():
     for b in books:
         nivel = normalize_text(str((b or {}).get("nivel", "")).strip())
         canon = ""
+        if "livro 4.5" in nivel or "livro4.5" in nivel or "livro 4,5" in nivel or "livro4,5" in nivel:
+            canon = "Livro 5"
         if "livro" in nivel:
-            for i in range(1, 5):
+            for i in range(1, 6):
                 if f"livro {i}" in nivel or f"livro{i}" in nivel:
                     canon = f"Livro {i}"
                     break
         if canon and canon not in seen:
             seen.add(canon)
             levels.append(canon)
-    return levels or ["Livro 1", "Livro 2", "Livro 3", "Livro 4"]
+    return levels or ["Livro 1", "Livro 2", "Livro 3", "Livro 4", "Livro 5"]
 
 def class_module_options():
     return [
@@ -3909,8 +3911,11 @@ def _norm_book_level(level):
     level = str(level or "").strip()
     if not level:
         return ""
-    # Accept "Livro 1".."Livro 4" (and minor variations).
-    for i in range(1, 5):
+    level_norm = normalize_text(level)
+    if "livro 4.5" in level_norm or "livro4.5" in level_norm or "livro 4,5" in level_norm or "livro4,5" in level_norm:
+        return "Livro 5"
+    # Accept "Livro 1".."Livro 5" (and minor variations).
+    for i in range(1, 6):
         if str(i) in level:
             return f"Livro {i}"
     if level.lower().startswith("livro"):
@@ -5551,7 +5556,7 @@ def render_agenda(items, empty_message):
 
 def library_book_templates():
     templates = []
-    for livro in range(1, 5):
+    for livro in range(1, 6):
         for parte in (1, 2):
             templates.append(
                 {
@@ -5616,9 +5621,18 @@ def library_book_templates():
     )
     return templates
 
+def _normalize_legacy_book_label(value):
+    txt = str(value or "").strip()
+    if not txt:
+        return ""
+    txt = re.sub(r"(?i)\blivro\s*4[.,]5\b", "Livro 5", txt)
+    return txt
+
 def _extract_livro_num(text):
     norm = normalize_text(text)
-    for i in range(1, 5):
+    if "livro 4.5" in norm or "livro4.5" in norm or "livro 4,5" in norm or "livro4,5" in norm:
+        return 5
+    for i in range(1, 6):
         if f"livro {i}" in norm or f"livro{i}" in norm:
             return i
     return None
@@ -5676,6 +5690,8 @@ def ensure_library_catalog(books):
         if not isinstance(raw, dict):
             continue
         obj = dict(raw)
+        obj["titulo"] = _normalize_legacy_book_label(obj.get("titulo", ""))
+        obj["nivel"] = _normalize_legacy_book_label(obj.get("nivel", ""))
         bid = infer_library_book_id(obj)
         if bid and bid in template_ids and bid not in mapped_existing:
             obj["book_id"] = bid
@@ -10395,8 +10411,8 @@ elif st.session_state["role"] == "Coordenador":
                             st.success(f"Arquivo salvo em: {target_obj.get('titulo', 'Livro')}.")
                             st.rerun()
 
-            st.markdown("### Ingles (4 livros em 2 partes)")
-            for livro in range(1, 5):
+            st.markdown("### Ingles (5 livros em 2 partes)")
+            for livro in range(1, 6):
                 st.markdown(f"#### Livro {livro}")
                 for parte in (1, 2):
                     book_id = f"ingles_livro_{livro}_parte_{parte}"
