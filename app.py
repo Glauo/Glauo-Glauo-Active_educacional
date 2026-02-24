@@ -5444,23 +5444,41 @@ def render_sales_leads_manage(vendedor_atual):
 
     st.markdown("### Acoes em massa")
     bulk_ids = [str(lead.get("id", "")).strip() for lead in filtrados if str(lead.get("id", "")).strip()]
+    all_bulk_ids = [
+        str(lead.get("id", "")).strip()
+        for lead in st.session_state.get("sales_leads", [])
+        if str(lead.get("id", "")).strip()
+    ]
+    all_lead_labels_by_id = {}
+    for lead in st.session_state.get("sales_leads", []):
+        lead_id = str(lead.get("id", "")).strip()
+        if not lead_id:
+            continue
+        show_cell = str(lead.get("celular", "")).strip() or str(lead.get("telefone", "")).strip() or "-"
+        show_mail = str(lead.get("email", "")).strip() or "-"
+        all_lead_labels_by_id[lead_id] = f"{str(lead.get('nome', '')).strip()} | {show_cell} | {show_mail}"
+
     selected_ids = st.multiselect(
         "Selecionar leads",
-        bulk_ids,
+        all_bulk_ids,
         key="sales_leads_bulk_selected_ids",
-        format_func=lambda lid: lead_labels_by_id.get(str(lid).strip(), str(lid).strip()),
+        format_func=lambda lid: all_lead_labels_by_id.get(str(lid).strip(), str(lid).strip()),
     )
 
-    qbulk1, qbulk2, qbulk3 = st.columns(3)
+    qbulk1, qbulk2, qbulk3, qbulk4 = st.columns(4)
     with qbulk1:
         if st.button("Selecionar todos filtrados", key="sales_leads_bulk_select_all"):
             st.session_state["sales_leads_bulk_selected_ids"] = list(bulk_ids)
             st.rerun()
     with qbulk2:
+        if st.button("Selecionar TODOS da base", key="sales_leads_bulk_select_all_base"):
+            st.session_state["sales_leads_bulk_selected_ids"] = list(all_bulk_ids)
+            st.rerun()
+    with qbulk3:
         if st.button("Limpar selecao", key="sales_leads_bulk_clear"):
             st.session_state["sales_leads_bulk_selected_ids"] = []
             st.rerun()
-    with qbulk3:
+    with qbulk4:
         st.caption(f"{len(selected_ids)} lead(s) selecionado(s)")
 
     st.markdown("#### Exclusao rapida em massa")
