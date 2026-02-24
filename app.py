@@ -5458,6 +5458,23 @@ def render_sales_leads_manage(vendedor_atual):
         show_mail = str(lead.get("email", "")).strip() or "-"
         all_lead_labels_by_id[lead_id] = f"{str(lead.get('nome', '')).strip()} | {show_cell} | {show_mail}"
 
+    sr1, sr2 = st.columns([2, 1])
+    with sr1:
+        bulk_select_mode = st.selectbox(
+            "Selecao rapida",
+            ["Manual", "Todos da base", "Todos filtrados", "Limpar selecao"],
+            key="sales_leads_bulk_select_mode",
+        )
+    with sr2:
+        if st.button("Aplicar selecao", key="sales_leads_bulk_apply_select_mode"):
+            if bulk_select_mode == "Todos da base":
+                st.session_state["sales_leads_bulk_selected_ids"] = list(all_bulk_ids)
+            elif bulk_select_mode == "Todos filtrados":
+                st.session_state["sales_leads_bulk_selected_ids"] = list(bulk_ids)
+            elif bulk_select_mode == "Limpar selecao":
+                st.session_state["sales_leads_bulk_selected_ids"] = []
+            st.rerun()
+
     selected_ids = st.multiselect(
         "Selecionar leads",
         all_bulk_ids,
