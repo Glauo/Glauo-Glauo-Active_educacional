@@ -1742,10 +1742,202 @@ def _extract_first_json(text):
     except Exception:
         return {}
 
+def _wiz_to_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    txt = str(value or "").strip().lower()
+    if txt in ("1", "true", "sim", "yes", "y", "on"):
+        return True
+    if txt in ("0", "false", "nao", "não", "no", "n", "off"):
+        return False
+    return bool(default)
+
+def _wiz_build_execution_message(base_reply, reports, missing=None):
+    base = str(base_reply or "").strip()
+    missing = missing if isinstance(missing, list) else []
+    reports = reports if isinstance(reports, list) else []
+    total = len(reports)
+    ok = len([r for r in reports if isinstance(r, dict) and r.get("ok")])
+    fail = total - ok
+    lines = []
+    if base:
+        lines.append(base)
+    if total > 0:
+        lines.append(f"Execução no sistema: {ok} concluída(s), {fail} com falha.")
+        for rep in reports[:8]:
+            if not isinstance(rep, dict):
+                continue
+            icon = "OK" if rep.get("ok") else "Falha"
+            msg = str(rep.get("message", "")).strip()
+            if msg:
+                lines.append(f"- {icon}: {msg}")
+    if missing:
+        pend = [str(m).strip() for m in missing if str(m).strip()]
+        if pend:
+            lines.append("Dados faltantes para próximas ações:")
+            for m in pend[:8]:
+                lines.append(f"- {m}")
+    if not lines:
+        lines.append("Não houve ação para executar.")
+    return "\n".join(lines)
+
+def _wiz_plan_actions_with_ai(user_text, chat_history=None):
+    api_key = get_groq_api_key()
+    if not api_key:
+        return {"reply": "", "actions": [], "missing": []}
+
+    history_lines = []
+    for msg in (chat_history or [])[-6:]:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role", "")).strip().lower()
+        content = str(msg.get("content", "")).strip()
+        if role in ("user", "assistant") and content:
+            history_lines.append(f"{role}: {content}")
+    hist_txt = "\n".join(history_lines)
+
+    schema_hint = (
+        "{"
+        '"reply":"texto curto ao usuario",'
+        '"actions":[{"type":"acao","data":{}}],'
+        '"missing":["campo faltante"]'
+        "}"
+    )
+    system_prompt = "\n".join(
+        [
+            "Voce e um orquestrador de acoes internas do sistema Active Educacional.",
+            "Retorne SOMENTE JSON valido, sem markdown.",
+            "Nunca invente dados obrigatorios que nao foram informados.",
+            "Se o pedido for apenas pergunta, orientacao ou analise, retorne actions = [].",
+            "Se o pedido exigir execucao interna, preencha actions com os tipos suportados.",
+            "Nunca inclua DietHealth.",
+            "Acoes suportadas:",
+            "- cadastrar_aluno",
+            "- cadastrar_professor",
+            "- cadastrar_usuario",
+            "- agendar_aula",
+            "- atualizar_link_turma",
+            "- publicar_noticia",
+            "- lancar_recebivel",
+            "- atualizar_recebivel",
+            "- excluir_recebivel",
+            "- baixar_recebivel",
+            "- lancar_despesa",
+            "- atualizar_despesa",
+            "- excluir_despesa",
+            "- baixar_despesa",
+            "- lancar_nota",
+            "Para exclusao/baixa use somente quando o pedido do usuario for explicito.",
+            f"Formato JSON: {schema_hint}",
+        ]
+    )
+    user_prompt = (
+        f"Historico recente:\n{hist_txt}\n\n"
+        f"Pedido atual do usuario:\n{str(user_text or '').strip()}\n\n"
+        "Gere o JSON."
+    )
+    try:
+        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+        result = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.05,
+            max_tokens=1400,
+        )
+        raw = (result.choices[0].message.content or "").strip()
+        obj = _extract_first_json(raw)
+    except Exception:
+        obj = {}
+
+    reply = str(obj.get("reply", "")).strip()
+    missing = obj.get("missing", [])
+    if not isinstance(missing, list):
+        missing = []
+    actions = obj.get("actions", [])
+    if isinstance(actions, dict):
+        actions = [actions]
+    if not isinstance(actions, list):
+        actions = []
+
+    clean_actions = []
+    for a in actions:
+        if not isinstance(a, dict):
+            continue
+        kind = str(a.get("type", "")).strip().lower()
+        data = a.get("data", {})
+        if not kind or not isinstance(data, dict):
+            continue
+        clean_actions.append({"type": kind, "data": data})
+
+    return {
+        "reply": reply,
+        "actions": clean_actions,
+        "missing": [str(m).strip() for m in missing if str(m).strip()],
+    }
+
 def _wiz_execute_actions(actions):
     reports = []
+    alias = {
+        "lançar_recebivel": "lancar_recebivel",
+        "lancar_recebimento": "lancar_recebivel",
+        "atualizar_recebimento": "atualizar_recebivel",
+        "excluir_recebimento": "excluir_recebivel",
+        "deletar_recebivel": "excluir_recebivel",
+        "dar_baixa_recebivel": "baixar_recebivel",
+        "baixa_recebivel": "baixar_recebivel",
+        "lançar_despesa": "lancar_despesa",
+        "deletar_despesa": "excluir_despesa",
+        "dar_baixa_despesa": "baixar_despesa",
+        "baixa_despesa": "baixar_despesa",
+    }
+
+    def _find_indices_by_codes(items, codes):
+        code_set = {str(c).strip().upper() for c in (codes or []) if str(c).strip()}
+        if not code_set:
+            return []
+        return [i for i, obj in enumerate(items) if str(obj.get("codigo", "")).strip().upper() in code_set]
+
+    def _find_receivable_indices(data):
+        items = st.session_state.get("receivables", [])
+        codes = []
+        code_one = str(data.get("codigo", "")).strip()
+        if code_one:
+            codes.append(code_one)
+        code_many = data.get("codigos", [])
+        if isinstance(code_many, list):
+            codes.extend([str(c).strip() for c in code_many if str(c).strip()])
+        idx = _find_indices_by_codes(items, codes)
+        if idx:
+            return idx
+        lote = str(data.get("lote_id", "")).strip()
+        if lote:
+            return [i for i, r in enumerate(items) if str(r.get("lote_id", "")).strip() == lote]
+        return []
+
+    def _find_payable_indices(data):
+        items = st.session_state.get("payables", [])
+        codes = []
+        code_one = str(data.get("codigo", "")).strip()
+        if code_one:
+            codes.append(code_one)
+        code_many = data.get("codigos", [])
+        if isinstance(code_many, list):
+            codes.extend([str(c).strip() for c in code_many if str(c).strip()])
+        idx = _find_indices_by_codes(items, codes)
+        if idx:
+            return idx
+        lote = str(data.get("lote_id", "")).strip()
+        if lote:
+            return [i for i, r in enumerate(items) if str(r.get("lote_id", "")).strip() == lote]
+        return []
+
     for action in actions:
         kind = str((action or {}).get("type", "")).strip().lower()
+        kind = alias.get(kind, kind)
         data = action.get("data", {}) if isinstance(action, dict) else {}
         try:
             if kind == "cadastrar_aluno":
@@ -1869,27 +2061,285 @@ def _wiz_execute_actions(actions):
                 )
                 reports.append({"type": kind, "ok": True, "message": "noticia publicada"})
             elif kind == "lancar_recebivel":
-                aluno = str(data.get("aluno", "")).strip()
-                valor = str(data.get("valor", "")).strip()
+                aluno = str(data.get("aluno", data.get("referencia", ""))).strip()
                 descricao = str(data.get("descricao", "Mensalidade")).strip()
-                if not aluno or not valor:
-                    reports.append({"type": kind, "ok": False, "message": "aluno e valor sao obrigatorios"})
+                categoria = str(data.get("categoria", "Mensalidade")).strip() or "Mensalidade"
+                categoria_lancamento = str(data.get("categoria_lancamento", data.get("tipo_categoria", "Aluno"))).strip() or "Aluno"
+                cobranca = str(data.get("cobranca", "Boleto")).strip() or "Boleto"
+                qtd = max(1, min(24, parse_int(data.get("qtd_parcelas", data.get("parcelas", 1))) or 1))
+                parcela_inicial = max(1, parse_int(data.get("parcela_inicial", 1)) or 1)
+                valor_parcela_num = parse_money(str(data.get("valor_parcela", data.get("valor", ""))))
+                valor_total_num = parse_money(str(data.get("valor_total", data.get("valor", ""))))
+                if valor_parcela_num <= 0 and valor_total_num > 0:
+                    valor_parcela_num = valor_total_num / qtd
+                if valor_total_num <= 0 and valor_parcela_num > 0:
+                    valor_total_num = valor_parcela_num * qtd
+                if not aluno or valor_parcela_num <= 0:
+                    reports.append({"type": kind, "ok": False, "message": "aluno/referencia e valor valido sao obrigatorios"})
                     continue
-                venc = parse_date(str(data.get("vencimento", ""))) or datetime.date.today()
-                codigo = add_receivable(
-                    aluno=aluno,
-                    descricao=descricao,
-                    valor=valor,
-                    vencimento=venc,
-                    cobranca=str(data.get("cobranca", "Boleto")),
-                    categoria=str(data.get("categoria", "Mensalidade")),
-                    data_lancamento=datetime.date.today(),
-                    valor_parcela=str(data.get("valor_parcela", valor)),
-                    parcela=str(data.get("parcela", "1/1")),
-                    numero_pedido=str(data.get("numero_pedido", "")),
-                    categoria_lancamento=str(data.get("categoria_lancamento", data.get("tipo_categoria", "Aluno"))),
+                data_lanc = parse_date(str(data.get("data_lancamento", ""))) or datetime.date.today()
+                venc0 = parse_date(str(data.get("vencimento", ""))) or datetime.date.today()
+                valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",")
+                valor_total_txt = f"{valor_total_num:.2f}".replace(".", ",")
+                lote_id = str(data.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                count = 0
+                for i in range(qtd):
+                    venc_item = add_months(venc0, i) if qtd > 1 else venc0
+                    parcela_txt = f"{parcela_inicial + i}/{qtd}" if qtd > 1 else str(parcela_inicial)
+                    add_receivable(
+                        aluno=aluno,
+                        descricao=descricao,
+                        valor=valor_total_txt,
+                        vencimento=venc_item,
+                        cobranca=cobranca,
+                        categoria=categoria,
+                        data_lancamento=data_lanc,
+                        valor_parcela=valor_parcela_txt,
+                        parcela=parcela_txt,
+                        numero_pedido=str(data.get("numero_pedido", "")),
+                        item_codigo=str(data.get("item_codigo", "")),
+                        categoria_lancamento=categoria_lancamento,
+                        lote_id=lote_id,
+                    )
+                    count += 1
+                reports.append({"type": kind, "ok": True, "message": f"recebivel lancado ({count} parcela(s))"})
+            elif kind == "atualizar_recebivel":
+                idx_list = _find_receivable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "recebivel nao encontrado"})
+                    continue
+                apply_lote = _wiz_to_bool(data.get("aplicar_em_lote", True), default=True)
+                if not apply_lote:
+                    idx_list = idx_list[:1]
+                itens = st.session_state.get("receivables", [])
+                qtd_ref = max(1, len(idx_list))
+                val_total_in = str(data.get("valor_total", data.get("valor", ""))).strip()
+                val_parc_in = str(data.get("valor_parcela", "")).strip()
+                val_total_num = parse_money(val_total_in) if val_total_in else 0
+                val_parc_num = parse_money(val_parc_in) if val_parc_in else 0
+                if val_parc_num <= 0 and val_total_num > 0:
+                    val_parc_num = val_total_num / qtd_ref
+                if val_total_num <= 0 and val_parc_num > 0:
+                    val_total_num = val_parc_num * qtd_ref
+                val_total_txt = f"{val_total_num:.2f}".replace(".", ",") if val_total_num > 0 else ""
+                val_parc_txt = f"{val_parc_num:.2f}".replace(".", ",") if val_parc_num > 0 else ""
+                novo_venc = parse_date(str(data.get("vencimento", "")))
+                idx_list = sorted(
+                    idx_list,
+                    key=lambda i: (
+                        parse_int(str(itens[i].get("parcela", "1")).split("/")[0]) or 1,
+                        i,
+                    ),
                 )
-                reports.append({"type": kind, "ok": True, "message": f"recebivel lancado ({codigo})"})
+                for pos, idx in enumerate(idx_list, start=1):
+                    obj = itens[idx]
+                    if str(data.get("descricao", "")).strip():
+                        obj["descricao"] = str(data.get("descricao", "")).strip()
+                    if str(data.get("aluno", data.get("referencia", ""))).strip():
+                        obj["aluno"] = str(data.get("aluno", data.get("referencia", ""))).strip()
+                    if str(data.get("categoria", "")).strip():
+                        obj["categoria"] = str(data.get("categoria", "")).strip()
+                    if str(data.get("categoria_lancamento", "")).strip():
+                        obj["categoria_lancamento"] = str(data.get("categoria_lancamento", "")).strip()
+                    if str(data.get("cobranca", "")).strip():
+                        obj["cobranca"] = str(data.get("cobranca", "")).strip()
+                    if str(data.get("status", "")).strip():
+                        obj["status"] = str(data.get("status", "")).strip()
+                    if str(data.get("numero_pedido", "")).strip():
+                        obj["numero_pedido"] = str(data.get("numero_pedido", "")).strip()
+                    if str(data.get("item_codigo", "")).strip():
+                        obj["item_codigo"] = str(data.get("item_codigo", "")).strip()
+                    if val_total_txt:
+                        obj["valor"] = val_total_txt
+                    if val_parc_txt:
+                        obj["valor_parcela"] = val_parc_txt
+                    if apply_lote:
+                        obj["parcela"] = f"{pos}/{len(idx_list)}" if len(idx_list) > 1 else "1"
+                        if novo_venc:
+                            obj["vencimento"] = add_months(novo_venc, pos - 1).strftime("%d/%m/%Y")
+                    elif novo_venc:
+                        obj["vencimento"] = novo_venc.strftime("%d/%m/%Y")
+                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                reports.append({"type": kind, "ok": True, "message": f"recebivel atualizado em {len(idx_list)} registro(s)"})
+            elif kind == "excluir_recebivel":
+                idx_list = _find_receivable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhum recebivel encontrado para exclusao"})
+                    continue
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("receivables", [])):
+                        st.session_state["receivables"].pop(idx)
+                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} recebivel(is) excluido(s)"})
+            elif kind == "baixar_recebivel":
+                idx_list = _find_receivable_indices(data)
+                if not idx_list:
+                    aluno_ref = str(data.get("aluno", "")).strip()
+                    if aluno_ref:
+                        somente_vencidos = _wiz_to_bool(data.get("somente_vencidos", True), default=True)
+                        ate = parse_date(str(data.get("ate_data", ""))) or datetime.date.today()
+                        idx_list = []
+                        for idx, obj in enumerate(st.session_state.get("receivables", [])):
+                            if str(obj.get("aluno", "")).strip() != aluno_ref:
+                                continue
+                            if str(obj.get("status", "")).strip().lower() == "pago":
+                                continue
+                            if somente_vencidos:
+                                venc_obj = parse_date(str(obj.get("vencimento", "")))
+                                if venc_obj and venc_obj > ate:
+                                    continue
+                            idx_list.append(idx)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhum recebivel encontrado para baixa"})
+                    continue
+                hoje_txt = datetime.date.today().strftime("%d/%m/%Y")
+                count = 0
+                for idx in sorted(set(idx_list)):
+                    if 0 <= idx < len(st.session_state.get("receivables", [])):
+                        obj = st.session_state["receivables"][idx]
+                        if str(obj.get("status", "")).strip().lower() != "pago":
+                            obj["status"] = "Pago"
+                            obj["baixa_data"] = hoje_txt
+                            obj["baixa_tipo"] = "Assistente Wiz"
+                            count += 1
+                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                reports.append({"type": kind, "ok": True, "message": f"baixa aplicada em {count} recebivel(is)"})
+            elif kind == "lancar_despesa":
+                descricao = str(data.get("descricao", "")).strip()
+                fornecedor = str(data.get("fornecedor", data.get("referencia", ""))).strip()
+                if not descricao or not fornecedor:
+                    reports.append({"type": kind, "ok": False, "message": "descricao e fornecedor/referencia sao obrigatorios"})
+                    continue
+                qtd = max(1, min(24, parse_int(data.get("qtd_parcelas", data.get("parcelas", 1))) or 1))
+                val_parc_num = parse_money(str(data.get("valor_parcela", data.get("valor", ""))))
+                val_total_num = parse_money(str(data.get("valor_total", data.get("valor", ""))))
+                if val_parc_num <= 0 and val_total_num > 0:
+                    val_parc_num = val_total_num / qtd
+                if val_total_num <= 0 and val_parc_num > 0:
+                    val_total_num = val_parc_num * qtd
+                if val_parc_num <= 0:
+                    reports.append({"type": kind, "ok": False, "message": "valor invalido para despesa"})
+                    continue
+                val_parc_txt = f"{val_parc_num:.2f}".replace(".", ",")
+                val_total_txt = f"{val_total_num:.2f}".replace(".", ",")
+                data_lanc = parse_date(str(data.get("data", data.get("data_lancamento", "")))) or datetime.date.today()
+                venc0 = parse_date(str(data.get("vencimento", ""))) or datetime.date.today()
+                lote_id = str(data.get("lote_id", "")).strip() or f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+                for i in range(qtd):
+                    venc_item = add_months(venc0, i) if qtd > 1 else venc0
+                    parcela_txt = f"{1 + i}/{qtd}" if qtd > 1 else "1"
+                    st.session_state["payables"].append(
+                        {
+                            "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
+                            "descricao": descricao,
+                            "valor": val_total_txt,
+                            "valor_parcela": val_parc_txt,
+                            "parcela": parcela_txt,
+                            "fornecedor": fornecedor,
+                            "categoria_lancamento": str(data.get("categoria_lancamento", "Fornecedor")).strip() or "Fornecedor",
+                            "numero_pedido": str(data.get("numero_pedido", "")).strip(),
+                            "data": data_lanc.strftime("%d/%m/%Y"),
+                            "vencimento": venc_item.strftime("%d/%m/%Y"),
+                            "cobranca": str(data.get("cobranca", "Boleto")).strip() or "Boleto",
+                            "status": str(data.get("status", "Aberto")).strip() or "Aberto",
+                            "lote_id": lote_id,
+                        }
+                    )
+                save_list(PAYABLES_FILE, st.session_state["payables"])
+                reports.append({"type": kind, "ok": True, "message": f"despesa lancada ({qtd} parcela(s))"})
+            elif kind == "atualizar_despesa":
+                idx_list = _find_payable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "despesa nao encontrada"})
+                    continue
+                apply_lote = _wiz_to_bool(data.get("aplicar_em_lote", True), default=True)
+                if not apply_lote:
+                    idx_list = idx_list[:1]
+                itens = st.session_state.get("payables", [])
+                qtd_ref = max(1, len(idx_list))
+                val_total_in = str(data.get("valor_total", data.get("valor", ""))).strip()
+                val_parc_in = str(data.get("valor_parcela", "")).strip()
+                val_total_num = parse_money(val_total_in) if val_total_in else 0
+                val_parc_num = parse_money(val_parc_in) if val_parc_in else 0
+                if val_parc_num <= 0 and val_total_num > 0:
+                    val_parc_num = val_total_num / qtd_ref
+                if val_total_num <= 0 and val_parc_num > 0:
+                    val_total_num = val_parc_num * qtd_ref
+                val_total_txt = f"{val_total_num:.2f}".replace(".", ",") if val_total_num > 0 else ""
+                val_parc_txt = f"{val_parc_num:.2f}".replace(".", ",") if val_parc_num > 0 else ""
+                novo_venc = parse_date(str(data.get("vencimento", "")))
+                idx_list = sorted(
+                    idx_list,
+                    key=lambda i: (
+                        parse_int(str(itens[i].get("parcela", "1")).split("/")[0]) or 1,
+                        i,
+                    ),
+                )
+                for pos, idx in enumerate(idx_list, start=1):
+                    obj = itens[idx]
+                    if str(data.get("descricao", "")).strip():
+                        obj["descricao"] = str(data.get("descricao", "")).strip()
+                    if str(data.get("fornecedor", data.get("referencia", ""))).strip():
+                        obj["fornecedor"] = str(data.get("fornecedor", data.get("referencia", ""))).strip()
+                    if str(data.get("categoria_lancamento", "")).strip():
+                        obj["categoria_lancamento"] = str(data.get("categoria_lancamento", "")).strip()
+                    if str(data.get("numero_pedido", "")).strip():
+                        obj["numero_pedido"] = str(data.get("numero_pedido", "")).strip()
+                    if str(data.get("cobranca", "")).strip():
+                        obj["cobranca"] = str(data.get("cobranca", "")).strip()
+                    if str(data.get("status", "")).strip():
+                        obj["status"] = str(data.get("status", "")).strip()
+                    if str(data.get("data", data.get("data_lancamento", ""))).strip():
+                        data_upd = parse_date(str(data.get("data", data.get("data_lancamento", ""))))
+                        if data_upd:
+                            obj["data"] = data_upd.strftime("%d/%m/%Y")
+                    if val_total_txt:
+                        obj["valor"] = val_total_txt
+                    if val_parc_txt:
+                        obj["valor_parcela"] = val_parc_txt
+                    if apply_lote:
+                        obj["parcela"] = f"{pos}/{len(idx_list)}" if len(idx_list) > 1 else "1"
+                        if novo_venc:
+                            obj["vencimento"] = add_months(novo_venc, pos - 1).strftime("%d/%m/%Y")
+                    elif novo_venc:
+                        obj["vencimento"] = novo_venc.strftime("%d/%m/%Y")
+                save_list(PAYABLES_FILE, st.session_state["payables"])
+                reports.append({"type": kind, "ok": True, "message": f"despesa atualizada em {len(idx_list)} registro(s)"})
+            elif kind == "excluir_despesa":
+                idx_list = _find_payable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhuma despesa encontrada para exclusao"})
+                    continue
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("payables", [])):
+                        st.session_state["payables"].pop(idx)
+                save_list(PAYABLES_FILE, st.session_state["payables"])
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} despesa(s) excluida(s)"})
+            elif kind == "baixar_despesa":
+                idx_list = _find_payable_indices(data)
+                if not idx_list:
+                    fornecedor_ref = str(data.get("fornecedor", "")).strip()
+                    if fornecedor_ref:
+                        idx_list = [
+                            idx for idx, obj in enumerate(st.session_state.get("payables", []))
+                            if str(obj.get("fornecedor", "")).strip() == fornecedor_ref
+                            and str(obj.get("status", "")).strip().lower() != "pago"
+                        ]
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhuma despesa encontrada para baixa"})
+                    continue
+                hoje_txt = datetime.date.today().strftime("%d/%m/%Y")
+                count = 0
+                for idx in sorted(set(idx_list)):
+                    if 0 <= idx < len(st.session_state.get("payables", [])):
+                        obj = st.session_state["payables"][idx]
+                        if str(obj.get("status", "")).strip().lower() != "pago":
+                            obj["status"] = "Pago"
+                            obj["baixa_data"] = hoje_txt
+                            obj["baixa_tipo"] = "Assistente Wiz"
+                            count += 1
+                save_list(PAYABLES_FILE, st.session_state["payables"])
+                reports.append({"type": kind, "ok": True, "message": f"baixa aplicada em {count} despesa(s)"})
             elif kind == "lancar_nota":
                 aluno = str(data.get("aluno", "")).strip()
                 if not aluno:
@@ -2010,6 +2460,23 @@ def run_wiz_assistant():
         with st.chat_message("assistant" if msg["role"] == "assistant" else "user"):
             st.markdown(msg["content"])
 
+    wiz_auto_exec = st.checkbox(
+        "Executar tarefas internas automaticamente",
+        value=True,
+        key="wiz_auto_exec_enabled",
+        help="Quando ligado, o Wiz executa no sistema as tarefas que voce pedir (financeiro, agenda, cadastros e comunicados).",
+    )
+    st.caption("Acoes internas disponiveis apenas para Coordenador/Admin.")
+
+    last_exec = st.session_state.get("wiz_last_execution", [])
+    if isinstance(last_exec, list) and last_exec:
+        with st.expander("Ultima execucao do Wiz no sistema", expanded=False):
+            for rep in last_exec[:12]:
+                if not isinstance(rep, dict):
+                    continue
+                icon = "OK" if rep.get("ok") else "Falha"
+                st.write(f"- {icon}: {str(rep.get('message', '')).strip()}")
+
     a1, a2 = st.columns([1, 1])
     if a1.button("Limpar conversa", key="wiz_simple_clear"):
         st.session_state["active_chat_histories"][chat_key] = []
@@ -2044,37 +2511,55 @@ def run_wiz_assistant():
 
     chat_history.append({"role": "user", "content": str(user_text).strip()})
 
-    system_prompt = "\n".join(
-        [
-            "Você é o Assistente Wiz da Active Educacional para Coordenador/Admin.",
-            "Responda em português do Brasil, de forma simples, direta e útil.",
-            "Nunca responda com JSON, código ou estrutura técnica.",
-            "Quando o pedido envolver operação interna, devolva: resumo do pedido, passos práticos e dados faltantes.",
-            "Se houver anexo, use o conteúdo anexado como base da resposta.",
-            "Nunca mencione DietHealth.",
-            get_active_context_text(),
-        ]
-    )
+    with st.spinner("Wiz esta processando seu pedido..."):
+        plan = _wiz_plan_actions_with_ai(full_user_text, chat_history[-10:])
 
-    request_messages = [{"role": "system", "content": system_prompt}]
-    request_messages += chat_history[-12:]
-    request_messages.append({"role": "user", "content": full_user_text})
+    plan_actions = plan.get("actions", []) if isinstance(plan, dict) else []
+    plan_reply = str((plan or {}).get("reply", "")).strip()
+    plan_missing = (plan or {}).get("missing", []) if isinstance(plan, dict) else []
+    answer = ""
 
-    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-    model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
-    with st.spinner("Wiz está pensando..."):
-        try:
-            result = client.chat.completions.create(
-                model=model_name,
-                messages=request_messages,
-                temperature=0.2,
-                max_tokens=1200,
-            )
-            answer = (result.choices[0].message.content or "").strip()
-            if not answer:
-                answer = "Não consegui responder agora. Tente novamente com mais detalhes."
-        except Exception as exc:
-            answer = f"Falha ao consultar IA: {exc}"
+    if wiz_auto_exec and plan_actions:
+        reports = _wiz_execute_actions(plan_actions)
+        st.session_state["wiz_last_execution"] = reports
+        answer = _wiz_build_execution_message(plan_reply, reports, plan_missing)
+    elif plan_actions and not wiz_auto_exec:
+        answer = _wiz_build_execution_message(
+            plan_reply or "Identifiquei acoes internas para executar.",
+            [],
+            plan_missing,
+        )
+        answer += "\n\nAtive a opcao de execucao automatica para o Wiz realizar essas tarefas no sistema."
+    else:
+        system_prompt = "\n".join(
+            [
+                "Você é o Assistente Wiz da Active Educacional para Coordenador/Admin.",
+                "Responda em português do Brasil, de forma simples, direta e útil.",
+                "Nunca responda com JSON, código ou estrutura técnica.",
+                "Quando houver dados faltantes para executar algo interno, peça apenas os dados faltantes.",
+                "Se houver anexo, use o conteúdo anexado como base da resposta.",
+                "Nunca mencione DietHealth.",
+                get_active_context_text(),
+            ]
+        )
+        request_messages = [{"role": "system", "content": system_prompt}]
+        request_messages += chat_history[-12:]
+        request_messages.append({"role": "user", "content": full_user_text})
+        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+        with st.spinner("Wiz esta pensando..."):
+            try:
+                result = client.chat.completions.create(
+                    model=model_name,
+                    messages=request_messages,
+                    temperature=0.2,
+                    max_tokens=1200,
+                )
+                answer = (result.choices[0].message.content or "").strip()
+                if not answer:
+                    answer = "Nao consegui responder agora. Tente novamente com mais detalhes."
+            except Exception as exc:
+                answer = f"Falha ao consultar IA: {exc}"
 
     chat_history.append({"role": "assistant", "content": answer})
     st.session_state["active_chat_histories"][chat_key] = chat_history
@@ -2368,7 +2853,19 @@ def build_sales_google_calendar_event_link(schedule_obj):
 
 def book_levels():
     books = st.session_state.get("books", [])
-    levels = [b.get("nivel", "") for b in books if b.get("nivel")]
+    levels = []
+    seen = set()
+    for b in books:
+        nivel = normalize_text(str((b or {}).get("nivel", "")).strip())
+        canon = ""
+        if "livro" in nivel:
+            for i in range(1, 5):
+                if f"livro {i}" in nivel or f"livro{i}" in nivel:
+                    canon = f"Livro {i}"
+                    break
+        if canon and canon not in seen:
+            seen.add(canon)
+            levels.append(canon)
     return levels or ["Livro 1", "Livro 2", "Livro 3", "Livro 4"]
 
 def class_module_options():
@@ -4029,6 +4526,199 @@ def render_agenda(items, empty_message):
             st.link_button("Adicionar no Google Agenda", google_url)
         st.markdown("---")
 
+def library_book_templates():
+    templates = []
+    for livro in range(1, 5):
+        for parte in (1, 2):
+            templates.append(
+                {
+                    "book_id": f"ingles_livro_{livro}_parte_{parte}",
+                    "nivel": f"Livro {livro}",
+                    "titulo": f"Ingles - Livro {livro} - Parte {parte}",
+                    "categoria": "Ingles",
+                    "parte": f"Parte {parte}",
+                    "url": "",
+                    "file_path": "",
+                    "file_b64": "",
+                    "file_name": "",
+                }
+            )
+    templates.extend(
+        [
+            {
+                "book_id": "lideranca",
+                "nivel": "",
+                "titulo": "Lideranca",
+                "categoria": "Lideranca",
+                "parte": "Parte unica",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo",
+                "nivel": "",
+                "titulo": "Empreendedorismo",
+                "categoria": "Empreendedorismo",
+                "parte": "Parte unica",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "educacao_financeira",
+                "nivel": "",
+                "titulo": "Educacao Financeira",
+                "categoria": "Educacao Financeira",
+                "parte": "Parte unica",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional",
+                "nivel": "",
+                "titulo": "Inteligencia Emocional",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Parte unica",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+        ]
+    )
+    return templates
+
+def _extract_livro_num(text):
+    norm = normalize_text(text)
+    for i in range(1, 5):
+        if f"livro {i}" in norm or f"livro{i}" in norm:
+            return i
+    return None
+
+def _extract_parte_num(text):
+    norm = normalize_text(text)
+    if "parte 2" in norm or "parte2" in norm:
+        return 2
+    if "parte 1" in norm or "parte1" in norm:
+        return 1
+    return None
+
+def infer_library_book_id(book_obj):
+    if not isinstance(book_obj, dict):
+        return ""
+    explicit = str(book_obj.get("book_id", "")).strip()
+    if explicit:
+        return explicit
+
+    titulo = str(book_obj.get("titulo", "")).strip()
+    nivel = str(book_obj.get("nivel", "")).strip()
+    categoria = str(book_obj.get("categoria", "")).strip()
+    parte = str(book_obj.get("parte", "")).strip()
+
+    livro_num = _extract_livro_num(titulo) or _extract_livro_num(nivel)
+    if livro_num:
+        parte_num = _extract_parte_num(titulo) or _extract_parte_num(parte) or 1
+        return f"ingles_livro_{livro_num}_parte_{parte_num}"
+
+    norm_candidates = [
+        normalize_text(categoria),
+        normalize_text(titulo),
+        normalize_text(nivel),
+    ]
+    mapping = {
+        "lideranca": "lideranca",
+        "empreendedorismo": "empreendedorismo",
+        "educacao financeira": "educacao_financeira",
+        "inteligencia emocional": "inteligencia_emocional",
+    }
+    for cand in norm_candidates:
+        for key, val in mapping.items():
+            if key in cand:
+                return val
+    return ""
+
+def ensure_library_catalog(books):
+    books = books if isinstance(books, list) else []
+    templates = library_book_templates()
+    template_ids = {t.get("book_id", "") for t in templates}
+    mapped_existing = {}
+    extras = []
+
+    for raw in books:
+        if not isinstance(raw, dict):
+            continue
+        obj = dict(raw)
+        bid = infer_library_book_id(obj)
+        if bid and bid in template_ids and bid not in mapped_existing:
+            obj["book_id"] = bid
+            mapped_existing[bid] = obj
+        else:
+            extras.append(obj)
+
+    merged = []
+    for tpl in templates:
+        bid = str(tpl.get("book_id", "")).strip()
+        old = mapped_existing.get(bid, {})
+        merged.append(
+            {
+                "book_id": bid,
+                "nivel": str(old.get("nivel", tpl.get("nivel", ""))).strip(),
+                "titulo": str(old.get("titulo", tpl.get("titulo", ""))).strip() or str(tpl.get("titulo", "")),
+                "categoria": str(old.get("categoria", tpl.get("categoria", ""))).strip() or str(tpl.get("categoria", "")),
+                "parte": str(old.get("parte", tpl.get("parte", ""))).strip() or str(tpl.get("parte", "")),
+                "url": str(old.get("url", "")).strip(),
+                "file_path": str(old.get("file_path", "")).strip(),
+                "file_b64": str(old.get("file_b64", "")).strip(),
+                "file_name": str(old.get("file_name", "")).strip(),
+            }
+        )
+
+    for extra in extras:
+        if not isinstance(extra, dict):
+            continue
+        bid = infer_library_book_id(extra)
+        if bid and bid in template_ids:
+            continue
+        merged.append(
+            {
+                "book_id": str(extra.get("book_id", "")).strip(),
+                "nivel": str(extra.get("nivel", "")).strip(),
+                "titulo": str(extra.get("titulo", "")).strip() or "Livro",
+                "categoria": str(extra.get("categoria", "")).strip(),
+                "parte": str(extra.get("parte", "")).strip(),
+                "url": str(extra.get("url", "")).strip(),
+                "file_path": str(extra.get("file_path", "")).strip(),
+                "file_b64": str(extra.get("file_b64", "")).strip(),
+                "file_name": str(extra.get("file_name", "")).strip(),
+            }
+        )
+    return merged
+
+def _book_binary_payload(book_obj):
+    if not isinstance(book_obj, dict):
+        return b"", ""
+    file_b64 = str(book_obj.get("file_b64", "")).strip()
+    file_name = str(book_obj.get("file_name", "")).strip()
+    if file_b64:
+        try:
+            data = base64.b64decode(file_b64.encode("ascii"), validate=False)
+            if data:
+                return data, file_name or "livro.pdf"
+        except Exception:
+            pass
+    file_path = str(book_obj.get("file_path", "")).strip()
+    if file_path and Path(file_path).exists():
+        try:
+            return Path(file_path).read_bytes(), Path(file_path).name
+        except Exception:
+            return b"", ""
+    return b"", ""
+
 def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
     st.markdown(f"### {title}")
     if not books:
@@ -4037,12 +4727,16 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
     for idx, b in enumerate(books):
         titulo = b.get("titulo") or b.get("nivel") or "Livro"
         st.markdown(f"**{titulo}**")
+        categoria = str(b.get("categoria", "")).strip()
+        parte = str(b.get("parte", "")).strip()
+        details = [d for d in [categoria, parte] if d]
+        if details:
+            st.caption(" | ".join(details))
         c1, c2 = st.columns(2)
-        file_path = str(b.get("file_path", "")).strip()
+        file_data, file_name = _book_binary_payload(b)
         url = str(b.get("url", "")).strip()
-        if file_path and Path(file_path).exists():
-            data = Path(file_path).read_bytes()
-            c1.download_button("Baixar livro", data=data, file_name=Path(file_path).name, key=f"{key_prefix}_download_{idx}")
+        if file_data:
+            c1.download_button("Baixar livro", data=file_data, file_name=file_name or "livro.pdf", key=f"{key_prefix}_download_{idx}")
         elif url:
             c1.link_button("Baixar livro", url)
         else:
@@ -4052,7 +4746,7 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
             c2.link_button("Abrir livro", url)
         else:
             c2.button("Abrir livro", disabled=True, key=f"{key_prefix}_open_disabled_{idx}")
-        if not url and not (file_path and Path(file_path).exists()):
+        if not url and not file_data:
             st.caption("Link/arquivo do livro não configurado.")
         st.markdown("---")
 
@@ -4201,7 +4895,21 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
-def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, data_lancamento=None, valor_parcela=None, parcela=None, numero_pedido="", item_codigo="", categoria_lancamento="Aluno"):
+def add_receivable(
+    aluno,
+    descricao,
+    valor,
+    vencimento,
+    cobranca,
+    categoria,
+    data_lancamento=None,
+    valor_parcela=None,
+    parcela=None,
+    numero_pedido="",
+    item_codigo="",
+    categoria_lancamento="Aluno",
+    lote_id=None,
+):
     prefix = re.sub(r"[^A-Z0-9]+", "", str(cobranca).upper()) or "REC"
     codigo = f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
     st.session_state["receivables"].append({
@@ -4217,6 +4925,7 @@ def add_receivable(aluno, descricao, valor, vencimento, cobranca, categoria, dat
         "parcela": parcela or "",
         "numero_pedido": str(numero_pedido).strip(),
         "item_codigo": str(item_codigo).strip(),
+        "lote_id": str(lote_id).strip() if str(lote_id or "").strip() else f"REC-LOT-{uuid.uuid4().hex[:10].upper()}",
         "vencimento": vencimento.strftime("%d/%m/%Y"),
         "status": "Aberto",
         "boleto_url": "",
@@ -6726,13 +7435,10 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     _ensure_activity_store_ids()
     _ensure_sales_store_defaults()
 
-    if not st.session_state["books"]:
-        st.session_state["books"] = [
-            {"nivel": "Livro 1", "titulo": "Livro 1", "url": "", "file_path": ""},
-            {"nivel": "Livro 2", "titulo": "Livro 2", "url": "", "file_path": ""},
-            {"nivel": "Livro 3", "titulo": "Livro 3", "url": "", "file_path": ""},
-            {"nivel": "Livro 4", "titulo": "Livro 4", "url": "", "file_path": ""},
-        ]
+    books_before = st.session_state.get("books", [])
+    books_normalized = ensure_library_catalog(books_before)
+    if books_before != books_normalized:
+        st.session_state["books"] = books_normalized
         books_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(BOOKS_FILE), "")
         if books_source != "db_unavailable":
             save_list(BOOKS_FILE, st.session_state["books"])
@@ -7960,8 +8666,16 @@ elif st.session_state["role"] == "Coordenador":
         with c2: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Professores</div><div class=\"card-value\">{len(st.session_state['teachers'])}</div></div></div>""", unsafe_allow_html=True)
         with c3: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Turmas</div><div class=\"card-value\">{len(st.session_state['classes'])}</div></div></div>""", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        total_rec = sum(parse_money(i["valor"]) for i in st.session_state["receivables"])
-        total_pag = sum(parse_money(i["valor"]) for i in st.session_state["payables"])
+        total_rec = sum(
+            parse_money(i.get("valor_parcela", i.get("valor", 0)))
+            for i in st.session_state["receivables"]
+            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
+        )
+        total_pag = sum(
+            parse_money(i.get("valor_parcela", i.get("valor", 0)))
+            for i in st.session_state["payables"]
+            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
+        )
         saldo = total_rec - total_pag
         c4, c5, c6 = st.columns(3)
         with c4: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Receber</div><div class=\"card-value\" style=\"color:#2563eb;\">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
@@ -8549,30 +9263,139 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Livros":
         st.markdown('<div class="main-header">Biblioteca</div>', unsafe_allow_html=True)
-        tab1, tab2 = st.tabs(["Biblioteca", "Configurar Links"])
+        books_current = st.session_state.get("books", [])
+        books_normalized = ensure_library_catalog(books_current)
+        if books_current != books_normalized:
+            st.session_state["books"] = books_normalized
+            save_list(BOOKS_FILE, st.session_state["books"])
+
+        tab1, tab2 = st.tabs(["Biblioteca", "Anexar Livros"])
         with tab1:
             render_books_section(st.session_state.get("books", []), "Todos os Livros", key_prefix="coord_livros")
         with tab2:
-            with st.form("edit_books"):
-                updated = []
-                for idx, b in enumerate(st.session_state.get("books", [])):
-                    st.markdown(f"### {b.get('nivel','Livro')}")
-                    titulo = st.text_input("Título", value=b.get("titulo", ""), key=f"book_title_{idx}")
-                    url = st.text_input("Link para download/abrir", value=b.get("url", ""), key=f"book_url_{idx}")
-                    file_path = st.text_input("Arquivo local (opcional)", value=b.get("file_path", ""), key=f"book_file_{idx}")
-                    updated.append(
-                        {
-                            "nivel": b.get("nivel", f"Livro {idx+1}"),
-                            "titulo": titulo.strip(),
-                            "url": url.strip(),
-                            "file_path": file_path.strip(),
-                        }
-                    )
+            st.caption(
+                "Anexe por botao: Ingles (4 livros em 2 partes), Lideranca, Empreendedorismo, Educacao Financeira e Inteligencia Emocional."
+            )
+
+            template_by_id = {str(t.get("book_id", "")).strip(): t for t in library_book_templates()}
+            books_list = st.session_state.get("books", [])
+            books_by_id = {
+                str(b.get("book_id", "")).strip(): b
+                for b in books_list
+                if str(b.get("book_id", "")).strip()
+            }
+
+            def _book_obj(book_id):
+                bid = str(book_id).strip()
+                obj = books_by_id.get(bid)
+                if obj is None:
+                    tpl = dict(template_by_id.get(bid, {}))
+                    tpl.setdefault("book_id", bid)
+                    tpl.setdefault("titulo", "Livro")
+                    tpl.setdefault("nivel", "")
+                    tpl.setdefault("categoria", "")
+                    tpl.setdefault("parte", "")
+                    tpl.setdefault("url", "")
+                    tpl.setdefault("file_path", "")
+                    tpl.setdefault("file_b64", "")
+                    tpl.setdefault("file_name", "")
+                    books_list.append(tpl)
+                    books_by_id[bid] = tpl
+                    obj = tpl
+                return obj
+
+            def _save_book_item(book_id, url_value, uploaded_file):
+                obj = _book_obj(book_id)
+                obj["url"] = str(url_value or "").strip()
+                if uploaded_file is not None:
+                    raw = uploaded_file.getvalue()
+                    if raw:
+                        obj["file_b64"] = base64.b64encode(raw).decode("ascii")
+                        obj["file_name"] = str(getattr(uploaded_file, "name", "") or "").strip()
+                        obj["file_path"] = ""
+                st.session_state["books"] = ensure_library_catalog(books_list)
+                save_list(BOOKS_FILE, st.session_state["books"])
+
+            st.markdown("### Ingles (4 livros em 2 partes)")
+            for livro in range(1, 5):
+                st.markdown(f"#### Livro {livro}")
+                for parte in (1, 2):
+                    book_id = f"ingles_livro_{livro}_parte_{parte}"
+                    obj = _book_obj(book_id)
+                    st.markdown(f"**{obj.get('titulo', f'Livro {livro} - Parte {parte}')}**")
+                    r1, r2, r3, r4 = st.columns([2.2, 2.2, 1.0, 1.0])
+                    with r1:
+                        url_item = st.text_input(
+                            "Link",
+                            value=str(obj.get("url", "")).strip(),
+                            key=f"coord_book_url_{book_id}",
+                        )
+                    with r2:
+                        upload_item = st.file_uploader(
+                            "Anexar arquivo",
+                            type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
+                            key=f"coord_book_upload_{book_id}",
+                        )
+                    with r3:
+                        if st.button("Anexar e salvar", key=f"coord_book_save_{book_id}", type="primary"):
+                            _save_book_item(book_id, url_item, upload_item)
+                            st.success(f"{obj.get('titulo', 'Livro')} salvo.")
+                            st.rerun()
+                    with r4:
+                        if st.button("Remover anexo", key=f"coord_book_clear_{book_id}"):
+                            obj["file_b64"] = ""
+                            obj["file_name"] = ""
+                            obj["file_path"] = ""
+                            st.session_state["books"] = ensure_library_catalog(books_list)
+                            save_list(BOOKS_FILE, st.session_state["books"])
+                            st.success("Anexo removido.")
+                            st.rerun()
+                    _, existing_name = _book_binary_payload(obj)
+                    if existing_name:
+                        st.caption(f"Arquivo anexado: {existing_name}")
                     st.markdown("---")
-                if st.form_submit_button("Salvar configurações"):
-                    st.session_state["books"] = updated
-                    save_list(BOOKS_FILE, st.session_state["books"])
-                    st.success("Biblioteca atualizada!")
+
+            st.markdown("### Trilhas Complementares")
+            trilhas = [
+                ("lideranca", "Lideranca"),
+                ("empreendedorismo", "Empreendedorismo"),
+                ("educacao_financeira", "Educacao Financeira"),
+                ("inteligencia_emocional", "Inteligencia Emocional"),
+            ]
+            for book_id, titulo_label in trilhas:
+                obj = _book_obj(book_id)
+                st.markdown(f"**{titulo_label}**")
+                r1, r2, r3, r4 = st.columns([2.2, 2.2, 1.0, 1.0])
+                with r1:
+                    url_item = st.text_input(
+                        "Link",
+                        value=str(obj.get("url", "")).strip(),
+                        key=f"coord_book_url_{book_id}",
+                    )
+                with r2:
+                    upload_item = st.file_uploader(
+                        "Anexar arquivo",
+                        type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
+                        key=f"coord_book_upload_{book_id}",
+                    )
+                with r3:
+                    if st.button("Anexar e salvar", key=f"coord_book_save_{book_id}", type="primary"):
+                        _save_book_item(book_id, url_item, upload_item)
+                        st.success(f"{titulo_label} salvo.")
+                        st.rerun()
+                with r4:
+                    if st.button("Remover anexo", key=f"coord_book_clear_{book_id}"):
+                        obj["file_b64"] = ""
+                        obj["file_name"] = ""
+                        obj["file_path"] = ""
+                        st.session_state["books"] = ensure_library_catalog(books_list)
+                        save_list(BOOKS_FILE, st.session_state["books"])
+                        st.success("Anexo removido.")
+                        st.rerun()
+                _, existing_name = _book_binary_payload(obj)
+                if existing_name:
+                    st.caption(f"Arquivo anexado: {existing_name}")
+                st.markdown("---")
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
@@ -9687,6 +10510,92 @@ elif st.session_state["role"] == "Coordenador":
                 total = atual
             return atual, total
 
+        def _sort_indices_by_parcela(items, indices):
+            return sorted(
+                indices,
+                key=lambda idx: (
+                    _parse_parcela_info(items[idx].get("parcela", "1"))[0],
+                    parse_date(items[idx].get("vencimento", "")) or datetime.date.today(),
+                    idx,
+                ),
+            )
+
+        def _related_receivable_indices(items, base_idx):
+            if base_idx < 0 or base_idx >= len(items):
+                return []
+            base = items[base_idx]
+            base_lote = str(base.get("lote_id", "")).strip()
+            if base_lote:
+                rel = [i for i, item in enumerate(items) if str(item.get("lote_id", "")).strip() == base_lote]
+                if rel:
+                    return rel
+            _, base_total = _parse_parcela_info(base.get("parcela", "1"))
+            if base_total <= 1:
+                return [base_idx]
+            base_key = (
+                normalize_text(base.get("aluno", "")),
+                normalize_text(base.get("descricao", "")),
+                normalize_text(base.get("categoria", "")),
+                normalize_text(base.get("categoria_lancamento", "Aluno")),
+                normalize_text(base.get("cobranca", "")),
+                str(base.get("data", "")).strip(),
+                normalize_text(base.get("item_codigo", "")),
+                base_total,
+            )
+            rel = []
+            for idx, item in enumerate(items):
+                _, total_item = _parse_parcela_info(item.get("parcela", "1"))
+                item_key = (
+                    normalize_text(item.get("aluno", "")),
+                    normalize_text(item.get("descricao", "")),
+                    normalize_text(item.get("categoria", "")),
+                    normalize_text(item.get("categoria_lancamento", "Aluno")),
+                    normalize_text(item.get("cobranca", "")),
+                    str(item.get("data", "")).strip(),
+                    normalize_text(item.get("item_codigo", "")),
+                    total_item,
+                )
+                if item_key == base_key:
+                    rel.append(idx)
+            return rel or [base_idx]
+
+        def _related_payable_indices(items, base_idx):
+            if base_idx < 0 or base_idx >= len(items):
+                return []
+            base = items[base_idx]
+            base_lote = str(base.get("lote_id", "")).strip()
+            if base_lote:
+                rel = [i for i, item in enumerate(items) if str(item.get("lote_id", "")).strip() == base_lote]
+                if rel:
+                    return rel
+            _, base_total = _parse_parcela_info(base.get("parcela", "1"))
+            if base_total <= 1:
+                return [base_idx]
+            base_key = (
+                normalize_text(base.get("fornecedor", "")),
+                normalize_text(base.get("descricao", "")),
+                normalize_text(base.get("categoria_lancamento", "Fornecedor")),
+                normalize_text(base.get("cobranca", "")),
+                str(base.get("data", "")).strip(),
+                normalize_text(base.get("numero_pedido", "")),
+                base_total,
+            )
+            rel = []
+            for idx, item in enumerate(items):
+                _, total_item = _parse_parcela_info(item.get("parcela", "1"))
+                item_key = (
+                    normalize_text(item.get("fornecedor", "")),
+                    normalize_text(item.get("descricao", "")),
+                    normalize_text(item.get("categoria_lancamento", "Fornecedor")),
+                    normalize_text(item.get("cobranca", "")),
+                    str(item.get("data", "")).strip(),
+                    normalize_text(item.get("numero_pedido", "")),
+                    total_item,
+                )
+                if item_key == base_key:
+                    rel.append(idx)
+            return rel or [base_idx]
+
         tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial"])
         with tab1:
             with st.expander("Configuracao automatica de e-mail e boleto", expanded=False):
@@ -9858,6 +10767,7 @@ elif st.session_state["role"] == "Coordenador":
                     else:
                         before_count = len(st.session_state.get("receivables", []))
                         total_lancados = 0
+                        lote_id_rec = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
                         if categoria == "Mensalidade":
                             for i in range(qtd_parcelas_calc):
                                 data_venc = add_months(venc, i)
@@ -9873,6 +10783,7 @@ elif st.session_state["role"] == "Coordenador":
                                     valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
+                                    lote_id=lote_id_rec,
                                 )
                                 total_lancados += 1
                             st.success(f"Mensalidades lancadas! ({total_lancados} parcelas)")
@@ -9892,6 +10803,7 @@ elif st.session_state["role"] == "Coordenador":
                                     valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
+                                    lote_id=lote_id_rec,
                                 )
                                 total_lancados += 1
                             st.success(f"Material lancado com parcelamento em {qtd_material}x.")
@@ -9910,6 +10822,7 @@ elif st.session_state["role"] == "Coordenador":
                                     valor_parcela=valor_parcela_txt,
                                     parcela=parcela,
                                     categoria_lancamento=categoria_lancamento,
+                                    lote_id=lote_id_rec,
                                 )
                                 total_lancados += 1
                             st.success(f"Lancado! ({total_lancados} parcela(s))")
@@ -9979,6 +10892,87 @@ elif st.session_state["role"] == "Coordenador":
                 st.dataframe(df_rec, use_container_width=True)
             else:
                 st.info("Nenhum recebimento encontrado.")
+
+            st.markdown("### Acoes em massa (Recebimentos)")
+            rec_bulk_all_codes = list(
+                dict.fromkeys(
+                    [
+                        str(r.get("codigo", "")).strip()
+                        for r in recebimentos
+                        if str(r.get("codigo", "")).strip()
+                    ]
+                )
+            )
+            rec_bulk_filtered_codes = list(
+                dict.fromkeys(
+                    [
+                        str(r.get("codigo", "")).strip()
+                        for r in recebimentos_filtrados
+                        if str(r.get("codigo", "")).strip()
+                    ]
+                )
+            )
+            rec_labels_by_code = {}
+            for r in recebimentos:
+                codigo_item = str(r.get("codigo", "")).strip()
+                if not codigo_item:
+                    continue
+                rec_labels_by_code[codigo_item] = (
+                    f"{codigo_item} | {str(r.get('aluno', '')).strip()} | "
+                    f"{str(r.get('descricao', '')).strip()} | Parcela {str(r.get('parcela', '')).strip()} | "
+                    f"{str(r.get('valor_parcela', r.get('valor', ''))).strip()} | {str(r.get('status', '')).strip()}"
+                )
+
+            rbk1, rbk2, rbk3, rbk4 = st.columns(4)
+            with rbk1:
+                if st.button("Selecionar filtrados", key="fin_rec_bulk_sel_filtered"):
+                    st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_filtered_codes)
+                    st.rerun()
+            with rbk2:
+                if st.button("Selecionar TODOS", key="fin_rec_bulk_sel_all"):
+                    st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_all_codes)
+                    st.rerun()
+            with rbk3:
+                if st.button("Limpar selecao", key="fin_rec_bulk_sel_clear"):
+                    st.session_state["fin_rec_bulk_codes"] = []
+                    st.rerun()
+            with rbk4:
+                st.caption(f"Filtrados: {len(rec_bulk_filtered_codes)} | Base: {len(rec_bulk_all_codes)}")
+
+            selected_rec_codes = st.multiselect(
+                "Selecionar recebimentos",
+                rec_bulk_all_codes,
+                key="fin_rec_bulk_codes",
+                format_func=lambda code: rec_labels_by_code.get(code, code),
+            )
+            rbk5, rbk6 = st.columns([1.6, 2.4])
+            with rbk5:
+                rec_bulk_confirm = st.checkbox(
+                    "Confirmo exclusao em massa",
+                    value=False,
+                    key="fin_rec_bulk_confirm_delete",
+                )
+            with rbk6:
+                if st.button(
+                    "Excluir recebimentos selecionados",
+                    type="primary",
+                    key="fin_rec_bulk_delete_btn",
+                    disabled=not bool(selected_rec_codes),
+                ):
+                    if not rec_bulk_confirm:
+                        st.error("Marque a confirmacao para excluir em massa.")
+                    else:
+                        before_rec = len(st.session_state.get("receivables", []))
+                        st.session_state["receivables"] = [
+                            r
+                            for r in st.session_state.get("receivables", [])
+                            if str(r.get("codigo", "")).strip() not in selected_rec_codes
+                        ]
+                        removed_rec = before_rec - len(st.session_state.get("receivables", []))
+                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                        st.session_state["fin_rec_bulk_codes"] = []
+                        st.success(f"{removed_rec} recebimento(s) excluido(s).")
+                        st.rerun()
 
             st.markdown("### Gerenciamento de Recebimentos")
             if not recebimentos:
@@ -10076,6 +11070,12 @@ elif st.session_state["role"] == "Coordenador":
                     with mb2:
                         new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
 
+                    apply_all_rec = st.checkbox(
+                        "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
+                        value=bool(qtd_atual_rec > 1),
+                        key=f"rec_apply_all_{idx_rec}",
+                    )
+
                     mc1, mc2 = st.columns(2)
                     with mc1:
                         salvar_rec = st.form_submit_button("Salvar alteracoes")
@@ -10086,25 +11086,93 @@ elif st.session_state["role"] == "Coordenador":
                         if not new_ref_rec.strip() or new_val_total_num <= 0:
                             st.error("Informe referencia e valor total valido.")
                         else:
-                            rec_obj["descricao"] = new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade")
-                            rec_obj["aluno"] = new_ref_rec.strip()
-                            rec_obj["categoria"] = new_cat_rec
-                            rec_obj["categoria_lancamento"] = new_cat_lanc_rec
-                            rec_obj["cobranca"] = new_cobranca_rec
-                            rec_obj["valor"] = new_val_total_rec.strip()
-                            rec_obj["valor_parcela"] = new_valor_parcela_rec
-                            rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
-                            rec_obj["status"] = new_status_rec
-                            rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
-                            rec_obj["numero_pedido"] = ""
-                            rec_obj["boleto_url"] = str(new_boleto_url).strip()
-                            rec_obj["boleto_linha_digitavel"] = _format_boleto_linha(new_boleto_linha)
-                            if rec_obj["boleto_url"] or rec_obj["boleto_linha_digitavel"]:
-                                rec_obj["boleto_status"] = "Gerado"
-                                if not rec_obj.get("boleto_gerado_em"):
-                                    rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            lote_id_rec = str(rec_obj.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                            ref_data_rec = str(rec_obj.get("data", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
+                            ref_item_codigo = str(rec_obj.get("item_codigo", "")).strip()
+                            new_boleto_url_txt = str(new_boleto_url).strip()
+                            new_boleto_linha_txt = _format_boleto_linha(new_boleto_linha)
+                            new_boleto_status = "Gerado" if (new_boleto_url_txt or new_boleto_linha_txt) else "Nao Gerado"
+                            new_boleto_em = datetime.datetime.now().strftime("%d/%m/%Y %H:%M") if new_boleto_status == "Gerado" else ""
+
+                            if apply_all_rec:
+                                related_idx = _related_receivable_indices(recebimentos, idx_rec)
+                                related_idx = _sort_indices_by_parcela(recebimentos, related_idx)
+                                if not related_idx:
+                                    related_idx = [idx_rec]
+                                related_items = [recebimentos[i] for i in related_idx if 0 <= i < len(recebimentos)]
+                                existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
+                                if not existing_codes:
+                                    existing_codes = [str(rec_obj.get("codigo", "")).strip()] if str(rec_obj.get("codigo", "")).strip() else []
+
+                                parcela_base = max(1, parcela_atual_rec)
+                                primeiro_venc = add_months(new_venc_rec, -(parcela_base - 1)) if parcela_base > 1 else new_venc_rec
+                                if primeiro_venc is None:
+                                    primeiro_venc = new_venc_rec
+
+                                related_set = set(related_idx)
+                                st.session_state["receivables"] = [
+                                    r for pos, r in enumerate(recebimentos) if pos not in related_set
+                                ]
+                                recebimentos = st.session_state["receivables"]
+
+                                prefix_rec = re.sub(r"[^A-Z0-9]+", "", str(new_cobranca_rec).upper()) or "REC"
+                                for i in range(new_qtd_rec_int):
+                                    codigo_item = (
+                                        existing_codes[i]
+                                        if i < len(existing_codes) and existing_codes[i]
+                                        else f"{prefix_rec}-{uuid.uuid4().hex[:8].upper()}"
+                                    )
+                                    venc_item = add_months(primeiro_venc, i) or new_venc_rec
+                                    parcela_txt = f"{i + 1}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else "1"
+                                    st.session_state["receivables"].append(
+                                        {
+                                            "descricao": new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade"),
+                                            "aluno": new_ref_rec.strip(),
+                                            "categoria": new_cat_rec,
+                                            "categoria_lancamento": new_cat_lanc_rec,
+                                            "cobranca": new_cobranca_rec,
+                                            "codigo": codigo_item,
+                                            "valor": new_val_total_rec.strip(),
+                                            "data": ref_data_rec,
+                                            "valor_parcela": new_valor_parcela_rec,
+                                            "parcela": parcela_txt,
+                                            "numero_pedido": "",
+                                            "item_codigo": ref_item_codigo,
+                                            "lote_id": lote_id_rec,
+                                            "vencimento": venc_item.strftime("%d/%m/%Y"),
+                                            "status": new_status_rec,
+                                            "boleto_url": new_boleto_url_txt,
+                                            "boleto_linha_digitavel": new_boleto_linha_txt,
+                                            "boleto_status": new_boleto_status,
+                                            "boleto_gerado_em": new_boleto_em,
+                                            "boleto_enviado_em": "",
+                                            "boleto_enviado_canais": "",
+                                        }
+                                    )
                             else:
-                                rec_obj["boleto_status"] = "Nao Gerado"
+                                rec_obj["descricao"] = new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade")
+                                rec_obj["aluno"] = new_ref_rec.strip()
+                                rec_obj["categoria"] = new_cat_rec
+                                rec_obj["categoria_lancamento"] = new_cat_lanc_rec
+                                rec_obj["cobranca"] = new_cobranca_rec
+                                rec_obj["valor"] = new_val_total_rec.strip()
+                                rec_obj["valor_parcela"] = new_valor_parcela_rec
+                                rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
+                                rec_obj["status"] = new_status_rec
+                                rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
+                                rec_obj["numero_pedido"] = ""
+                                rec_obj["item_codigo"] = ref_item_codigo
+                                rec_obj["lote_id"] = lote_id_rec
+                                rec_obj["boleto_url"] = new_boleto_url_txt
+                                rec_obj["boleto_linha_digitavel"] = new_boleto_linha_txt
+                                rec_obj["boleto_status"] = new_boleto_status
+                                if new_boleto_status == "Gerado":
+                                    if not rec_obj.get("boleto_gerado_em"):
+                                        rec_obj["boleto_gerado_em"] = new_boleto_em
+                                else:
+                                    rec_obj["boleto_gerado_em"] = ""
+                                rec_obj["boleto_enviado_em"] = ""
+                                rec_obj["boleto_enviado_canais"] = ""
                             save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                             st.success("Recebimento atualizado!")
                             st.rerun()
@@ -10203,6 +11271,7 @@ elif st.session_state["role"] == "Coordenador":
                             ]
                         count = 0
                         for aluno_dest in alunos_destino:
+                            lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
                             for i in range(parcelas):
                                 data_venc = add_months(venc, i)
                                 parcela = f"{1 + i}/{parcelas}"
@@ -10218,6 +11287,7 @@ elif st.session_state["role"] == "Coordenador":
                                     parcela=parcela,
                                     item_codigo=item_codigo,
                                     categoria_lancamento="Aluno",
+                                    lote_id=lote_id_mat,
                                 )
                                 count += 1
                         st.success(f"Material lançado no financeiro! ({count} parcelas)")
@@ -10312,6 +11382,7 @@ elif st.session_state["role"] == "Coordenador":
                     if not desc.strip() or not forn.strip() or val_parcela_pag_num <= 0:
                         st.error("Informe descricao, referencia e valor da parcela valido.")
                     else:
+                        lote_id_pag = f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
                         for i in range(qtd_pag_int):
                             venc_item = add_months(venc_pag, i) if qtd_pag_int > 1 else venc_pag
                             parcela_txt = f"{1 + i}/{qtd_pag_int}" if qtd_pag_int > 1 else "1"
@@ -10329,6 +11400,7 @@ elif st.session_state["role"] == "Coordenador":
                                     "vencimento": venc_item.strftime("%d/%m/%Y"),
                                     "cobranca": cobranca_pag,
                                     "status": status_pag,
+                                    "lote_id": lote_id_pag,
                                 }
                             )
                         save_list(PAYABLES_FILE, st.session_state["payables"])
@@ -10355,6 +11427,74 @@ elif st.session_state["role"] == "Coordenador":
                 st.dataframe(df_pag, use_container_width=True)
             else:
                 st.info("Nenhuma conta a pagar cadastrada.")
+
+            st.markdown("### Acoes em massa (Despesas)")
+            pag_bulk_all_codes = list(
+                dict.fromkeys(
+                    [
+                        str(p.get("codigo", "")).strip()
+                        for p in despesas
+                        if str(p.get("codigo", "")).strip()
+                    ]
+                )
+            )
+            pag_labels_by_code = {}
+            for p in despesas:
+                codigo_pag = str(p.get("codigo", "")).strip()
+                if not codigo_pag:
+                    continue
+                pag_labels_by_code[codigo_pag] = (
+                    f"{codigo_pag} | {str(p.get('fornecedor', '')).strip()} | "
+                    f"{str(p.get('descricao', '')).strip()} | Parcela {str(p.get('parcela', '')).strip()} | "
+                    f"{str(p.get('valor_parcela', p.get('valor', ''))).strip()} | {str(p.get('status', '')).strip()}"
+                )
+
+            pbk1, pbk2, pbk3 = st.columns(3)
+            with pbk1:
+                if st.button("Selecionar TODAS", key="fin_pag_bulk_sel_all"):
+                    st.session_state["fin_pag_bulk_codes"] = list(pag_bulk_all_codes)
+                    st.rerun()
+            with pbk2:
+                if st.button("Limpar selecao", key="fin_pag_bulk_sel_clear"):
+                    st.session_state["fin_pag_bulk_codes"] = []
+                    st.rerun()
+            with pbk3:
+                st.caption(f"Base: {len(pag_bulk_all_codes)} despesa(s)")
+
+            selected_pag_codes = st.multiselect(
+                "Selecionar despesas",
+                pag_bulk_all_codes,
+                key="fin_pag_bulk_codes",
+                format_func=lambda code: pag_labels_by_code.get(code, code),
+            )
+            pbk4, pbk5 = st.columns([1.6, 2.4])
+            with pbk4:
+                pag_bulk_confirm = st.checkbox(
+                    "Confirmo exclusao em massa",
+                    value=False,
+                    key="fin_pag_bulk_confirm_delete",
+                )
+            with pbk5:
+                if st.button(
+                    "Excluir despesas selecionadas",
+                    type="primary",
+                    key="fin_pag_bulk_delete_btn",
+                    disabled=not bool(selected_pag_codes),
+                ):
+                    if not pag_bulk_confirm:
+                        st.error("Marque a confirmacao para excluir em massa.")
+                    else:
+                        before_pag = len(st.session_state.get("payables", []))
+                        st.session_state["payables"] = [
+                            p
+                            for p in st.session_state.get("payables", [])
+                            if str(p.get("codigo", "")).strip() not in selected_pag_codes
+                        ]
+                        removed_pag = before_pag - len(st.session_state.get("payables", []))
+                        save_list(PAYABLES_FILE, st.session_state["payables"])
+                        st.session_state["fin_pag_bulk_codes"] = []
+                        st.success(f"{removed_pag} despesa(s) excluida(s).")
+                        st.rerun()
 
             st.markdown("### Gerenciamento de Despesas")
             if not despesas:
@@ -10437,6 +11577,12 @@ elif st.session_state["role"] == "Coordenador":
                     with mp11:
                         st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_pag, disabled=True, key="pag_edit_valor_parcela_auto")
 
+                    apply_all_pag = st.checkbox(
+                        "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
+                        value=bool(qtd_atual_pag > 1),
+                        key=f"pag_apply_all_{idx_pag}",
+                    )
+
                     mpc1, mpc2 = st.columns(2)
                     with mpc1:
                         salvar_pag = st.form_submit_button("Salvar alteracoes")
@@ -10447,17 +11593,67 @@ elif st.session_state["role"] == "Coordenador":
                         if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_total_pag_num <= 0:
                             st.error("Informe descricao, referencia e valor total valido.")
                         else:
-                            pag_obj["descricao"] = new_desc_pag.strip()
-                            pag_obj["valor"] = new_val_total_pag.strip()
-                            pag_obj["valor_parcela"] = new_valor_parcela_pag
-                            pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
-                            pag_obj["fornecedor"] = new_forn_pag.strip()
-                            pag_obj["categoria_lancamento"] = new_cat_pag
-                            pag_obj["numero_pedido"] = new_numero_pedido_pag.strip()
-                            pag_obj["data"] = new_data_pag.strftime("%d/%m/%Y")
-                            pag_obj["vencimento"] = new_venc_pag.strftime("%d/%m/%Y")
-                            pag_obj["cobranca"] = new_cobranca_pag
-                            pag_obj["status"] = new_status_pag
+                            lote_id_pag = str(pag_obj.get("lote_id", "")).strip() or f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+
+                            if apply_all_pag:
+                                related_idx = _related_payable_indices(despesas, idx_pag)
+                                related_idx = _sort_indices_by_parcela(despesas, related_idx)
+                                if not related_idx:
+                                    related_idx = [idx_pag]
+                                related_items = [despesas[i] for i in related_idx if 0 <= i < len(despesas)]
+                                existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
+                                if not existing_codes:
+                                    existing_codes = [str(pag_obj.get("codigo", "")).strip()] if str(pag_obj.get("codigo", "")).strip() else []
+
+                                parcela_base_pag = max(1, parcela_atual_pag)
+                                primeiro_venc_pag = add_months(new_venc_pag, -(parcela_base_pag - 1)) if parcela_base_pag > 1 else new_venc_pag
+                                if primeiro_venc_pag is None:
+                                    primeiro_venc_pag = new_venc_pag
+
+                                related_set_pag = set(related_idx)
+                                st.session_state["payables"] = [
+                                    p for pos, p in enumerate(despesas) if pos not in related_set_pag
+                                ]
+                                despesas = st.session_state["payables"]
+
+                                for i in range(new_qtd_pag_int):
+                                    codigo_pag_item = (
+                                        existing_codes[i]
+                                        if i < len(existing_codes) and existing_codes[i]
+                                        else f"PAG-{uuid.uuid4().hex[:8].upper()}"
+                                    )
+                                    venc_pag_item = add_months(primeiro_venc_pag, i) or new_venc_pag
+                                    parcela_txt_pag = f"{i + 1}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else "1"
+                                    st.session_state["payables"].append(
+                                        {
+                                            "codigo": codigo_pag_item,
+                                            "descricao": new_desc_pag.strip(),
+                                            "valor": new_val_total_pag.strip(),
+                                            "valor_parcela": new_valor_parcela_pag,
+                                            "parcela": parcela_txt_pag,
+                                            "fornecedor": new_forn_pag.strip(),
+                                            "categoria_lancamento": new_cat_pag,
+                                            "numero_pedido": new_numero_pedido_pag.strip(),
+                                            "data": new_data_pag.strftime("%d/%m/%Y"),
+                                            "vencimento": venc_pag_item.strftime("%d/%m/%Y"),
+                                            "cobranca": new_cobranca_pag,
+                                            "status": new_status_pag,
+                                            "lote_id": lote_id_pag,
+                                        }
+                                    )
+                            else:
+                                pag_obj["descricao"] = new_desc_pag.strip()
+                                pag_obj["valor"] = new_val_total_pag.strip()
+                                pag_obj["valor_parcela"] = new_valor_parcela_pag
+                                pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
+                                pag_obj["fornecedor"] = new_forn_pag.strip()
+                                pag_obj["categoria_lancamento"] = new_cat_pag
+                                pag_obj["numero_pedido"] = new_numero_pedido_pag.strip()
+                                pag_obj["data"] = new_data_pag.strftime("%d/%m/%Y")
+                                pag_obj["vencimento"] = new_venc_pag.strftime("%d/%m/%Y")
+                                pag_obj["cobranca"] = new_cobranca_pag
+                                pag_obj["status"] = new_status_pag
+                                pag_obj["lote_id"] = lote_id_pag
                             save_list(PAYABLES_FILE, st.session_state["payables"])
                             st.success("Despesa atualizada!")
                             st.rerun()
