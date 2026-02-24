@@ -1775,17 +1775,20 @@ def _wiz_book_defaults_from_id(book_id):
         defaults["nivel"] = f"Livro {num}"
         defaults["parte"] = f"Parte {part}"
         return defaults
-    fixed = {
-        "lideranca": ("Lideranca", "Lideranca"),
-        "empreendedorismo": ("Empreendedorismo", "Empreendedorismo"),
-        "educacao_financeira": ("Educacao Financeira", "Educacao Financeira"),
-        "inteligencia_emocional": ("Inteligencia Emocional", "Inteligencia Emocional"),
-    }
-    if bid in fixed:
-        title, category = fixed[bid]
-        defaults["titulo"] = title
-        defaults["categoria"] = category
-        defaults["parte"] = "Parte unica"
+
+    tpl = next(
+        (
+            t
+            for t in library_book_templates()
+            if str(t.get("book_id", "")).strip().lower() == bid
+        ),
+        None,
+    )
+    if isinstance(tpl, dict):
+        defaults["titulo"] = str(tpl.get("titulo", "")).strip()
+        defaults["categoria"] = str(tpl.get("categoria", "")).strip()
+        defaults["nivel"] = str(tpl.get("nivel", "")).strip()
+        defaults["parte"] = str(tpl.get("parte", "")).strip()
     return defaults
 
 def _wiz_guess_book_id_from_filename(file_name):
@@ -5617,6 +5620,226 @@ def library_book_templates():
                 "file_b64": "",
                 "file_name": "",
             },
+            {
+                "book_id": "empreendedorismo_business_adults_1",
+                "nivel": "",
+                "titulo": "Mister Wiz livro Business Adults",
+                "categoria": "Empreendedorismo",
+                "parte": "Business Adults",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_business_adults_2",
+                "nivel": "",
+                "titulo": "Mister Wiz livro Business Adults 2",
+                "categoria": "Empreendedorismo",
+                "parte": "Business Adults 2",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_business_adults_3",
+                "nivel": "",
+                "titulo": "Mister Wiz livro Business Adults 3",
+                "categoria": "Empreendedorismo",
+                "parte": "Business Adults 3",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_empreendedoresmo_1",
+                "nivel": "",
+                "titulo": "Mister Wiz livro empreendedoresmo 1",
+                "categoria": "Empreendedorismo",
+                "parte": "Empreendedoresmo 1",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_empreendedoresmo_2",
+                "nivel": "",
+                "titulo": "Mister Wiz livro empreendedoresmo 2",
+                "categoria": "Empreendedorismo",
+                "parte": "Empreendedoresmo 2",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_jovens_1_1",
+                "nivel": "",
+                "titulo": "Mister Wiz livro jovens empreendedor 1.1",
+                "categoria": "Empreendedorismo",
+                "parte": "Jovens Empreendedor 1.1",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_jovens_1",
+                "nivel": "",
+                "titulo": "Mister Wiz livro jovens empreendedor 1",
+                "categoria": "Empreendedorismo",
+                "parte": "Jovens Empreendedor 1",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_jovens_2",
+                "nivel": "",
+                "titulo": "Mister Wiz livro jovens empreendedor 2",
+                "categoria": "Empreendedorismo",
+                "parte": "Jovens Empreendedor 2",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_jovens_3",
+                "nivel": "",
+                "titulo": "Mister Wiz livro jovens empreendedor 3",
+                "categoria": "Empreendedorismo",
+                "parte": "Jovens Empreendedor 3",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "empreendedorismo_jovens_4",
+                "nivel": "",
+                "titulo": "Mister Wiz livro jovens empreendedor 4",
+                "categoria": "Empreendedorismo",
+                "parte": "Jovens Empreendedor 4",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_1",
+                "nivel": "",
+                "titulo": "Mister Wiz livro inteligencia emocional 1",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 1",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_2",
+                "nivel": "",
+                "titulo": "Mister Wiz livro inteligencia emocional 2",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 2",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_2_2",
+                "nivel": "",
+                "titulo": "Mister Wiz livro inteligencia emocional 2.2",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 2.2",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_3",
+                "nivel": "",
+                "titulo": "Mister Wiz inteligencia emocional livro 3",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 3",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_3_3",
+                "nivel": "",
+                "titulo": "Mister Wiz inteligencia emocional livro 3.3",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 3.3",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_livro_4",
+                "nivel": "",
+                "titulo": "Mister Wiz inteligencia emocional livro 4",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Livro 4",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_base",
+                "nivel": "",
+                "titulo": "Mister Wiz livro inteligencia emocional",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Base",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_express_adults",
+                "nivel": "",
+                "titulo": "Mister Wiz livro express adults",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Express Adults",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_express_teens",
+                "nivel": "",
+                "titulo": "Mister Wiz livro express teens",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Express Teens",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
+            {
+                "book_id": "inteligencia_emocional_express_teens_3",
+                "nivel": "",
+                "titulo": "Mister Wiz livro express teens 3",
+                "categoria": "Inteligencia Emocional",
+                "parte": "Express Teens 3",
+                "url": "",
+                "file_path": "",
+                "file_b64": "",
+                "file_name": "",
+            },
         ]
     )
     return templates
@@ -5667,6 +5890,36 @@ def infer_library_book_id(book_obj):
         normalize_text(titulo),
         normalize_text(nivel),
     ]
+    joined = " | ".join([c for c in norm_candidates if c])
+    detailed_mapping = [
+        ("business adults 3", "empreendedorismo_business_adults_3"),
+        ("business adults 2", "empreendedorismo_business_adults_2"),
+        ("business adults", "empreendedorismo_business_adults_1"),
+        ("empreendedoresmo 2", "empreendedorismo_empreendedoresmo_2"),
+        ("empreendedorismo 2", "empreendedorismo_empreendedoresmo_2"),
+        ("empreendedoresmo 1", "empreendedorismo_empreendedoresmo_1"),
+        ("empreendedorismo 1", "empreendedorismo_empreendedoresmo_1"),
+        ("jovens empreendedor 4", "empreendedorismo_jovens_4"),
+        ("jovens empreendedor 3", "empreendedorismo_jovens_3"),
+        ("jovens empreendedor 2", "empreendedorismo_jovens_2"),
+        ("jovens empreendedor 1.1", "empreendedorismo_jovens_1_1"),
+        ("jovens empreendedor 1...", "empreendedorismo_jovens_1_1"),
+        ("jovens empreendedor 1", "empreendedorismo_jovens_1"),
+        ("inteligencia emocional livro 3.3", "inteligencia_emocional_livro_3_3"),
+        ("inteligencia emocional livro 2.2", "inteligencia_emocional_livro_2_2"),
+        ("inteligencia emocional livro 4", "inteligencia_emocional_livro_4"),
+        ("inteligencia emocional livro 3", "inteligencia_emocional_livro_3"),
+        ("inteligencia emocional livro 2", "inteligencia_emocional_livro_2"),
+        ("inteligencia emocional livro 1", "inteligencia_emocional_livro_1"),
+        ("express teens 3", "inteligencia_emocional_express_teens_3"),
+        ("express teens", "inteligencia_emocional_express_teens"),
+        ("express adults", "inteligencia_emocional_express_adults"),
+        ("livro inteligencia emocional", "inteligencia_emocional_base"),
+    ]
+    for key, val in detailed_mapping:
+        if key in joined:
+            return val
+
     mapping = {
         "lideranca": "lideranca",
         "empreendedorismo": "empreendedorismo",
@@ -10315,7 +10568,7 @@ elif st.session_state["role"] == "Coordenador":
             render_books_section(st.session_state.get("books", []), "Todos os Livros", key_prefix="coord_livros")
         with tab2:
             st.caption(
-                "Anexe por botao: Ingles (4 livros em 2 partes), Lideranca, Empreendedorismo, Educacao Financeira e Inteligencia Emocional."
+                "Anexe por botao: Ingles (5 livros em 2 partes), Lideranca, Empreendedorismo, Educacao Financeira e Inteligencia Emocional."
             )
 
             template_by_id = {str(t.get("book_id", "")).strip(): t for t in library_book_templates()}
@@ -10356,6 +10609,41 @@ elif st.session_state["role"] == "Coordenador":
                         obj["file_path"] = ""
                 st.session_state["books"] = ensure_library_catalog(books_list)
                 save_list(BOOKS_FILE, st.session_state["books"])
+
+            def _render_book_editor(book_id, fallback_title):
+                obj = _book_obj(book_id)
+                title = str(obj.get("titulo", "")).strip() or str(fallback_title or "Livro").strip()
+                st.markdown(f"**{title}**")
+                r1, r2, r3, r4 = st.columns([2.2, 2.2, 1.0, 1.0])
+                with r1:
+                    url_item = st.text_input(
+                        "Link",
+                        value=str(obj.get("url", "")).strip(),
+                        key=f"coord_book_url_{book_id}",
+                    )
+                with r2:
+                    upload_item = st.file_uploader(
+                        "Anexar arquivo",
+                        type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
+                        key=f"coord_book_upload_{book_id}",
+                    )
+                with r3:
+                    if st.button("Anexar e salvar", key=f"coord_book_save_{book_id}", type="primary"):
+                        _save_book_item(book_id, url_item, upload_item)
+                        st.success(f"{title} salvo.")
+                        st.rerun()
+                with r4:
+                    if st.button("Remover anexo", key=f"coord_book_clear_{book_id}"):
+                        obj["file_b64"] = ""
+                        obj["file_name"] = ""
+                        obj["file_path"] = ""
+                        st.session_state["books"] = ensure_library_catalog(books_list)
+                        save_list(BOOKS_FILE, st.session_state["books"])
+                        st.success("Anexo removido.")
+                        st.rerun()
+                _, existing_name = _book_binary_payload(obj)
+                if existing_name:
+                    st.caption(f"Arquivo anexado: {existing_name}")
 
             with st.container(border=True):
                 st.markdown("#### Importar DOC/PDF para Biblioteca")
@@ -10416,81 +10704,53 @@ elif st.session_state["role"] == "Coordenador":
                 st.markdown(f"#### Livro {livro}")
                 for parte in (1, 2):
                     book_id = f"ingles_livro_{livro}_parte_{parte}"
-                    obj = _book_obj(book_id)
-                    st.markdown(f"**{obj.get('titulo', f'Livro {livro} - Parte {parte}')}**")
-                    r1, r2, r3, r4 = st.columns([2.2, 2.2, 1.0, 1.0])
-                    with r1:
-                        url_item = st.text_input(
-                            "Link",
-                            value=str(obj.get("url", "")).strip(),
-                            key=f"coord_book_url_{book_id}",
-                        )
-                    with r2:
-                        upload_item = st.file_uploader(
-                            "Anexar arquivo",
-                            type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
-                            key=f"coord_book_upload_{book_id}",
-                        )
-                    with r3:
-                        if st.button("Anexar e salvar", key=f"coord_book_save_{book_id}", type="primary"):
-                            _save_book_item(book_id, url_item, upload_item)
-                            st.success(f"{obj.get('titulo', 'Livro')} salvo.")
-                            st.rerun()
-                    with r4:
-                        if st.button("Remover anexo", key=f"coord_book_clear_{book_id}"):
-                            obj["file_b64"] = ""
-                            obj["file_name"] = ""
-                            obj["file_path"] = ""
-                            st.session_state["books"] = ensure_library_catalog(books_list)
-                            save_list(BOOKS_FILE, st.session_state["books"])
-                            st.success("Anexo removido.")
-                            st.rerun()
-                    _, existing_name = _book_binary_payload(obj)
-                    if existing_name:
-                        st.caption(f"Arquivo anexado: {existing_name}")
+                    _render_book_editor(book_id, f"Livro {livro} - Parte {parte}")
                     st.markdown("---")
 
             st.markdown("### Trilhas Complementares")
             trilhas = [
-                ("lideranca", "Lideranca"),
-                ("empreendedorismo", "Empreendedorismo"),
-                ("educacao_financeira", "Educacao Financeira"),
-                ("inteligencia_emocional", "Inteligencia Emocional"),
+                ("Lideranca", ["lideranca"]),
+                (
+                    "Empreendedorismo",
+                    [
+                        "empreendedorismo_business_adults_1",
+                        "empreendedorismo_business_adults_2",
+                        "empreendedorismo_business_adults_3",
+                        "empreendedorismo_empreendedoresmo_1",
+                        "empreendedorismo_empreendedoresmo_2",
+                        "empreendedorismo_jovens_1_1",
+                        "empreendedorismo_jovens_1",
+                        "empreendedorismo_jovens_2",
+                        "empreendedorismo_jovens_3",
+                        "empreendedorismo_jovens_4",
+                        "empreendedorismo",
+                    ],
+                ),
+                ("Educacao Financeira", ["educacao_financeira"]),
+                (
+                    "Inteligencia Emocional",
+                    [
+                        "inteligencia_emocional_livro_1",
+                        "inteligencia_emocional_livro_2",
+                        "inteligencia_emocional_livro_2_2",
+                        "inteligencia_emocional_livro_3",
+                        "inteligencia_emocional_livro_3_3",
+                        "inteligencia_emocional_livro_4",
+                        "inteligencia_emocional_base",
+                        "inteligencia_emocional_express_adults",
+                        "inteligencia_emocional_express_teens",
+                        "inteligencia_emocional_express_teens_3",
+                        "inteligencia_emocional",
+                    ],
+                ),
             ]
-            for book_id, titulo_label in trilhas:
-                obj = _book_obj(book_id)
-                st.markdown(f"**{titulo_label}**")
-                r1, r2, r3, r4 = st.columns([2.2, 2.2, 1.0, 1.0])
-                with r1:
-                    url_item = st.text_input(
-                        "Link",
-                        value=str(obj.get("url", "")).strip(),
-                        key=f"coord_book_url_{book_id}",
-                    )
-                with r2:
-                    upload_item = st.file_uploader(
-                        "Anexar arquivo",
-                        type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
-                        key=f"coord_book_upload_{book_id}",
-                    )
-                with r3:
-                    if st.button("Anexar e salvar", key=f"coord_book_save_{book_id}", type="primary"):
-                        _save_book_item(book_id, url_item, upload_item)
-                        st.success(f"{titulo_label} salvo.")
-                        st.rerun()
-                with r4:
-                    if st.button("Remover anexo", key=f"coord_book_clear_{book_id}"):
-                        obj["file_b64"] = ""
-                        obj["file_name"] = ""
-                        obj["file_path"] = ""
-                        st.session_state["books"] = ensure_library_catalog(books_list)
-                        save_list(BOOKS_FILE, st.session_state["books"])
-                        st.success("Anexo removido.")
-                        st.rerun()
-                _, existing_name = _book_binary_payload(obj)
-                if existing_name:
-                    st.caption(f"Arquivo anexado: {existing_name}")
-                st.markdown("---")
+            for secao, ids in trilhas:
+                st.markdown(f"#### {secao}")
+                for book_id in ids:
+                    tpl = template_by_id.get(book_id, {})
+                    fallback_title = str(tpl.get("titulo", "")).strip() or secao
+                    _render_book_editor(book_id, fallback_title)
+                    st.markdown("---")
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
