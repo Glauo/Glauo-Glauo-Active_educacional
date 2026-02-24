@@ -1752,6 +1752,106 @@ def _wiz_to_bool(value, default=False):
         return False
     return bool(default)
 
+def _wiz_norm_text(value):
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", text).strip()
+
+def _wiz_digits(value):
+    return re.sub(r"\D", "", str(value or ""))
+
+def _wiz_book_defaults_from_id(book_id):
+    bid = str(book_id or "").strip().lower()
+    defaults = {"titulo": "", "categoria": "", "nivel": "", "parte": ""}
+    mt = re.match(r"^ingles_livro_(\d+)_parte_(\d+)$", bid)
+    if mt:
+        num = int(mt.group(1))
+        part = int(mt.group(2))
+        defaults["titulo"] = f"Ingles - Livro {num} - Parte {part}"
+        defaults["categoria"] = "Ingles"
+        defaults["nivel"] = f"Livro {num}"
+        defaults["parte"] = f"Parte {part}"
+        return defaults
+    fixed = {
+        "lideranca": ("Lideranca", "Lideranca"),
+        "empreendedorismo": ("Empreendedorismo", "Empreendedorismo"),
+        "educacao_financeira": ("Educacao Financeira", "Educacao Financeira"),
+        "inteligencia_emocional": ("Inteligencia Emocional", "Inteligencia Emocional"),
+    }
+    if bid in fixed:
+        title, category = fixed[bid]
+        defaults["titulo"] = title
+        defaults["categoria"] = category
+        defaults["parte"] = "Parte unica"
+    return defaults
+
+def _wiz_guess_book_id_from_filename(file_name):
+    stem = Path(str(file_name or "").strip()).stem
+    if not stem:
+        return ""
+    candidate = infer_library_book_id(
+        {
+            "titulo": stem,
+            "nivel": stem,
+            "categoria": stem,
+            "parte": stem,
+        }
+    )
+    if candidate:
+        return candidate
+    norm = _wiz_norm_text(stem).replace("-", " ").replace("_", " ")
+    mt = re.search(r"livro\s*(\d+)", norm)
+    if mt:
+        part = 2 if "parte 2" in norm else 1
+        return f"ingles_livro_{int(mt.group(1))}_parte_{part}"
+    if "lideranca" in norm:
+        return "lideranca"
+    if "empreendedorismo" in norm:
+        return "empreendedorismo"
+    if "educacao financeira" in norm:
+        return "educacao_financeira"
+    if "inteligencia emocional" in norm:
+        return "inteligencia_emocional"
+    return ""
+
+def _wiz_actions_from_book_uploads(user_text, uploaded_files):
+    request_norm = _wiz_norm_text(user_text)
+    triggers = ("livro", "biblioteca", "anex", "post", "public", "cadastr")
+    if not any(token in request_norm for token in triggers):
+        return []
+
+    actions = []
+    for up in uploaded_files or []:
+        file_name = str(getattr(up, "name", "") or "").strip()
+        if not file_name:
+            continue
+        try:
+            raw = up.getvalue() if hasattr(up, "getvalue") else b""
+        except Exception:
+            raw = b""
+        if not isinstance(raw, (bytes, bytearray)) or not raw:
+            continue
+
+        book_id = _wiz_guess_book_id_from_filename(file_name)
+        defaults = _wiz_book_defaults_from_id(book_id)
+        title_fallback = Path(file_name).stem.replace("_", " ").replace("-", " ").strip() or "Livro"
+        actions.append(
+            {
+                "type": "cadastrar_livro",
+                "data": {
+                    "book_id": book_id,
+                    "titulo": defaults.get("titulo") or title_fallback,
+                    "categoria": defaults.get("categoria", ""),
+                    "nivel": defaults.get("nivel", ""),
+                    "parte": defaults.get("parte", ""),
+                    "file_name": file_name,
+                    "file_bytes": bytes(raw),
+                },
+            }
+        )
+    return actions
+
 def _wiz_build_execution_message(base_reply, reports, missing=None):
     base = str(base_reply or "").strip()
     missing = missing if isinstance(missing, list) else []
@@ -1813,11 +1913,25 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
             "Nunca inclua DietHealth.",
             "Acoes suportadas:",
             "- cadastrar_aluno",
+            "- atualizar_aluno",
+            "- excluir_aluno",
             "- cadastrar_professor",
+            "- atualizar_professor",
+            "- excluir_professor",
             "- cadastrar_usuario",
+            "- atualizar_usuario",
+            "- excluir_usuario",
+            "- cadastrar_turma",
+            "- atualizar_turma",
+            "- excluir_turma",
             "- agendar_aula",
+            "- atualizar_aula",
+            "- excluir_aula",
             "- atualizar_link_turma",
             "- publicar_noticia",
+            "- cadastrar_livro",
+            "- atualizar_livro",
+            "- excluir_livro",
             "- lancar_recebivel",
             "- atualizar_recebivel",
             "- excluir_recebivel",
@@ -1882,6 +1996,30 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
 def _wiz_execute_actions(actions):
     reports = []
     alias = {
+        "incluir_aluno": "cadastrar_aluno",
+        "criar_aluno": "cadastrar_aluno",
+        "editar_aluno": "atualizar_aluno",
+        "alterar_aluno": "atualizar_aluno",
+        "deletar_aluno": "excluir_aluno",
+        "remover_aluno": "excluir_aluno",
+        "incluir_professor": "cadastrar_professor",
+        "criar_professor": "cadastrar_professor",
+        "editar_professor": "atualizar_professor",
+        "alterar_professor": "atualizar_professor",
+        "deletar_professor": "excluir_professor",
+        "remover_professor": "excluir_professor",
+        "incluir_usuario": "cadastrar_usuario",
+        "criar_usuario": "cadastrar_usuario",
+        "editar_usuario": "atualizar_usuario",
+        "alterar_usuario": "atualizar_usuario",
+        "deletar_usuario": "excluir_usuario",
+        "remover_usuario": "excluir_usuario",
+        "incluir_turma": "cadastrar_turma",
+        "criar_turma": "cadastrar_turma",
+        "editar_turma": "atualizar_turma",
+        "alterar_turma": "atualizar_turma",
+        "deletar_turma": "excluir_turma",
+        "remover_turma": "excluir_turma",
         "lançar_recebivel": "lancar_recebivel",
         "lancar_recebimento": "lancar_recebivel",
         "atualizar_recebimento": "atualizar_recebivel",
@@ -1893,6 +2031,20 @@ def _wiz_execute_actions(actions):
         "deletar_despesa": "excluir_despesa",
         "dar_baixa_despesa": "baixar_despesa",
         "baixa_despesa": "baixar_despesa",
+        "incluir_livro": "cadastrar_livro",
+        "criar_livro": "cadastrar_livro",
+        "anexar_livro": "cadastrar_livro",
+        "postar_livro": "cadastrar_livro",
+        "editar_livro": "atualizar_livro",
+        "alterar_livro": "atualizar_livro",
+        "deletar_livro": "excluir_livro",
+        "remover_livro": "excluir_livro",
+        "atualizar_agenda": "atualizar_aula",
+        "editar_aula": "atualizar_aula",
+        "alterar_aula": "atualizar_aula",
+        "cancelar_aula": "excluir_aula",
+        "deletar_aula": "excluir_aula",
+        "remover_aula": "excluir_aula",
     }
 
     def _find_indices_by_codes(items, codes):
@@ -1935,6 +2087,147 @@ def _wiz_execute_actions(actions):
             return [i for i, r in enumerate(items) if str(r.get("lote_id", "")).strip() == lote]
         return []
 
+    def _norm(value):
+        return _wiz_norm_text(value)
+
+    def _match_text(value, expected):
+        value_norm = _norm(value)
+        expected_norm = _norm(expected)
+        if not expected_norm:
+            return True
+        if not value_norm:
+            return False
+        return expected_norm in value_norm or value_norm in expected_norm
+
+    def _find_student_indices(data):
+        items = st.session_state.get("students", [])
+        nome = str(data.get("nome", data.get("aluno", ""))).strip()
+        matricula = str(data.get("matricula", "")).strip()
+        email = str(data.get("email", "")).strip().lower()
+        cpf = _wiz_digits(data.get("cpf", ""))
+        usuario = str(data.get("usuario", data.get("login", ""))).strip().lower()
+        if not any([nome, matricula, email, cpf, usuario]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if matricula and str(obj.get("matricula", "")).strip() != matricula:
+                continue
+            if email and str(obj.get("email", "")).strip().lower() != email:
+                continue
+            if cpf and _wiz_digits(obj.get("cpf", "")) != cpf:
+                continue
+            if usuario and str(obj.get("usuario", "")).strip().lower() != usuario:
+                continue
+            if nome and not _match_text(obj.get("nome", ""), nome):
+                continue
+            found.append(idx)
+        return found
+
+    def _find_teacher_indices(data):
+        items = st.session_state.get("teachers", [])
+        nome = str(data.get("nome", data.get("professor", ""))).strip()
+        email = str(data.get("email", "")).strip().lower()
+        usuario = str(data.get("usuario", data.get("login", ""))).strip().lower()
+        if not any([nome, email, usuario]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if email and str(obj.get("email", "")).strip().lower() != email:
+                continue
+            if usuario and str(obj.get("usuario", "")).strip().lower() != usuario:
+                continue
+            if nome and not _match_text(obj.get("nome", ""), nome):
+                continue
+            found.append(idx)
+        return found
+
+    def _find_user_indices(data):
+        items = st.session_state.get("users", [])
+        usuario = str(data.get("usuario", data.get("login", ""))).strip().lower()
+        email = str(data.get("email", "")).strip().lower()
+        pessoa = str(data.get("pessoa", data.get("nome", ""))).strip()
+        perfil = str(data.get("perfil", "")).strip().lower()
+        if not any([usuario, email, pessoa, perfil]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if usuario and str(obj.get("usuario", "")).strip().lower() != usuario:
+                continue
+            if email and str(obj.get("email", "")).strip().lower() != email:
+                continue
+            if pessoa and not _match_text(obj.get("pessoa", ""), pessoa):
+                continue
+            if perfil and str(obj.get("perfil", "")).strip().lower() != perfil:
+                continue
+            found.append(idx)
+        return found
+
+    def _find_class_indices(data):
+        items = st.session_state.get("classes", [])
+        nome = str(data.get("nome", data.get("turma", ""))).strip()
+        professor = str(data.get("professor", "")).strip()
+        livro = str(data.get("livro", "")).strip()
+        if not any([nome, professor, livro]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if nome and not _match_text(obj.get("nome", ""), nome):
+                continue
+            if professor and not _match_text(obj.get("professor", ""), professor):
+                continue
+            if livro and not _match_text(obj.get("livro", ""), livro):
+                continue
+            found.append(idx)
+        return found
+
+    def _find_agenda_indices(data):
+        items = st.session_state.get("agenda", [])
+        turma = str(data.get("turma", "")).strip()
+        titulo = str(data.get("titulo", "")).strip()
+        professor = str(data.get("professor", "")).strip()
+        data_txt = str(data.get("data", "")).strip()
+        hora_txt = str(data.get("hora", "")).strip()
+        if not any([turma, titulo, professor, data_txt, hora_txt]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if turma and not _match_text(obj.get("turma", ""), turma):
+                continue
+            if titulo and not _match_text(obj.get("titulo", ""), titulo):
+                continue
+            if professor and not _match_text(obj.get("professor", ""), professor):
+                continue
+            if data_txt and str(obj.get("data", "")).strip() != data_txt:
+                continue
+            if hora_txt and str(obj.get("hora", "")).strip() != hora_txt:
+                continue
+            found.append(idx)
+        return found
+
+    def _find_book_indices(data):
+        items = st.session_state.get("books", [])
+        bid = str(data.get("book_id", "")).strip().lower()
+        titulo = str(data.get("titulo", "")).strip()
+        categoria = str(data.get("categoria", "")).strip()
+        nivel = str(data.get("nivel", "")).strip()
+        parte = str(data.get("parte", "")).strip()
+        if not any([bid, titulo, categoria, nivel, parte]):
+            return []
+        found = []
+        for idx, obj in enumerate(items):
+            if bid and str(obj.get("book_id", "")).strip().lower() != bid:
+                continue
+            if titulo and not _match_text(obj.get("titulo", ""), titulo):
+                continue
+            if categoria and not _match_text(obj.get("categoria", ""), categoria):
+                continue
+            if nivel and not _match_text(obj.get("nivel", ""), nivel):
+                continue
+            if parte and not _match_text(obj.get("parte", ""), parte):
+                continue
+            found.append(idx)
+        return found
+
     for action in actions:
         kind = str((action or {}).get("type", "")).strip().lower()
         kind = alias.get(kind, kind)
@@ -1943,16 +2236,19 @@ def _wiz_execute_actions(actions):
             if kind == "cadastrar_aluno":
                 nome = str(data.get("nome", "")).strip()
                 email = str(data.get("email", "")).strip().lower()
-                if not nome or not email:
-                    reports.append({"type": kind, "ok": False, "message": "nome e email sao obrigatorios"})
+                celular = str(data.get("celular", data.get("telefone", ""))).strip()
+                if not nome:
+                    reports.append({"type": kind, "ok": False, "message": "nome e obrigatorio"})
                     continue
+                if not email and celular:
+                    email = ""
                 novo = {
                     "nome": nome,
                     "matricula": _next_student_matricula(st.session_state.get("students", [])),
                     "idade": int(data.get("idade") or 18),
                     "genero": str(data.get("genero", data.get("sexo", ""))).strip(),
                     "data_nascimento": str(data.get("data_nascimento", "")),
-                    "celular": str(data.get("celular", "")),
+                    "celular": celular,
                     "email": email,
                     "rg": str(data.get("rg", "")),
                     "cpf": str(data.get("cpf", "")),
@@ -1979,6 +2275,125 @@ def _wiz_execute_actions(actions):
                 st.session_state["students"].append(novo)
                 save_list(STUDENTS_FILE, st.session_state["students"])
                 reports.append({"type": kind, "ok": True, "message": f"aluno {nome} cadastrado"})
+            elif kind == "atualizar_aluno":
+                idx_list = _find_student_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "aluno nao encontrado"})
+                    continue
+                if not _wiz_to_bool(data.get("aplicar_em_lote", False), default=False):
+                    idx_list = idx_list[:1]
+                touched = 0
+                for idx in idx_list:
+                    if idx < 0 or idx >= len(st.session_state.get("students", [])):
+                        continue
+                    obj = st.session_state["students"][idx]
+                    old_nome = str(obj.get("nome", "")).strip()
+                    new_nome = str(data.get("novo_nome", data.get("nome", ""))).strip()
+                    if new_nome:
+                        obj["nome"] = new_nome
+                    if str(data.get("matricula", "")).strip():
+                        obj["matricula"] = str(data.get("matricula", "")).strip()
+                    if str(data.get("idade", "")).strip():
+                        obj["idade"] = parse_int(data.get("idade")) or obj.get("idade", "")
+                    if str(data.get("sexo", data.get("genero", ""))).strip():
+                        obj["genero"] = str(data.get("sexo", data.get("genero", ""))).strip()
+                    if str(data.get("data_nascimento", "")).strip():
+                        obj["data_nascimento"] = str(data.get("data_nascimento", "")).strip()
+                    if str(data.get("celular", data.get("telefone", ""))).strip():
+                        obj["celular"] = str(data.get("celular", data.get("telefone", ""))).strip()
+                    if str(data.get("email", "")).strip():
+                        obj["email"] = str(data.get("email", "")).strip().lower()
+                    if str(data.get("rg", "")).strip():
+                        obj["rg"] = str(data.get("rg", "")).strip()
+                    if str(data.get("cpf", "")).strip():
+                        obj["cpf"] = str(data.get("cpf", "")).strip()
+                    if str(data.get("cidade_natal", "")).strip():
+                        obj["cidade_natal"] = str(data.get("cidade_natal", "")).strip()
+                    if str(data.get("pais", "")).strip():
+                        obj["pais"] = str(data.get("pais", "")).strip()
+                    if str(data.get("cep", "")).strip():
+                        obj["cep"] = str(data.get("cep", "")).strip()
+                    if str(data.get("cidade", "")).strip():
+                        obj["cidade"] = str(data.get("cidade", "")).strip()
+                    if str(data.get("bairro", "")).strip():
+                        obj["bairro"] = str(data.get("bairro", "")).strip()
+                    if str(data.get("rua", data.get("endereco", ""))).strip():
+                        obj["rua"] = str(data.get("rua", data.get("endereco", ""))).strip()
+                    if str(data.get("numero", "")).strip():
+                        obj["numero"] = str(data.get("numero", "")).strip()
+                    if str(data.get("complemento", data.get("observacao_endereco", ""))).strip():
+                        obj["complemento"] = str(data.get("complemento", data.get("observacao_endereco", ""))).strip()
+                    if str(data.get("turma", "")).strip():
+                        obj["turma"] = str(data.get("turma", "")).strip()
+                    if str(data.get("modulo", "")).strip():
+                        obj["modulo"] = str(data.get("modulo", "")).strip()
+                    if str(data.get("livro", "")).strip():
+                        obj["livro"] = str(data.get("livro", "")).strip()
+                    if str(data.get("usuario", data.get("login", ""))).strip():
+                        obj["usuario"] = str(data.get("usuario", data.get("login", ""))).strip()
+                    if str(data.get("senha", "")).strip():
+                        obj["senha"] = str(data.get("senha", "")).strip()
+
+                    if "responsavel" not in obj or not isinstance(obj.get("responsavel"), dict):
+                        obj["responsavel"] = {}
+                    if str(data.get("responsavel_nome", "")).strip():
+                        obj["responsavel"]["nome"] = str(data.get("responsavel_nome", "")).strip()
+                    if str(data.get("responsavel_cpf", "")).strip():
+                        obj["responsavel"]["cpf"] = str(data.get("responsavel_cpf", "")).strip()
+                    if str(data.get("responsavel_celular", "")).strip():
+                        obj["responsavel"]["celular"] = str(data.get("responsavel_celular", "")).strip()
+                    if str(data.get("responsavel_email", "")).strip():
+                        obj["responsavel"]["email"] = str(data.get("responsavel_email", "")).strip().lower()
+
+                    new_nome_eff = str(obj.get("nome", "")).strip()
+                    if old_nome and new_nome_eff and old_nome != new_nome_eff:
+                        for rec in st.session_state.get("receivables", []):
+                            if str(rec.get("aluno", "")).strip() == old_nome:
+                                rec["aluno"] = new_nome_eff
+                        for g in st.session_state.get("grades", []):
+                            if str(g.get("aluno", "")).strip() == old_nome:
+                                g["aluno"] = new_nome_eff
+                        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+                        save_list(GRADES_FILE, st.session_state.get("grades", []))
+                    touched += 1
+                save_list(STUDENTS_FILE, st.session_state["students"])
+                reports.append({"type": kind, "ok": True, "message": f"aluno atualizado em {touched} registro(s)"})
+            elif kind == "excluir_aluno":
+                idx_list = _find_student_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "aluno nao encontrado para exclusao"})
+                    continue
+                usuarios_remover = set()
+                nomes_removidos = []
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("students", [])):
+                        aluno_obj = st.session_state["students"][idx]
+                        usuario_aluno = str(aluno_obj.get("usuario", "")).strip().lower()
+                        if usuario_aluno:
+                            usuarios_remover.add(usuario_aluno)
+                        nomes_removidos.append(str(aluno_obj.get("nome", "")).strip())
+                        st.session_state["students"].pop(idx)
+                save_list(STUDENTS_FILE, st.session_state["students"])
+
+                if _wiz_to_bool(data.get("remover_usuario", True), default=True) and usuarios_remover:
+                    st.session_state["users"] = [
+                        u for u in st.session_state.get("users", [])
+                        if not (
+                            str(u.get("usuario", "")).strip().lower() in usuarios_remover
+                            and str(u.get("perfil", "")).strip() == "Aluno"
+                        )
+                    ]
+                    save_users(st.session_state["users"])
+
+                if _wiz_to_bool(data.get("excluir_financeiro_relacionado", False), default=False):
+                    nome_norm_set = {_wiz_norm_text(n) for n in nomes_removidos if str(n).strip()}
+                    st.session_state["receivables"] = [
+                        rec for rec in st.session_state.get("receivables", [])
+                        if _wiz_norm_text(rec.get("aluno", "")) not in nome_norm_set
+                    ]
+                    save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} aluno(s) excluido(s)"})
             elif kind == "cadastrar_professor":
                 nome = str(data.get("nome", "")).strip()
                 if not nome:
@@ -1995,6 +2410,99 @@ def _wiz_execute_actions(actions):
                 st.session_state["teachers"].append(prof)
                 save_list(TEACHERS_FILE, st.session_state["teachers"])
                 reports.append({"type": kind, "ok": True, "message": f"professor {nome} cadastrado"})
+            elif kind == "atualizar_professor":
+                idx_list = _find_teacher_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "professor nao encontrado"})
+                    continue
+                if not _wiz_to_bool(data.get("aplicar_em_lote", False), default=False):
+                    idx_list = idx_list[:1]
+                touched = 0
+                for idx in idx_list:
+                    if idx < 0 or idx >= len(st.session_state.get("teachers", [])):
+                        continue
+                    obj = st.session_state["teachers"][idx]
+                    old_nome = str(obj.get("nome", "")).strip()
+                    new_nome = str(data.get("novo_nome", data.get("nome", ""))).strip()
+                    if new_nome:
+                        obj["nome"] = new_nome
+                    if str(data.get("area", "")).strip():
+                        obj["area"] = str(data.get("area", "")).strip()
+                    if str(data.get("email", "")).strip():
+                        obj["email"] = str(data.get("email", "")).strip().lower()
+                    if str(data.get("celular", data.get("telefone", ""))).strip():
+                        obj["celular"] = str(data.get("celular", data.get("telefone", ""))).strip()
+                    if str(data.get("usuario", data.get("login", ""))).strip():
+                        obj["usuario"] = str(data.get("usuario", data.get("login", ""))).strip()
+                    if str(data.get("senha", "")).strip():
+                        obj["senha"] = str(data.get("senha", "")).strip()
+
+                    if old_nome and str(obj.get("nome", "")).strip() and old_nome != str(obj.get("nome", "")).strip():
+                        for turma in st.session_state.get("classes", []):
+                            if str(turma.get("professor", "")).strip() == old_nome:
+                                turma["professor"] = str(obj.get("nome", "")).strip()
+                        save_list(CLASSES_FILE, st.session_state.get("classes", []))
+
+                    login_prof = str(obj.get("usuario", "")).strip()
+                    senha_prof = str(obj.get("senha", "")).strip()
+                    if login_prof:
+                        user_obj = find_user(login_prof)
+                        if user_obj:
+                            user_obj["perfil"] = "Professor"
+                            user_obj["pessoa"] = str(obj.get("nome", "")).strip()
+                            if senha_prof:
+                                user_obj["senha"] = senha_prof
+                            if str(obj.get("email", "")).strip():
+                                user_obj["email"] = str(obj.get("email", "")).strip().lower()
+                            if str(obj.get("celular", "")).strip():
+                                user_obj["celular"] = str(obj.get("celular", "")).strip()
+                        elif senha_prof:
+                            st.session_state["users"].append(
+                                {
+                                    "usuario": login_prof,
+                                    "senha": senha_prof,
+                                    "perfil": "Professor",
+                                    "pessoa": str(obj.get("nome", "")).strip(),
+                                    "email": str(obj.get("email", "")).strip().lower(),
+                                    "celular": str(obj.get("celular", "")).strip(),
+                                }
+                            )
+                        save_users(st.session_state["users"])
+                    touched += 1
+                save_list(TEACHERS_FILE, st.session_state["teachers"])
+                reports.append({"type": kind, "ok": True, "message": f"professor atualizado em {touched} registro(s)"})
+            elif kind == "excluir_professor":
+                idx_list = _find_teacher_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "professor nao encontrado para exclusao"})
+                    continue
+                logins_remove = set()
+                nomes_remove = []
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("teachers", [])):
+                        prof_obj = st.session_state["teachers"][idx]
+                        logins_remove.add(str(prof_obj.get("usuario", "")).strip().lower())
+                        nomes_remove.append(str(prof_obj.get("nome", "")).strip())
+                        st.session_state["teachers"].pop(idx)
+                save_list(TEACHERS_FILE, st.session_state["teachers"])
+
+                nome_norm_set = {_wiz_norm_text(n) for n in nomes_remove if str(n).strip()}
+                for turma in st.session_state.get("classes", []):
+                    if _wiz_norm_text(turma.get("professor", "")) in nome_norm_set:
+                        turma["professor"] = "Sem Professor"
+                save_list(CLASSES_FILE, st.session_state["classes"])
+
+                if _wiz_to_bool(data.get("remover_usuario", True), default=True):
+                    st.session_state["users"] = [
+                        u for u in st.session_state.get("users", [])
+                        if not (
+                            str(u.get("usuario", "")).strip().lower() in logins_remove
+                            and str(u.get("perfil", "")).strip() == "Professor"
+                        )
+                    ]
+                    save_users(st.session_state["users"])
+
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} professor(es) excluido(s)"})
             elif kind == "cadastrar_usuario":
                 usuario = str(data.get("usuario", "")).strip()
                 senha = str(data.get("senha", "")).strip()
@@ -2014,6 +2522,206 @@ def _wiz_execute_actions(actions):
                 )
                 save_users(st.session_state["users"])
                 reports.append({"type": kind, "ok": True, "message": f"usuario {usuario} criado"})
+            elif kind == "atualizar_usuario":
+                idx_list = _find_user_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "usuario nao encontrado"})
+                    continue
+                if not _wiz_to_bool(data.get("aplicar_em_lote", False), default=False):
+                    idx_list = idx_list[:1]
+                new_login = str(data.get("novo_usuario", data.get("usuario_novo", ""))).strip()
+                if new_login and len(idx_list) > 1:
+                    reports.append({"type": kind, "ok": False, "message": "novo login so pode ser aplicado em um usuario por vez"})
+                    continue
+                if new_login:
+                    exists_other = any(
+                        str(u.get("usuario", "")).strip().lower() == new_login.lower()
+                        and i not in idx_list
+                        for i, u in enumerate(st.session_state.get("users", []))
+                    )
+                    if exists_other:
+                        reports.append({"type": kind, "ok": False, "message": "novo login ja existe"})
+                        continue
+
+                touched = 0
+                for idx in idx_list:
+                    if idx < 0 or idx >= len(st.session_state.get("users", [])):
+                        continue
+                    obj = st.session_state["users"][idx]
+                    old_login = str(obj.get("usuario", "")).strip()
+                    if new_login:
+                        obj["usuario"] = new_login
+                    if str(data.get("senha", "")).strip():
+                        obj["senha"] = str(data.get("senha", "")).strip()
+                    if str(data.get("perfil", "")).strip():
+                        perfil = str(data.get("perfil", "")).strip()
+                        obj["perfil"] = perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Comercial") else obj.get("perfil", "Coordenador")
+                    if str(data.get("pessoa", data.get("nome", ""))).strip():
+                        obj["pessoa"] = str(data.get("pessoa", data.get("nome", ""))).strip()
+                    if str(data.get("email", "")).strip():
+                        obj["email"] = str(data.get("email", "")).strip().lower()
+                    if str(data.get("celular", data.get("telefone", ""))).strip():
+                        obj["celular"] = str(data.get("celular", data.get("telefone", ""))).strip()
+
+                    login_effective = str(obj.get("usuario", "")).strip()
+                    if old_login and login_effective and old_login != login_effective:
+                        for prof in st.session_state.get("teachers", []):
+                            if str(prof.get("usuario", "")).strip() == old_login:
+                                prof["usuario"] = login_effective
+                                if str(obj.get("senha", "")).strip():
+                                    prof["senha"] = str(obj.get("senha", "")).strip()
+                        for aluno in st.session_state.get("students", []):
+                            if str(aluno.get("usuario", "")).strip() == old_login:
+                                aluno["usuario"] = login_effective
+                                if str(obj.get("senha", "")).strip():
+                                    aluno["senha"] = str(obj.get("senha", "")).strip()
+                    touched += 1
+
+                save_users(st.session_state["users"])
+                save_list(TEACHERS_FILE, st.session_state.get("teachers", []))
+                save_list(STUDENTS_FILE, st.session_state.get("students", []))
+                reports.append({"type": kind, "ok": True, "message": f"usuario atualizado em {touched} registro(s)"})
+            elif kind == "excluir_usuario":
+                idx_list = _find_user_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "usuario nao encontrado para exclusao"})
+                    continue
+                logins = []
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("users", [])):
+                        logins.append(str(st.session_state["users"][idx].get("usuario", "")).strip())
+                        st.session_state["users"].pop(idx)
+                save_users(st.session_state["users"])
+
+                if _wiz_to_bool(data.get("desvincular_professor_aluno", True), default=True):
+                    login_set = {str(l).strip() for l in logins if str(l).strip()}
+                    for prof in st.session_state.get("teachers", []):
+                        if str(prof.get("usuario", "")).strip() in login_set:
+                            prof["usuario"] = ""
+                            prof["senha"] = ""
+                    for aluno in st.session_state.get("students", []):
+                        if str(aluno.get("usuario", "")).strip() in login_set:
+                            aluno["usuario"] = ""
+                            aluno["senha"] = ""
+                    save_list(TEACHERS_FILE, st.session_state.get("teachers", []))
+                    save_list(STUDENTS_FILE, st.session_state.get("students", []))
+
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} usuario(s) excluido(s)"})
+            elif kind == "cadastrar_turma":
+                nome = str(data.get("nome", data.get("turma", ""))).strip()
+                if not nome:
+                    reports.append({"type": kind, "ok": False, "message": "nome da turma e obrigatorio"})
+                    continue
+                exists = next((t for t in st.session_state.get("classes", []) if str(t.get("nome", "")).strip().lower() == nome.lower()), None)
+                if exists and not _wiz_to_bool(data.get("permitir_duplicado", False), default=False):
+                    reports.append({"type": kind, "ok": False, "message": "turma ja existe"})
+                    continue
+                dias_raw = data.get("dias_semana", data.get("dias", []))
+                if isinstance(dias_raw, str):
+                    dias_semana = infer_class_days_from_text(dias_raw)
+                elif isinstance(dias_raw, list):
+                    dias_semana = [str(d).strip() for d in dias_raw if str(d).strip() in WEEKDAY_OPTIONS_PT]
+                else:
+                    dias_semana = []
+                if not dias_semana:
+                    dias_semana = [WEEKDAY_OPTIONS_PT[0]]
+                hora_inicio_obj = parse_time(str(data.get("hora_inicio", data.get("hora", "19:00"))).strip() or "19:00")
+                hora_inicio = hora_inicio_obj.strftime("%H:%M")
+                hora_fim_default_obj = (datetime.datetime.combine(datetime.date.today(), hora_inicio_obj) + datetime.timedelta(hours=1)).time()
+                hora_fim_obj = parse_time(str(data.get("hora_fim", "")).strip() or hora_fim_default_obj.strftime("%H:%M"))
+                if hora_fim_obj <= hora_inicio_obj:
+                    hora_fim_obj = (datetime.datetime.combine(datetime.date.today(), hora_inicio_obj) + datetime.timedelta(hours=1)).time()
+                hora_fim = hora_fim_obj.strftime("%H:%M")
+                turma_obj = {
+                    "nome": nome,
+                    "professor": str(data.get("professor", "Sem Professor")).strip() or "Sem Professor",
+                    "modulo": str(data.get("modulo", "Presencial em Turma")).strip() or "Presencial em Turma",
+                    "dias": format_class_schedule(dias_semana, hora_inicio, hora_fim),
+                    "dias_semana": dias_semana,
+                    "hora_inicio": hora_inicio,
+                    "hora_fim": hora_fim,
+                    "link_zoom": str(data.get("link_zoom", data.get("link", ""))).strip(),
+                    "livro": str(data.get("livro", "")).strip(),
+                }
+                st.session_state["classes"].append(turma_obj)
+                save_list(CLASSES_FILE, st.session_state["classes"])
+                reports.append({"type": kind, "ok": True, "message": f"turma {nome} cadastrada"})
+            elif kind == "atualizar_turma":
+                idx_list = _find_class_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "turma nao encontrada"})
+                    continue
+                if not _wiz_to_bool(data.get("aplicar_em_lote", False), default=False):
+                    idx_list = idx_list[:1]
+                touched = 0
+                for idx in idx_list:
+                    if idx < 0 or idx >= len(st.session_state.get("classes", [])):
+                        continue
+                    turma_obj = st.session_state["classes"][idx]
+                    old_nome = str(turma_obj.get("nome", "")).strip()
+                    novo_nome = str(data.get("novo_nome", data.get("nome", data.get("turma", "")))).strip()
+                    if novo_nome:
+                        turma_obj["nome"] = novo_nome
+                    if str(data.get("professor", "")).strip():
+                        turma_obj["professor"] = str(data.get("professor", "")).strip()
+                    if str(data.get("modulo", "")).strip():
+                        turma_obj["modulo"] = str(data.get("modulo", "")).strip()
+                    if str(data.get("livro", "")).strip():
+                        turma_obj["livro"] = str(data.get("livro", "")).strip()
+                    if str(data.get("link_zoom", data.get("link", ""))).strip():
+                        turma_obj["link_zoom"] = str(data.get("link_zoom", data.get("link", ""))).strip()
+
+                    dias_raw = data.get("dias_semana", data.get("dias", None))
+                    dias_semana = None
+                    if isinstance(dias_raw, str) and str(dias_raw).strip():
+                        dias_semana = infer_class_days_from_text(dias_raw)
+                    elif isinstance(dias_raw, list):
+                        dias_semana = [str(d).strip() for d in dias_raw if str(d).strip() in WEEKDAY_OPTIONS_PT]
+
+                    hora_inicio = str(turma_obj.get("hora_inicio", "19:00")).strip() or "19:00"
+                    hora_fim = str(turma_obj.get("hora_fim", "20:00")).strip() or "20:00"
+                    if str(data.get("hora_inicio", "")).strip():
+                        hora_inicio = parse_time(str(data.get("hora_inicio", "")).strip()).strftime("%H:%M")
+                    if str(data.get("hora_fim", "")).strip():
+                        hora_fim = parse_time(str(data.get("hora_fim", "")).strip()).strftime("%H:%M")
+                    hora_inicio_obj = parse_time(hora_inicio)
+                    hora_fim_obj = parse_time(hora_fim)
+                    if hora_fim_obj <= hora_inicio_obj:
+                        hora_fim_obj = (datetime.datetime.combine(datetime.date.today(), hora_inicio_obj) + datetime.timedelta(hours=1)).time()
+                    hora_fim = hora_fim_obj.strftime("%H:%M")
+
+                    if dias_semana:
+                        turma_obj["dias_semana"] = dias_semana
+                    dias_eff = turma_obj.get("dias_semana", dias_semana or [])
+                    turma_obj["hora_inicio"] = hora_inicio
+                    turma_obj["hora_fim"] = hora_fim
+                    turma_obj["dias"] = format_class_schedule(dias_eff, hora_inicio, hora_fim)
+
+                    if old_nome and novo_nome and old_nome != novo_nome:
+                        for aluno in st.session_state.get("students", []):
+                            if str(aluno.get("turma", "")).strip() == old_nome:
+                                aluno["turma"] = novo_nome
+                        save_list(STUDENTS_FILE, st.session_state["students"])
+                    touched += 1
+                save_list(CLASSES_FILE, st.session_state["classes"])
+                reports.append({"type": kind, "ok": True, "message": f"turma atualizada em {touched} registro(s)"})
+            elif kind == "excluir_turma":
+                idx_list = _find_class_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "turma nao encontrada para exclusao"})
+                    continue
+                turmas_nomes = []
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("classes", [])):
+                        turmas_nomes.append(str(st.session_state["classes"][idx].get("nome", "")).strip())
+                        st.session_state["classes"].pop(idx)
+                save_list(CLASSES_FILE, st.session_state["classes"])
+                turma_set = {str(t).strip() for t in turmas_nomes if str(t).strip()}
+                for aluno in st.session_state.get("students", []):
+                    if str(aluno.get("turma", "")).strip() in turma_set:
+                        aluno["turma"] = "Sem Turma"
+                save_list(STUDENTS_FILE, st.session_state["students"])
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} turma(s) excluida(s)"})
             elif kind == "agendar_aula":
                 turma = str(data.get("turma", "")).strip()
                 if not turma:
@@ -2035,6 +2743,43 @@ def _wiz_execute_actions(actions):
                 st.session_state["agenda"].append(item)
                 save_list(AGENDA_FILE, st.session_state["agenda"])
                 reports.append({"type": kind, "ok": True, "message": f"aula agendada para {turma}"})
+            elif kind == "atualizar_aula":
+                idx_list = _find_agenda_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "aula nao encontrada na agenda"})
+                    continue
+                if not _wiz_to_bool(data.get("aplicar_em_lote", False), default=False):
+                    idx_list = idx_list[:1]
+                touched = 0
+                for idx in idx_list:
+                    if idx < 0 or idx >= len(st.session_state.get("agenda", [])):
+                        continue
+                    obj = st.session_state["agenda"][idx]
+                    for src, dst in [
+                        ("turma", "turma"),
+                        ("professor", "professor"),
+                        ("titulo", "titulo"),
+                        ("descricao", "descricao"),
+                        ("data", "data"),
+                        ("hora", "hora"),
+                        ("link", "link"),
+                    ]:
+                        if str(data.get(src, "")).strip():
+                            obj[dst] = str(data.get(src, "")).strip()
+                    obj["google_calendar_link"] = build_google_calendar_event_link(obj)
+                    touched += 1
+                save_list(AGENDA_FILE, st.session_state["agenda"])
+                reports.append({"type": kind, "ok": True, "message": f"aula atualizada em {touched} registro(s)"})
+            elif kind == "excluir_aula":
+                idx_list = _find_agenda_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "aula nao encontrada para exclusao"})
+                    continue
+                for idx in sorted(set(idx_list), reverse=True):
+                    if 0 <= idx < len(st.session_state.get("agenda", [])):
+                        st.session_state["agenda"].pop(idx)
+                save_list(AGENDA_FILE, st.session_state["agenda"])
+                reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} aula(s) removida(s) da agenda"})
             elif kind == "atualizar_link_turma":
                 turma = str(data.get("turma", "")).strip()
                 novo_link = str(data.get("link", "")).strip()
@@ -2060,6 +2805,98 @@ def _wiz_execute_actions(actions):
                     origem="Assistente Wiz",
                 )
                 reports.append({"type": kind, "ok": True, "message": "noticia publicada"})
+            elif kind in ("cadastrar_livro", "atualizar_livro"):
+                books = ensure_library_catalog(st.session_state.get("books", []))
+                st.session_state["books"] = books
+                idx_list = _find_book_indices(data)
+                book_id = str(data.get("book_id", "")).strip()
+                titulo_in = str(data.get("titulo", "")).strip()
+                if not idx_list and book_id:
+                    idx_list = _find_book_indices({"book_id": book_id})
+                if not idx_list and titulo_in:
+                    idx_list = _find_book_indices({"titulo": titulo_in})
+
+                if kind == "atualizar_livro" and not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "livro nao encontrado para atualizacao"})
+                    continue
+
+                if idx_list:
+                    idx = idx_list[0]
+                    obj = books[idx]
+                else:
+                    inferred_id = book_id or infer_library_book_id(data) or _wiz_guess_book_id_from_filename(str(data.get("file_name", "")).strip())
+                    defaults = _wiz_book_defaults_from_id(inferred_id)
+                    obj = {
+                        "book_id": inferred_id,
+                        "nivel": defaults.get("nivel", ""),
+                        "titulo": defaults.get("titulo") or "Livro",
+                        "categoria": defaults.get("categoria", ""),
+                        "parte": defaults.get("parte", ""),
+                        "url": "",
+                        "file_path": "",
+                        "file_b64": "",
+                        "file_name": "",
+                    }
+                    books.append(obj)
+
+                if str(data.get("book_id", "")).strip():
+                    obj["book_id"] = str(data.get("book_id", "")).strip()
+                if titulo_in:
+                    obj["titulo"] = titulo_in
+                if str(data.get("categoria", "")).strip():
+                    obj["categoria"] = str(data.get("categoria", "")).strip()
+                if str(data.get("nivel", "")).strip():
+                    obj["nivel"] = str(data.get("nivel", "")).strip()
+                if str(data.get("parte", "")).strip():
+                    obj["parte"] = str(data.get("parte", "")).strip()
+                if str(data.get("url", data.get("link", ""))).strip():
+                    obj["url"] = str(data.get("url", data.get("link", ""))).strip()
+
+                file_bytes = data.get("file_bytes")
+                file_b64 = str(data.get("file_b64", "")).strip()
+                if isinstance(file_bytes, (bytes, bytearray)) and file_bytes:
+                    obj["file_b64"] = base64.b64encode(bytes(file_bytes)).decode("ascii")
+                    obj["file_name"] = str(data.get("file_name", obj.get("file_name", ""))).strip() or "livro.pdf"
+                    obj["file_path"] = ""
+                elif file_b64:
+                    try:
+                        decoded = base64.b64decode(file_b64.encode("ascii"), validate=False)
+                        if decoded:
+                            obj["file_b64"] = base64.b64encode(decoded).decode("ascii")
+                            obj["file_name"] = str(data.get("file_name", obj.get("file_name", ""))).strip() or obj.get("file_name", "livro.pdf")
+                            obj["file_path"] = ""
+                    except Exception:
+                        pass
+
+                st.session_state["books"] = ensure_library_catalog(books)
+                save_list(BOOKS_FILE, st.session_state["books"])
+                reports.append({"type": kind, "ok": True, "message": f"livro salvo: {obj.get('titulo', 'Livro')}"})
+            elif kind == "excluir_livro":
+                books = ensure_library_catalog(st.session_state.get("books", []))
+                st.session_state["books"] = books
+                idx_list = _find_book_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "livro nao encontrado para exclusao"})
+                    continue
+
+                template_ids = {str(t.get("book_id", "")).strip() for t in library_book_templates()}
+                removed = 0
+                for idx in sorted(set(idx_list), reverse=True):
+                    if idx < 0 or idx >= len(books):
+                        continue
+                    obj = books[idx]
+                    bid = str(obj.get("book_id", "")).strip()
+                    if bid and bid in template_ids:
+                        obj["url"] = ""
+                        obj["file_path"] = ""
+                        obj["file_b64"] = ""
+                        obj["file_name"] = ""
+                    else:
+                        books.pop(idx)
+                    removed += 1
+                st.session_state["books"] = ensure_library_catalog(books)
+                save_list(BOOKS_FILE, st.session_state["books"])
+                reports.append({"type": kind, "ok": True, "message": f"{removed} livro(s) processado(s) para exclusao"})
             elif kind == "lancar_recebivel":
                 aluno = str(data.get("aluno", data.get("referencia", ""))).strip()
                 descricao = str(data.get("descricao", "Mensalidade")).strip()
@@ -2499,9 +3336,6 @@ def run_wiz_assistant():
         return
 
     api_key = get_groq_api_key()
-    if not api_key:
-        st.error("Configure GROQ_API_KEY para usar o Assistente Wiz.")
-        return
 
     full_user_text = str(user_text or "").strip()
     if summaries:
@@ -2511,12 +3345,24 @@ def run_wiz_assistant():
 
     chat_history.append({"role": "user", "content": str(user_text).strip()})
 
-    with st.spinner("Wiz esta processando seu pedido..."):
-        plan = _wiz_plan_actions_with_ai(full_user_text, chat_history[-10:])
+    fallback_actions = _wiz_actions_from_book_uploads(user_text, uploaded_files) if wiz_auto_exec else []
+    if not api_key and not fallback_actions:
+        st.error("Configure GROQ_API_KEY para usar o Assistente Wiz.")
+        return
+
+    if api_key:
+        with st.spinner("Wiz esta processando seu pedido..."):
+            plan = _wiz_plan_actions_with_ai(full_user_text, chat_history[-10:])
+    else:
+        plan = {"reply": "", "actions": [], "missing": []}
 
     plan_actions = plan.get("actions", []) if isinstance(plan, dict) else []
     plan_reply = str((plan or {}).get("reply", "")).strip()
     plan_missing = (plan or {}).get("missing", []) if isinstance(plan, dict) else []
+    if not plan_actions and fallback_actions:
+        plan_actions = fallback_actions
+        if not plan_reply:
+            plan_reply = "Entendi. Ja executei o cadastro/anexo dos livros enviados na biblioteca."
     answer = ""
 
     if wiz_auto_exec and plan_actions:
