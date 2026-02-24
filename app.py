@@ -5586,6 +5586,22 @@ def render_sales_leads_manage(vendedor_atual):
         else:
             bulk_value = st.checkbox("Confirmo exclusao em massa", value=False, key="sales_leads_bulk_delete_confirm")
 
+    if bulk_action == "Excluir selecionados":
+        bx1, bx2, bx3 = st.columns(3)
+        with bx1:
+            if st.button("Selecionar TODOS para excluir", key="sales_leads_bulk_delete_select_all_visible"):
+                st.session_state["sales_leads_bulk_selected_ids"] = list(all_bulk_ids)
+                st.rerun()
+        with bx2:
+            if st.button("Selecionar filtrados para excluir", key="sales_leads_bulk_delete_select_filtered_visible"):
+                st.session_state["sales_leads_bulk_selected_ids"] = list(bulk_ids)
+                st.rerun()
+        with bx3:
+            if st.button("Limpar selecionados", key="sales_leads_bulk_delete_clear_visible"):
+                st.session_state["sales_leads_bulk_selected_ids"] = []
+                st.rerun()
+        st.caption(f"Selecionados para exclusao: {len(st.session_state.get('sales_leads_bulk_selected_ids', []))}")
+
     if st.button("Aplicar acao em massa", type="primary", key="sales_leads_bulk_apply"):
         if not selected_ids:
             st.error("Selecione ao menos um lead.")
