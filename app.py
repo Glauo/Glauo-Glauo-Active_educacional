@@ -11682,23 +11682,25 @@ elif st.session_state["role"] == "Coordenador":
                             )
             st.markdown("### Recebimentos")
             recebimentos = st.session_state["receivables"]
-            c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
-            with c_f1:
-                status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
-                status_sel = st.selectbox("Status", status_opts)
-            with c_f2:
-                cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
-                cat_sel = st.selectbox("Categoria", cat_opts)
-            with c_f3:
-                cat_lanc_opts = ["Todos"] + sorted({r.get("categoria_lancamento", "Aluno") for r in recebimentos if r.get("categoria_lancamento", "Aluno")})
-                cat_lanc_sel = st.selectbox("Categoria do lancamento", cat_lanc_opts)
-            with c_f4:
-                aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
-                aluno_sel = st.selectbox("Aluno/Referencia", aluno_opts)
-            with c_f5:
-                item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
-                item_sel = st.selectbox("Item (Codigo)", item_opts)
-            busca = st.text_input("Buscar por descrição")
+            with st.container(border=True):
+                st.markdown("#### Filtros de Recebimentos")
+                c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
+                with c_f1:
+                    status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
+                    status_sel = st.selectbox("Status", status_opts)
+                with c_f2:
+                    cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
+                    cat_sel = st.selectbox("Categoria", cat_opts)
+                with c_f3:
+                    cat_lanc_opts = ["Todos"] + sorted({r.get("categoria_lancamento", "Aluno") for r in recebimentos if r.get("categoria_lancamento", "Aluno")})
+                    cat_lanc_sel = st.selectbox("Categoria do lancamento", cat_lanc_opts)
+                with c_f4:
+                    aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
+                    aluno_sel = st.selectbox("Aluno/Referencia", aluno_opts)
+                with c_f5:
+                    item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
+                    item_sel = st.selectbox("Item (Codigo)", item_opts)
+                busca = st.text_input("Buscar por descricao")
 
             recebimentos_filtrados = recebimentos
             if status_sel != "Todos":
@@ -11820,7 +11822,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.success(f"{removed_rec} recebimento(s) excluido(s).")
                         st.rerun()
 
-            st.markdown("### Gerenciamento de Recebimentos")
+            st.markdown("### Gerenciamento de Recebimentos (Editar/Excluir Cobranca)")
             if not recebimentos:
                 st.info("Nenhum recebimento para gerenciar.")
             else:
@@ -11829,7 +11831,7 @@ elif st.session_state["role"] == "Coordenador":
                     for r in recebimentos
                 ]
                 idx_rec = st.selectbox(
-                    "Selecione o recebimento",
+                    "Selecione a cobranca para editar/excluir",
                     list(range(len(recebimentos))),
                     format_func=lambda i: opcoes_rec[i],
                     key="manage_rec_idx",
@@ -11916,17 +11918,19 @@ elif st.session_state["role"] == "Coordenador":
                     with mb2:
                         new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
 
-                    apply_all_rec = st.checkbox(
-                        "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
-                        value=bool(qtd_atual_rec > 1),
-                        key=f"rec_apply_all_{idx_rec}",
+                    related_preview_idx = _related_receivable_indices(recebimentos, idx_rec)
+                    total_relacionados = len(set(related_preview_idx)) if related_preview_idx else 1
+                    apply_all_rec = True
+                    st.info(
+                        "Edicao em lote ativa: ao salvar, o sistema atualiza todas as parcelas do mesmo lancamento "
+                        f"({total_relacionados} parcela(s))."
                     )
 
                     mc1, mc2 = st.columns(2)
                     with mc1:
-                        salvar_rec = st.form_submit_button("Salvar alteracoes")
+                        salvar_rec = st.form_submit_button("Salvar cobranca (todas parcelas)")
                     with mc2:
-                        excluir_rec = st.form_submit_button("Excluir recebimento", type="primary")
+                        excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
 
                     if salvar_rec:
                         if not new_ref_rec.strip() or new_val_total_num <= 0:
@@ -12020,13 +12024,19 @@ elif st.session_state["role"] == "Coordenador":
                                 rec_obj["boleto_enviado_em"] = ""
                                 rec_obj["boleto_enviado_canais"] = ""
                             save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                            st.success("Recebimento atualizado!")
+                            st.success("Cobranca atualizada em lote!")
                             st.rerun()
 
                     if excluir_rec:
-                        st.session_state["receivables"].remove(rec_obj)
+                        related_del_idx = _related_receivable_indices(recebimentos, idx_rec)
+                        related_del_idx = sorted(set(related_del_idx), reverse=True)
+                        removed_count = 0
+                        for del_idx in related_del_idx:
+                            if 0 <= del_idx < len(st.session_state.get("receivables", [])):
+                                st.session_state["receivables"].pop(del_idx)
+                                removed_count += 1
                         save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.success("Recebimento excluido.")
+                        st.success(f"Cobranca excluida em lote ({removed_count} parcela(s)).")
                         st.rerun()
 
                 aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
@@ -12068,115 +12078,117 @@ elif st.session_state["role"] == "Coordenador":
                             f"({rec_obj.get('boleto_enviado_canais', '')})"
                         )
 
-            st.markdown("### Lançar Material do Estoque")
-            itens_estoque = st.session_state["inventory"]
-            if not itens_estoque:
-                st.info("Nenhum item de estoque cadastrado.")
-            else:
-                with st.form("add_rec_stock", clear_on_submit=True):
-                    opcoes = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in itens_estoque]
-                    item_sel = st.selectbox("Item", opcoes)
-                    modo_destino = st.selectbox("Destino", ["Aluno", "Turma"])
-                    aluno_mat = ""
-                    turma_mat = ""
-                    if modo_destino == "Aluno":
-                        aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
-                    else:
-                        turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                    data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                    venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
-                    material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
-                    material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
-                    parcelas_material = st.number_input(
-                        "Parcelamento do material (maximo 6x)",
-                        min_value=1,
-                        max_value=6,
-                        value=2 if material_parcelado else 1,
-                        disabled=not material_parcelado,
-                        key="parcelas_mat_fin",
-                    )
-                    if st.form_submit_button("Lançar material"):
-                        item_obj = itens_estoque[opcoes.index(item_sel)]
-                        preco = parse_money(item_obj.get("preco", 0))
-                        parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
-                        parcelas = min(6, parcelas_item)
-                        if material_parcelado:
-                            parcelas = int(parcelas_material)
-                        else:
-                            parcelas = 1
-                        cobranca = material_payment
-                        descricao = item_obj.get("descricao", "Material")
-                        item_codigo = item_obj.get("codigo", "")
-                        alunos_destino = []
-                        if modo_destino == "Aluno":
-                            alunos_destino = [aluno_mat] if aluno_mat else []
-                        else:
-                            alunos_destino = [
-                                s.get("nome") for s in st.session_state["students"]
-                                if s.get("turma") == turma_mat
-                            ]
-                        count = 0
-                        for aluno_dest in alunos_destino:
-                            lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
-                            for i in range(parcelas):
-                                data_venc = add_months(venc, i)
-                                parcela = f"{1 + i}/{parcelas}"
-                                add_receivable(
-                                    aluno_dest,
-                                    descricao,
-                                    str(preco),
-                                    data_venc,
-                                    cobranca,
-                                    "Material",
-                                    data_lancamento=data_lanc,
-                                    valor_parcela=str(preco),
-                                    parcela=parcela,
-                                    item_codigo=item_codigo,
-                                    categoria_lancamento="Aluno",
-                                    lote_id=lote_id_mat,
-                                )
-                                count += 1
-                        st.success(f"Material lançado no financeiro! ({count} parcelas)")
-                        st.rerun()
-
-            st.markdown("### Baixa de Recebimentos")
-            abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
-            if not abertos:
-                st.info("Nenhum recebimento em aberto.")
-            else:
-                cba1, cba2 = st.columns(2)
-                with cba1:
-                    alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
-                    aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
-                with cba2:
-                    modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
-
-                if modo_baixa == "Manual":
-                    opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
-                    item_sel = st.selectbox("Selecione o lançamento", opcoes)
-                    if st.button("Dar baixa manual"):
-                        item_obj = abertos[opcoes.index(item_sel)]
-                        item_obj["status"] = "Pago"
-                        item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-                        item_obj["baixa_tipo"] = "Manual"
-                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.success("Baixa realizada!")
-                        st.rerun()
+            with st.container(border=True):
+                st.markdown("### Lançar Material do Estoque")
+                itens_estoque = st.session_state["inventory"]
+                if not itens_estoque:
+                    st.info("Nenhum item de estoque cadastrado.")
                 else:
-                    if st.button("Baixar automaticamente vencidos (Aluno)"):
-                        hoje = datetime.date.today()
-                        count = 0
-                        for r in st.session_state["receivables"]:
-                            if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
-                                vencimento = parse_date(r.get("vencimento", ""))
-                                if vencimento and vencimento <= hoje:
-                                    r["status"] = "Pago"
-                                    r["baixa_data"] = hoje.strftime("%d/%m/%Y")
-                                    r["baixa_tipo"] = "Automática"
+                    with st.form("add_rec_stock", clear_on_submit=True):
+                        opcoes = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in itens_estoque]
+                        item_sel = st.selectbox("Item", opcoes)
+                        modo_destino = st.selectbox("Destino", ["Aluno", "Turma"])
+                        aluno_mat = ""
+                        turma_mat = ""
+                        if modo_destino == "Aluno":
+                            aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                        else:
+                            turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                        data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                        venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
+                        material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
+                        material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                        parcelas_material = st.number_input(
+                            "Parcelamento do material (maximo 6x)",
+                            min_value=1,
+                            max_value=6,
+                            value=2 if material_parcelado else 1,
+                            disabled=not material_parcelado,
+                            key="parcelas_mat_fin",
+                        )
+                        if st.form_submit_button("Lançar material"):
+                            item_obj = itens_estoque[opcoes.index(item_sel)]
+                            preco = parse_money(item_obj.get("preco", 0))
+                            parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
+                            parcelas = min(6, parcelas_item)
+                            if material_parcelado:
+                                parcelas = int(parcelas_material)
+                            else:
+                                parcelas = 1
+                            cobranca = material_payment
+                            descricao = item_obj.get("descricao", "Material")
+                            item_codigo = item_obj.get("codigo", "")
+                            alunos_destino = []
+                            if modo_destino == "Aluno":
+                                alunos_destino = [aluno_mat] if aluno_mat else []
+                            else:
+                                alunos_destino = [
+                                    s.get("nome") for s in st.session_state["students"]
+                                    if s.get("turma") == turma_mat
+                                ]
+                            count = 0
+                            for aluno_dest in alunos_destino:
+                                lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                                for i in range(parcelas):
+                                    data_venc = add_months(venc, i)
+                                    parcela = f"{1 + i}/{parcelas}"
+                                    add_receivable(
+                                        aluno_dest,
+                                        descricao,
+                                        str(preco),
+                                        data_venc,
+                                        cobranca,
+                                        "Material",
+                                        data_lancamento=data_lanc,
+                                        valor_parcela=str(preco),
+                                        parcela=parcela,
+                                        item_codigo=item_codigo,
+                                        categoria_lancamento="Aluno",
+                                        lote_id=lote_id_mat,
+                                    )
                                     count += 1
-                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.success(f"Baixa automática realizada: {count} lançamento(s).")
-                        st.rerun()
+                            st.success(f"Material lançado no financeiro! ({count} parcelas)")
+                            st.rerun()
+
+            with st.container(border=True):
+                st.markdown("### Baixa de Recebimentos")
+                abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
+                if not abertos:
+                    st.info("Nenhum recebimento em aberto.")
+                else:
+                    cba1, cba2 = st.columns(2)
+                    with cba1:
+                        alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
+                        aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
+                    with cba2:
+                        modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
+
+                    if modo_baixa == "Manual":
+                        opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
+                        item_sel = st.selectbox("Selecione o lançamento", opcoes)
+                        if st.button("Dar baixa manual"):
+                            item_obj = abertos[opcoes.index(item_sel)]
+                            item_obj["status"] = "Pago"
+                            item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+                            item_obj["baixa_tipo"] = "Manual"
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.success("Baixa realizada!")
+                            st.rerun()
+                    else:
+                        if st.button("Baixar automaticamente vencidos (Aluno)"):
+                            hoje = datetime.date.today()
+                            count = 0
+                            for r in st.session_state["receivables"]:
+                                if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
+                                    vencimento = parse_date(r.get("vencimento", ""))
+                                    if vencimento and vencimento <= hoje:
+                                        r["status"] = "Pago"
+                                        r["baixa_data"] = hoje.strftime("%d/%m/%Y")
+                                        r["baixa_tipo"] = "Automática"
+                                        count += 1
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.success(f"Baixa automática realizada: {count} lançamento(s).")
+                            st.rerun()
         with tab2:
             with st.form("add_pag"):
                 st.markdown("### Lancar Despesa")
