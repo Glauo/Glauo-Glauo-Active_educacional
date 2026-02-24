@@ -1,5 +1,7 @@
 ﻿import base64
 import datetime
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -3497,19 +3499,194 @@ def create_or_update_login(username, password, role, person_name):
             "pessoa": person_name
         })
 
-def login_user(role, name, unit, account_profile):
+ACTIVE_AUTH_QUERY_PARAM = "active_auth"
+
+
+def _auth_ttl_seconds():
+    try:
+        days = int(str(os.getenv("ACTIVE_LOGIN_REMEMBER_DAYS", "30")).strip())
+    except Exception:
+        days = 30
+    days = max(1, min(days, 365))
+    return days * 24 * 60 * 60
+
+
+def _auth_secret_key():
+    env_secret = str(os.getenv("ACTIVE_AUTH_SECRET", "")).strip()
+    if env_secret:
+        return env_secret
+    return "active-educacional-auth-secret-2026"
+
+
+def _b64u_encode(raw_bytes):
+    return base64.urlsafe_b64encode(raw_bytes).decode("ascii").rstrip("=")
+
+
+def _b64u_decode(raw_text):
+    text = str(raw_text or "").strip()
+    if not text:
+        return b""
+    text += "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode(text.encode("ascii"))
+
+
+def _get_auth_query_token():
+    try:
+        value = st.query_params.get(ACTIVE_AUTH_QUERY_PARAM, "")
+        if isinstance(value, list):
+            value = value[0] if value else ""
+        return str(value or "").strip()
+    except Exception:
+        try:
+            params = st.experimental_get_query_params() or {}
+            value = params.get(ACTIVE_AUTH_QUERY_PARAM, [""])
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            return str(value or "").strip()
+        except Exception:
+            return ""
+
+
+def _set_auth_query_token(token):
+    token_txt = str(token or "").strip()
+    try:
+        if token_txt:
+            st.query_params[ACTIVE_AUTH_QUERY_PARAM] = token_txt
+        elif ACTIVE_AUTH_QUERY_PARAM in st.query_params:
+            del st.query_params[ACTIVE_AUTH_QUERY_PARAM]
+        return
+    except Exception:
+        pass
+    try:
+        params = st.experimental_get_query_params() or {}
+        if token_txt:
+            params[ACTIVE_AUTH_QUERY_PARAM] = [token_txt]
+        else:
+            params.pop(ACTIVE_AUTH_QUERY_PARAM, None)
+        st.experimental_set_query_params(**params)
+    except Exception:
+        pass
+
+
+def _build_auth_token(username, role, unit, account_profile, display_name):
+    username_txt = str(username or "").strip()
+    role_txt = str(role or "").strip()
+    if not username_txt or not role_txt:
+        return ""
+    now_ts = int(time.time())
+    payload = {
+        "u": username_txt,
+        "r": role_txt,
+        "un": str(unit or "").strip(),
+        "p": str(account_profile or "").strip(),
+        "n": str(display_name or "").strip(),
+        "iat": now_ts,
+        "exp": now_ts + _auth_ttl_seconds(),
+    }
+    payload_raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(_auth_secret_key().encode("utf-8"), payload_raw, hashlib.sha256).digest()
+    return f"{_b64u_encode(payload_raw)}.{_b64u_encode(signature)}"
+
+
+def _parse_auth_token(token):
+    token_txt = str(token or "").strip()
+    if "." not in token_txt:
+        return None
+    left, right = token_txt.split(".", 1)
+    try:
+        payload_raw = _b64u_decode(left)
+        signature_raw = _b64u_decode(right)
+    except Exception:
+        return None
+    expected = hmac.new(_auth_secret_key().encode("utf-8"), payload_raw, hashlib.sha256).digest()
+    if not hmac.compare_digest(expected, signature_raw):
+        return None
+    try:
+        payload = json.loads(payload_raw.decode("utf-8"))
+    except Exception:
+        return None
+    exp_ts = int(payload.get("exp", 0) or 0)
+    if exp_ts <= int(time.time()):
+        return None
+    return payload
+
+
+def restore_login_from_query():
+    if st.session_state.get("logged_in", False):
+        return
+    token = _get_auth_query_token()
+    if not token:
+        return
+    payload = _parse_auth_token(token)
+    if not isinstance(payload, dict):
+        _set_auth_query_token("")
+        return
+
+    username_txt = str(payload.get("u", "")).strip()
+    role_txt = str(payload.get("r", "")).strip()
+    unit_txt = str(payload.get("un", "")).strip()
+    if not username_txt or not role_txt:
+        _set_auth_query_token("")
+        return
+
+    users_now = load_users()
+    users_now = ensure_admin_user(users_now)
+    users_now = sync_users_from_profiles(users_now)
+    st.session_state["users"] = users_now
+    user_obj = find_user(username_txt)
+    if not user_obj:
+        _set_auth_query_token("")
+        return
+
+    account_profile = str(user_obj.get("perfil", "")).strip()
+    allowed = allowed_portals(account_profile)
+    if role_txt not in allowed:
+        if not allowed:
+            _set_auth_query_token("")
+            return
+        role_txt = allowed[0]
+
+    display_name = str(user_obj.get("pessoa", "")).strip() or str(payload.get("n", "")).strip() or username_txt
+    st.session_state["logged_in"] = True
+    st.session_state["role"] = role_txt
+    st.session_state["user_name"] = display_name
+    st.session_state["unit"] = unit_txt or "Matriz"
+    st.session_state["account_profile"] = account_profile
+    st.session_state["_active_runtime_loaded"] = False
+
+    refreshed_token = _build_auth_token(
+        username_txt,
+        role_txt,
+        st.session_state.get("unit", ""),
+        account_profile,
+        display_name,
+    )
+    if refreshed_token:
+        _set_auth_query_token(refreshed_token)
+
+
+def login_user(role, name, unit, account_profile, username_login=""):
     st.session_state["logged_in"] = True
     st.session_state["role"] = role
     st.session_state["user_name"] = name
     st.session_state["unit"] = unit
     st.session_state["account_profile"] = account_profile
+    username_txt = str(username_login or "").strip()
+    if username_txt:
+        token = _build_auth_token(username_txt, role, unit, account_profile, name)
+        if token:
+            _set_auth_query_token(token)
     st.rerun()
 
+
 def logout_user():
+    _set_auth_query_token("")
     st.session_state["logged_in"] = False
     st.session_state["role"] = None
+    st.session_state["user_name"] = ""
     st.session_state["unit"] = ""
     st.session_state["account_profile"] = None
+    st.session_state["_active_runtime_loaded"] = False
     st.rerun()
 
 # --- HELPER FUNCTIONS DE NEGOCIO ---
@@ -8143,6 +8320,8 @@ def run_commercial_panel():
     elif menu_sales == "Professor Wiz":
         run_active_chatbot()
 
+restore_login_from_query()
+
 # ==============================================================================
 # CSS DINAMICO
 # ==============================================================================
@@ -8373,7 +8552,7 @@ if not st.session_state.get("logged_in", False):
                     st.error(f"Este usuario nao tem permissao de {role}.")
                 else:
                     display_name = user.get("pessoa") or usuario.strip()
-                    login_user(role, display_name, str(unidade).strip(), perfil_conta)
+                    login_user(role, display_name, str(unidade).strip(), perfil_conta, usuario.strip())
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
@@ -10161,6 +10340,60 @@ elif st.session_state["role"] == "Coordenador":
                         obj["file_path"] = ""
                 st.session_state["books"] = ensure_library_catalog(books_list)
                 save_list(BOOKS_FILE, st.session_state["books"])
+
+            with st.container(border=True):
+                st.markdown("#### Importar DOC/PDF para Biblioteca")
+                st.caption("Escolha o livro de destino e anexe DOC, DOCX, PDF ou outro formato permitido.")
+
+                quick_options = []
+                for tpl in library_book_templates():
+                    bid = str(tpl.get("book_id", "")).strip()
+                    if not bid:
+                        continue
+                    titulo = str(tpl.get("titulo", "")).strip() or bid
+                    categoria = str(tpl.get("categoria", "")).strip()
+                    parte = str(tpl.get("parte", "")).strip()
+                    label_parts = [titulo]
+                    if categoria:
+                        label_parts.append(categoria)
+                    if parte:
+                        label_parts.append(parte)
+                    quick_options.append((bid, " | ".join(label_parts)))
+                quick_options = sorted(quick_options, key=lambda x: x[1])
+                quick_map = {label: bid for bid, label in quick_options}
+                if not quick_options:
+                    st.warning("Nenhum template de livro encontrado para importacao rapida.")
+                else:
+                    q1, q2 = st.columns([2, 2])
+                    with q1:
+                        quick_target_label = st.selectbox(
+                            "Livro de destino",
+                            [label for _, label in quick_options],
+                            key="coord_book_quick_target",
+                        )
+                    with q2:
+                        quick_link = st.text_input(
+                            "Link opcional",
+                            key="coord_book_quick_link",
+                        )
+
+                    quick_file = st.file_uploader(
+                        "Arquivo (DOC, DOCX, PDF, PPT, PPTX, ZIP, TXT, EPUB)",
+                        type=["pdf", "doc", "docx", "ppt", "pptx", "zip", "txt", "epub"],
+                        key="coord_book_quick_file",
+                    )
+
+                    if st.button("Importar e anexar no livro", key="coord_book_quick_save", type="primary"):
+                        target_id = quick_map.get(quick_target_label, "")
+                        if not target_id:
+                            st.error("Selecione um livro de destino.")
+                        elif quick_file is None and not str(quick_link).strip():
+                            st.error("Anexe um arquivo ou informe um link.")
+                        else:
+                            _save_book_item(target_id, quick_link, quick_file)
+                            target_obj = _book_obj(target_id)
+                            st.success(f"Arquivo salvo em: {target_obj.get('titulo', 'Livro')}.")
+                            st.rerun()
 
             st.markdown("### Ingles (4 livros em 2 partes)")
             for livro in range(1, 5):
