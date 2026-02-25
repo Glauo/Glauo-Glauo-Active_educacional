@@ -6564,6 +6564,22 @@ def email_students_by_level(level, assunto, corpo, origem):
     stats["enviados"] = stats["email_ok"]
     return stats
 
+def notify_new_challenge_by_level(level, week_key, titulo, descricao):
+    level_label = _norm_book_level(level)
+    week_label = str(week_key or "").strip()
+    title_label = str(titulo or "Desafio da semana").strip() or "Desafio da semana"
+    description_label = str(descricao or "").strip()
+    assunto = f"[Active] Tem desafio novo - {level_label} ({week_label})"
+    corpo = (
+        "Tem desafio novo para voce no Active.\n"
+        f"Nivel: {level_label}\n"
+        f"Semana: {week_label}\n\n"
+        f"{title_label}\n\n"
+        f"{description_label}\n\n"
+        "Acesse o portal do aluno > Desafios para responder e enviar."
+    )
+    return email_students_by_level(level_label, assunto, corpo, "Desafios")
+
 def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mensagens"):
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
@@ -13621,9 +13637,9 @@ elif st.session_state["role"] == "Coordenador":
                 due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
 
             autor = st.session_state.get("user_name", "Coordenacao")
-            enviar_email = st.checkbox(
-                "Enviar email para alunos deste livro",
-                value=False,
+            enviar_comunicado = st.checkbox(
+                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
+                value=True,
                 key=f"{key_prefix}_notify_level",
             )
 
@@ -13646,17 +13662,15 @@ elif st.session_state["role"] == "Coordenador":
                             rubrica=gen.get("rubrica", ""),
                             dica=gen.get("dica", ""),
                         )
-                        if enviar_email:
-                            assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
-                            corpo = (
-                                f"Novo desafio semanal publicado.\n"
-                                f"Nivel: {nivel}\nSemana: {semana}\n\n"
-                                f"{gen.get('titulo','Desafio')}\n\n{gen.get('descricao','')}\n\n"
-                                "Acesse o portal do aluno > Desafios para responder e ser avaliado."
+                        if enviar_comunicado:
+                            stats = notify_new_challenge_by_level(
+                                nivel,
+                                semana,
+                                gen.get("titulo", "Desafio da semana"),
+                                gen.get("descricao", ""),
                             )
-                            stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
                             st.info(
-                                "Disparos dos desafios: "
+                                "Comunicado de novo desafio enviado: "
                                 f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
                                 f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
                             )
@@ -13674,6 +13688,7 @@ elif st.session_state["role"] == "Coordenador":
                     levels = book_levels()
                     created = 0
                     failed = 0
+                    notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                     for lv in levels:
                         if get_weekly_challenge(lv, week_now):
                             continue
@@ -13690,10 +13705,25 @@ elif st.session_state["role"] == "Coordenador":
                                 rubrica=gen.get("rubrica", ""),
                                 dica=gen.get("dica", ""),
                             )
+                            if enviar_comunicado:
+                                partial_stats = notify_new_challenge_by_level(
+                                    lv,
+                                    week_now,
+                                    gen.get("titulo", "Desafio da semana"),
+                                    gen.get("descricao", ""),
+                                )
+                                for key in notify_stats:
+                                    notify_stats[key] += int(partial_stats.get(key, 0))
                             created += 1
                         except Exception:
                             failed += 1
                     if created:
+                        if enviar_comunicado:
+                            st.info(
+                                "Comunicado de novo desafio enviado: "
+                                f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
+                                f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
+                            )
                         st.success(f"Gerados {created} desafio(s) para a semana {week_now}.")
                         st.rerun()
                     if not created and not failed:
@@ -13713,17 +13743,10 @@ elif st.session_state["role"] == "Coordenador":
                         rubrica=rubrica,
                         dica=dica,
                     )
-                    if enviar_email:
-                        assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
-                        corpo = (
-                            f"Novo desafio semanal publicado.\n"
-                            f"Nivel: {nivel}\nSemana: {semana}\n\n"
-                            f"{titulo}\n\n{descricao}\n\n"
-                            "Acesse o portal do aluno > Desafios para responder e ser avaliado."
-                        )
-                        stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
+                    if enviar_comunicado:
+                        stats = notify_new_challenge_by_level(nivel, semana, titulo, descricao)
                         st.info(
-                            "Disparos dos desafios: "
+                            "Comunicado de novo desafio enviado: "
                             f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
                             f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
                         )
