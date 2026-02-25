@@ -3391,6 +3391,104 @@ def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
             blocks.append(f"[{name}]\n{clean}")
     return summaries, blocks
 
+def _render_wiz_action_history_panel():
+    with st.expander("Historico de execucoes do Wiz", expanded=False):
+        logs = load_list(WIZ_ACTION_AUDIT_FILE)
+        logs = logs if isinstance(logs, list) else []
+        if not logs:
+            st.info("Sem historico de execucao ate o momento.")
+            return
+
+        rows = []
+        for item in reversed(logs[-2000:]):
+            if not isinstance(item, dict):
+                continue
+            payload = item.get("data", {})
+            payload_txt = ""
+            if isinstance(payload, (dict, list)):
+                try:
+                    payload_txt = json.dumps(payload, ensure_ascii=False)
+                except Exception:
+                    payload_txt = str(payload)
+            else:
+                payload_txt = str(payload or "")
+            if len(payload_txt) > 400:
+                payload_txt = payload_txt[:400] + "..."
+            rows.append(
+                {
+                    "Data/Hora": str(item.get("timestamp", "")).strip(),
+                    "Usuario": str(item.get("usuario", "")).strip(),
+                    "Role": str(item.get("role", "")).strip(),
+                    "Perfil Conta": str(item.get("perfil_conta", "")).strip(),
+                    "Acao": str(item.get("action", "")).strip(),
+                    "Status": "OK" if bool(item.get("ok", False)) else "Falha",
+                    "Mensagem": str(item.get("message", "")).strip(),
+                    "Dados": payload_txt,
+                }
+            )
+        if not rows:
+            st.info("Sem registros validos no historico.")
+            return
+
+        df_hist = pd.DataFrame(rows)
+        f1, f2, f3 = st.columns([1.2, 1.2, 2.0])
+        with f1:
+            status_sel = st.selectbox(
+                "Status",
+                ["Todos", "OK", "Falha"],
+                key="wiz_hist_status",
+            )
+        with f2:
+            action_options = ["Todas"] + sorted([a for a in df_hist["Acao"].dropna().unique().tolist() if str(a).strip()])
+            action_sel = st.selectbox(
+                "Acao",
+                action_options,
+                key="wiz_hist_action",
+            )
+        with f3:
+            only_me = st.checkbox(
+                "Mostrar apenas minhas acoes",
+                value=True,
+                key="wiz_hist_only_me",
+            )
+
+        df_view = df_hist.copy()
+        if status_sel != "Todos":
+            df_view = df_view[df_view["Status"] == status_sel]
+        if action_sel != "Todas":
+            df_view = df_view[df_view["Acao"] == action_sel]
+        if only_me:
+            current_user = str(st.session_state.get("user_name", "")).strip()
+            if current_user:
+                df_view = df_view[df_view["Usuario"] == current_user]
+
+        st.caption(f"Registros exibidos: {len(df_view)}")
+        st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+        csv_data = df_view.to_csv(index=False).encode("utf-8")
+        d1, d2 = st.columns([1.2, 2.0])
+        with d1:
+            st.download_button(
+                "Exportar historico (CSV)",
+                data=csv_data,
+                file_name="wiz_historico_execucao.csv",
+                mime="text/csv",
+                key="wiz_hist_export_csv",
+            )
+        with d2:
+            confirm_clear = st.checkbox(
+                "Confirmo apagar o historico de execucao",
+                value=False,
+                key="wiz_hist_confirm_clear",
+            )
+            if st.button("Apagar historico", key="wiz_hist_clear_btn"):
+                if not confirm_clear:
+                    st.warning("Marque a confirmacao para apagar o historico.")
+                else:
+                    save_list(WIZ_ACTION_AUDIT_FILE, [])
+                    st.success("Historico do Wiz apagado.")
+                    st.rerun()
+
 def run_wiz_assistant():
     st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
     st.caption("Conversa simples com o Wiz para Coordenação/Admin. Anexe arquivo/imagem e escreva seu pedido.")
@@ -3445,6 +3543,8 @@ def run_wiz_assistant():
                     continue
                 icon = "OK" if rep.get("ok") else "Falha"
                 st.write(f"- {icon}: {str(rep.get('message', '')).strip()}")
+
+    _render_wiz_action_history_panel()
 
     a1, a2 = st.columns([1, 1])
     if a1.button("Limpar conversa", key="wiz_simple_clear"):
