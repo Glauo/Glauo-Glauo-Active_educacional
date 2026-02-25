@@ -3703,6 +3703,25 @@ def run_wiz_assistant():
     )
     st.caption("Acoes internas disponiveis apenas para Coordenador/Admin.")
 
+    q1, q2 = st.columns([1.3, 2.0])
+    with q1:
+        if st.button("Reativar envios agora", key="wiz_quick_reactivate"):
+            force_on = dict(DEFAULT_WIZ_SETTINGS)
+            force_on["enabled"] = True
+            force_on["notify_email"] = True
+            force_on["notify_whatsapp"] = True
+            save_wiz_settings(force_on)
+            st.success("Envios por e-mail e WhatsApp reativados.")
+            st.rerun()
+    with q2:
+        _wa_diag = _whatsapp_config_diagnostics()
+        _smtp_diag = _smtp_config_diagnostics()
+        wa_ok = bool(_wa_diag.get("wapi_ready") or _wa_diag.get("evolution_ready"))
+        smtp_ok = bool(_smtp_diag.get("host_ok") and _smtp_diag.get("from_ok"))
+        st.caption(
+            f"Status rapido: WhatsApp {'OK' if wa_ok else 'PENDENTE'} | SMTP {'OK' if smtp_ok else 'PENDENTE'}."
+        )
+
     last_exec = st.session_state.get("wiz_last_execution", [])
     if isinstance(last_exec, list) and last_exec:
         with st.expander("Ultima execucao do Wiz no sistema", expanded=False):
