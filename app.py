@@ -6524,21 +6524,50 @@ def _message_recipients_for_student(student):
         recipients.add(resp_email)
     return sorted(recipients)
 
-def email_students_by_turma(turma, assunto, corpo, origem):
+def notify_students_by_turma_channels(turma, assunto, corpo, origem, send_email=True, send_whatsapp=True):
     stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     for student in st.session_state.get("students", []):
         if turma != "Todas" and student.get("turma") != turma:
             continue
         partial = _notify_direct_contacts(
             student.get("nome", "Aluno"),
-            _message_recipients_for_student(student),
-            _student_whatsapp_recipients(student),
+            _message_recipients_for_student(student) if bool(send_email) else [],
+            _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
             assunto,
             corpo,
             origem,
         )
         for key in stats:
             stats[key] += int(partial.get(key, 0))
+    return stats
+
+def notify_teachers_channels(assunto, corpo, origem, professor="Todos", send_email=True, send_whatsapp=True):
+    teacher_target = str(professor or "Todos").strip() or "Todos"
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    for teacher in st.session_state.get("teachers", []):
+        if teacher_target != "Todos" and str(teacher.get("nome", "")).strip() != teacher_target:
+            continue
+        partial = _notify_direct_contacts(
+            teacher.get("nome", "Professor"),
+            [teacher.get("email", "")] if bool(send_email) else [],
+            [teacher.get("celular", "")] if bool(send_whatsapp) else [],
+            assunto,
+            corpo,
+            origem,
+        )
+        for key in stats:
+            stats[key] += int(partial.get(key, 0))
+    return stats
+
+def email_students_by_turma(turma, assunto, corpo, origem):
+    stats = notify_students_by_turma_channels(
+        turma,
+        assunto,
+        corpo,
+        origem,
+        send_email=True,
+        send_whatsapp=True,
+    )
     # Compatibilidade com trechos legados que usam total/enviados para e-mail.
     stats["total"] = stats["email_total"]
     stats["enviados"] = stats["email_ok"]
@@ -6564,24 +6593,102 @@ def email_students_by_level(level, assunto, corpo, origem):
     stats["enviados"] = stats["email_ok"]
     return stats
 
-def post_message_and_notify(autor, titulo, mensagem, turma="Todas", origem="Mensagens"):
+def notify_new_challenge_by_level(level, week_key, titulo, descricao):
+    level_label = _norm_book_level(level)
+    week_label = str(week_key or "").strip()
+    title_label = str(titulo or "Desafio da semana").strip() or "Desafio da semana"
+    description_label = str(descricao or "").strip()
+    assunto = f"[Active] Tem desafio novo - {level_label} ({week_label})"
+    corpo = (
+        "Tem desafio novo para voce no Active.\n"
+        f"Nivel: {level_label}\n"
+        f"Semana: {week_label}\n\n"
+        f"{title_label}\n\n"
+        f"{description_label}\n\n"
+        "Acesse o portal do aluno > Desafios para responder e enviar."
+    )
+    return email_students_by_level(level_label, assunto, corpo, "Desafios")
+
+def post_message_and_notify(
+    autor,
+    titulo,
+    mensagem,
+    turma="Todas",
+    origem="Mensagens",
+    publico="Alunos",
+    professor="Todos",
+    send_email=True,
+    send_whatsapp=True,
+):
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
         "mensagem": (mensagem or "").strip(),
         "data": datetime.date.today().strftime("%d/%m/%Y"),
         "autor": autor.strip() if autor else "Sistema",
         "turma": turma or "Todas",
+        "publico": str(publico or "Alunos").strip() or "Alunos",
+        "professor": str(professor or "Todos").strip() or "Todos",
     }
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
+    publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
+    destino_label = (
+        f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+        if publico_label == "Professores"
+        else f"Turma: {mensagem_obj.get('turma', 'Todas')}"
+    )
     corpo = (
         f"Mensagem publicada por {mensagem_obj['autor']}\n"
-        f"Turma: {mensagem_obj['turma']}\n"
+        f"Publico: {publico_label}\n"
+        f"{destino_label}\n"
         f"Data: {mensagem_obj['data']}\n\n"
         f"{mensagem_obj['mensagem']}"
     )
-    return email_students_by_turma(mensagem_obj["turma"], assunto, corpo, origem)
+    if publico_label == "Professores":
+        stats = notify_teachers_channels(
+            assunto,
+            corpo,
+            origem,
+            professor=mensagem_obj.get("professor", "Todos"),
+            send_email=bool(send_email),
+            send_whatsapp=bool(send_whatsapp),
+        )
+    elif publico_label == "Alunos e Professores":
+        stats_alunos = notify_students_by_turma_channels(
+            mensagem_obj["turma"],
+            assunto,
+            corpo,
+            origem,
+            send_email=bool(send_email),
+            send_whatsapp=bool(send_whatsapp),
+        )
+        stats_prof = notify_teachers_channels(
+            assunto,
+            corpo,
+            origem,
+            professor=mensagem_obj.get("professor", "Todos"),
+            send_email=bool(send_email),
+            send_whatsapp=bool(send_whatsapp),
+        )
+        stats = {
+            "email_total": int(stats_alunos.get("email_total", 0)) + int(stats_prof.get("email_total", 0)),
+            "email_ok": int(stats_alunos.get("email_ok", 0)) + int(stats_prof.get("email_ok", 0)),
+            "whatsapp_total": int(stats_alunos.get("whatsapp_total", 0)) + int(stats_prof.get("whatsapp_total", 0)),
+            "whatsapp_ok": int(stats_alunos.get("whatsapp_ok", 0)) + int(stats_prof.get("whatsapp_ok", 0)),
+        }
+    else:
+        stats = notify_students_by_turma_channels(
+            mensagem_obj["turma"],
+            assunto,
+            corpo,
+            origem,
+            send_email=bool(send_email),
+            send_whatsapp=bool(send_whatsapp),
+        )
+    stats["total"] = stats.get("email_total", 0)
+    stats["enviados"] = stats.get("email_ok", 0)
+    return stats
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
@@ -9747,11 +9854,26 @@ elif st.session_state["role"] == "Professor":
         else:
             with st.form("prof_publish_message", clear_on_submit=True):
                 turma_msg = st.selectbox("Turma", turmas_prof)
+                n1, n2 = st.columns(2)
+                with n1:
+                    send_prof_msg_email = st.checkbox(
+                        "Enviar por e-mail",
+                        value=True,
+                        key="prof_msg_notify_email",
+                    )
+                with n2:
+                    send_prof_msg_whatsapp = st.checkbox(
+                        "Enviar por WhatsApp",
+                        value=True,
+                        key="prof_msg_notify_whatsapp",
+                    )
                 titulo_msg = st.text_input("Titulo da mensagem")
                 corpo_msg = st.text_area("Mensagem")
                 if st.form_submit_button("Publicar mensagem"):
                     if not titulo_msg.strip() or not corpo_msg.strip():
                         st.error("Preencha titulo e mensagem.")
+                    elif not send_prof_msg_email and not send_prof_msg_whatsapp:
+                        st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
                     else:
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Professor"),
@@ -9759,6 +9881,8 @@ elif st.session_state["role"] == "Professor":
                             mensagem=corpo_msg,
                             turma=turma_msg,
                             origem="Mensagens Professor",
+                            send_email=bool(send_prof_msg_email),
+                            send_whatsapp=bool(send_prof_msg_whatsapp),
                         )
                         st.success(
                             "Mensagem publicada. "
@@ -11421,6 +11545,21 @@ elif st.session_state["role"] == "Coordenador":
                 with cr3: resp_cel = st.text_input("Celular do Responsavel", key=_sfk("add_student_resp_cel"))
                 with cr4: resp_email = st.text_input("E-mail do Responsavel", key=_sfk("add_student_resp_email"))
 
+                st.markdown("### Envio automatico de boas-vindas")
+                n1, n2 = st.columns(2)
+                with n1:
+                    send_student_email = st.checkbox(
+                        "Enviar mensagem por e-mail",
+                        value=True,
+                        key=_sfk("add_student_notify_email"),
+                    )
+                with n2:
+                    send_student_whatsapp = st.checkbox(
+                        "Enviar mensagem por WhatsApp",
+                        value=True,
+                        key=_sfk("add_student_notify_whatsapp"),
+                    )
+
                 submit_label = "Salvar Correcao do Aluno" if edit_student_active else "Cadastrar Aluno"
                 if st.form_submit_button(submit_label):
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
@@ -11558,8 +11697,8 @@ elif st.session_state["role"] == "Coordenador":
                                 if wiz_event_enabled("on_student_created"):
                                     notify_stats = _notify_direct_contacts(
                                         nome,
-                                        _message_recipients_for_student(novo_aluno),
-                                        _student_whatsapp_recipients(novo_aluno),
+                                        _message_recipients_for_student(novo_aluno) if bool(send_student_email) else [],
+                                        _student_whatsapp_recipients(novo_aluno) if bool(send_student_whatsapp) else [],
                                         assunto_auto,
                                         corpo_auto,
                                         "Cadastro Aluno",
@@ -11816,6 +11955,20 @@ elif st.session_state["role"] == "Coordenador":
                 with c3: login_prof = st.text_input("Login do Professor")
                 with c4: senha_prof = st.text_input("Senha do Professor", type="password")
 
+                n1, n2 = st.columns(2)
+                with n1:
+                    send_prof_email = st.checkbox(
+                        "Enviar mensagem por e-mail",
+                        value=True,
+                        key="add_prof_notify_email",
+                    )
+                with n2:
+                    send_prof_whatsapp = st.checkbox(
+                        "Enviar mensagem por WhatsApp",
+                        value=True,
+                        key="add_prof_notify_whatsapp",
+                    )
+
                 if st.form_submit_button("Cadastrar"):
                     if (login_prof and not senha_prof) or (senha_prof and not login_prof):
                         st.error("ERRO: Para criar o login, informe usuário e senha.")
@@ -11848,8 +12001,8 @@ elif st.session_state["role"] == "Coordenador":
                         if wiz_event_enabled("on_teacher_created"):
                             _notify_direct_contacts(
                                 nome or "Professor",
-                                [email_prof],
-                                [celular_prof],
+                                [email_prof] if bool(send_prof_email) else [],
+                                [celular_prof] if bool(send_prof_whatsapp) else [],
                                 "[Active] Cadastro de professor concluído",
                                 "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
                                 "Cadastro Professor",
@@ -13436,6 +13589,19 @@ elif st.session_state["role"] == "Coordenador":
                 with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
                 with d2: u_email = st.text_input("E-mail (opcional)")
                 with d3: u_cel = st.text_input("Celular/WhatsApp (opcional)")
+                n1, n2 = st.columns(2)
+                with n1:
+                    send_user_email = st.checkbox(
+                        "Enviar mensagem por e-mail",
+                        value=True,
+                        key="new_user_notify_email",
+                    )
+                with n2:
+                    send_user_whatsapp = st.checkbox(
+                        "Enviar mensagem por WhatsApp",
+                        value=True,
+                        key="new_user_notify_whatsapp",
+                    )
                 if st.form_submit_button("Criar Acesso"):
                     st.session_state["users"].append(
                         {
@@ -13451,8 +13617,8 @@ elif st.session_state["role"] == "Coordenador":
                     if wiz_event_enabled("on_user_created"):
                         _notify_direct_contacts(
                             u_pessoa.strip() or u_user.strip() or "Usuário",
-                            [u_email],
-                            [u_cel],
+                            [u_email] if bool(send_user_email) else [],
+                            [u_cel] if bool(send_user_whatsapp) else [],
                             "[Active] Acesso criado",
                             f"Seu acesso ao Active foi criado.\nPerfil: {u_role}\nUsuário: {u_user}",
                             "Cadastro Usuário",
@@ -13505,12 +13671,37 @@ elif st.session_state["role"] == "Coordenador":
         with tab_msg:
             turmas_msg = ["Todas"] + class_names()
             with st.form("coord_publish_message", clear_on_submit=True):
-                turma_msg = st.selectbox("Turma de destino", turmas_msg)
+                publico_msg = st.selectbox(
+                    "Destinatarios",
+                    ["Alunos", "Professores", "Alunos e Professores"],
+                )
+                turma_msg = "Todas"
+                professor_msg = "Todos"
+                if publico_msg in ("Alunos", "Alunos e Professores"):
+                    turma_msg = st.selectbox("Turma de destino (alunos)", turmas_msg)
+                if publico_msg in ("Professores", "Alunos e Professores"):
+                    prof_opts = ["Todos"] + teacher_names()
+                    professor_msg = st.selectbox("Professor(es) de destino", prof_opts)
+                ch1, ch2 = st.columns(2)
+                with ch1:
+                    send_msg_email = st.checkbox(
+                        "Enviar por e-mail",
+                        value=True,
+                        key="coord_msg_notify_email",
+                    )
+                with ch2:
+                    send_msg_whatsapp = st.checkbox(
+                        "Enviar por WhatsApp",
+                        value=True,
+                        key="coord_msg_notify_whatsapp",
+                    )
                 titulo_msg = st.text_input("Titulo da mensagem")
                 corpo_msg = st.text_area("Mensagem")
                 if st.form_submit_button("Publicar e enviar email"):
                     if not titulo_msg.strip() or not corpo_msg.strip():
                         st.error("Preencha titulo e mensagem.")
+                    elif not send_msg_email and not send_msg_whatsapp:
+                        st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
                     else:
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
@@ -13518,6 +13709,10 @@ elif st.session_state["role"] == "Coordenador":
                             mensagem=corpo_msg,
                             turma=turma_msg,
                             origem="Mensagens Coordenacao",
+                            publico=publico_msg,
+                            professor=professor_msg,
+                            send_email=bool(send_msg_email),
+                            send_whatsapp=bool(send_msg_whatsapp),
                         )
                         st.success(
                             "Mensagem publicada. "
@@ -13533,7 +13728,7 @@ elif st.session_state["role"] == "Coordenador":
                     st.markdown(
                         f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
 <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
-<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Publico: {msg.get('publico','Alunos')} | Turma: {msg.get('turma','Todas')} | Professor(es): {msg.get('professor','Todos')}</div>
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
