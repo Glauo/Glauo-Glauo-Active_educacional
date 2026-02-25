@@ -11294,10 +11294,24 @@ elif st.session_state["role"] == "Coordenador":
                     st.text_input("Link da aula", value=link_default, disabled=True)
                     professor = str(prof_default).strip()
                     link_aula = str(link_default).strip()
-                    enviar_email_convite = st.checkbox("Enviar comunicado automatico para alunos da turma (e-mail + WhatsApp)", value=True)
+                    c_notify_1, c_notify_2 = st.columns(2)
+                    with c_notify_1:
+                        enviar_email_convite = st.checkbox(
+                            "Enviar comunicado por e-mail",
+                            value=True,
+                            key="coord_agenda_notify_email",
+                        )
+                    with c_notify_2:
+                        enviar_whatsapp_convite = st.checkbox(
+                            "Enviar comunicado por WhatsApp",
+                            value=True,
+                            key="coord_agenda_notify_whatsapp",
+                        )
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
                             st.error("Selecione pelo menos um dia para repetição por data.")
+                        elif not enviar_email_convite and not enviar_whatsapp_convite:
+                            st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
                         else:
                             datas_aulas = []
                             if repetir:
@@ -11359,8 +11373,15 @@ elif st.session_state["role"] == "Coordenador":
                                     + "\n".join(resumo)
                                 )
                                 notif_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
-                                if enviar_email_convite:
-                                    notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Agenda")
+                                if enviar_email_convite or enviar_whatsapp_convite:
+                                    notif_stats = notify_students_by_turma_channels(
+                                        turma_sel,
+                                        assunto,
+                                        corpo,
+                                        "Agenda",
+                                        send_email=bool(enviar_email_convite),
+                                        send_whatsapp=bool(enviar_whatsapp_convite),
+                                    )
                                 st.info(
                                     "Disparos da agenda: "
                                     f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
@@ -11381,6 +11402,19 @@ elif st.session_state["role"] == "Coordenador":
                 turma_obj = next((t for t in st.session_state["classes"] if t["nome"] == turma_sel), None)
                 link_atual = turma_obj.get("link_zoom", "") if turma_obj else ""
                 novo_link = st.text_input("Link da Aula Ao Vivo (Zoom/Meet/Teams)", value=link_atual)
+                l1, l2 = st.columns(2)
+                with l1:
+                    enviar_link_email = st.checkbox(
+                        "Enviar atualizacao por e-mail",
+                        value=True,
+                        key="coord_link_notify_email",
+                    )
+                with l2:
+                    enviar_link_whatsapp = st.checkbox(
+                        "Enviar atualizacao por WhatsApp",
+                        value=True,
+                        key="coord_link_notify_whatsapp",
+                    )
                 if st.form_submit_button("Salvar Link para a Turma"):
                     if turma_obj:
                         turma_obj["link_zoom"] = novo_link
@@ -11391,7 +11425,14 @@ elif st.session_state["role"] == "Coordenador":
                                 f"O link da aula da turma {turma_sel} foi atualizado.\n\n"
                                 f"Novo link: {novo_link}"
                             )
-                            notif_stats = email_students_by_turma(turma_sel, assunto, corpo, "Links")
+                            notif_stats = notify_students_by_turma_channels(
+                                turma_sel,
+                                assunto,
+                                corpo,
+                                "Links",
+                                send_email=bool(enviar_link_email),
+                                send_whatsapp=bool(enviar_link_whatsapp),
+                            )
                             st.info(
                                 "Disparos do link: "
                                 f"E-mail {notif_stats.get('email_ok', 0)}/{notif_stats.get('email_total', 0)} | "
