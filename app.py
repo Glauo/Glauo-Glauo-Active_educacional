@@ -9141,13 +9141,43 @@ elif st.session_state["role"] == "Aluno":
         )
         st.info("Nível: Intermediário B1")
         st.markdown("---")
-        menu_aluno_label = sidebar_menu("Navegacao", ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens", "Atividades", "Desafios", "Aulas Gravadas", "Financeiro", "Materiais de Estudo", "Professor Wiz"], "menu_aluno")
+        menu_aluno_label = sidebar_menu(
+            "Navegacao",
+            [
+                "Painel",
+                "Agenda",
+                "Minhas Aulas",
+                "Boletim e Frequencia",
+                "Mensagens",
+                "Atividades",
+                "Lições de Casa",
+                "Desafios",
+                "Aulas Gravadas",
+                "Financeiro",
+                "Materiais de Estudo",
+                "Professor Wiz",
+            ],
+            "menu_aluno",
+        )
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    menu_aluno_map = {"Painel": "Dashboard", "Agenda": "Agenda", "Minhas Aulas": "Minhas Aulas", "Boletim e Frequencia": "Boletim & Frequencia", "Mensagens": "Mensagens", "Atividades": "Atividades", "Desafios": "Desafios", "Aulas Gravadas": "Aulas Gravadas", "Financeiro": "Financeiro", "Materiais de Estudo": "Materiais de Estudo", "Professor Wiz": "Professor Wiz"}
+    menu_aluno_map = {
+        "Painel": "Dashboard",
+        "Agenda": "Agenda",
+        "Minhas Aulas": "Minhas Aulas",
+        "Boletim e Frequencia": "Boletim & Frequencia",
+        "Mensagens": "Mensagens",
+        "Atividades": "Atividades",
+        "Lições de Casa": "Atividades",
+        "Desafios": "Desafios",
+        "Aulas Gravadas": "Aulas Gravadas",
+        "Financeiro": "Financeiro",
+        "Materiais de Estudo": "Materiais de Estudo",
+        "Professor Wiz": "Professor Wiz",
+    }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
     if menu_aluno == "Dashboard":
@@ -9240,7 +9270,7 @@ elif st.session_state["role"] == "Aluno":
                 st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
 
     elif menu_aluno == "Atividades":
-        st.markdown('<div class="main-header">Atividades (Tarefas, Provas e Trabalhos)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Atividades e Licoes de Casa</div>', unsafe_allow_html=True)
         aluno_nome = st.session_state.get("user_name", "")
         turma_aluno = _student_class_name(aluno_nome)
         if not turma_aluno:
