@@ -188,6 +188,7 @@ SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
+WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
 WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
@@ -1763,6 +1764,81 @@ def _wiz_norm_text(value):
 def _wiz_digits(value):
     return re.sub(r"\D", "", str(value or ""))
 
+def _wiz_can_operate_system():
+    role = str(st.session_state.get("role", "")).strip()
+    profile = str(st.session_state.get("account_profile", role)).strip()
+    allowed_profiles = {"Admin", "Coordenador"}
+    if role != "Coordenador":
+        return False, f"perfil atual sem permissao para execucao automatica ({role or 'desconhecido'})"
+    if profile not in allowed_profiles:
+        return False, f"perfil da conta sem permissao ({profile or 'desconhecido'})"
+    return True, ""
+
+def _wiz_mask_secret(value):
+    raw = str(value or "")
+    if not raw:
+        return ""
+    if len(raw) <= 4:
+        return "*" * len(raw)
+    return f"{raw[:2]}{'*' * (len(raw) - 4)}{raw[-2:]}"
+
+def _wiz_sanitize_action_data(data, depth=0):
+    if depth > 4:
+        return "<depth_limit>"
+    if isinstance(data, dict):
+        out = {}
+        for k, v in data.items():
+            key_txt = str(k)
+            low = key_txt.lower()
+            is_sensitive = any(token in low for token in ("senha", "password", "token", "secret", "apikey", "api_key", "authorization"))
+            if is_sensitive:
+                out[key_txt] = _wiz_mask_secret(v)
+            else:
+                out[key_txt] = _wiz_sanitize_action_data(v, depth + 1)
+        return out
+    if isinstance(data, list):
+        return [_wiz_sanitize_action_data(v, depth + 1) for v in data[:100]]
+    if isinstance(data, (bytes, bytearray)):
+        return f"<bytes:{len(data)}>"
+    if isinstance(data, (str, int, float, bool)) or data is None:
+        return data
+    try:
+        return str(data)
+    except Exception:
+        return "<unserializable>"
+
+def _wiz_log_action_batch(actions, reports):
+    if not isinstance(reports, list) or not reports:
+        return
+    existing = load_list(WIZ_ACTION_AUDIT_FILE)
+    logs = existing if isinstance(existing, list) else []
+    now_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    actor = str(st.session_state.get("user_name", "")).strip()
+    role = str(st.session_state.get("role", "")).strip()
+    profile = str(st.session_state.get("account_profile", "")).strip()
+
+    for idx, rep in enumerate(reports):
+        if not isinstance(rep, dict):
+            continue
+        action_obj = actions[idx] if isinstance(actions, list) and idx < len(actions) and isinstance(actions[idx], dict) else {}
+        action_type = str(action_obj.get("type", rep.get("type", ""))).strip()
+        action_data = action_obj.get("data", {}) if isinstance(action_obj.get("data", {}), dict) else {}
+        logs.append(
+            {
+                "timestamp": now_txt,
+                "usuario": actor,
+                "role": role,
+                "perfil_conta": profile,
+                "action": action_type,
+                "ok": bool(rep.get("ok", False)),
+                "message": str(rep.get("message", "")).strip(),
+                "data": _wiz_sanitize_action_data(action_data),
+            }
+        )
+    if len(logs) > 5000:
+        logs = logs[-5000:]
+    save_list(WIZ_ACTION_AUDIT_FILE, logs)
+
 def _wiz_book_defaults_from_id(book_id):
     bid = str(book_id or "").strip().lower()
     defaults = {"titulo": "", "categoria": "", "nivel": "", "parte": ""}
@@ -1933,6 +2009,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
             "- atualizar_aula",
             "- excluir_aula",
             "- atualizar_link_turma",
+            "- enviar_comunicado",
             "- publicar_noticia",
             "- cadastrar_livro",
             "- atualizar_livro",
@@ -1946,6 +2023,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
             "- excluir_despesa",
             "- baixar_despesa",
             "- lancar_nota",
+            "Para comunicados para alunos/turmas, prefira enviar_comunicado.",
             "Para exclusao/baixa use somente quando o pedido do usuario for explicito.",
             f"Formato JSON: {schema_hint}",
         ]
@@ -1999,7 +2077,25 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
     }
 
 def _wiz_execute_actions(actions):
+    actions = actions if isinstance(actions, list) else []
+    if not actions:
+        return []
+
     reports = []
+    can_run, deny_msg = _wiz_can_operate_system()
+    if not can_run:
+        for action in actions:
+            action_type = str((action or {}).get("type", "")).strip().lower() if isinstance(action, dict) else ""
+            reports.append(
+                {
+                    "type": action_type or "acao",
+                    "ok": False,
+                    "message": f"execucao bloqueada: {deny_msg}",
+                }
+            )
+        _wiz_log_action_batch(actions, reports)
+        return reports
+
     alias = {
         "incluir_aluno": "cadastrar_aluno",
         "criar_aluno": "cadastrar_aluno",
@@ -2050,6 +2146,11 @@ def _wiz_execute_actions(actions):
         "cancelar_aula": "excluir_aula",
         "deletar_aula": "excluir_aula",
         "remover_aula": "excluir_aula",
+        "enviar_aviso": "enviar_comunicado",
+        "publicar_comunicado": "enviar_comunicado",
+        "comunicar_turma": "enviar_comunicado",
+        "enviar_mensagem_turma": "enviar_comunicado",
+        "disparar_comunicado": "enviar_comunicado",
     }
 
     def _find_indices_by_codes(items, codes):
@@ -2810,6 +2911,31 @@ def _wiz_execute_actions(actions):
                     origem="Assistente Wiz",
                 )
                 reports.append({"type": kind, "ok": True, "message": "noticia publicada"})
+            elif kind == "enviar_comunicado":
+                titulo = str(data.get("titulo", data.get("assunto", "Comunicado"))).strip() or "Comunicado"
+                mensagem = str(data.get("mensagem", data.get("texto", ""))).strip()
+                turma = str(data.get("turma", "Todas")).strip() or "Todas"
+                if not mensagem:
+                    reports.append({"type": kind, "ok": False, "message": "mensagem e obrigatoria"})
+                    continue
+                stats = post_message_and_notify(
+                    autor=st.session_state.get("user_name", "Assistente Wiz"),
+                    titulo=titulo,
+                    mensagem=mensagem,
+                    turma=turma,
+                    origem="Assistente Wiz",
+                )
+                reports.append(
+                    {
+                        "type": kind,
+                        "ok": True,
+                        "message": (
+                            f"comunicado enviado para {turma} "
+                            f"(e-mail {int(stats.get('email_ok', 0))}/{int(stats.get('email_total', 0))}, "
+                            f"whatsapp {int(stats.get('whatsapp_ok', 0))}/{int(stats.get('whatsapp_total', 0))})"
+                        ),
+                    }
+                )
             elif kind in ("cadastrar_livro", "atualizar_livro"):
                 books = ensure_library_catalog(st.session_state.get("books", []))
                 st.session_state["books"] = books
@@ -3204,6 +3330,7 @@ def _wiz_execute_actions(actions):
                 reports.append({"type": kind, "ok": False, "message": "acao nao suportada"})
         except Exception as exc:
             reports.append({"type": kind, "ok": False, "message": f"falha: {exc}"})
+    _wiz_log_action_batch(actions, reports)
     return reports
 
 def _wiz_attachment_kind(uploaded_file):
