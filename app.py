@@ -191,7 +191,7 @@ FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 WHATSAPP_NUMBER = "5516996043314" 
-WAPI_DEFAULT_INSTANCE_ID = "KLL54G-UZDSJ8-IPZG69"
+WAPI_DEFAULT_INSTANCE_ID = ""
 _PLACEHOLDER_CONFIG_TOKENS = {
     "HOST",
     "PORT",
@@ -365,6 +365,21 @@ def _wapi_base_url():
         or _get_config_value("WAPI_URL", "")
     ).strip().rstrip("/")
 
+def _wapi_instance_from_url(url_value):
+    try:
+        raw_url = str(url_value or "").strip()
+        if not raw_url:
+            return ""
+        split = urlsplit(raw_url)
+        qs = dict(parse_qsl(split.query, keep_blank_values=True))
+        for key in ("instanceId", "instance_id", "instance", "instanceName", "instance_name"):
+            val = str(qs.get(key, "")).strip()
+            if val:
+                return val
+    except Exception:
+        return ""
+    return ""
+
 def _wapi_token():
     return (
         _get_config_value("WAPI_TOKEN", "")
@@ -373,13 +388,22 @@ def _wapi_token():
     ).strip()
 
 def _wapi_instance_id():
-    return (
+    explicit = (
         _get_config_value("WAPI_INSTANCE_ID", "")
         or _get_config_value("W_API_INSTANCE_ID", "")
         or _get_config_value("WAPI_INSTANCE", "")
         or _get_config_value("W_API_INSTANCE", "")
-        or WAPI_DEFAULT_INSTANCE_ID
     ).strip()
+    if explicit:
+        return explicit
+    from_url = _wapi_instance_from_url(
+        _get_config_value("WAPI_URL", "")
+        or _get_config_value("W_API_URL", "")
+        or _get_config_value("WAPI_BASE_URL", "")
+    )
+    if from_url:
+        return str(from_url).strip()
+    return str(WAPI_DEFAULT_INSTANCE_ID or "").strip()
 
 def _student_portal_url():
     return (
@@ -1226,21 +1250,30 @@ def _send_whatsapp_wapi(number, text, timeout=20):
     base_url = _wapi_base_url()
     token = _wapi_token()
     instance_id = _wapi_instance_id()
-    if not (number and message_text and base_url and token and instance_id):
+    if not (number and message_text and base_url and token):
         return False, "wapi nao configurado", []
 
     split = urlsplit(base_url)
     path_lower = str(split.path or "").lower()
     direct_endpoint = any(token in path_lower for token in ("send-text", "sendtext", "send-message", "sendmessage"))
+    qs_initial = dict(parse_qsl(split.query, keep_blank_values=True))
+    url_instance = (
+        str(qs_initial.get("instanceId", "")).strip()
+        or str(qs_initial.get("instance_id", "")).strip()
+        or str(qs_initial.get("instance", "")).strip()
+    )
+    effective_instance = str(instance_id or url_instance or "").strip()
+    if not effective_instance:
+        return False, "instanceId da W-API nao configurado", []
     endpoint_urls = []
     if direct_endpoint:
-        qs = dict(parse_qsl(split.query, keep_blank_values=True))
+        qs = dict(qs_initial)
         # Try multiple variants to avoid stale instanceId in URL query.
         qs_forced = dict(qs)
-        if instance_id:
-            qs_forced["instanceId"] = instance_id
+        if effective_instance:
+            qs_forced["instanceId"] = effective_instance
             if "instance_id" in qs_forced:
-                qs_forced["instance_id"] = instance_id
+                qs_forced["instance_id"] = effective_instance
         qs_original = dict(qs)
         qs_without_instance = {k: v for k, v in qs.items() if str(k) not in ("instanceId", "instance_id")}
         direct_url_forced = urlunsplit((split.scheme, split.netloc, split.path, urlencode(qs_forced), split.fragment))
@@ -1259,7 +1292,7 @@ def _send_whatsapp_wapi(number, text, timeout=20):
             r = str(r).rstrip("/")
             if r and r not in roots:
                 roots.append(r)
-        inst_q = quote(instance_id, safe="")
+        inst_q = quote(effective_instance, safe="")
         path_candidates = [
             "/v1/message/send-text",
             f"/v1/message/send-text?instanceId={inst_q}",
@@ -1280,8 +1313,8 @@ def _send_whatsapp_wapi(number, text, timeout=20):
             f"/message/send-text?instance_id={inst_q}",
             "/message/sendText",
             f"/message/sendText?instanceId={inst_q}",
-            f"/api/v1/instances/{quote(instance_id, safe='')}/send-text",
-            f"/instance/{quote(instance_id, safe='')}/send-text",
+            f"/api/v1/instances/{quote(effective_instance, safe='')}/send-text",
+            f"/instance/{quote(effective_instance, safe='')}/send-text",
         ]
         endpoint_urls = [root + path for root in roots for path in path_candidates]
 
@@ -1295,10 +1328,10 @@ def _send_whatsapp_wapi(number, text, timeout=20):
         {"number": number, "message": message_text},
         {"to": number, "message": message_text},
         {"to": number, "text": message_text},
-        {"instanceId": instance_id, "phone": number, "message": message_text},
-        {"instanceId": instance_id, "number": number, "text": message_text},
-        {"instance_id": instance_id, "phone": number, "message": message_text},
-        {"instance": instance_id, "phone": number, "message": message_text},
+        {"instanceId": effective_instance, "phone": number, "message": message_text},
+        {"instanceId": effective_instance, "number": number, "text": message_text},
+        {"instance_id": effective_instance, "phone": number, "message": message_text},
+        {"instance": effective_instance, "phone": number, "message": message_text},
     ]
 
     attempts = []
@@ -1347,9 +1380,21 @@ def _has_evolution_config():
 def _send_whatsapp_auto(number, text, timeout=20):
     provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip().lower()
     if provider == "wapi":
-        return _send_whatsapp_wapi(number, text, timeout=timeout)
+        ok, status, attempts = _send_whatsapp_wapi(number, text, timeout=timeout)
+        if ok or not _has_evolution_config():
+            return ok, status, attempts
+        ok2, status2, attempts2 = _send_whatsapp_evolution(number, text, timeout=timeout)
+        if ok2:
+            return ok2, status2, attempts2
+        return ok, f"{status} | fallback evolution: {status2}", attempts + attempts2
     if provider == "evolution":
-        return _send_whatsapp_evolution(number, text, timeout=timeout)
+        ok, status, attempts = _send_whatsapp_evolution(number, text, timeout=timeout)
+        if ok or not _has_wapi_config():
+            return ok, status, attempts
+        ok2, status2, attempts2 = _send_whatsapp_wapi(number, text, timeout=timeout)
+        if ok2:
+            return ok2, status2, attempts2
+        return ok, f"{status} | fallback wapi: {status2}", attempts + attempts2
 
     # auto: prioriza W-API se estiver configurado; caso contrario, Evolution.
     if _has_wapi_config():
@@ -3489,6 +3534,127 @@ def _render_wiz_action_history_panel():
                     st.success("Historico do Wiz apagado.")
                     st.rerun()
 
+def _render_wiz_automation_panel():
+    settings = get_wiz_settings()
+    smtp_diag = _smtp_config_diagnostics()
+    wa_diag = _whatsapp_config_diagnostics()
+
+    with st.expander("Configurar automacoes e notificacoes do Assistente Wiz", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            wiz_enabled_flag = st.checkbox(
+                "Assistente habilitado",
+                value=bool(settings.get("enabled", True)),
+                key="wiz_cfg_enabled",
+            )
+        with c2:
+            notify_email_flag = st.checkbox(
+                "Enviar e-mail",
+                value=bool(settings.get("notify_email", True)),
+                key="wiz_cfg_notify_email",
+            )
+        with c3:
+            notify_whatsapp_flag = st.checkbox(
+                "Enviar WhatsApp",
+                value=bool(settings.get("notify_whatsapp", True)),
+                key="wiz_cfg_notify_whatsapp",
+            )
+
+        e1, e2, e3 = st.columns(3)
+        with e1:
+            on_student_created = st.checkbox(
+                "Cadastro de alunos",
+                value=bool(settings.get("on_student_created", True)),
+                key="wiz_cfg_on_student_created",
+            )
+            on_teacher_created = st.checkbox(
+                "Cadastro de professores",
+                value=bool(settings.get("on_teacher_created", True)),
+                key="wiz_cfg_on_teacher_created",
+            )
+            on_user_created = st.checkbox(
+                "Cadastro de usuarios",
+                value=bool(settings.get("on_user_created", True)),
+                key="wiz_cfg_on_user_created",
+            )
+        with e2:
+            on_news_posted = st.checkbox(
+                "Publicacao de notificacoes",
+                value=bool(settings.get("on_news_posted", True)),
+                key="wiz_cfg_on_news_posted",
+            )
+            on_grade_approved = st.checkbox(
+                "Aprovacao de notas",
+                value=bool(settings.get("on_grade_approved", True)),
+                key="wiz_cfg_on_grade_approved",
+            )
+            on_agenda_created = st.checkbox(
+                "Agendamento de aula",
+                value=bool(settings.get("on_agenda_created", True)),
+                key="wiz_cfg_on_agenda_created",
+            )
+        with e3:
+            on_class_link_updated = st.checkbox(
+                "Alteracao de link de turma",
+                value=bool(settings.get("on_class_link_updated", True)),
+                key="wiz_cfg_on_class_link_updated",
+            )
+            on_financial_created = st.checkbox(
+                "Lancamento financeiro",
+                value=bool(settings.get("on_financial_created", True)),
+                key="wiz_cfg_on_financial_created",
+            )
+            auto_daily_backup = st.checkbox(
+                "Backup diario automatico",
+                value=bool(settings.get("auto_daily_backup", False)),
+                key="wiz_cfg_auto_daily_backup",
+            )
+
+        merged = {
+            "enabled": bool(wiz_enabled_flag),
+            "notify_email": bool(notify_email_flag),
+            "notify_whatsapp": bool(notify_whatsapp_flag),
+            "on_student_created": bool(on_student_created),
+            "on_teacher_created": bool(on_teacher_created),
+            "on_user_created": bool(on_user_created),
+            "on_news_posted": bool(on_news_posted),
+            "on_grade_approved": bool(on_grade_approved),
+            "on_agenda_created": bool(on_agenda_created),
+            "on_class_link_updated": bool(on_class_link_updated),
+            "on_financial_created": bool(on_financial_created),
+            "auto_daily_backup": bool(auto_daily_backup),
+        }
+
+        b1, b2 = st.columns([1.3, 1.0])
+        with b1:
+            if st.button("Salvar configuracoes do Assistente Wiz", key="wiz_cfg_save"):
+                save_wiz_settings(merged)
+                st.success("Configuracoes do Assistente Wiz salvas.")
+                st.rerun()
+        with b2:
+            if st.button("Reativar todos os envios", key="wiz_cfg_reactivate_all"):
+                force_on = dict(DEFAULT_WIZ_SETTINGS)
+                force_on["enabled"] = True
+                force_on["notify_email"] = True
+                force_on["notify_whatsapp"] = True
+                save_wiz_settings(force_on)
+                st.success("Envios por e-mail e WhatsApp reativados.")
+                st.rerun()
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("SMTP", "Configurado" if (smtp_diag.get("host_ok") and smtp_diag.get("from_ok")) else "Pendente")
+        with m2:
+            st.metric("WhatsApp", "Configurado" if (wa_diag.get("wapi_ready") or wa_diag.get("evolution_ready")) else "Pendente")
+        with m3:
+            provider_label = str(wa_diag.get("provider", "auto")).strip() or "auto"
+            st.metric("Provedor WA", provider_label.upper())
+        with m4:
+            st.metric("Automacoes", "Ativas" if bool(merged.get("enabled")) else "Desativadas")
+
+        if not merged.get("notify_whatsapp"):
+            st.warning("Enviar WhatsApp esta desativado. Ative para voltar a disparar mensagens automaticas.")
+
 def run_wiz_assistant():
     st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
     st.caption("Conversa simples com o Wiz para Coordenação/Admin. Anexe arquivo/imagem e escreva seu pedido.")
@@ -3497,6 +3663,8 @@ def run_wiz_assistant():
     if account_profile not in ("Admin", "Coordenador"):
         st.error("Acesso restrito para Coordenador/Admin.")
         return
+
+    _render_wiz_automation_panel()
 
     chat_key = f"wiz:{(st.session_state.get('user_name') or '').strip().lower()}"
     if chat_key not in st.session_state["active_chat_histories"]:
@@ -3566,6 +3734,48 @@ def run_wiz_assistant():
     user_text = st.chat_input("Digite o que você precisa no sistema (cadastro, agenda, financeiro, comunicados, etc.)")
     if not user_text:
         return
+
+    normalized_user_text = _wiz_norm_text(user_text)
+    force_reactivate = any(
+        token in normalized_user_text
+        for token in (
+            "reativar envio",
+            "reativar envios",
+            "reative envio",
+            "reative envios",
+            "reativa envio",
+            "reativa envios",
+            "reativar whatsapp",
+            "reative whatsapp",
+            "reativa whatsapp",
+            "ativar envio",
+            "ativar envios",
+            "ativar notificacoes",
+            "ativar mensagens",
+            "ativar whatsapp",
+            "ativar e-mail",
+            "ativar email",
+            "religar whatsapp",
+            "ligar whatsapp",
+            "whatsapp nao envia",
+            "whatsapp nao esta enviando",
+            "nao esta enviando whatsapp",
+        )
+    )
+    if force_reactivate:
+        force_on = dict(DEFAULT_WIZ_SETTINGS)
+        force_on["enabled"] = True
+        force_on["notify_email"] = True
+        force_on["notify_whatsapp"] = True
+        save_wiz_settings(force_on)
+        answer = (
+            "Pronto. Reativei os envios automáticos do sistema (e-mail e WhatsApp) e mantive "
+            "as automações do Assistente Wiz habilitadas."
+        )
+        chat_history.append({"role": "user", "content": str(user_text).strip()})
+        chat_history.append({"role": "assistant", "content": answer})
+        st.session_state["active_chat_histories"][chat_key] = chat_history
+        st.rerun()
 
     api_key = get_groq_api_key()
 
@@ -10957,7 +11167,7 @@ elif st.session_state["role"] == "Coordenador":
                     st.text_input("Link da aula", value=link_default, disabled=True)
                     professor = str(prof_default).strip()
                     link_aula = str(link_default).strip()
-                    enviar_email_convite = st.checkbox("Enviar email automatico para alunos da turma", value=True)
+                    enviar_email_convite = st.checkbox("Enviar comunicado automatico para alunos da turma (e-mail + WhatsApp)", value=True)
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
                             st.error("Selecione pelo menos um dia para repetição por data.")
@@ -14198,7 +14408,7 @@ elif st.session_state["role"] == "Coordenador":
                 turma_msg = st.selectbox("Turma de destino", turmas_msg)
                 titulo_msg = st.text_input("Titulo da mensagem")
                 corpo_msg = st.text_area("Mensagem")
-                if st.form_submit_button("Publicar e enviar email"):
+                if st.form_submit_button("Publicar e enviar comunicado (e-mail + WhatsApp)"):
                     if not titulo_msg.strip() or not corpo_msg.strip():
                         st.error("Preencha titulo e mensagem.")
                     else:
