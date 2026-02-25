@@ -6022,7 +6022,7 @@ def _normalize_book_url(url):
         return f"https://{raw}"
     return ""
 
-def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
+def render_books_section(books, title="Livros Didáticos", key_prefix="books", allow_download=True):
     st.markdown(f"### {title}")
     if not books:
         st.info("Nenhum livro disponível.")
@@ -6040,12 +6040,15 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
         raw_url = str(b.get("url", "")).strip()
         url = _normalize_book_url(raw_url)
         invalid_url = bool(raw_url and not url)
-        if file_data:
-            c1.download_button("Baixar livro", data=file_data, file_name=file_name or "livro.pdf", key=f"{key_prefix}_download_{idx}")
-        elif url:
-            c1.link_button("Baixar livro", url)
+        if allow_download:
+            if file_data:
+                c1.download_button("Baixar livro", data=file_data, file_name=file_name or "livro.pdf", key=f"{key_prefix}_download_{idx}")
+            elif url:
+                c1.link_button("Baixar livro", url)
+            else:
+                c1.button("Baixar livro", disabled=True, key=f"{key_prefix}_disabled_{idx}")
         else:
-            c1.button("Baixar livro", disabled=True, key=f"{key_prefix}_disabled_{idx}")
+            c1.button("Baixar livro", disabled=True, key=f"{key_prefix}_download_blocked_{idx}")
 
         if url:
             c2.link_button("Abrir livro", url)
@@ -9247,7 +9250,7 @@ elif st.session_state["role"] == "Aluno":
             livro_aluno = turma_obj.get("livro", "")
         livros = st.session_state.get("books", [])
         livros_filtrados = [b for b in livros if b.get("nivel") == livro_aluno] if livro_aluno else []
-        render_books_section(livros_filtrados, "Livro do Aluno", key_prefix="aluno_livro")
+        render_books_section(livros_filtrados, "Livro do Aluno", key_prefix="aluno_livro", allow_download=False)
         if not st.session_state["materials"]: st.info("Sem materiais.")
         for m in reversed(st.session_state["materials"]):
             with st.container():
