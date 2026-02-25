@@ -6011,6 +6011,17 @@ def _book_binary_payload(book_obj):
             return b"", ""
     return b"", ""
 
+def _normalize_book_url(url):
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    low = raw.lower()
+    if low.startswith(("http://", "https://")):
+        return raw
+    if low.startswith("www."):
+        return f"https://{raw}"
+    return ""
+
 def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
     st.markdown(f"### {title}")
     if not books:
@@ -6026,7 +6037,9 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
             st.caption(" | ".join(details))
         c1, c2 = st.columns(2)
         file_data, file_name = _book_binary_payload(b)
-        url = str(b.get("url", "")).strip()
+        raw_url = str(b.get("url", "")).strip()
+        url = _normalize_book_url(raw_url)
+        invalid_url = bool(raw_url and not url)
         if file_data:
             c1.download_button("Baixar livro", data=file_data, file_name=file_name or "livro.pdf", key=f"{key_prefix}_download_{idx}")
         elif url:
@@ -6038,6 +6051,8 @@ def render_books_section(books, title="Livros Didáticos", key_prefix="books"):
             c2.link_button("Abrir livro", url)
         else:
             c2.button("Abrir livro", disabled=True, key=f"{key_prefix}_open_disabled_{idx}")
+        if invalid_url:
+            st.warning("Link do livro inválido. Use um link completo com http:// ou https://.")
         if not url and not file_data:
             st.caption("Link/arquivo do livro não configurado.")
         st.markdown("---")
