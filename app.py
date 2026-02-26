@@ -3551,6 +3551,74 @@ def _render_wiz_action_history_panel():
                     st.success("Historico do Wiz apagado.")
                     st.rerun()
 
+def _wiz_students_grouped_by_existing_class():
+    classes = [str(c.get("nome", "")).strip() for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip()]
+    grouped = {nome: [] for nome in classes}
+    sem_turma = []
+    class_set = set(classes)
+    for student in st.session_state.get("students", []):
+        nome = str(student.get("nome", "")).strip() or "Aluno sem nome"
+        turma = str(student.get("turma", "")).strip()
+        if turma and turma in class_set and turma.lower() not in ("sem turma", "todos", "todas"):
+            grouped[turma].append(nome)
+        else:
+            sem_turma.append(nome)
+    return grouped, sem_turma
+
+def _wiz_try_direct_data_answer(user_text):
+    txt = _wiz_norm_text(user_text)
+    if not txt:
+        return ""
+
+    asks_alunos_turma = (
+        ("aluno" in txt or "alunos" in txt)
+        and ("turma" in txt or "turmas" in txt)
+        and any(token in txt for token in ("lista", "listar", "quais", "mostrar", "mostra", "por turma", "em cada turma", "quantos", "qtd"))
+    )
+    asks_sem_turma = ("aluno" in txt or "alunos" in txt) and "sem turma" in txt
+
+    if not asks_alunos_turma and not asks_sem_turma:
+        return ""
+
+    grouped, sem_turma = _wiz_students_grouped_by_existing_class()
+    total_students = len(st.session_state.get("students", []))
+    total_classes = len(grouped)
+
+    if asks_sem_turma and not asks_alunos_turma:
+        if not sem_turma:
+            return "Dados atuais do sistema: nao ha alunos sem turma."
+        preview = ", ".join(sem_turma[:30])
+        extra = len(sem_turma) - 30
+        if extra > 0:
+            preview += f" ... (+{extra})"
+        return (
+            f"Dados atuais do sistema: {len(sem_turma)} aluno(s) sem turma.\n"
+            f"Alunos sem turma: {preview}"
+        )
+
+    lines = [
+        "Dados atuais do sistema (confirmados agora):",
+        f"- Total de alunos cadastrados: {total_students}",
+        f"- Total de turmas cadastradas: {total_classes}",
+    ]
+    if total_classes == 0:
+        lines.append("- Nenhuma turma cadastrada no momento.")
+    else:
+        for turma_nome in sorted(grouped.keys(), key=lambda x: _wiz_norm_text(x)):
+            alunos = grouped.get(turma_nome, [])
+            qtd = len(alunos)
+            if qtd == 0:
+                lines.append(f"- {turma_nome}: 0 aluno(s)")
+                continue
+            preview = ", ".join(alunos[:20])
+            extra = qtd - 20
+            if extra > 0:
+                preview += f" ... (+{extra})"
+            lines.append(f"- {turma_nome}: {qtd} aluno(s) | {preview}")
+    if sem_turma:
+        lines.append(f"- Sem turma: {len(sem_turma)} aluno(s)")
+    return "\n".join(lines)
+
 def run_wiz_assistant():
     st.markdown('<div class="main-header">ASSISTENTE WIZ</div>', unsafe_allow_html=True)
     st.caption("Conversa simples com o Wiz para Coordenação/Admin. Anexe arquivo/imagem e escreva seu pedido.")
@@ -3638,6 +3706,12 @@ def run_wiz_assistant():
         full_user_text += "\n\nConteúdo lido dos anexos:\n" + "\n\n".join(content_blocks)
 
     chat_history.append({"role": "user", "content": str(user_text).strip()})
+
+    direct_answer = _wiz_try_direct_data_answer(full_user_text)
+    if direct_answer:
+        chat_history.append({"role": "assistant", "content": direct_answer})
+        st.session_state["active_chat_histories"][chat_key] = chat_history
+        st.rerun()
 
     fallback_actions = _wiz_actions_from_book_uploads(user_text, uploaded_files) if wiz_auto_exec else []
     if not api_key and not fallback_actions:
@@ -7208,6 +7282,12 @@ def get_active_context_text():
         lines.append(f"Total de professores: {len(st.session_state['teachers'])}")
         lines.append(f"Total de turmas: {len(st.session_state['classes'])}")
         lines.append(f"Mensagens cadastradas: {len(st.session_state['messages'])}")
+        grouped, sem_turma = _wiz_students_grouped_by_existing_class()
+        if grouped:
+            resumo = "; ".join([f"{k}: {len(v)} aluno(s)" for k, v in sorted(grouped.items(), key=lambda x: _wiz_norm_text(x[0]))])
+            lines.append(f"Resumo de alunos por turma: {resumo}")
+        if sem_turma:
+            lines.append(f"Alunos sem turma: {len(sem_turma)}")
 
     return "\n".join(lines)
 
