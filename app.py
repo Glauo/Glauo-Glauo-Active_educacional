@@ -1516,6 +1516,37 @@ def notify_student_financial_event(aluno_nome, itens, send_email=True, send_what
         "Financeiro",
     )
 
+def notify_student_profile_update(student, autor="", origem="Atualizacao Aluno", send_email=True, send_whatsapp=True):
+    if not isinstance(student, dict):
+        return {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    nome = str(student.get("nome", "")).strip() or "Aluno"
+    turma = str(student.get("turma", "")).strip() or "Sem Turma"
+    livro = str(student.get("livro", "")).strip() or "A definir"
+    matricula = str(student.get("matricula", "")).strip() or "-"
+    assunto = "[Active] Atualizacao de cadastro"
+    corpo = (
+        f"Ola, {nome}!\n"
+        "Seu cadastro no Active foi atualizado.\n\n"
+        f"Data: {datetime.date.today().strftime('%d/%m/%Y')}\n"
+        f"Turma: {turma}\n"
+        f"Livro/Nivel: {livro}\n"
+        f"Matricula: {matricula}\n"
+    )
+    portal = _student_portal_url()
+    if portal:
+        corpo += f"Portal do aluno: {portal}\n"
+    if str(autor or "").strip():
+        corpo += f"Atualizado por: {str(autor).strip()}\n"
+    corpo += "\nSe tiver duvidas, responda esta mensagem."
+    return _notify_direct_contacts(
+        nome,
+        _message_recipients_for_student(student) if bool(send_email) else [],
+        _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
+        assunto,
+        corpo,
+        origem,
+    )
+
 def _smtp_config_diagnostics():
     host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "")
     port = _finance_config_value("ACTIVE_SMTP_PORT", "smtp_port", "587")
@@ -12691,8 +12722,17 @@ elif st.session_state["role"] == "Coordenador":
                         key=_sfk("add_student_notify_whatsapp"),
                     )
 
-                submit_label = "Salvar Correcao do Aluno" if edit_student_active else "Cadastrar Aluno"
-                if st.form_submit_button(submit_label):
+                submit_with_notify = False
+                if edit_student_active:
+                    sb1, sb2 = st.columns(2)
+                    with sb1:
+                        submit_base = st.form_submit_button("Salvar Correcao do Aluno")
+                    with sb2:
+                        submit_with_notify = st.form_submit_button("Salvar Correcao + Notificar (E-mail/WhatsApp)")
+                    submit_pressed = bool(submit_base or submit_with_notify)
+                else:
+                    submit_pressed = st.form_submit_button("Cadastrar Aluno")
+                if submit_pressed:
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
                     edit_idx_submit = int(st.session_state.get("add_student_edit_idx", -1) or -1)
                     edit_obj_submit = None
@@ -12782,9 +12822,26 @@ elif st.session_state["role"] == "Coordenador":
                                         )
                                     save_users(st.session_state["users"])
 
+                                update_notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                                if bool(submit_with_notify):
+                                    update_notify_stats = notify_student_profile_update(
+                                        edit_obj_submit,
+                                        autor=st.session_state.get("user_name", "Coordenacao"),
+                                        origem="Atualizacao Aluno",
+                                        send_email=True,
+                                        send_whatsapp=True,
+                                    )
                                 st.session_state["add_student_feedback"] = {
                                     "success": "Aluno atualizado com sucesso no Cadastro Completo!",
-                                    "info": "Os dados foram carregados e corrigidos sem duplicar cadastro.",
+                                    "info": (
+                                        "Os dados foram carregados e corrigidos sem duplicar cadastro."
+                                        if not bool(submit_with_notify)
+                                        else (
+                                            "Disparos de atualizacao: "
+                                            f"E-mail {update_notify_stats.get('email_ok', 0)}/{update_notify_stats.get('email_total', 0)} | "
+                                            f"WhatsApp {update_notify_stats.get('whatsapp_ok', 0)}/{update_notify_stats.get('whatsapp_total', 0)}."
+                                        )
+                                    ),
                                 }
                             else:
                                 novo_aluno = dict(aluno_payload)
@@ -12988,7 +13045,9 @@ elif st.session_state["role"] == "Coordenador":
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
-                            if st.form_submit_button("Salvar Alterações"):
+                            save_student = st.form_submit_button("Salvar Alterações")
+                            save_student_notify = st.form_submit_button("Salvar + Notificar (E-mail/WhatsApp)")
+                            if save_student or save_student_notify:
                                 old_login = aluno_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or aluno_obj.get("senha", "")
@@ -13055,7 +13114,23 @@ elif st.session_state["role"] == "Coordenador":
                                         aluno_obj.pop("nascimento", None)
 
                                         save_list(STUDENTS_FILE, st.session_state["students"])
-                                        st.success("Dados atualizados!")
+                                        update_notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                                        if bool(save_student_notify):
+                                            update_notify_stats = notify_student_profile_update(
+                                                aluno_obj,
+                                                autor=st.session_state.get("user_name", "Coordenacao"),
+                                                origem="Atualizacao Aluno",
+                                                send_email=True,
+                                                send_whatsapp=True,
+                                            )
+                                        if bool(save_student_notify):
+                                            st.success(
+                                                "Dados atualizados! "
+                                                f"E-mail {update_notify_stats.get('email_ok', 0)}/{update_notify_stats.get('email_total', 0)} | "
+                                                f"WhatsApp {update_notify_stats.get('whatsapp_ok', 0)}/{update_notify_stats.get('whatsapp_total', 0)}."
+                                            )
+                                        else:
+                                            st.success("Dados atualizados!")
                                         st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR ALUNO", type="primary"):
