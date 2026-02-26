@@ -388,6 +388,22 @@ def _student_portal_url():
         or "https://activeducacional.streamlit.app/"
     ).strip()
 
+def _build_student_welcome_message(student_name, username="", password="", portal_url=""):
+    nome = str(student_name or "Aluno").strip() or "Aluno"
+    usuario = str(username or "").strip() or "Nao informado"
+    senha = str(password or "").strip() or "Nao informada"
+    portal = str(portal_url or "").strip() or _student_portal_url()
+    assunto = "[Active] Boas-vindas e acesso inicial"
+    corpo = (
+        f"Ola, {nome}! \U0001F44B\n\n"
+        "Seja muito bem-vindo(a)! Seu cadastro no Sistema Educacional Ativo ja foi realizado com sucesso. \U0001F393\n\n"
+        "A partir de agora, voce tem acesso ao seu portal para acompanhar notas, frequencias, materiais de aula e comunicados oficiais.\n\n"
+        f"\U0001F517 Acesse por aqui: {portal}\n"
+        f"\U0001F464 Seu Usuario: {usuario}\n"
+        f"\U0001F511 Senha Provisoria: {senha}"
+    )
+    return assunto, corpo
+
 def _http_request(method, url, headers=None, json_payload=None, timeout=15):
     headers = dict(headers or {})
     data = None
@@ -2391,7 +2407,35 @@ def _wiz_execute_actions(actions):
                 }
                 st.session_state["students"].append(novo)
                 save_list(STUDENTS_FILE, st.session_state["students"])
-                reports.append({"type": kind, "ok": True, "message": f"aluno {nome} cadastrado"})
+                notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+                send_email = _wiz_to_bool(data.get("enviar_email", data.get("send_email", True)), default=True)
+                send_whatsapp = _wiz_to_bool(data.get("enviar_whatsapp", data.get("send_whatsapp", True)), default=True)
+                if wiz_event_enabled("on_student_created") and (send_email or send_whatsapp):
+                    assunto_auto, corpo_auto = _build_student_welcome_message(
+                        nome,
+                        username=novo.get("usuario", ""),
+                        password=novo.get("senha", ""),
+                        portal_url=_student_portal_url(),
+                    )
+                    notify_stats = _notify_direct_contacts(
+                        nome,
+                        _message_recipients_for_student(novo) if bool(send_email) else [],
+                        _student_whatsapp_recipients(novo) if bool(send_whatsapp) else [],
+                        assunto_auto,
+                        corpo_auto,
+                        "Cadastro Aluno",
+                    )
+                reports.append(
+                    {
+                        "type": kind,
+                        "ok": True,
+                        "message": (
+                            f"aluno {nome} cadastrado "
+                            f"(e-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
+                            f"whatsapp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)})"
+                        ),
+                    }
+                )
             elif kind == "atualizar_aluno":
                 idx_list = _find_student_indices(data)
                 if not idx_list:
@@ -11931,27 +11975,11 @@ elif st.session_state["role"] == "Coordenador":
                                     )
                                     save_users(st.session_state["users"])
 
-                                turma_link = str(turma_obj.get("link_zoom", "")).strip() if isinstance(turma_obj, dict) else ""
-                                portal_url = _student_portal_url()
-                                login_info = login_final or "Nao informado"
-                                senha_info = senha_final or "Nao informada"
-                                assunto_auto = "[Active] Boas-vindas e acesso inicial"
-                                corpo_auto = (
-                                    f"Ola, {nome}! Seja muito bem-vindo(a) a Mister Wiz! \U0001F389\n\n"
-                                    f"Seu cadastro foi concluido no Active.\n"
-                                    f"Turma: {turma}\n"
-                                    f"Livro/Nivel: {livro_final or 'A definir'}\n"
-                                    f"Matricula: {matricula_final}\n"
-                                    f"Login: {login_info}\n"
-                                    f"Senha: {senha_info}\n"
-                                )
-                                if portal_url:
-                                    corpo_auto += f"Portal do aluno: {portal_url}\n"
-                                if turma_link:
-                                    corpo_auto += f"Link da aula: {turma_link}\n"
-                                corpo_auto += (
-                                    "\nFinanceiro, boletos e materiais ficam disponiveis no portal do aluno.\n"
-                                    "Em caso de duvidas, responda esta mensagem."
+                                assunto_auto, corpo_auto = _build_student_welcome_message(
+                                    nome,
+                                    username=login_final,
+                                    password=senha_final,
+                                    portal_url=_student_portal_url(),
                                 )
                                 notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                                 if wiz_event_enabled("on_student_created"):
