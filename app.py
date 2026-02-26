@@ -10393,10 +10393,19 @@ elif st.session_state["role"] == "Coordenador":
                             default=default_days,
                         )
 
-                    st.text_input("Professor", value=prof_default, disabled=True)
-                    st.text_input("Link da aula", value=link_default, disabled=True)
-                    professor = str(prof_default).strip()
-                    link_aula = str(link_default).strip()
+                    # Force refresh of readonly fields whenever class selection changes.
+                    st.session_state["coord_agenda_professor_preview"] = str(prof_default).strip()
+                    st.session_state["coord_agenda_link_preview"] = str(link_default).strip()
+                    st.text_input(
+                        "Professor",
+                        key="coord_agenda_professor_preview",
+                        disabled=True,
+                    )
+                    st.text_input(
+                        "Link da aula",
+                        key="coord_agenda_link_preview",
+                        disabled=True,
+                    )
                     c_notify_1, c_notify_2 = st.columns(2)
                     with c_notify_1:
                         enviar_email_convite = st.checkbox(
@@ -10416,6 +10425,13 @@ elif st.session_state["role"] == "Coordenador":
                         elif not enviar_email_convite and not enviar_whatsapp_convite:
                             st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
                         else:
+                            # Re-read class data at submit time to avoid stale professor/link.
+                            turma_obj_submit = next(
+                                (c for c in st.session_state["classes"] if c.get("nome") == turma_sel),
+                                {},
+                            )
+                            professor_submit = str(turma_obj_submit.get("professor", "")).strip()
+                            link_aula_submit = str(turma_obj_submit.get("link_zoom", "")).strip()
                             datas_aulas = []
                             if repetir:
                                 total_semanas = int(semanas)
@@ -10447,12 +10463,12 @@ elif st.session_state["role"] == "Coordenador":
                             for data_item in datas_aulas:
                                 agenda_item = {
                                     "turma": turma_sel,
-                                    "professor": professor.strip(),
+                                    "professor": professor_submit,
                                     "titulo": titulo.strip() or "Aula ao vivo",
                                     "descricao": descricao.strip(),
                                     "data": data_item.strftime("%d/%m/%Y") if data_item else "",
                                     "hora": hora_aula.strftime("%H:%M") if hora_aula else "",
-                                    "link": link_aula.strip(),
+                                    "link": link_aula_submit,
                                     "recorrencia": recorrencia,
                                 }
                                 agenda_item["google_calendar_link"] = build_google_calendar_event_link(agenda_item)
