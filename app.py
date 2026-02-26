@@ -6707,6 +6707,71 @@ def _message_recipients_for_student(student):
         recipients.add(resp_email)
     return sorted(recipients)
 
+def _inbox_single_recipient_options():
+    options = []
+    seen = set()
+
+    for student in st.session_state.get("students", []):
+        nome = str(student.get("nome", "")).strip()
+        if not nome:
+            continue
+        emails = _message_recipients_for_student(student)
+        whatsapps = _student_whatsapp_recipients(student)
+        key = ("aluno", _wiz_norm_text(nome), "|".join(sorted(emails)), "|".join(sorted(whatsapps)))
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            {
+                "label": f"Aluno | {nome}",
+                "name": nome,
+                "emails": emails,
+                "whatsapps": whatsapps,
+            }
+        )
+
+    for teacher in st.session_state.get("teachers", []):
+        nome = str(teacher.get("nome", "")).strip()
+        if not nome:
+            continue
+        emails = [str(teacher.get("email", "")).strip().lower()] if str(teacher.get("email", "")).strip() else []
+        whatsapps = [str(teacher.get("celular", "")).strip()] if str(teacher.get("celular", "")).strip() else []
+        key = ("professor", _wiz_norm_text(nome), "|".join(sorted(emails)), "|".join(sorted(whatsapps)))
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            {
+                "label": f"Professor | {nome}",
+                "name": nome,
+                "emails": emails,
+                "whatsapps": whatsapps,
+            }
+        )
+
+    for user in st.session_state.get("users", []):
+        nome = str(user.get("pessoa", user.get("usuario", ""))).strip()
+        if not nome:
+            continue
+        perfil = str(user.get("perfil", "")).strip() or "Usuario"
+        emails = [str(user.get("email", "")).strip().lower()] if str(user.get("email", "")).strip() else []
+        whatsapps = [str(user.get("celular", "")).strip()] if str(user.get("celular", "")).strip() else []
+        key = ("usuario", _wiz_norm_text(nome), perfil.lower(), "|".join(sorted(emails)), "|".join(sorted(whatsapps)))
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            {
+                "label": f"{perfil} | {nome}",
+                "name": nome,
+                "emails": emails,
+                "whatsapps": whatsapps,
+            }
+        )
+
+    options.sort(key=lambda x: _wiz_norm_text(x.get("label", "")))
+    return options
+
 def _existing_class_name_set():
     out = set()
     for turma_obj in st.session_state.get("classes", []):
@@ -6852,6 +6917,7 @@ def post_message_and_notify(
     send_whatsapp=True,
     student_only_existing_classes=False,
     include_students_without_turma_when_all=True,
+    recipient_entry=None,
 ):
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
@@ -6861,12 +6927,16 @@ def post_message_and_notify(
         "turma": turma or "Todas",
         "publico": str(publico or "Alunos").strip() or "Alunos",
         "professor": str(professor or "Todos").strip() or "Todos",
+        "destinatario_unico": str((recipient_entry or {}).get("label", "")).strip() if isinstance(recipient_entry, dict) else "",
     }
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
     publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
     destino_label = (
+        f"Destinatario: {mensagem_obj.get('destinatario_unico', '')}"
+        if publico_label == "Pessoa especifica"
+        else
         f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
         if publico_label == "Professores"
         else f"Turma: {mensagem_obj.get('turma', 'Todas')}"
@@ -6886,6 +6956,16 @@ def post_message_and_notify(
             professor=mensagem_obj.get("professor", "Todos"),
             send_email=bool(send_email),
             send_whatsapp=bool(send_whatsapp),
+        )
+    elif publico_label == "Pessoa especifica":
+        entry = recipient_entry if isinstance(recipient_entry, dict) else {}
+        stats = _notify_direct_contacts(
+            str(entry.get("name", "Destinatario")).strip() or "Destinatario",
+            entry.get("emails", []) if bool(send_email) else [],
+            entry.get("whatsapps", []) if bool(send_whatsapp) else [],
+            assunto,
+            corpo,
+            origem,
         )
     elif publico_label == "Alunos e Professores":
         stats_alunos = notify_students_by_turma_channels(
@@ -13985,15 +14065,27 @@ elif st.session_state["role"] == "Coordenador":
             with st.form("coord_publish_message", clear_on_submit=True):
                 publico_msg = st.selectbox(
                     "Destinatarios",
-                    ["Alunos", "Professores", "Alunos e Professores"],
+                    ["Alunos", "Professores", "Alunos e Professores", "Pessoa especifica"],
                 )
                 turma_msg = "Todas"
                 professor_msg = "Todos"
+                recipient_entry_msg = None
                 if publico_msg in ("Alunos", "Alunos e Professores"):
                     turma_msg = st.selectbox("Turma de destino (alunos)", turmas_msg)
                 if publico_msg in ("Professores", "Alunos e Professores"):
                     prof_opts = ["Todos"] + teacher_names()
                     professor_msg = st.selectbox("Professor(es) de destino", prof_opts)
+                if publico_msg == "Pessoa especifica":
+                    single_options = _inbox_single_recipient_options()
+                    if single_options:
+                        single_labels = [opt.get("label", "") for opt in single_options if opt.get("label", "")]
+                        selected_label = st.selectbox("Pessoa de destino", single_labels, key="coord_msg_single_person")
+                        recipient_entry_msg = next(
+                            (opt for opt in single_options if opt.get("label", "") == selected_label),
+                            None,
+                        )
+                    else:
+                        st.warning("Nenhum contato encontrado para envio individual.")
                 ch1, ch2 = st.columns(2)
                 with ch1:
                     send_msg_email = st.checkbox(
@@ -14014,6 +14106,8 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
                         st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
+                    elif publico_msg == "Pessoa especifica" and not recipient_entry_msg:
+                        st.error("Selecione uma pessoa de destino.")
                     else:
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
@@ -14025,6 +14119,7 @@ elif st.session_state["role"] == "Coordenador":
                             professor=professor_msg,
                             send_email=bool(send_msg_email),
                             send_whatsapp=bool(send_msg_whatsapp),
+                            recipient_entry=recipient_entry_msg,
                         )
                         st.success(
                             "Mensagem publicada. "
@@ -14037,10 +14132,16 @@ elif st.session_state["role"] == "Coordenador":
                 st.info("Sem mensagens.")
             else:
                 for msg in reversed(st.session_state["messages"]):
+                    destino_unico = str(msg.get("destinatario_unico", "")).strip()
+                    destino_txt = (
+                        f"Destinatario: {destino_unico}"
+                        if destino_unico
+                        else f"Turma: {msg.get('turma','Todas')} | Professor(es): {msg.get('professor','Todos')}"
+                    )
                     st.markdown(
                         f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
 <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
-<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Publico: {msg.get('publico','Alunos')} | Turma: {msg.get('turma','Todas')} | Professor(es): {msg.get('professor','Todos')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Publico: {msg.get('publico','Alunos')} | {destino_txt}</div>
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
