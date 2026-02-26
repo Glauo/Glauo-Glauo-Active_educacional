@@ -13738,7 +13738,7 @@ elif st.session_state["role"] == "Coordenador":
                     )
                 titulo_msg = st.text_input("Titulo da mensagem")
                 corpo_msg = st.text_area("Mensagem")
-                if st.form_submit_button("Publicar e enviar email"):
+                if st.form_submit_button("Publicar e enviar comunicado (e-mail + WhatsApp)"):
                     if not titulo_msg.strip() or not corpo_msg.strip():
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
