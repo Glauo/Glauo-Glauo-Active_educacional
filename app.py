@@ -2029,14 +2029,23 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
         '"missing":["campo faltante"]'
         "}"
     )
+    try:
+        context_txt = get_active_context_text()
+    except Exception:
+        context_txt = ""
     system_prompt = "\n".join(
         [
             "Voce e um orquestrador de acoes internas do sistema Active Educacional.",
             "Retorne SOMENTE JSON valido, sem markdown.",
             "Nunca invente dados obrigatorios que nao foram informados.",
+            "Nunca invente fatos do sistema (nomes, turmas, valores, status, quantidades, datas ou links).",
+            "Se nao houver confirmacao no contexto/dados do pedido, nao afirme certeza e preencha missing com o que falta.",
             "Se o pedido for apenas pergunta, orientacao ou analise, retorne actions = [].",
             "Se o pedido exigir execucao interna, preencha actions com os tipos suportados.",
             "Nunca inclua DietHealth.",
+            "Para enviar_comunicado com turma='Todas', use por padrao somente alunos com turma valida existente.",
+            "Inclua alunos sem turma apenas se o usuario pedir explicitamente.",
+            "Se o usuario pedir envio para turmas existentes, use no data: {\"somente_turmas_existentes\": true}.",
             "Acoes suportadas:",
             "- cadastrar_aluno",
             "- atualizar_aluno",
@@ -2070,6 +2079,8 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
             "- lancar_nota",
             "Para comunicados para alunos/turmas, prefira enviar_comunicado.",
             "Para exclusao/baixa use somente quando o pedido do usuario for explicito.",
+            "Nao confirme execucao na resposta; a confirmacao final vem do relatorio de execucao do sistema.",
+            ("Contexto atual:\n" + context_txt) if context_txt else "Contexto atual: indisponivel.",
             f"Formato JSON: {schema_hint}",
         ]
     )
@@ -2948,12 +2959,27 @@ def _wiz_execute_actions(actions):
                 if not titulo or not mensagem:
                     reports.append({"type": kind, "ok": False, "message": "titulo e mensagem sao obrigatorios"})
                     continue
+                somente_turmas_existentes = _wiz_to_bool(
+                    data.get(
+                        "somente_turmas_existentes",
+                        data.get(
+                            "apenas_turmas_existentes",
+                            data.get(
+                                "somente_com_turma",
+                                data.get("apenas_com_turma", True),
+                            ),
+                        ),
+                    ),
+                    default=True,
+                )
                 post_message_and_notify(
                     autor=st.session_state.get("user_name", "Assistente Wiz"),
                     titulo=titulo,
                     mensagem=mensagem,
                     turma=turma,
                     origem="Assistente Wiz",
+                    student_only_existing_classes=bool(somente_turmas_existentes),
+                    include_students_without_turma_when_all=False,
                 )
                 reports.append({"type": kind, "ok": True, "message": "noticia publicada"})
             elif kind == "enviar_comunicado":
@@ -2963,19 +2989,55 @@ def _wiz_execute_actions(actions):
                 if not mensagem:
                     reports.append({"type": kind, "ok": False, "message": "mensagem e obrigatoria"})
                     continue
+                somente_turmas_existentes = _wiz_to_bool(
+                    data.get(
+                        "somente_turmas_existentes",
+                        data.get(
+                            "apenas_turmas_existentes",
+                            data.get(
+                                "somente_com_turma",
+                                data.get("apenas_com_turma", True),
+                            ),
+                        ),
+                    ),
+                    default=True,
+                )
+                incluir_sem_turma = _wiz_to_bool(
+                    data.get("incluir_sem_turma", data.get("incluir_alunos_sem_turma", False)),
+                    default=False,
+                )
+                turmas_existentes = {str(c.get("nome", "")).strip() for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip()}
+                if turma != "Todas" and somente_turmas_existentes and turma not in turmas_existentes:
+                    reports.append(
+                        {
+                            "type": kind,
+                            "ok": False,
+                            "message": f"turma '{turma}' nao existe no cadastro de turmas",
+                        }
+                    )
+                    continue
                 stats = post_message_and_notify(
                     autor=st.session_state.get("user_name", "Assistente Wiz"),
                     titulo=titulo,
                     mensagem=mensagem,
                     turma=turma,
                     origem="Assistente Wiz",
+                    student_only_existing_classes=bool(somente_turmas_existentes),
+                    include_students_without_turma_when_all=bool(incluir_sem_turma),
                 )
+                filtro_label = "somente alunos com turma existente"
+                if not bool(somente_turmas_existentes):
+                    filtro_label = "todos os alunos do filtro informado"
+                    if turma == "Todas" and bool(incluir_sem_turma):
+                        filtro_label = "todos os alunos, incluindo sem turma"
                 reports.append(
                     {
                         "type": kind,
                         "ok": True,
                         "message": (
                             f"comunicado enviado para {turma} "
+                            f"[filtro: {filtro_label}; alunos considerados {int(stats.get('student_total', 0))}; "
+                            f"alunos com contato {int(stats.get('student_with_channel', 0))}] "
                             f"(e-mail {int(stats.get('email_ok', 0))}/{int(stats.get('email_total', 0))}, "
                             f"whatsapp {int(stats.get('whatsapp_ok', 0))}/{int(stats.get('whatsapp_total', 0))})"
                         ),
@@ -3845,6 +3907,9 @@ def run_wiz_assistant():
                 "Nunca responda com JSON, código ou estrutura técnica.",
                 "Quando houver dados faltantes para executar algo interno, peça apenas os dados faltantes.",
                 "Se houver anexo, use o conteúdo anexado como base da resposta.",
+                "Nunca invente informacoes do sistema (alunos, turmas, valores, status, datas, links ou resultados).",
+                "Nao diga que tem certeza sem validacao no contexto atual.",
+                "Se nao conseguir confirmar algo no sistema, diga explicitamente que nao foi possivel confirmar agora.",
                 "Nunca mencione DietHealth.",
                 get_active_context_text(),
             ]
@@ -7369,11 +7434,54 @@ def _message_recipients_for_student(student):
         recipients.add(resp_email)
     return sorted(recipients)
 
-def notify_students_by_turma_channels(turma, assunto, corpo, origem, send_email=True, send_whatsapp=True):
-    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+def _existing_class_name_set():
+    out = set()
+    for turma_obj in st.session_state.get("classes", []):
+        nome = str(turma_obj.get("nome", "")).strip()
+        if nome:
+            out.add(nome)
+    return out
+
+def _student_has_existing_class(student, existing_classes=None):
+    turma_nome = str((student or {}).get("turma", "")).strip()
+    if not turma_nome:
+        return False
+    if turma_nome.strip().lower() in ("sem turma", "todos", "todas"):
+        return False
+    if existing_classes is None:
+        existing_classes = _existing_class_name_set()
+    return turma_nome in existing_classes
+
+def notify_students_by_turma_channels(
+    turma,
+    assunto,
+    corpo,
+    origem,
+    send_email=True,
+    send_whatsapp=True,
+    only_existing_classes=False,
+    include_students_without_turma_when_all=True,
+):
+    stats = {
+        "email_total": 0,
+        "email_ok": 0,
+        "whatsapp_total": 0,
+        "whatsapp_ok": 0,
+        "student_total": 0,
+        "student_with_channel": 0,
+        "student_contacted": 0,
+    }
+    turma_target = str(turma or "Todas").strip() or "Todas"
+    existing_classes = _existing_class_name_set() if bool(only_existing_classes) else None
     for student in st.session_state.get("students", []):
-        if turma != "Todas" and student.get("turma") != turma:
+        student_turma = str(student.get("turma", "")).strip()
+        if turma_target != "Todas" and student_turma != turma_target:
             continue
+        if bool(only_existing_classes) and not _student_has_existing_class(student, existing_classes):
+            continue
+        if turma_target == "Todas" and not bool(include_students_without_turma_when_all):
+            if not student_turma or student_turma.lower() in ("sem turma", "todos", "todas"):
+                continue
         partial = _notify_direct_contacts(
             student.get("nome", "Aluno"),
             _message_recipients_for_student(student) if bool(send_email) else [],
@@ -7382,6 +7490,11 @@ def notify_students_by_turma_channels(turma, assunto, corpo, origem, send_email=
             corpo,
             origem,
         )
+        stats["student_total"] += 1
+        if int(partial.get("email_total", 0)) + int(partial.get("whatsapp_total", 0)) > 0:
+            stats["student_with_channel"] += 1
+        if int(partial.get("email_ok", 0)) + int(partial.get("whatsapp_ok", 0)) > 0:
+            stats["student_contacted"] += 1
         for key in stats:
             stats[key] += int(partial.get(key, 0))
     return stats
@@ -7464,6 +7577,8 @@ def post_message_and_notify(
     professor="Todos",
     send_email=True,
     send_whatsapp=True,
+    student_only_existing_classes=False,
+    include_students_without_turma_when_all=True,
 ):
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
@@ -7507,6 +7622,8 @@ def post_message_and_notify(
             origem,
             send_email=bool(send_email),
             send_whatsapp=bool(send_whatsapp),
+            only_existing_classes=bool(student_only_existing_classes),
+            include_students_without_turma_when_all=bool(include_students_without_turma_when_all),
         )
         stats_prof = notify_teachers_channels(
             assunto,
@@ -7521,6 +7638,9 @@ def post_message_and_notify(
             "email_ok": int(stats_alunos.get("email_ok", 0)) + int(stats_prof.get("email_ok", 0)),
             "whatsapp_total": int(stats_alunos.get("whatsapp_total", 0)) + int(stats_prof.get("whatsapp_total", 0)),
             "whatsapp_ok": int(stats_alunos.get("whatsapp_ok", 0)) + int(stats_prof.get("whatsapp_ok", 0)),
+            "student_total": int(stats_alunos.get("student_total", 0)),
+            "student_with_channel": int(stats_alunos.get("student_with_channel", 0)),
+            "student_contacted": int(stats_alunos.get("student_contacted", 0)),
         }
     else:
         stats = notify_students_by_turma_channels(
@@ -7530,6 +7650,8 @@ def post_message_and_notify(
             origem,
             send_email=bool(send_email),
             send_whatsapp=bool(send_whatsapp),
+            only_existing_classes=bool(student_only_existing_classes),
+            include_students_without_turma_when_all=bool(include_students_without_turma_when_all),
         )
     stats["total"] = stats.get("email_total", 0)
     stats["enviados"] = stats.get("email_ok", 0)
@@ -7942,6 +8064,7 @@ def get_active_system_prompt(mode, include_context=True):
         "Responda em portugues do Brasil, com foco pratico e claro.",
         "Quando faltar contexto, pergunte objetivamente antes de concluir.",
         "Evite inventar dados. Se nao souber, diga que nao ha dados suficientes.",
+        "Nunca afirme com certeza dados de alunos, turmas, valores, agenda ou financeiro sem confirmacao no sistema.",
     ]
 
     mode_map = {
