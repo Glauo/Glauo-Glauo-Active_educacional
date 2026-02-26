@@ -1445,7 +1445,7 @@ def notify_students_by_turma_whatsapp(turma, assunto, corpo, origem):
             _log_comm_event(student.get("nome", "Aluno"), "whatsapp", number, assunto, corpo, origem, status)
     return total
 
-def notify_student_financial_event(aluno_nome, itens):
+def notify_student_financial_event(aluno_nome, itens, send_email=True, send_whatsapp=True):
     if not wiz_event_enabled("on_financial_created"):
         return {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     student = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
@@ -1464,8 +1464,8 @@ def notify_student_financial_event(aluno_nome, itens):
     corpo = "Foram lançados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
     return _notify_direct_contacts(
         student.get("nome", "Aluno"),
-        _message_recipients_for_student(student),
-        _student_whatsapp_recipients(student),
+        _message_recipients_for_student(student) if bool(send_email) else [],
+        _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
         assunto,
         corpo,
         "Financeiro",
@@ -12570,10 +12570,29 @@ elif st.session_state["role"] == "Coordenador":
                 valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
                 with c9:
                     st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
+                d1, d2 = st.columns(2)
+                with d1:
+                    enviar_fin_email = st.checkbox(
+                        "Enviar comunicado por e-mail",
+                        value=True,
+                        key="rec_notify_email",
+                        disabled=(categoria_lancamento != "Aluno"),
+                    )
+                with d2:
+                    enviar_fin_whatsapp = st.checkbox(
+                        "Enviar comunicado por WhatsApp",
+                        value=True,
+                        key="rec_notify_whatsapp",
+                        disabled=(categoria_lancamento != "Aluno"),
+                    )
+                if categoria_lancamento != "Aluno":
+                    st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
 
                 if st.form_submit_button("Lancar"):
                     if not str(aluno).strip() or valor_parcela_num <= 0:
                         st.error("Informe referencia e valor da parcela valido.")
+                    elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
+                        st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
                     else:
                         before_count = len(st.session_state.get("receivables", []))
                         total_lancados = 0
@@ -12638,7 +12657,12 @@ elif st.session_state["role"] == "Coordenador":
                             st.success(f"Lancado! ({total_lancados} parcela(s))")
                         if wiz_event_enabled("on_financial_created") and categoria_lancamento == "Aluno":
                             new_items = st.session_state.get("receivables", [])[before_count:]
-                            stats_fin = notify_student_financial_event(aluno, new_items)
+                            stats_fin = notify_student_financial_event(
+                                aluno,
+                                new_items,
+                                send_email=bool(enviar_fin_email),
+                                send_whatsapp=bool(enviar_fin_whatsapp),
+                            )
                             st.info(
                                 "Disparos financeiros: "
                                 f"E-mail {stats_fin.get('email_ok', 0)}/{stats_fin.get('email_total', 0)} | "
