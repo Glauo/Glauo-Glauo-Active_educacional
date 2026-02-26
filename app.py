@@ -7579,25 +7579,42 @@ def post_message_and_notify(
     send_whatsapp=True,
     student_only_existing_classes=False,
     include_students_without_turma_when_all=True,
+    aluno="",
 ):
+    aluno = str(aluno or "").strip()
+    turma = str(turma or "Todas").strip() or "Todas"
+    publico_label = str(publico or "Alunos").strip() or "Alunos"
+    professor_label = str(professor or "Todos").strip() or "Todos"
+    student_obj = next(
+        (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno),
+        {},
+    ) if aluno else {}
+    turma_destino = str(student_obj.get("turma", turma)).strip() or turma
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
         "mensagem": (mensagem or "").strip(),
         "data": datetime.date.today().strftime("%d/%m/%Y"),
         "autor": autor.strip() if autor else "Sistema",
-        "turma": turma or "Todas",
-        "publico": str(publico or "Alunos").strip() or "Alunos",
-        "professor": str(professor or "Todos").strip() or "Todos",
+        "turma": turma_destino,
+        "publico": "Aluno especifico" if aluno else publico_label,
+        "professor": professor_label,
+        "aluno": aluno,
     }
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
     publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
-    destino_label = (
-        f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
-        if publico_label == "Professores"
-        else f"Turma: {mensagem_obj.get('turma', 'Todas')}"
-    )
+    if mensagem_obj["aluno"]:
+        destino_label = f"Destinatario: {mensagem_obj['aluno']}\nTurma: {mensagem_obj['turma']}"
+    elif publico_label == "Professores":
+        destino_label = f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+    elif publico_label == "Alunos e Professores":
+        destino_label = (
+            f"Turma: {mensagem_obj.get('turma', 'Todas')}\n"
+            f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+        )
+    else:
+        destino_label = f"Turma: {mensagem_obj.get('turma', 'Todas')}"
     corpo = (
         f"Mensagem publicada por {mensagem_obj['autor']}\n"
         f"Publico: {publico_label}\n"
@@ -7605,7 +7622,18 @@ def post_message_and_notify(
         f"Data: {mensagem_obj['data']}\n\n"
         f"{mensagem_obj['mensagem']}"
     )
-    if publico_label == "Professores":
+    if mensagem_obj["aluno"] and student_obj:
+        stats = _notify_direct_contacts(
+            student_obj.get("nome", "Aluno"),
+            _message_recipients_for_student(student_obj),
+            _student_whatsapp_recipients(student_obj),
+            assunto,
+            corpo,
+            origem,
+        )
+    elif mensagem_obj["aluno"]:
+        stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    elif publico_label == "Professores":
         stats = notify_teachers_channels(
             assunto,
             corpo,
@@ -7656,6 +7684,29 @@ def post_message_and_notify(
     stats["total"] = stats.get("email_total", 0)
     stats["enviados"] = stats.get("email_ok", 0)
     return stats
+
+def _message_matches_student(message_obj, aluno_nome, turma_aluno):
+    publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip()
+    if publico_msg == "Professores":
+        return False
+    aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
+    if aluno_msg:
+        return aluno_msg == str(aluno_nome or "").strip()
+    turma_msg = str((message_obj or {}).get("turma", "")).strip()
+    return (not turma_msg) or turma_msg == "Todas" or turma_msg == str(turma_aluno or "").strip()
+
+def _message_destination_label(message_obj):
+    publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip() or "Alunos"
+    professor_msg = str((message_obj or {}).get("professor", "Todos")).strip() or "Todos"
+    aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
+    turma_msg = str((message_obj or {}).get("turma", "")).strip() or "Todas"
+    if aluno_msg:
+        return f"Publico: Aluno especifico | Destino: {aluno_msg} | Turma: {turma_msg}"
+    if publico_msg == "Professores":
+        return f"Publico: Professores | Professor(es): {professor_msg}"
+    if publico_msg == "Alunos e Professores":
+        return f"Publico: Alunos e Professores | Turma: {turma_msg} | Professor(es): {professor_msg}"
+    return f"Publico: {publico_msg} | Turma: {turma_msg}"
 
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
@@ -7976,11 +8027,12 @@ def render_library(title="Biblioteca", turma=None, turma_options=None):
             st.info("Sem noticias.")
         else:
             for msg in reversed(noticias):
+                destino_txt = _message_destination_label(msg)
                 with st.container():
                     st.markdown(
                         f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
                         <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Noticia')}</div>
-                        <div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')}</div>
+                        <div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | {destino_txt}</div>
                         <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
@@ -10321,12 +10373,13 @@ elif st.session_state["role"] == "Aluno":
         turma_aluno = next((s.get("turma") for s in st.session_state["students"] if s.get("nome") == aluno_nome), "")
         mensagens_aluno = [
             m for m in st.session_state["messages"]
-            if not m.get("turma") or m.get("turma") == "Todas" or m.get("turma") == turma_aluno
+            if _message_matches_student(m, aluno_nome, turma_aluno)
         ]
         if not mensagens_aluno: st.info("Sem mensagens.")
         for msg in reversed(mensagens_aluno):
+            destino_txt = _message_destination_label(msg)
             with st.container():
-                st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;"><div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div><div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | {destino_txt}</div><div>{msg.get('mensagem','')}</div></div>""", unsafe_allow_html=True)
 
     elif menu_aluno == "Atividades":
         only_homework = str(menu_aluno_label).strip() == "Lições de Casa"
@@ -10908,10 +10961,11 @@ elif st.session_state["role"] == "Professor":
             if not historico:
                 st.info("Sem mensagens.")
             for msg in historico:
+                destino_txt = _message_destination_label(msg)
                 st.markdown(
                     f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
 <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
-<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Turma: {msg.get('turma','Todas')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | {destino_txt}</div>
 <div>{msg.get('mensagem','')}</div></div>""",
                     unsafe_allow_html=True,
                 )
@@ -14780,15 +14834,40 @@ elif st.session_state["role"] == "Coordenador":
             with st.form("coord_publish_message", clear_on_submit=True):
                 publico_msg = st.selectbox(
                     "Destinatarios",
-                    ["Alunos", "Professores", "Alunos e Professores"],
+                    ["Alunos", "Professores", "Alunos e Professores", "Pessoa especifica (aluno)"],
                 )
                 turma_msg = "Todas"
                 professor_msg = "Todos"
-                if publico_msg in ("Alunos", "Alunos e Professores"):
+                aluno_obj_msg = None
+                if publico_msg in ("Alunos", "Alunos e Professores", "Pessoa especifica (aluno)"):
                     turma_msg = st.selectbox("Turma de destino (alunos)", turmas_msg)
                 if publico_msg in ("Professores", "Alunos e Professores"):
                     prof_opts = ["Todos"] + teacher_names()
                     professor_msg = st.selectbox("Professor(es) de destino", prof_opts)
+                if publico_msg == "Pessoa especifica (aluno)":
+                    alunos_destino = [
+                        s for s in st.session_state.get("students", [])
+                        if str(s.get("nome", "")).strip()
+                        and (turma_msg == "Todas" or str(s.get("turma", "")).strip() == turma_msg)
+                    ]
+                    alunos_destino = sorted(alunos_destino, key=lambda s: str(s.get("nome", "")).strip().lower())
+                    aluno_opts = [None] + alunos_destino
+                    aluno_obj_msg = st.selectbox(
+                        "Pessoa de destino (aluno)",
+                        aluno_opts,
+                        format_func=lambda s: (
+                            "Selecione"
+                            if s is None
+                            else (
+                                f"{str(s.get('nome', '')).strip()} ({str(s.get('turma', '')).strip() or 'Sem Turma'})"
+                                + (
+                                    f" - Matricula {str(s.get('matricula', '')).strip()}"
+                                    if str(s.get("matricula", "")).strip()
+                                    else ""
+                                )
+                            )
+                        ),
+                    )
                 ch1, ch2 = st.columns(2)
                 with ch1:
                     send_msg_email = st.checkbox(
@@ -14809,17 +14888,22 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
                         st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
+                    elif publico_msg == "Pessoa especifica (aluno)" and not isinstance(aluno_obj_msg, dict):
+                        st.error("Selecione a pessoa de destino.")
                     else:
+                        aluno_nome_msg = str(aluno_obj_msg.get("nome", "")).strip() if isinstance(aluno_obj_msg, dict) else ""
+                        publico_api = "Alunos" if publico_msg == "Pessoa especifica (aluno)" else publico_msg
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
                             titulo=titulo_msg,
                             mensagem=corpo_msg,
                             turma=turma_msg,
                             origem="Mensagens Coordenacao",
-                            publico=publico_msg,
+                            publico=publico_api,
                             professor=professor_msg,
                             send_email=bool(send_msg_email),
                             send_whatsapp=bool(send_msg_whatsapp),
+                            aluno=aluno_nome_msg,
                         )
                         st.success(
                             "Mensagem publicada. "
@@ -14832,10 +14916,11 @@ elif st.session_state["role"] == "Coordenador":
                 st.info("Sem mensagens.")
             else:
                 for msg in reversed(st.session_state["messages"]):
+                    destino_txt = _message_destination_label(msg)
                     st.markdown(
                         f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
 <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
-<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Publico: {msg.get('publico','Alunos')} | Turma: {msg.get('turma','Todas')} | Professor(es): {msg.get('professor','Todos')}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | {destino_txt}</div>
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
