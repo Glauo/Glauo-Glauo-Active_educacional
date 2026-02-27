@@ -14982,62 +14982,54 @@ elif st.session_state["role"] == "Coordenador":
             with st.form("coord_publish_message", clear_on_submit=True):
                 publico_msg = st.selectbox(
                     "Destinatarios",
-                    ["Alunos", "Professores", "Alunos e Professores", "Pessoa especifica"],
+                    ["Alunos", "Professores", "Alunos e Professores", "Aluno (individual)", "Professor (individual)"],
                 )
                 turma_msg = "Todas"
                 professor_msg = "Todos"
                 aluno_obj_msg = None
-                pessoa_tipo_msg = "Aluno"
                 professor_individual_msg = ""
-                if publico_msg in ("Alunos", "Alunos e Professores"):
+                if publico_msg in ("Alunos", "Alunos e Professores", "Aluno (individual)"):
                     turma_msg = st.selectbox("Turma de destino (alunos)", turmas_msg)
                 if publico_msg in ("Professores", "Alunos e Professores"):
                     prof_opts = ["Todos"] + teacher_names()
                     professor_msg = st.selectbox("Professor(es) de destino", prof_opts)
-                if publico_msg == "Pessoa especifica":
-                    pessoa_tipo_msg = st.radio(
-                        "Tipo de destinatario",
-                        ["Aluno", "Professor"],
-                        horizontal=True,
-                    )
-                    if pessoa_tipo_msg == "Aluno":
-                        turma_msg = st.selectbox("Turma de destino (aluno)", turmas_msg)
-                        alunos_destino = [
-                            s for s in st.session_state.get("students", [])
-                            if str(s.get("nome", "")).strip()
-                            and (turma_msg == "Todas" or str(s.get("turma", "")).strip() == turma_msg)
-                        ]
-                        alunos_destino = sorted(alunos_destino, key=lambda s: str(s.get("nome", "")).strip().lower())
-                        aluno_opts = [None] + alunos_destino
-                        aluno_obj_msg = st.selectbox(
-                            "Pessoa de destino (aluno)",
-                            aluno_opts,
-                            format_func=lambda s: (
-                                "Selecione"
-                                if s is None
-                                else (
-                                    f"{str(s.get('nome', '')).strip()} ({str(s.get('turma', '')).strip() or 'Sem Turma'})"
-                                    + (
-                                        f" - Matricula {str(s.get('matricula', '')).strip()}"
-                                        if str(s.get("matricula", "")).strip()
-                                        else ""
-                                    )
+                if publico_msg == "Aluno (individual)":
+                    alunos_destino = [
+                        s for s in st.session_state.get("students", [])
+                        if str(s.get("nome", "")).strip()
+                        and (turma_msg == "Todas" or str(s.get("turma", "")).strip() == turma_msg)
+                    ]
+                    alunos_destino = sorted(alunos_destino, key=lambda s: str(s.get("nome", "")).strip().lower())
+                    aluno_opts = [None] + alunos_destino
+                    aluno_obj_msg = st.selectbox(
+                        "Pessoa de destino (aluno)",
+                        aluno_opts,
+                        format_func=lambda s: (
+                            "Selecione"
+                            if s is None
+                            else (
+                                f"{str(s.get('nome', '')).strip()} ({str(s.get('turma', '')).strip() or 'Sem Turma'})"
+                                + (
+                                    f" - Matricula {str(s.get('matricula', '')).strip()}"
+                                    if str(s.get("matricula", "")).strip()
+                                    else ""
                                 )
-                            ),
-                        )
-                    else:
-                        professores_destino = sorted(
-                            {
-                                str(t.get("nome", "")).strip()
-                                for t in st.session_state.get("teachers", [])
-                                if str(t.get("nome", "")).strip()
-                            }
-                        )
-                        professor_individual_msg = st.selectbox(
-                            "Pessoa de destino (professor)",
-                            [""] + professores_destino,
-                            format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
-                        )
+                            )
+                        ),
+                    )
+                if publico_msg == "Professor (individual)":
+                    professores_destino = sorted(
+                        {
+                            str(t.get("nome", "")).strip()
+                            for t in st.session_state.get("teachers", [])
+                            if str(t.get("nome", "")).strip()
+                        }
+                    )
+                    professor_individual_msg = st.selectbox(
+                        "Pessoa de destino (professor)",
+                        [""] + professores_destino,
+                        format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
+                    )
                 ch1, ch2 = st.columns(2)
                 with ch1:
                     send_msg_email = st.checkbox(
@@ -15058,15 +15050,17 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
                         st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
-                    elif publico_msg == "Pessoa especifica" and pessoa_tipo_msg == "Aluno" and not isinstance(aluno_obj_msg, dict):
+                    elif publico_msg == "Aluno (individual)" and not isinstance(aluno_obj_msg, dict):
                         st.error("Selecione a pessoa de destino.")
-                    elif publico_msg == "Pessoa especifica" and pessoa_tipo_msg == "Professor" and not professor_individual_msg:
+                    elif publico_msg == "Professor (individual)" and not professor_individual_msg:
                         st.error("Selecione a pessoa de destino.")
                     else:
                         aluno_nome_msg = str(aluno_obj_msg.get("nome", "")).strip() if isinstance(aluno_obj_msg, dict) else ""
                         publico_api = publico_msg
-                        if publico_msg == "Pessoa especifica":
-                            publico_api = "Alunos" if pessoa_tipo_msg == "Aluno" else "Professores"
+                        if publico_msg == "Aluno (individual)":
+                            publico_api = "Alunos"
+                        elif publico_msg == "Professor (individual)":
+                            publico_api = "Professores"
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
                             titulo=titulo_msg,
