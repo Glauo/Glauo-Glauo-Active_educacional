@@ -2,6 +2,7 @@
 import datetime
 import hashlib
 import hmac
+import importlib
 import io
 import json
 import os
@@ -3480,12 +3481,23 @@ def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
                 text = pd.read_excel(io.BytesIO(raw)).head(20).to_csv(index=False)
             elif kind == "pdf" and raw:
                 try:
-                    from pypdf import PdfReader
-                    reader = PdfReader(io.BytesIO(raw))
-                    parts = []
-                    for page in reader.pages[:3]:
-                        parts.append((page.extract_text() or "").strip())
-                    text = "\n".join([p for p in parts if p])
+                    pdf_reader_cls = None
+                    for pdf_module_name in ("pypdf", "PyPDF2"):
+                        try:
+                            pdf_module = importlib.import_module(pdf_module_name)
+                            pdf_reader_cls = getattr(pdf_module, "PdfReader", None)
+                            if pdf_reader_cls:
+                                break
+                        except Exception:
+                            continue
+                    if pdf_reader_cls:
+                        reader = pdf_reader_cls(io.BytesIO(raw))
+                        parts = []
+                        for page in reader.pages[:3]:
+                            parts.append((page.extract_text() or "").strip())
+                        text = "\n".join([p for p in parts if p])
+                    else:
+                        text = ""
                 except Exception:
                     text = ""
         except Exception:
