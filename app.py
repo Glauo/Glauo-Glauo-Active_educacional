@@ -6917,30 +6917,56 @@ def post_message_and_notify(
     send_whatsapp=True,
     student_only_existing_classes=False,
     include_students_without_turma_when_all=True,
-    recipient_entry=None,
+    aluno="",
+    professor_individual="",
 ):
+    aluno = str(aluno or "").strip()
+    professor_individual = str(professor_individual or "").strip()
+    turma = str(turma or "Todas").strip() or "Todas"
+    publico_label = str(publico or "Alunos").strip() or "Alunos"
+    professor_label = str(professor or "Todos").strip() or "Todos"
+    student_obj = next(
+        (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno),
+        {},
+    ) if aluno else {}
+    teacher_obj = next(
+        (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == professor_individual),
+        {},
+    ) if professor_individual else {}
+    turma_destino = str(student_obj.get("turma", turma)).strip() or turma
+    publico_destino = publico_label
+    if aluno:
+        publico_destino = "Aluno especifico"
+    elif professor_individual:
+        publico_destino = "Professor especifico"
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
         "mensagem": (mensagem or "").strip(),
         "data": datetime.date.today().strftime("%d/%m/%Y"),
         "autor": autor.strip() if autor else "Sistema",
-        "turma": turma or "Todas",
-        "publico": str(publico or "Alunos").strip() or "Alunos",
-        "professor": str(professor or "Todos").strip() or "Todos",
-        "destinatario_unico": str((recipient_entry or {}).get("label", "")).strip() if isinstance(recipient_entry, dict) else "",
+        "turma": turma_destino,
+        "publico": publico_destino,
+        "professor": professor_label,
+        "aluno": aluno,
+        "professor_individual": professor_individual,
     }
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
     publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
-    destino_label = (
-        f"Destinatario: {mensagem_obj.get('destinatario_unico', '')}"
-        if publico_label == "Pessoa especifica"
-        else
-        f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
-        if publico_label == "Professores"
-        else f"Turma: {mensagem_obj.get('turma', 'Todas')}"
-    )
+    if mensagem_obj["aluno"]:
+        destino_label = f"Destinatario: {mensagem_obj['aluno']}\nTurma: {mensagem_obj['turma']}"
+    elif str(mensagem_obj.get("professor_individual", "")).strip():
+        destino_label = f"Destinatario: {mensagem_obj.get('professor_individual', '')}\nTipo: Professor"
+    elif publico_label == "Professores":
+        destino_label = f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+    elif publico_label == "Alunos e Professores":
+        destino_label = (
+            f"Turma: {mensagem_obj.get('turma', 'Todas')}\n"
+            f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+        )
+    else:
+        destino_label = f"Turma: {mensagem_obj.get('turma', 'Todas')}"
     corpo = (
         f"Mensagem publicada por {mensagem_obj['autor']}\n"
         f"Publico: {publico_label}\n"
@@ -6948,7 +6974,29 @@ def post_message_and_notify(
         f"Data: {mensagem_obj['data']}\n\n"
         f"{mensagem_obj['mensagem']}"
     )
-    if publico_label == "Professores":
+    if mensagem_obj["aluno"] and student_obj:
+        stats = _notify_direct_contacts(
+            student_obj.get("nome", "Aluno"),
+            _message_recipients_for_student(student_obj) if bool(send_email) else [],
+            _student_whatsapp_recipients(student_obj) if bool(send_whatsapp) else [],
+            assunto,
+            corpo,
+            origem,
+        )
+    elif mensagem_obj["aluno"]:
+        stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    elif str(mensagem_obj.get("professor_individual", "")).strip() and teacher_obj:
+        stats = _notify_direct_contacts(
+            teacher_obj.get("nome", "Professor"),
+            [teacher_obj.get("email", "")] if bool(send_email) else [],
+            [teacher_obj.get("celular", "")] if bool(send_whatsapp) else [],
+            assunto,
+            corpo,
+            origem,
+        )
+    elif str(mensagem_obj.get("professor_individual", "")).strip():
+        stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    elif publico_label == "Professores":
         stats = notify_teachers_channels(
             assunto,
             corpo,
@@ -6956,16 +7004,6 @@ def post_message_and_notify(
             professor=mensagem_obj.get("professor", "Todos"),
             send_email=bool(send_email),
             send_whatsapp=bool(send_whatsapp),
-        )
-    elif publico_label == "Pessoa especifica":
-        entry = recipient_entry if isinstance(recipient_entry, dict) else {}
-        stats = _notify_direct_contacts(
-            str(entry.get("name", "Destinatario")).strip() or "Destinatario",
-            entry.get("emails", []) if bool(send_email) else [],
-            entry.get("whatsapps", []) if bool(send_whatsapp) else [],
-            assunto,
-            corpo,
-            origem,
         )
     elif publico_label == "Alunos e Professores":
         stats_alunos = notify_students_by_turma_channels(
@@ -7010,6 +7048,53 @@ def post_message_and_notify(
     stats["enviados"] = stats.get("email_ok", 0)
     return stats
 
+def _message_matches_student(message_obj, aluno_nome, turma_aluno):
+    publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip()
+    if publico_msg in ("Professores", "Professor especifico"):
+        return False
+    aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
+    if aluno_msg:
+        return aluno_msg == str(aluno_nome or "").strip()
+    turma_msg = str((message_obj or {}).get("turma", "")).strip()
+    return (not turma_msg) or turma_msg == "Todas" or turma_msg == str(turma_aluno or "").strip()
+
+def _message_matches_teacher(message_obj, prof_nome, turmas_prof):
+    msg = message_obj or {}
+    prof_name = str(prof_nome or "").strip().lower()
+    turmas_set = {str(t).strip() for t in (turmas_prof or []) if str(t).strip()}
+    publico_msg = str(msg.get("publico", "Alunos")).strip() or "Alunos"
+    aluno_msg = str(msg.get("aluno", "")).strip()
+    professor_individual_msg = str(msg.get("professor_individual", "")).strip()
+    professor_msg = str(msg.get("professor", "Todos")).strip() or "Todos"
+    turma_msg = str(msg.get("turma", "")).strip() or "Todas"
+
+    if aluno_msg:
+        return False
+    if professor_individual_msg:
+        return professor_individual_msg.lower() == prof_name
+    if publico_msg == "Professores":
+        return professor_msg == "Todos" or professor_msg.strip().lower() == prof_name
+    if publico_msg == "Alunos e Professores":
+        if professor_msg != "Todos" and professor_msg.strip().lower() != prof_name:
+            return False
+        return turma_msg == "Todas" or turma_msg in turmas_set
+    return turma_msg == "Todas" or turma_msg in turmas_set
+
+def _message_destination_label(message_obj):
+    publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip() or "Alunos"
+    professor_msg = str((message_obj or {}).get("professor", "Todos")).strip() or "Todos"
+    aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
+    professor_individual_msg = str((message_obj or {}).get("professor_individual", "")).strip()
+    turma_msg = str((message_obj or {}).get("turma", "")).strip() or "Todas"
+    if aluno_msg:
+        return f"Publico: Aluno especifico | Destino: {aluno_msg} | Turma: {turma_msg}"
+    if professor_individual_msg:
+        return f"Publico: Professor especifico | Destino: {professor_individual_msg}"
+    if publico_msg == "Professores":
+        return f"Publico: Professores | Professor(es): {professor_msg}"
+    if publico_msg == "Alunos e Professores":
+        return f"Publico: Alunos e Professores | Turma: {turma_msg} | Professor(es): {professor_msg}"
+    return f"Publico: {publico_msg} | Turma: {turma_msg}"
 def sidebar_menu(title, options, key):
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state or st.session_state.get(key) not in options:
@@ -10220,7 +10305,7 @@ elif st.session_state["role"] == "Professor":
             st.markdown("### Historico")
             historico = [
                 m for m in reversed(st.session_state["messages"])
-                if m.get("turma") in turmas_prof or not m.get("turma") or m.get("turma") == "Todas"
+                if _message_matches_teacher(m, prof_nome, turmas_prof)
             ]
             if not historico:
                 st.info("Sem mensagens.")
@@ -12520,101 +12605,124 @@ elif st.session_state["role"] == "Coordenador":
                     current_prof = turma_obj.get("professor", "Sem Professor")
                     if current_prof not in prof_list:
                         prof_list.append(current_prof)
+                    col_class_form, col_class_students = st.columns([2.2, 1.4], gap="large")
+                    with col_class_form:
+                        with st.form("edit_class"):
+                            new_nome = st.text_input("Nome da Turma", value=turma_obj.get("nome", ""))
+                            new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
+                            current_modulo = turma_obj.get("modulo", "")
+                            modulo_opts = class_module_options()
+                            if current_modulo and current_modulo not in modulo_opts:
+                                modulo_opts.append(current_modulo)
+                            modulo_index = modulo_opts.index(current_modulo) if current_modulo in modulo_opts else 0
+                            new_modulo = st.selectbox("Modulo da Turma", modulo_opts, index=modulo_index)
 
-                    with st.form("edit_class"):
-                        new_nome = st.text_input("Nome da Turma", value=turma_obj.get("nome", ""))
-                        new_prof = st.selectbox("Professor", prof_list, index=prof_list.index(current_prof))
-                        current_modulo = turma_obj.get("modulo", "")
-                        modulo_opts = class_module_options()
-                        if current_modulo and current_modulo not in modulo_opts:
-                            modulo_opts.append(current_modulo)
-                        modulo_index = modulo_opts.index(current_modulo) if current_modulo in modulo_opts else 0
-                        new_modulo = st.selectbox("Modulo da Turma", modulo_opts, index=modulo_index)
+                            dias_salvos = turma_obj.get("dias_semana", [])
+                            if isinstance(dias_salvos, str):
+                                dias_salvos = [dias_salvos]
+                            dias_salvos = [dia for dia in dias_salvos if dia in WEEKDAY_OPTIONS_PT]
+                            if not dias_salvos:
+                                dias_salvos = infer_class_days_from_text(turma_obj.get("dias", ""))
 
-                        dias_salvos = turma_obj.get("dias_semana", [])
-                        if isinstance(dias_salvos, str):
-                            dias_salvos = [dias_salvos]
-                        dias_salvos = [dia for dia in dias_salvos if dia in WEEKDAY_OPTIONS_PT]
-                        if not dias_salvos:
-                            dias_salvos = infer_class_days_from_text(turma_obj.get("dias", ""))
+                            hora_inicio_atual = str(turma_obj.get("hora_inicio", "")).strip()
+                            hora_fim_atual = str(turma_obj.get("hora_fim", "")).strip()
+                            if not hora_inicio_atual or not hora_fim_atual:
+                                horarios_texto = re.findall(r"\b\d{1,2}:\d{2}\b", str(turma_obj.get("dias", "")))
+                                if not hora_inicio_atual and horarios_texto:
+                                    hora_inicio_atual = horarios_texto[0]
+                                if not hora_fim_atual and len(horarios_texto) > 1:
+                                    hora_fim_atual = horarios_texto[1]
 
-                        hora_inicio_atual = str(turma_obj.get("hora_inicio", "")).strip()
-                        hora_fim_atual = str(turma_obj.get("hora_fim", "")).strip()
-                        if not hora_inicio_atual or not hora_fim_atual:
-                            horarios_texto = re.findall(r"\b\d{1,2}:\d{2}\b", str(turma_obj.get("dias", "")))
-                            if not hora_inicio_atual and horarios_texto:
-                                hora_inicio_atual = horarios_texto[0]
-                            if not hora_fim_atual and len(horarios_texto) > 1:
-                                hora_fim_atual = horarios_texto[1]
+                            hora_inicio_padrao = parse_time(hora_inicio_atual or "19:00")
+                            hora_fim_padrao = parse_time(hora_fim_atual or "20:00")
 
-                        hora_inicio_padrao = parse_time(hora_inicio_atual or "19:00")
-                        hora_fim_padrao = parse_time(hora_fim_atual or "20:00")
+                            c_dias_1, c_dias_2 = st.columns(2)
+                            with c_dias_1:
+                                new_dias_semana = st.multiselect("Dias das aulas", WEEKDAY_OPTIONS_PT, default=dias_salvos)
+                            with c_dias_2:
+                                new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
 
-                        c_dias_1, c_dias_2 = st.columns(2)
-                        with c_dias_1:
-                            new_dias_semana = st.multiselect("Dias das aulas", WEEKDAY_OPTIONS_PT, default=dias_salvos)
-                        with c_dias_2:
-                            new_link = st.text_input("Link do Zoom", value=turma_obj.get("link_zoom", ""))
+                            c_hora_1, c_hora_2 = st.columns(2)
+                            with c_hora_1:
+                                new_hora_inicio = st.time_input("Horário inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
+                            with c_hora_2:
+                                new_hora_fim = st.time_input("Horário final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
 
-                        c_hora_1, c_hora_2 = st.columns(2)
-                        with c_hora_1:
-                            new_hora_inicio = st.time_input("Horário inicial", value=hora_inicio_padrao, key=f"edit_class_hora_inicio_{turma_sel}")
-                        with c_hora_2:
-                            new_hora_fim = st.time_input("Horário final", value=hora_fim_padrao, key=f"edit_class_hora_fim_{turma_sel}")
+                            livro_atual = turma_obj.get("livro", "")
+                            livro_opts = book_levels()
+                            if livro_atual and livro_atual not in livro_opts:
+                                livro_opts.append(livro_atual)
+                            new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
 
-                        livro_atual = turma_obj.get("livro", "")
-                        livro_opts = book_levels()
-                        if livro_atual and livro_atual not in livro_opts:
-                            livro_opts.append(livro_atual)
-                        new_livro = st.selectbox("Livro/Nível da Turma", livro_opts, index=livro_opts.index(livro_atual) if livro_atual in livro_opts else 0)
+                            c_edit, c_del = st.columns([1, 1])
+                            with c_edit:
+                                if st.form_submit_button("Salvar Alterações"):
+                                    new_nome = new_nome.strip()
+                                    dias_limpos = [dia for dia in new_dias_semana if dia in WEEKDAY_OPTIONS_PT]
+                                    new_hora_inicio_str = new_hora_inicio.strftime("%H:%M") if new_hora_inicio else ""
+                                    new_hora_fim_str = new_hora_fim.strftime("%H:%M") if new_hora_fim else ""
 
-                        c_edit, c_del = st.columns([1, 1])
-                        with c_edit:
-                            if st.form_submit_button("Salvar Alterações"):
-                                new_nome = new_nome.strip()
-                                dias_limpos = [dia for dia in new_dias_semana if dia in WEEKDAY_OPTIONS_PT]
-                                new_hora_inicio_str = new_hora_inicio.strftime("%H:%M") if new_hora_inicio else ""
-                                new_hora_fim_str = new_hora_fim.strftime("%H:%M") if new_hora_fim else ""
+                                    if not new_nome:
+                                        st.error("Informe o nome da turma.")
+                                    elif not dias_limpos:
+                                        st.error("Selecione pelo menos um dia das aulas.")
+                                    elif new_hora_fim <= new_hora_inicio:
+                                        st.error("O horário final precisa ser maior que o horário inicial.")
+                                    else:
+                                        old_nome = turma_obj.get("nome", "")
+                                        turma_obj["nome"] = new_nome
+                                        turma_obj["professor"] = new_prof
+                                        turma_obj["modulo"] = new_modulo
+                                        turma_obj["dias"] = format_class_schedule(dias_limpos, new_hora_inicio_str, new_hora_fim_str)
+                                        turma_obj["dias_semana"] = dias_limpos
+                                        turma_obj["hora_inicio"] = new_hora_inicio_str
+                                        turma_obj["hora_fim"] = new_hora_fim_str
+                                        turma_obj["link_zoom"] = new_link.strip()
+                                        turma_obj["livro"] = new_livro
 
-                                if not new_nome:
-                                    st.error("Informe o nome da turma.")
-                                elif not dias_limpos:
-                                    st.error("Selecione pelo menos um dia das aulas.")
-                                elif new_hora_fim <= new_hora_inicio:
-                                    st.error("O horário final precisa ser maior que o horário inicial.")
-                                else:
-                                    old_nome = turma_obj.get("nome", "")
-                                    turma_obj["nome"] = new_nome
-                                    turma_obj["professor"] = new_prof
-                                    turma_obj["modulo"] = new_modulo
-                                    turma_obj["dias"] = format_class_schedule(dias_limpos, new_hora_inicio_str, new_hora_fim_str)
-                                    turma_obj["dias_semana"] = dias_limpos
-                                    turma_obj["hora_inicio"] = new_hora_inicio_str
-                                    turma_obj["hora_fim"] = new_hora_fim_str
-                                    turma_obj["link_zoom"] = new_link.strip()
-                                    turma_obj["livro"] = new_livro
+                                        if old_nome and new_nome and old_nome != new_nome:
+                                            for aluno in st.session_state["students"]:
+                                                if aluno.get("turma") == old_nome:
+                                                    aluno["turma"] = new_nome
+                                            save_list(STUDENTS_FILE, st.session_state["students"])
 
-                                    if old_nome and new_nome and old_nome != new_nome:
+                                        save_list(CLASSES_FILE, st.session_state["classes"])
+                                        st.success("Turma atualizada!")
+                                        st.rerun()
+                            with c_del:
+                                if st.form_submit_button("EXCLUIR TURMA", type="primary"):
+                                    nome_turma = turma_obj.get("nome", "")
+                                    if nome_turma:
                                         for aluno in st.session_state["students"]:
-                                            if aluno.get("turma") == old_nome:
-                                                aluno["turma"] = new_nome
+                                            if aluno.get("turma") == nome_turma:
+                                                aluno["turma"] = "Sem Turma"
                                         save_list(STUDENTS_FILE, st.session_state["students"])
-
+                                    st.session_state["classes"].remove(turma_obj)
                                     save_list(CLASSES_FILE, st.session_state["classes"])
-                                    st.success("Turma atualizada!")
+                                    st.error("Turma excluída.")
                                     st.rerun()
-                        with c_del:
-                            if st.form_submit_button("EXCLUIR TURMA", type="primary"):
-                                nome_turma = turma_obj.get("nome", "")
-                                if nome_turma:
-                                    for aluno in st.session_state["students"]:
-                                        if aluno.get("turma") == nome_turma:
-                                            aluno["turma"] = "Sem Turma"
-                                    save_list(STUDENTS_FILE, st.session_state["students"])
-                                st.session_state["classes"].remove(turma_obj)
-                                save_list(CLASSES_FILE, st.session_state["classes"])
-                                st.error("Turma excluída.")
-                                st.rerun()
+                    with col_class_students:
+                        st.markdown("#### Alunos da turma selecionada")
+                        alunos_turma = [
+                            {
+                                "Aluno": str(aluno.get("nome", "")).strip(),
+                                "Matricula": str(aluno.get("matricula", "")).strip() or "-",
+                                "E-mail": str(aluno.get("email", "")).strip() or "-",
+                                "WhatsApp": str(aluno.get("celular", "")).strip() or "-",
+                            }
+                            for aluno in st.session_state.get("students", [])
+                            if str(aluno.get("turma", "")).strip() == turma_sel and str(aluno.get("nome", "")).strip()
+                        ]
+                        alunos_turma = sorted(alunos_turma, key=lambda item: str(item.get("Aluno", "")).lower())
+                        if alunos_turma:
+                            st.dataframe(
+                                pd.DataFrame(alunos_turma),
+                                use_container_width=True,
+                                hide_index=True,
+                                height=420,
+                            )
+                        else:
+                            st.info("Nenhum aluno vinculado a esta turma.")
 
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
@@ -14069,23 +14177,58 @@ elif st.session_state["role"] == "Coordenador":
                 )
                 turma_msg = "Todas"
                 professor_msg = "Todos"
-                recipient_entry_msg = None
+                aluno_obj_msg = None
+                pessoa_tipo_msg = "Aluno"
+                professor_individual_msg = ""
                 if publico_msg in ("Alunos", "Alunos e Professores"):
                     turma_msg = st.selectbox("Turma de destino (alunos)", turmas_msg)
                 if publico_msg in ("Professores", "Alunos e Professores"):
                     prof_opts = ["Todos"] + teacher_names()
                     professor_msg = st.selectbox("Professor(es) de destino", prof_opts)
                 if publico_msg == "Pessoa especifica":
-                    single_options = _inbox_single_recipient_options()
-                    if single_options:
-                        single_labels = [opt.get("label", "") for opt in single_options if opt.get("label", "")]
-                        selected_label = st.selectbox("Pessoa de destino", single_labels, key="coord_msg_single_person")
-                        recipient_entry_msg = next(
-                            (opt for opt in single_options if opt.get("label", "") == selected_label),
-                            None,
+                    pessoa_tipo_msg = st.radio(
+                        "Tipo de destinatario",
+                        ["Aluno", "Professor"],
+                        horizontal=True,
+                    )
+                    if pessoa_tipo_msg == "Aluno":
+                        turma_msg = st.selectbox("Turma de destino (aluno)", turmas_msg)
+                        alunos_destino = [
+                            s for s in st.session_state.get("students", [])
+                            if str(s.get("nome", "")).strip()
+                            and (turma_msg == "Todas" or str(s.get("turma", "")).strip() == turma_msg)
+                        ]
+                        alunos_destino = sorted(alunos_destino, key=lambda s: str(s.get("nome", "")).strip().lower())
+                        aluno_opts = [None] + alunos_destino
+                        aluno_obj_msg = st.selectbox(
+                            "Pessoa de destino (aluno)",
+                            aluno_opts,
+                            format_func=lambda s: (
+                                "Selecione"
+                                if s is None
+                                else (
+                                    f"{str(s.get('nome', '')).strip()} ({str(s.get('turma', '')).strip() or 'Sem Turma'})"
+                                    + (
+                                        f" - Matricula {str(s.get('matricula', '')).strip()}"
+                                        if str(s.get("matricula", "")).strip()
+                                        else ""
+                                    )
+                                )
+                            ),
                         )
                     else:
-                        st.warning("Nenhum contato encontrado para envio individual.")
+                        professores_destino = sorted(
+                            {
+                                str(t.get("nome", "")).strip()
+                                for t in st.session_state.get("teachers", [])
+                                if str(t.get("nome", "")).strip()
+                            }
+                        )
+                        professor_individual_msg = st.selectbox(
+                            "Pessoa de destino (professor)",
+                            [""] + professores_destino,
+                            format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
+                        )
                 ch1, ch2 = st.columns(2)
                 with ch1:
                     send_msg_email = st.checkbox(
@@ -14106,20 +14249,27 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
                         st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
-                    elif publico_msg == "Pessoa especifica" and not recipient_entry_msg:
-                        st.error("Selecione uma pessoa de destino.")
+                    elif publico_msg == "Pessoa especifica" and pessoa_tipo_msg == "Aluno" and not isinstance(aluno_obj_msg, dict):
+                        st.error("Selecione a pessoa de destino.")
+                    elif publico_msg == "Pessoa especifica" and pessoa_tipo_msg == "Professor" and not professor_individual_msg:
+                        st.error("Selecione a pessoa de destino.")
                     else:
+                        aluno_nome_msg = str(aluno_obj_msg.get("nome", "")).strip() if isinstance(aluno_obj_msg, dict) else ""
+                        publico_api = publico_msg
+                        if publico_msg == "Pessoa especifica":
+                            publico_api = "Alunos" if pessoa_tipo_msg == "Aluno" else "Professores"
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
                             titulo=titulo_msg,
                             mensagem=corpo_msg,
                             turma=turma_msg,
                             origem="Mensagens Coordenacao",
-                            publico=publico_msg,
+                            publico=publico_api,
                             professor=professor_msg,
                             send_email=bool(send_msg_email),
                             send_whatsapp=bool(send_msg_whatsapp),
-                            recipient_entry=recipient_entry_msg,
+                            aluno=aluno_nome_msg,
+                            professor_individual=professor_individual_msg,
                         )
                         st.success(
                             "Mensagem publicada. "
@@ -14132,16 +14282,11 @@ elif st.session_state["role"] == "Coordenador":
                 st.info("Sem mensagens.")
             else:
                 for msg in reversed(st.session_state["messages"]):
-                    destino_unico = str(msg.get("destinatario_unico", "")).strip()
-                    destino_txt = (
-                        f"Destinatario: {destino_unico}"
-                        if destino_unico
-                        else f"Turma: {msg.get('turma','Todas')} | Professor(es): {msg.get('professor','Todos')}"
-                    )
+                    destino_txt = _message_destination_label(msg)
                     st.markdown(
                         f"""<div style="background:white; padding:16px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:10px;">
 <div style="font-weight:700; color:#1e3a8a;">{msg.get('titulo','Mensagem')}</div>
-<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | Publico: {msg.get('publico','Alunos')} | {destino_txt}</div>
+<div style="font-size:0.85rem; color:#64748b; margin-bottom:8px;">{msg.get('data','')} | {msg.get('autor','')} | {destino_txt}</div>
 <div>{msg.get('mensagem','')}</div></div>""",
                         unsafe_allow_html=True,
                     )
