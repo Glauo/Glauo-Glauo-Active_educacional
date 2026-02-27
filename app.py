@@ -10884,20 +10884,38 @@ elif st.session_state["role"] == "Aluno":
     elif menu_aluno == "Materiais de Estudo":
         st.markdown('<div class="main-header">Materiais</div>', unsafe_allow_html=True)
         aluno_obj = next((s for s in st.session_state["students"] if s.get("nome") == st.session_state["user_name"]), {})
-        livro_aluno = aluno_obj.get("livro", "")
-        if not livro_aluno:
-            turma_nome = aluno_obj.get("turma", "")
-            turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma_nome), {})
-            livro_aluno = turma_obj.get("livro", "")
+        turma_nome = str(aluno_obj.get("turma", "")).strip()
+        livro_aluno = student_book_level(aluno_obj)
         livros = st.session_state.get("books", [])
-        livros_filtrados = [b for b in livros if b.get("nivel") == livro_aluno] if livro_aluno else []
-        render_books_section(livros_filtrados, "Livro do Aluno", key_prefix="aluno_livro", allow_download=False)
-        if not st.session_state["materials"]: st.info("Sem materiais.")
-        for m in reversed(st.session_state["materials"]):
+        livro_aluno_norm = _norm_book_level(livro_aluno)
+        livros_filtrados = []
+        for b in livros:
+            if not isinstance(b, dict):
+                continue
+            nivel_item_norm = _norm_book_level(str(b.get("nivel", "")).strip())
+            # Mostra os livros do nivel do aluno e livros gerais (sem nivel).
+            if livro_aluno_norm and nivel_item_norm and nivel_item_norm != livro_aluno_norm:
+                continue
+            livros_filtrados.append(b)
+        render_books_section(livros_filtrados, "Livro do Aluno", key_prefix="aluno_livro", allow_download=True)
+
+        materiais_aluno = filter_items_by_turma(st.session_state.get("materials", []), turma_nome)
+        if not materiais_aluno:
+            st.info("Sem materiais para sua turma.")
+        for m in reversed(materiais_aluno):
             with st.container():
                 st.markdown(f"**{m['titulo']}**")
                 st.write(m['descricao'])
                 if m['link']: st.markdown(f"[Baixar Arquivo]({m['link']})")
+                meta = []
+                if m.get("turma"):
+                    meta.append(f"Turma: {m.get('turma')}")
+                if m.get("autor"):
+                    meta.append(f"Autor: {m.get('autor')}")
+                if m.get("data"):
+                    meta.append(f"Data: {m.get('data')}")
+                if meta:
+                    st.caption(" | ".join(meta))
                 st.markdown("---")
 
     elif menu_aluno == "Financeiro":
