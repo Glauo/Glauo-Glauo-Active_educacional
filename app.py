@@ -7765,11 +7765,17 @@ def _message_matches_student(message_obj, aluno_nome, turma_aluno):
     publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip()
     if publico_msg in ("Professores", "Professor especifico", "Pessoa especifica"):
         return False
+    destinatario_unico = str((message_obj or {}).get("destinatario_unico", "")).strip()
+    if destinatario_unico:
+        destinatario_base = destinatario_unico.split("(", 1)[0].strip()
+        return destinatario_base == str(aluno_nome or "").strip()
     aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
     if aluno_msg:
         return aluno_msg == str(aluno_nome or "").strip()
     turma_msg = str((message_obj or {}).get("turma", "")).strip()
-    return (not turma_msg) or turma_msg == "Todas" or turma_msg == str(turma_aluno or "").strip()
+    if not turma_msg or turma_msg == "Todas":
+        return False
+    return turma_msg == str(turma_aluno or "").strip()
 
 def _message_matches_teacher(message_obj, prof_nome, turmas_prof):
     msg = message_obj or {}
@@ -10356,7 +10362,12 @@ elif st.session_state["role"] == "Aluno":
 """,
             unsafe_allow_html=True,
         )
-        st.info("Nível: Intermediário B1")
+        aluno_sidebar_obj = next(
+            (s for s in st.session_state.get("students", []) if s.get("nome") == st.session_state.get("user_name", "")),
+            {},
+        )
+        nivel_aluno_sidebar = student_book_level(aluno_sidebar_obj) or "Sem nivel definido"
+        st.info(f"Nível: {nivel_aluno_sidebar}")
         st.markdown("---")
         menu_aluno_label = sidebar_menu(
             "Navegacao",
@@ -10399,18 +10410,114 @@ elif st.session_state["role"] == "Aluno":
 
     if menu_aluno == "Dashboard":
         st.markdown('<div class="main-header">Painel do Aluno</div>', unsafe_allow_html=True)
+        aluno_nome = st.session_state.get("user_name", "")
+        aluno_obj = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
         link_aula = "https://zoom.us/join"
-        turma_aluno = next((s["turma"] for s in st.session_state["students"] if s["nome"] == st.session_state["user_name"]), None)
+        turma_aluno = str(aluno_obj.get("turma", "")).strip()
+        turma_obj = {}
         if turma_aluno:
             turma_obj = next((c for c in st.session_state["classes"] if c["nome"] == turma_aluno), None)
             if turma_obj and "link_zoom" in turma_obj: link_aula = turma_obj["link_zoom"]
         st.error("AULA AO VIVO AGORA")
         st.link_button("ENTRAR NA AULA (ZOOM)", link_aula, type="primary")
+
+        sessoes_finalizadas = [
+            s for s in st.session_state.get("class_sessions", [])
+            if str(s.get("turma", "")).strip() == turma_aluno
+            and str(s.get("status", "")).strip().lower() == "finalizada"
+        ]
+        total_aulas_turma = len(sessoes_finalizadas)
+
+        notas_aluno_aprovadas = [
+            g for g in st.session_state.get("grades", [])
+            if str(g.get("aluno", "")).strip() == aluno_nome
+            and str(g.get("status", "")).strip().lower() == "aprovado"
+        ]
+        notas_numericas = []
+        presencas_percent = []
+        for nota_obj in notas_aluno_aprovadas:
+            nota_txt = str(nota_obj.get("nota", "")).strip()
+            if not nota_txt:
+                continue
+            match_num = re.search(r"-?\d+(?:[.,]\d+)?", nota_txt)
+            if not match_num:
+                continue
+            valor_nota = _parse_float(match_num.group(0), default=0.0)
+            avaliacao_norm = normalize_text(nota_obj.get("avaliacao", ""))
+            if "%" in nota_txt or "presenca" in avaliacao_norm:
+                presencas_percent.append(max(0.0, min(100.0, valor_nota)))
+            elif 0.0 <= valor_nota <= 10.0:
+                notas_numericas.append(valor_nota)
+
+        presenca_media = (sum(presencas_percent) / len(presencas_percent)) if presencas_percent else None
+        if total_aulas_turma > 0:
+            fator_presenca = (presenca_media / 100.0) if presenca_media is not None else 1.0
+            aulas_assistidas = int(round(total_aulas_turma * fator_presenca))
+            aulas_assistidas = max(0, min(total_aulas_turma, aulas_assistidas))
+            aulas_label = f"{aulas_assistidas}/{total_aulas_turma}"
+            aulas_percent_label = f"{(aulas_assistidas / total_aulas_turma) * 100:.0f}%"
+        else:
+            aulas_label = "--"
+            aulas_percent_label = f"{presenca_media:.0f}%" if presenca_media is not None else "Sem dados"
+
+        media_geral = (sum(notas_numericas) / len(notas_numericas)) if notas_numericas else None
+        media_label = f"{media_geral:.1f}" if media_geral is not None else "--"
+        media_sub_label = f"{len(notas_numericas)} avaliacao(oes)" if notas_numericas else "Sem notas aprovadas"
+
+        provas_futuras = []
+        hoje = datetime.date.today()
+        for nota_obj in st.session_state.get("grades", []):
+            if str(nota_obj.get("aluno", "")).strip() != aluno_nome:
+                continue
+            avaliacao_txt = str(nota_obj.get("avaliacao", "")).strip()
+            avaliacao_norm = normalize_text(avaliacao_txt)
+            if "prova" not in avaliacao_norm and "test" not in avaliacao_norm:
+                continue
+            data_prova = parse_date(nota_obj.get("data", ""))
+            if data_prova and data_prova >= hoje:
+                provas_futuras.append((data_prova, avaliacao_txt or "Prova"))
+        if not provas_futuras and turma_aluno:
+            for agenda_obj in st.session_state.get("agenda", []):
+                if str(agenda_obj.get("turma", "")).strip() != turma_aluno:
+                    continue
+                titulo_agenda = str(agenda_obj.get("titulo", "")).strip()
+                titulo_norm = normalize_text(titulo_agenda)
+                if "prova" not in titulo_norm and "test" not in titulo_norm:
+                    continue
+                data_agenda = parse_date(agenda_obj.get("data", ""))
+                if data_agenda and data_agenda >= hoje:
+                    provas_futuras.append((data_agenda, titulo_agenda or "Prova"))
+        provas_futuras = sorted(provas_futuras, key=lambda item: item[0])
+        if provas_futuras:
+            proxima_prova_data, proxima_prova_titulo = provas_futuras[0]
+            proxima_prova_data_label = proxima_prova_data.strftime("%d/%m")
+            proxima_prova_titulo_label = proxima_prova_titulo
+        else:
+            proxima_prova_data_label = "--"
+            proxima_prova_titulo_label = "Sem prova agendada"
+
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
-        with col1: st.markdown("""<div class="dash-card"><div><div class="card-title">Aulas Assistidas</div><div class="card-value">24/30</div></div><div class="card-sub"><span class="trend-up">80%</span> <span class="trend-neutral">Concluído</span></div></div>""", unsafe_allow_html=True)
-        with col2: st.markdown("""<div class="dash-card"><div><div class="card-title">Média Geral</div><div class="card-value">8.5</div></div><div class="card-sub"><span class="trend-up">+0.5</span> <span class="trend-neutral">Último mês</span></div></div>""", unsafe_allow_html=True)
-        with col3: st.markdown("""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">15/02</div></div><div class="card-sub"><span style="color:#64748b">Oral Test - Unit 5</span></div></div>""", unsafe_allow_html=True)
+        with col1:
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Aulas Assistidas</div><div class="card-value">{aulas_label}</div></div><div class="card-sub"><span class="trend-up">{aulas_percent_label}</span> <span class="trend-neutral">da sua turma</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Média Geral</div><div class="card-value">{media_label}</div></div><div class="card-sub"><span class="trend-neutral">{media_sub_label}</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        with col3:
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">{proxima_prova_data_label}</div></div><div class="card-sub"><span style="color:#64748b">{proxima_prova_titulo_label}</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        if isinstance(turma_obj, dict) and turma_obj:
+            st.caption(
+                f"Turma: {turma_aluno or '-'} | Modulo: {str(turma_obj.get('modulo', '')).strip() or '-'} | "
+                f"Livro/Nivel: {student_book_level(aluno_obj) or str(turma_obj.get('livro', '')).strip() or '-'}"
+            )
 
     elif menu_aluno == "Agenda":
         st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
@@ -10424,44 +10531,65 @@ elif st.session_state["role"] == "Aluno":
 
     elif menu_aluno == "Minhas Aulas":
         st.markdown('<div class="main-header">Grade Curricular</div>', unsafe_allow_html=True)
-        modules = {"Módulo 1: Introdução": ["Aula 1.1 - Hello", "Aula 1.2 - Colors"], "Módulo 2: Verbos": ["Aula 2.1 - To Be", "Aula 2.2 - Can"]}
-        for mod, aulas in modules.items():
-            with st.expander(mod):
-                for aula in aulas: st.checkbox(f"{aula}", value=True)
-                st.button(f"Ver Material {mod}", key=mod)
-
-        st.markdown("### Historico de aulas")
         aluno_nome = st.session_state.get("user_name", "")
         aluno_obj = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
         turma_aluno = str(aluno_obj.get("turma", "")).strip()
-        historico_aulas = [
-            s for s in st.session_state.get("class_sessions", [])
-            if str(s.get("turma", "")).strip() == turma_aluno and str(s.get("status", "")).strip().lower() == "finalizada"
-        ]
-        historico_aulas = sorted(
-            historico_aulas,
-            key=lambda x: (
-                parse_date(x.get("data", "")) or datetime.date(1900, 1, 1),
-                parse_time(x.get("hora_inicio_real", x.get("hora_inicio_prevista", "00:00"))),
-            ),
-            reverse=True,
-        )
-        if not historico_aulas:
-            st.info("Nenhuma aula finalizada registrada para sua turma.")
+        if not turma_aluno:
+            st.info("Seu usuario nao esta vinculado a uma turma.")
         else:
-            df_hist = pd.DataFrame(historico_aulas)
-            col_order = [
-                "data",
-                "turma",
-                "professor",
-                "hora_inicio_real",
-                "hora_fim_real",
-                "titulo",
-                "licao",
-                "resumo_final",
+            turma_obj = next(
+                (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_aluno),
+                {},
+            )
+            livro_aluno = student_book_level(aluno_obj) or str(turma_obj.get("livro", "")).strip()
+            c_grade_1, c_grade_2, c_grade_3 = st.columns(3)
+            with c_grade_1:
+                st.metric("Turma", turma_aluno)
+            with c_grade_2:
+                st.metric("Modulo", str(turma_obj.get("modulo", "")).strip() or "-")
+            with c_grade_3:
+                st.metric("Livro/Nivel", livro_aluno or "-")
+            dias_grade = str(turma_obj.get("dias", "")).strip()
+            if dias_grade:
+                st.caption(f"Grade da turma: {dias_grade}")
+            link_turma = str(turma_obj.get("link_zoom", "")).strip()
+            if link_turma:
+                st.link_button("Entrar na aula da turma (Zoom)", link_turma)
+
+            st.markdown("### Conteudos e materias salvos pelo professor")
+            historico_aulas = [
+                s for s in st.session_state.get("class_sessions", [])
+                if str(s.get("turma", "")).strip() == turma_aluno and str(s.get("status", "")).strip().lower() == "finalizada"
             ]
-            df_hist = df_hist[[c for c in col_order if c in df_hist.columns]]
-            st.dataframe(df_hist, use_container_width=True)
+            historico_aulas = sorted(
+                historico_aulas,
+                key=lambda x: (
+                    parse_date(x.get("data", "")) or datetime.date(1900, 1, 1),
+                    parse_time(x.get("hora_inicio_real", x.get("hora_inicio_prevista", "00:00"))),
+                ),
+                reverse=True,
+            )
+            if not historico_aulas:
+                st.info("Nenhuma aula finalizada registrada para sua turma.")
+            else:
+                for sessao in historico_aulas[:20]:
+                    data_label = str(sessao.get("data", "")).strip() or "-"
+                    titulo_label = str(sessao.get("titulo", "")).strip() or "Aula"
+                    with st.expander(f"{data_label} | {titulo_label}", expanded=False):
+                        professor_label = str(sessao.get("professor", "")).strip() or "-"
+                        hora_inicio = str(sessao.get("hora_inicio_real", sessao.get("hora_inicio_prevista", ""))).strip()
+                        hora_fim = str(sessao.get("hora_fim_real", sessao.get("hora_fim_prevista", ""))).strip()
+                        if hora_inicio or hora_fim:
+                            st.caption(f"Professor: {professor_label} | Horario: {hora_inicio or '--'} - {hora_fim or '--'}")
+                        else:
+                            st.caption(f"Professor: {professor_label}")
+                        st.markdown(f"**Licao/Conteudo:** {str(sessao.get('licao', '')).strip() or '-'}")
+                        resumo_final = str(sessao.get("resumo_final", "")).strip()
+                        resumo_inicio = str(sessao.get("resumo_inicio", "")).strip()
+                        if resumo_final:
+                            st.markdown(f"**Resumo final:** {resumo_final}")
+                        elif resumo_inicio:
+                            st.markdown(f"**Objetivo da aula:** {resumo_inicio}")
 
     elif menu_aluno == "Boletim & Frequencia":
         st.markdown('<div class="main-header">Desempenho Acadêmico</div>', unsafe_allow_html=True)
@@ -10471,7 +10599,22 @@ elif st.session_state["role"] == "Aluno":
         with tab1:
             if notas: st.dataframe(pd.DataFrame(notas), use_container_width=True)
             else: st.info("Nenhuma nota lançada.")
-        with tab2: st.info("Frequência: 92% de presença.")
+        with tab2:
+            presencas = []
+            for nota_obj in notas:
+                avaliacao_norm = normalize_text(nota_obj.get("avaliacao", ""))
+                nota_txt = str(nota_obj.get("nota", "")).strip()
+                if "%" not in nota_txt and "presenca" not in avaliacao_norm:
+                    continue
+                match_num = re.search(r"-?\d+(?:[.,]\d+)?", nota_txt)
+                if not match_num:
+                    continue
+                presencas.append(max(0.0, min(100.0, _parse_float(match_num.group(0), default=0.0))))
+            if presencas:
+                media_presenca = sum(presencas) / len(presencas)
+                st.success(f"Frequência atual: {media_presenca:.0f}%")
+            else:
+                st.info("Frequência: sem dados aprovados ainda.")
 
     elif menu_aluno == "Mensagens":
         st.markdown('<div class="main-header">Mensagens</div>', unsafe_allow_html=True)
