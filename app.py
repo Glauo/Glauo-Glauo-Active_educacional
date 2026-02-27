@@ -6919,9 +6919,15 @@ def post_message_and_notify(
     include_students_without_turma_when_all=True,
     aluno="",
     professor_individual="",
+    recipient_entry=None,
 ):
     aluno = str(aluno or "").strip()
     professor_individual = str(professor_individual or "").strip()
+    recipient_entry = recipient_entry if isinstance(recipient_entry, dict) else {}
+    recipient_name = str(recipient_entry.get("name", "")).strip()
+    recipient_label = str(recipient_entry.get("label", recipient_name)).strip() or recipient_name
+    recipient_emails = [str(x).strip().lower() for x in recipient_entry.get("emails", []) if str(x).strip()]
+    recipient_whatsapps = [str(x).strip() for x in recipient_entry.get("whatsapps", []) if str(x).strip()]
     turma = str(turma or "Todas").strip() or "Todas"
     publico_label = str(publico or "Alunos").strip() or "Alunos"
     professor_label = str(professor or "Todos").strip() or "Todos"
@@ -6939,6 +6945,8 @@ def post_message_and_notify(
         publico_destino = "Aluno especifico"
     elif professor_individual:
         publico_destino = "Professor especifico"
+    elif recipient_name:
+        publico_destino = "Pessoa especifica"
     mensagem_obj = {
         "titulo": (titulo or "Aviso").strip(),
         "mensagem": (mensagem or "").strip(),
@@ -6949,6 +6957,7 @@ def post_message_and_notify(
         "professor": professor_label,
         "aluno": aluno,
         "professor_individual": professor_individual,
+        "destinatario_unico": recipient_label,
     }
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
@@ -6958,6 +6967,8 @@ def post_message_and_notify(
         destino_label = f"Destinatario: {mensagem_obj['aluno']}\nTurma: {mensagem_obj['turma']}"
     elif str(mensagem_obj.get("professor_individual", "")).strip():
         destino_label = f"Destinatario: {mensagem_obj.get('professor_individual', '')}\nTipo: Professor"
+    elif str(mensagem_obj.get("destinatario_unico", "")).strip():
+        destino_label = f"Destinatario: {mensagem_obj.get('destinatario_unico', '')}\nTipo: Usuario especifico"
     elif publico_label == "Professores":
         destino_label = f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
     elif publico_label == "Alunos e Professores":
@@ -6996,6 +7007,15 @@ def post_message_and_notify(
         )
     elif str(mensagem_obj.get("professor_individual", "")).strip():
         stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    elif str(mensagem_obj.get("destinatario_unico", "")).strip():
+        stats = _notify_direct_contacts(
+            mensagem_obj.get("destinatario_unico", "Destinatario"),
+            recipient_emails if bool(send_email) else [],
+            recipient_whatsapps if bool(send_whatsapp) else [],
+            assunto,
+            corpo,
+            origem,
+        )
     elif publico_label == "Professores":
         stats = notify_teachers_channels(
             assunto,
@@ -7050,7 +7070,7 @@ def post_message_and_notify(
 
 def _message_matches_student(message_obj, aluno_nome, turma_aluno):
     publico_msg = str((message_obj or {}).get("publico", "Alunos")).strip()
-    if publico_msg in ("Professores", "Professor especifico"):
+    if publico_msg in ("Professores", "Professor especifico", "Pessoa especifica"):
         return False
     aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
     if aluno_msg:
@@ -7072,6 +7092,8 @@ def _message_matches_teacher(message_obj, prof_nome, turmas_prof):
         return False
     if professor_individual_msg:
         return professor_individual_msg.lower() == prof_name
+    if publico_msg == "Pessoa especifica":
+        return False
     if publico_msg == "Professores":
         return professor_msg == "Todos" or professor_msg.strip().lower() == prof_name
     if publico_msg == "Alunos e Professores":
@@ -7085,11 +7107,14 @@ def _message_destination_label(message_obj):
     professor_msg = str((message_obj or {}).get("professor", "Todos")).strip() or "Todos"
     aluno_msg = str((message_obj or {}).get("aluno", "")).strip()
     professor_individual_msg = str((message_obj or {}).get("professor_individual", "")).strip()
+    destinatario_unico = str((message_obj or {}).get("destinatario_unico", "")).strip()
     turma_msg = str((message_obj or {}).get("turma", "")).strip() or "Todas"
     if aluno_msg:
         return f"Publico: Aluno especifico | Destino: {aluno_msg} | Turma: {turma_msg}"
     if professor_individual_msg:
         return f"Publico: Professor especifico | Destino: {professor_individual_msg}"
+    if destinatario_unico:
+        return f"Publico: Pessoa especifica | Destino: {destinatario_unico}"
     if publico_msg == "Professores":
         return f"Publico: Professores | Professor(es): {professor_msg}"
     if publico_msg == "Alunos e Professores":
@@ -14221,6 +14246,56 @@ elif st.session_state["role"] == "Coordenador":
                         [""] + professores_destino,
                         format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
                     )
+                st.markdown("**Envio individual extra (opcional)**")
+                alunos_extra_opts = sorted(
+                    {
+                        str(s.get("nome", "")).strip()
+                        for s in st.session_state.get("students", [])
+                        if str(s.get("nome", "")).strip()
+                    }
+                )
+                professores_extra_opts = sorted(
+                    {
+                        str(t.get("nome", "")).strip()
+                        for t in st.session_state.get("teachers", [])
+                        if str(t.get("nome", "")).strip()
+                    }
+                )
+                coordenadores_map = {}
+                for user_obj in st.session_state.get("users", []):
+                    perfil_user = str(user_obj.get("perfil", "")).strip().lower()
+                    if perfil_user not in ("coordenador", "admin"):
+                        continue
+                    nome_user = str(user_obj.get("pessoa", "")).strip() or str(user_obj.get("usuario", "")).strip()
+                    if not nome_user:
+                        continue
+                    key_nome = nome_user.lower()
+                    if key_nome not in coordenadores_map:
+                        coordenadores_map[key_nome] = {
+                            "nome": nome_user,
+                            "email": str(user_obj.get("email", "")).strip().lower(),
+                            "celular": str(user_obj.get("celular", "")).strip(),
+                        }
+                coordenadores_extra_opts = sorted(item.get("nome", "") for item in coordenadores_map.values() if item.get("nome", ""))
+                ce1, ce2, ce3 = st.columns(3)
+                with ce1:
+                    extra_aluno_nome = st.selectbox(
+                        "Aluno (extra individual)",
+                        [""] + alunos_extra_opts,
+                        format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
+                    )
+                with ce2:
+                    extra_prof_nome = st.selectbox(
+                        "Professor (extra individual)",
+                        [""] + professores_extra_opts,
+                        format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
+                    )
+                with ce3:
+                    extra_coord_nome = st.selectbox(
+                        "Coordenador (extra individual)",
+                        [""] + coordenadores_extra_opts,
+                        format_func=lambda p: "Selecione" if not str(p).strip() else str(p).strip(),
+                    )
                 ch1, ch2 = st.columns(2)
                 with ch1:
                     send_msg_email = st.checkbox(
@@ -14241,17 +14316,46 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Preencha titulo e mensagem.")
                     elif not send_msg_email and not send_msg_whatsapp:
                         st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
-                    elif publico_msg == "Aluno (individual)" and not isinstance(aluno_obj_msg, dict):
+                    elif sum(1 for v in (extra_aluno_nome, extra_prof_nome, extra_coord_nome) if str(v).strip()) > 1:
+                        st.error("No envio individual extra, selecione somente uma pessoa.")
+                    elif not any(str(v).strip() for v in (extra_aluno_nome, extra_prof_nome, extra_coord_nome)) and publico_msg == "Aluno (individual)" and not isinstance(aluno_obj_msg, dict):
                         st.error("Selecione a pessoa de destino.")
-                    elif publico_msg == "Professor (individual)" and not professor_individual_msg:
+                    elif not any(str(v).strip() for v in (extra_aluno_nome, extra_prof_nome, extra_coord_nome)) and publico_msg == "Professor (individual)" and not professor_individual_msg:
                         st.error("Selecione a pessoa de destino.")
                     else:
                         aluno_nome_msg = str(aluno_obj_msg.get("nome", "")).strip() if isinstance(aluno_obj_msg, dict) else ""
                         publico_api = publico_msg
+                        recipient_entry_msg = None
                         if publico_msg == "Aluno (individual)":
                             publico_api = "Alunos"
                         elif publico_msg == "Professor (individual)":
                             publico_api = "Professores"
+                        extra_alvo = ""
+                        extra_tipo = ""
+                        if str(extra_aluno_nome).strip():
+                            extra_tipo = "aluno"
+                            extra_alvo = str(extra_aluno_nome).strip()
+                        elif str(extra_prof_nome).strip():
+                            extra_tipo = "professor"
+                            extra_alvo = str(extra_prof_nome).strip()
+                        elif str(extra_coord_nome).strip():
+                            extra_tipo = "coordenador"
+                            extra_alvo = str(extra_coord_nome).strip()
+                        if extra_tipo == "aluno":
+                            aluno_nome_msg = extra_alvo
+                            publico_api = "Alunos"
+                        elif extra_tipo == "professor":
+                            professor_individual_msg = extra_alvo
+                            publico_api = "Professores"
+                        elif extra_tipo == "coordenador":
+                            coord_ref = coordenadores_map.get(extra_alvo.lower(), {})
+                            publico_api = "Pessoa especifica"
+                            recipient_entry_msg = {
+                                "name": extra_alvo,
+                                "label": f"{extra_alvo} (Coordenador)",
+                                "emails": [str(coord_ref.get("email", "")).strip().lower()],
+                                "whatsapps": [str(coord_ref.get("celular", "")).strip()],
+                            }
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
                             titulo=titulo_msg,
@@ -14264,6 +14368,7 @@ elif st.session_state["role"] == "Coordenador":
                             send_whatsapp=bool(send_msg_whatsapp),
                             aluno=aluno_nome_msg,
                             professor_individual=professor_individual_msg,
+                            recipient_entry=recipient_entry_msg,
                         )
                         st.success(
                             "Mensagem publicada. "
