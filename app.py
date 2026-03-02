@@ -14340,6 +14340,12 @@ elif st.session_state["role"] == "Coordenador":
                     key="fin_teacher_pay_selected_refs",
                     format_func=lambda ref: teacher_labels.get(ref, ref),
                 )
+                selected_teacher_items = [item for item in teacher_candidates if item.get("ref") in set(selected_teacher_refs)]
+                selected_teacher_total = sum(float(item.get("valor", 0) or 0) for item in selected_teacher_items)
+                st.caption(
+                    f"Selecionadas: {len(selected_teacher_items)} aula(s) | "
+                    f"Total a lancar: {format_money(selected_teacher_total)}"
+                )
                 tp4, tp5, tp6 = st.columns(3)
                 with tp4:
                     teacher_pay_data = st.date_input(
