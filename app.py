@@ -15260,6 +15260,85 @@ elif st.session_state["role"] == "Coordenador":
                         st.success(f"Pagamento de {launched} aula(s) lancado com sucesso.")
                         st.rerun()
 
+                st.divider()
+                st.markdown("### Lancamento manual de pagamento")
+                manual_turma_options = class_names()
+                if not manual_turma_options:
+                    st.info("Nenhuma turma cadastrada para lancamento manual.")
+                else:
+                    mp1, mp2, mp3 = st.columns(3)
+                    with mp1:
+                        teacher_manual_month_ref = st.date_input(
+                            "Mes de referencia (manual)",
+                            value=datetime.date.today(),
+                            format="DD/MM/YYYY",
+                            key="fin_teacher_manual_month_ref",
+                        )
+                    with mp2:
+                        teacher_manual_turma = st.selectbox(
+                            "Turma (manual)",
+                            manual_turma_options,
+                            key="fin_teacher_manual_turma",
+                        )
+                    turma_manual_obj = next(
+                        (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == str(teacher_manual_turma).strip()),
+                        {},
+                    )
+                    modulo_manual = str(turma_manual_obj.get("modulo", "")).strip()
+                    professor_manual = str(turma_manual_obj.get("professor", "")).strip()
+                    minutos_manual = _teacher_payment_minutes_for_module(modulo_manual, turma_obj=turma_manual_obj)
+                    valor_unitario_manual = _teacher_payment_value_for_minutes(minutos_manual)
+                    with mp3:
+                        teacher_manual_qtd = st.number_input(
+                            "Quantidade de aulas",
+                            min_value=1,
+                            max_value=100,
+                            value=1,
+                            step=1,
+                            key="fin_teacher_manual_qtd",
+                        )
+                    st.caption(
+                        f"Professor: {professor_manual or '-'} | Modulo: {modulo_manual or '-'} | "
+                        f"Duracao por aula: {minutos_manual} min | Valor unitario: {format_money(valor_unitario_manual)}"
+                    )
+                    teacher_manual_total = float(valor_unitario_manual) * int(teacher_manual_qtd or 0)
+                    st.caption(f"Total manual a lancar: {format_money(teacher_manual_total)}")
+                    if st.button(
+                        "Lancar pagamento manual do professor",
+                        type="secondary",
+                        key="fin_teacher_manual_launch_btn",
+                    ):
+                        if not professor_manual or not modulo_manual:
+                            st.error("A turma selecionada precisa ter professor e modulo cadastrados.")
+                        else:
+                            mes_manual_label = teacher_manual_month_ref.strftime("%m/%Y") if teacher_manual_month_ref else datetime.date.today().strftime("%m/%Y")
+                            valor_total_manual_txt = f"{teacher_manual_total:.2f}".replace(".", ",")
+                            st.session_state["payables"].append(
+                                {
+                                    "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
+                                    "descricao": f"Pagamento manual de aulas - {teacher_manual_turma} - {mes_manual_label}",
+                                    "valor": valor_total_manual_txt,
+                                    "valor_parcela": valor_total_manual_txt,
+                                    "parcela": "1",
+                                    "fornecedor": professor_manual,
+                                    "categoria_lancamento": "Professor",
+                                    "numero_pedido": f"MANUAL-{uuid.uuid4().hex[:6].upper()}",
+                                    "turma": str(teacher_manual_turma).strip(),
+                                    "modulo": modulo_manual,
+                                    "duracao_minutos": int(minutos_manual),
+                                    "quantidade_aulas": int(teacher_manual_qtd),
+                                    "valor_unitario_aula": f"{float(valor_unitario_manual):.2f}".replace(".", ","),
+                                    "data": teacher_pay_data.strftime("%d/%m/%Y"),
+                                    "vencimento": teacher_pay_venc.strftime("%d/%m/%Y"),
+                                    "cobranca": teacher_pay_cobranca,
+                                    "status": teacher_pay_status,
+                                    "lote_id": f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}",
+                                }
+                            )
+                            save_list(PAYABLES_FILE, st.session_state["payables"])
+                            st.success("Pagamento manual do professor lancado com sucesso.")
+                            st.rerun()
+
             with st.form("add_pag"):
                 st.markdown("### Lancar Despesa")
                 c1, c2, c3 = st.columns(3)
