@@ -4556,6 +4556,28 @@ def _consume_vip_package_for_class(turma_nome):
         save_list(STUDENTS_FILE, st.session_state.get("students", []))
     return consumidos
 
+def _vip_students_for_class(turma_nome):
+    turma_label = str(turma_nome or "").strip()
+    if not turma_label:
+        return []
+    vip_alunos = []
+    for aluno in st.session_state.get("students", []):
+        if str(aluno.get("turma", "")).strip() != turma_label:
+            continue
+        resumo_vip = _student_vip_summary(aluno)
+        if not resumo_vip:
+            continue
+        vip_alunos.append(
+            {
+                "nome": str(aluno.get("nome", "")).strip(),
+                "plano": str(resumo_vip.get("plano", "")).strip(),
+                "restantes": int(resumo_vip.get("restantes", 0)),
+                "total": int(resumo_vip.get("total", 0)),
+            }
+        )
+    vip_alunos.sort(key=lambda item: normalize_text(item.get("nome", "")))
+    return vip_alunos
+
 def _ensure_challenge_id(ch):
     if not isinstance(ch, dict):
         return False
@@ -11138,11 +11160,19 @@ elif st.session_state["role"] == "Professor":
             with tab_controle:
                 turma_ctrl = st.selectbox("Turma", turmas_prof, key="prof_ctrl_turma")
                 turma_obj = next((c for c in st.session_state.get("classes", []) if c.get("nome") == turma_ctrl), {})
+                vip_alunos_turma = _vip_students_for_class(turma_ctrl)
                 aulas_turma = [
                     a for a in st.session_state.get("agenda", [])
                     if str(a.get("turma", "")).strip() == str(turma_ctrl).strip()
                 ]
                 aulas_turma = sort_agenda(aulas_turma)
+
+                st.markdown("### Saldo VIP da turma")
+                if vip_alunos_turma:
+                    df_vip = pd.DataFrame(vip_alunos_turma)
+                    st.dataframe(df_vip, use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Nenhum aluno VIP nesta turma.")
 
                 prof_nome_atual = str(st.session_state.get("user_name", "")).strip()
                 sessoes_ativas = [
