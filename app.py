@@ -12329,17 +12329,18 @@ elif st.session_state["role"] == "Coordenador":
                     valor_restante_padrao = parse_int(st.session_state.get(vip_restantes_key, vip_aulas_total))
                     if valor_restante_padrao is None:
                         valor_restante_padrao = vip_aulas_total
-                    valor_restante_padrao = max(0, min(vip_aulas_total, int(valor_restante_padrao)))
+                    valor_restante_padrao = max(0, min(50, int(valor_restante_padrao)))
                     st.session_state[vip_restantes_key] = valor_restante_padrao
                     vip_aulas_restantes = int(
                         st.number_input(
                             "Aulas restantes no pacote",
                             min_value=0,
-                            max_value=max(1, vip_aulas_total),
+                            max_value=50,
                             step=1,
                             key=vip_restantes_key,
                         )
                     )
+                    vip_aulas_total = max(int(vip_aulas_total), int(vip_aulas_restantes))
 
                 st.divider()
                 st.markdown("### Acesso do Aluno (opcional)")
@@ -12648,16 +12649,17 @@ elif st.session_state["role"] == "Coordenador":
                             vip_restantes_atual = parse_int(aluno_obj.get("vip_aulas_restantes", new_vip_total))
                             if vip_restantes_atual is None:
                                 vip_restantes_atual = new_vip_total
-                            vip_restantes_atual = max(0, min(new_vip_total, int(vip_restantes_atual)))
+                            vip_restantes_atual = max(0, min(50, int(vip_restantes_atual)))
                             new_vip_restantes = int(
                                 st.number_input(
                                     "Aulas restantes no pacote",
                                     min_value=0,
-                                    max_value=max(1, new_vip_total),
+                                    max_value=50,
                                     step=1,
                                     value=vip_restantes_atual,
                                 )
                             )
+                            new_vip_total = max(int(new_vip_total), int(new_vip_restantes))
 
                         st.divider()
                         st.markdown("### Acesso do Aluno (opcional)")
