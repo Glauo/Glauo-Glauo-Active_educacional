@@ -7609,6 +7609,145 @@ def add_receivable(
     save_list(RECEIVABLES_FILE, st.session_state["receivables"])
     return codigo
 
+def _current_month_bounds(base_date=None):
+    ref = base_date if isinstance(base_date, datetime.date) else datetime.date.today()
+    month_start = ref.replace(day=1)
+    month_end = add_months(month_start, 1) - datetime.timedelta(days=1)
+    return month_start, month_end
+
+def _financial_open_status(item_obj):
+    status = normalize_text((item_obj or {}).get("status", "Aberto"))
+    return status not in ("pago", "cancelado")
+
+def _financial_due_total_for_month(items, date_field="vencimento", ref_date=None):
+    month_start, month_end = _current_month_bounds(ref_date)
+    total = 0.0
+    for item in items or []:
+        if not _financial_open_status(item):
+            continue
+        due_date = parse_date((item or {}).get(date_field, ""))
+        if not due_date or due_date < month_start or due_date > month_end:
+            continue
+        total += parse_money((item or {}).get("valor_parcela", (item or {}).get("valor", 0)))
+    return total
+
+def _teacher_payment_ref_for_session(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    sess_id = str(sess.get("id", "")).strip()
+    if sess_id:
+        return f"CLS-{sess_id}"
+    parts = [
+        str(sess.get("turma", "")).strip(),
+        str(sess.get("professor", "")).strip(),
+        str(sess.get("data", "")).strip(),
+        str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip(),
+        str(sess.get("titulo", "")).strip(),
+        str(sess.get("licao", "")).strip(),
+    ]
+    return "CLS-" + re.sub(r"[^A-Z0-9]+", "-", normalize_text("|".join(parts)).upper()).strip("-")
+
+def _session_duration_minutes_from_times(session_obj, turma_obj=None):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    turma = turma_obj if isinstance(turma_obj, dict) else {}
+    hora_inicio = (
+        str(sess.get("hora_inicio_real", "")).strip()
+        or str(sess.get("hora_inicio_prevista", "")).strip()
+        or str(turma.get("hora_inicio", "")).strip()
+    )
+    hora_fim = (
+        str(sess.get("hora_fim_real", "")).strip()
+        or str(sess.get("hora_fim_prevista", "")).strip()
+        or str(turma.get("hora_fim", "")).strip()
+    )
+    inicio_time = parse_time(hora_inicio)
+    fim_time = parse_time(hora_fim)
+    if not inicio_time or not fim_time:
+        return 0
+    inicio_dt = datetime.datetime.combine(datetime.date.today(), inicio_time)
+    fim_dt = datetime.datetime.combine(datetime.date.today(), fim_time)
+    if fim_dt <= inicio_dt:
+        return 0
+    return int((fim_dt - inicio_dt).total_seconds() // 60)
+
+def _teacher_payment_minutes_for_module(module_label, session_obj=None, turma_obj=None):
+    modulo_norm = normalize_text(module_label)
+    if "intensivo" in modulo_norm and "vip" in modulo_norm:
+        return 30
+    if "vip" in modulo_norm and "intensivo" not in modulo_norm:
+        return 60
+    if "presencial em turma" in modulo_norm or ("presencial" in modulo_norm and "turma" in modulo_norm):
+        return 120
+    if "turma online" in modulo_norm or ("online" in modulo_norm and "turma" in modulo_norm):
+        return 120
+    if "grupo" in modulo_norm:
+        return 120
+    if "kids" in modulo_norm and "completo" in modulo_norm:
+        return 120
+    if "terceira idade" in modulo_norm:
+        return 120
+    minutes_by_time = _session_duration_minutes_from_times(session_obj, turma_obj)
+    if minutes_by_time > 0:
+        return minutes_by_time
+    return 60
+
+def _teacher_payment_value_for_minutes(minutes):
+    if minutes <= 30:
+        return 25.0
+    if minutes <= 60:
+        return 50.0
+    return 100.0
+
+def _teacher_payment_info_for_session(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    turma_nome = str(sess.get("turma", "")).strip()
+    turma_obj = next(
+        (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome),
+        {},
+    )
+    modulo_label = str(turma_obj.get("modulo", "")).strip() or str(sess.get("modulo", "")).strip()
+    minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
+    valor = _teacher_payment_value_for_minutes(minutos)
+    return {
+        "ref": _teacher_payment_ref_for_session(sess),
+        "professor": str(sess.get("professor", "")).strip(),
+        "turma": turma_nome,
+        "modulo": modulo_label,
+        "data": str(sess.get("data", "")).strip(),
+        "hora": str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip(),
+        "minutos": int(minutos),
+        "valor": float(valor),
+        "descricao": f"Pagamento aula {turma_nome} - {str(sess.get('data', '')).strip()}",
+        "session_id": str(sess.get("id", "")).strip(),
+    }
+
+def _teacher_payment_already_launched(session_obj):
+    ref = _teacher_payment_ref_for_session(session_obj)
+    for payable in st.session_state.get("payables", []):
+        if str(payable.get("class_session_ref", "")).strip() == ref:
+            return True
+    return False
+
+def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_name="Todas"):
+    month_start, month_end = _current_month_bounds(month_ref)
+    prof_target = str(professor_name or "Todos").strip() or "Todos"
+    turma_target = str(turma_name or "Todas").strip() or "Todas"
+    out = []
+    for sess in st.session_state.get("class_sessions", []):
+        if normalize_text(sess.get("status", "")) != "finalizada":
+            continue
+        sess_date = parse_date(sess.get("data", ""))
+        if not sess_date or sess_date < month_start or sess_date > month_end:
+            continue
+        if prof_target != "Todos" and str(sess.get("professor", "")).strip() != prof_target:
+            continue
+        if turma_target != "Todas" and str(sess.get("turma", "")).strip() != turma_target:
+            continue
+        if _teacher_payment_already_launched(sess):
+            continue
+        out.append(_teacher_payment_info_for_session(sess))
+    out.sort(key=lambda item: (parse_date(item.get("data", "")) or month_start, item.get("professor", ""), item.get("turma", "")))
+    return out
+
 def allowed_portals(profile):
     if profile == "Aluno": return ["Aluno"]
     if profile == "Professor": return ["Professor"]
@@ -11951,6 +12090,8 @@ elif st.session_state["role"] == "Coordenador":
             for i in st.session_state["payables"]
             if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
         )
+        total_rec_mes = _financial_due_total_for_month(st.session_state.get("receivables", []), date_field="vencimento")
+        total_pag_mes = _financial_due_total_for_month(st.session_state.get("payables", []), date_field="vencimento")
         saldo = total_rec - total_pag
         c4, c5, c6 = st.columns(3)
         with c4: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Receber</div><div class=\"card-value\" style=\"color:#2563eb;\">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
@@ -11958,6 +12099,25 @@ elif st.session_state["role"] == "Coordenador":
         with c6:
              color = "#16a34a" if saldo >= 0 else "#dc2626"
              st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Saldo Atual</div><div class=\"card-value\" style=\"color:{color};\">{format_money(saldo)}</div></div></div>""", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class="dash-card">
+              <div class="card-title">Mes Vigente</div>
+              <div style="display:flex; gap:32px; flex-wrap:wrap; margin-top:10px;">
+                <div>
+                  <div class="card-sub">A receber no mes</div>
+                  <div class="card-value" style="color:#2563eb;">{format_money(total_rec_mes)}</div>
+                </div>
+                <div>
+                  <div class="card-sub">A pagar no mes</div>
+                  <div class="card-value" style="color:#dc2626;">{format_money(total_pag_mes)}</div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     elif menu_coord == "Agenda":
         st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
@@ -14933,6 +15093,129 @@ elif st.session_state["role"] == "Coordenador":
                             st.success(f"Baixa automática realizada: {count} lançamento(s).")
                             st.rerun()
         with tab2:
+            if st.session_state.pop("fin_teacher_pay_reset_pending", False):
+                st.session_state.pop("fin_teacher_pay_selected_refs", None)
+            with st.container(border=True):
+                st.markdown("### Lancar Pagamento de Aulas do Professor")
+                st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
+                tp1, tp2, tp3 = st.columns(3)
+                with tp1:
+                    teacher_pay_month_ref = st.date_input(
+                        "Mes de referencia",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_pay_month_ref",
+                    )
+                teacher_options = ["Todos"] + sorted(
+                    {
+                        str(t.get("nome", "")).strip()
+                        for t in st.session_state.get("teachers", [])
+                        if str(t.get("nome", "")).strip()
+                    }
+                )
+                turma_options_pay = ["Todas"] + class_names()
+                with tp2:
+                    teacher_pay_prof = st.selectbox("Professor", teacher_options, key="fin_teacher_pay_prof")
+                with tp3:
+                    teacher_pay_turma = st.selectbox("Turma", turma_options_pay, key="fin_teacher_pay_turma")
+
+                teacher_candidates = _teacher_payment_candidates(
+                    month_ref=teacher_pay_month_ref,
+                    professor_name=teacher_pay_prof,
+                    turma_name=teacher_pay_turma,
+                )
+                teacher_labels = {
+                    item["ref"]: (
+                        f"{item['data']} | {item['professor']} | {item['turma']} | "
+                        f"{item['modulo'] or 'Modulo nao informado'} | "
+                        f"{item['minutos']} min | {format_money(item['valor'])}"
+                    )
+                    for item in teacher_candidates
+                }
+                teacher_total = sum(float(item.get("valor", 0) or 0) for item in teacher_candidates)
+                st.caption(
+                    f"Aulas finalizadas disponiveis: {len(teacher_candidates)} | "
+                    f"Total potencial: {format_money(teacher_total)}"
+                )
+                selected_teacher_refs = st.multiselect(
+                    "Aulas finalizadas para lancar pagamento",
+                    [item["ref"] for item in teacher_candidates],
+                    key="fin_teacher_pay_selected_refs",
+                    format_func=lambda ref: teacher_labels.get(ref, ref),
+                )
+                tp4, tp5, tp6 = st.columns(3)
+                with tp4:
+                    teacher_pay_data = st.date_input(
+                        "Data do lancamento",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_pay_data",
+                    )
+                with tp5:
+                    teacher_pay_venc = st.date_input(
+                        "Vencimento",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_pay_venc",
+                    )
+                with tp6:
+                    teacher_pay_status = st.selectbox(
+                        "Status",
+                        ["Aberto", "Pago"],
+                        key="fin_teacher_pay_status",
+                    )
+                teacher_pay_cobranca = st.selectbox(
+                    "Forma de pagamento",
+                    ["Transferencia", "Pix", "Dinheiro", "Boleto", "Cartao"],
+                    index=0,
+                    key="fin_teacher_pay_cobranca",
+                )
+                if st.button(
+                    "Lancar pagamentos das aulas selecionadas",
+                    type="primary",
+                    key="fin_teacher_pay_launch_btn",
+                    disabled=not bool(selected_teacher_refs),
+                ):
+                    if not selected_teacher_refs:
+                        st.error("Selecione ao menos uma aula finalizada.")
+                    else:
+                        candidates_by_ref = {item["ref"]: item for item in teacher_candidates}
+                        lote_id_teacher = f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+                        launched = 0
+                        for ref in selected_teacher_refs:
+                            item = candidates_by_ref.get(ref)
+                            if not item:
+                                continue
+                            valor_txt = f"{float(item.get('valor', 0) or 0):.2f}".replace(".", ",")
+                            st.session_state["payables"].append(
+                                {
+                                    "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
+                                    "descricao": str(item.get("descricao", "")).strip() or "Pagamento de aula",
+                                    "valor": valor_txt,
+                                    "valor_parcela": valor_txt,
+                                    "parcela": "1",
+                                    "fornecedor": str(item.get("professor", "")).strip(),
+                                    "categoria_lancamento": "Professor",
+                                    "numero_pedido": ref,
+                                    "class_session_ref": ref,
+                                    "class_session_id": str(item.get("session_id", "")).strip(),
+                                    "turma": str(item.get("turma", "")).strip(),
+                                    "modulo": str(item.get("modulo", "")).strip(),
+                                    "data_aula": str(item.get("data", "")).strip(),
+                                    "duracao_minutos": int(item.get("minutos", 0) or 0),
+                                    "data": teacher_pay_data.strftime("%d/%m/%Y"),
+                                    "vencimento": teacher_pay_venc.strftime("%d/%m/%Y"),
+                                    "cobranca": teacher_pay_cobranca,
+                                    "status": teacher_pay_status,
+                                    "lote_id": lote_id_teacher,
+                                }
+                            )
+                            launched += 1
+                        save_list(PAYABLES_FILE, st.session_state["payables"])
+                        st.session_state["fin_teacher_pay_reset_pending"] = True
+                        st.success(f"Pagamento de {launched} aula(s) lancado com sucesso.")
+                        st.rerun()
+
             with st.form("add_pag"):
                 st.markdown("### Lancar Despesa")
                 c1, c2, c3 = st.columns(3)
@@ -15017,6 +15300,10 @@ elif st.session_state["role"] == "Coordenador":
                     "fornecedor",
                     "descricao",
                     "categoria_lancamento",
+                    "turma",
+                    "modulo",
+                    "data_aula",
+                    "duracao_minutos",
                     "numero_pedido",
                     "valor_parcela",
                     "parcela",
