@@ -4451,15 +4451,103 @@ def _ensure_challenge_store_ids():
     if changed:
         save_list(CHALLENGES_FILE, st.session_state["challenges"])
 
-def get_weekly_challenge(level, week_key):
+def _challenge_target_type(value):
+    target_norm = normalize_text(value)
+    if "turma" in target_norm:
+        return "turma"
+    if "vip" in target_norm and "aluno" in target_norm:
+        return "aluno_vip"
+    if "aluno" in target_norm:
+        return "aluno_vip"
+    return "nivel"
+
+def _challenge_target_parts(challenge_obj):
+    ch = challenge_obj if isinstance(challenge_obj, dict) else {}
+    return (
+        _challenge_target_type(ch.get("target_type", "nivel")),
+        str(ch.get("target_turma", "")).strip(),
+        str(ch.get("target_aluno", "")).strip(),
+    )
+
+def _challenge_target_label(challenge_obj):
+    target_type, target_turma, target_aluno = _challenge_target_parts(challenge_obj)
+    if target_type == "turma":
+        return f"Turma: {target_turma or '-'}"
+    if target_type == "aluno_vip":
+        return f"Aluno VIP: {target_aluno or '-'}"
+    return f"Nivel: {_norm_book_level((challenge_obj or {}).get('nivel', '')) or '-'}"
+
+def get_weekly_challenge_for_target(level, week_key, target_type="nivel", target_turma="", target_aluno=""):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
+    target_type = _challenge_target_type(target_type)
+    target_turma = str(target_turma or "").strip()
+    target_aluno = str(target_aluno or "").strip()
     for ch in st.session_state.get("challenges", []):
-        if _norm_book_level(ch.get("nivel", "")) == level and str(ch.get("semana", "")).strip() == week_key:
-            return ch
+        ch_type, ch_turma, ch_aluno = _challenge_target_parts(ch)
+        if str(ch.get("semana", "")).strip() != week_key:
+            continue
+        if ch_type != target_type:
+            continue
+        if target_type == "turma":
+            if ch_turma != target_turma:
+                continue
+        elif target_type == "aluno_vip":
+            if ch_aluno != target_aluno:
+                continue
+        elif _norm_book_level(ch.get("nivel", "")) != level:
+            continue
+        return ch
     return None
 
-def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica=""):
+def get_weekly_challenge(level, week_key):
+    return get_weekly_challenge_for_target(level, week_key, target_type="nivel")
+
+def _challenge_matches_student(challenge_obj, student_obj):
+    if not isinstance(challenge_obj, dict) or not isinstance(student_obj, dict):
+        return False
+    target_type, target_turma, target_aluno = _challenge_target_parts(challenge_obj)
+    aluno_nome = str(student_obj.get("nome", "")).strip()
+    turma_nome = str(student_obj.get("turma", "")).strip()
+    if target_type == "turma":
+        return bool(target_turma) and target_turma == turma_nome
+    if target_type == "aluno_vip":
+        return bool(target_aluno) and target_aluno == aluno_nome
+    return student_book_level(student_obj) == _norm_book_level(challenge_obj.get("nivel", ""))
+
+def _students_for_challenge_target(level, target_type="nivel", target_turma="", target_aluno=""):
+    level = _norm_book_level(level)
+    target_type = _challenge_target_type(target_type)
+    target_turma = str(target_turma or "").strip()
+    target_aluno = str(target_aluno or "").strip()
+    out = []
+    for student in st.session_state.get("students", []):
+        if target_type == "turma":
+            if str(student.get("turma", "")).strip() != target_turma:
+                continue
+        elif target_type == "aluno_vip":
+            if str(student.get("nome", "")).strip() != target_aluno:
+                continue
+        elif student_book_level(student) != level:
+            continue
+        out.append(student)
+    return out
+
+def get_student_weekly_challenges(student_obj, week_key):
+    week_key = str(week_key or "").strip()
+    desafios = [
+        ch for ch in st.session_state.get("challenges", [])
+        if str(ch.get("semana", "")).strip() == week_key and _challenge_matches_student(ch, student_obj)
+    ]
+    desafios.sort(
+        key=lambda ch: (
+            {"aluno_vip": 0, "turma": 1, "nivel": 2}.get(_challenge_target_type(ch.get("target_type", "nivel")), 9),
+            str(ch.get("titulo", "")).strip().lower(),
+        )
+    )
+    return desafios
+
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno=""):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     titulo = str(titulo or "").strip()
@@ -4469,7 +4557,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
     due_str = due_date.strftime("%d/%m/%Y") if isinstance(due_date, datetime.date) else str(due_date or "").strip()
     rubrica = str(rubrica or "").strip()
     dica = str(dica or "").strip()
-    existing = get_weekly_challenge(level, week_key)
+    target_type = _challenge_target_type(target_type)
+    target_turma = str(target_turma or "").strip()
+    target_aluno = str(target_aluno or "").strip()
+    existing = get_weekly_challenge_for_target(level, week_key, target_type=target_type, target_turma=target_turma, target_aluno=target_aluno)
     if existing:
         existing["nivel"] = level
         existing["semana"] = week_key
@@ -4482,7 +4573,11 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             existing["rubrica"] = rubrica
         if dica or "dica" in existing:
             existing["dica"] = dica
+        existing["target_type"] = target_type
+        existing["target_turma"] = target_turma
+        existing["target_aluno"] = target_aluno
         existing["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+        saved = existing
     else:
         ch = {
             "id": uuid.uuid4().hex,
@@ -4495,11 +4590,16 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             "due_date": due_str,
             "rubrica": rubrica,
             "dica": dica,
+            "target_type": target_type,
+            "target_turma": target_turma,
+            "target_aluno": target_aluno,
             "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
             "updated_at": "",
         }
         st.session_state["challenges"].append(ch)
+        saved = ch
     save_list(CHALLENGES_FILE, st.session_state["challenges"])
+    return saved
 
 def has_completed_challenge(challenge_id, aluno_nome):
     cid = str(challenge_id or "").strip()
@@ -4547,6 +4647,8 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
             "aluno": aluno_nome,
             "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
             "semana": str(challenge_obj.get("semana", "")).strip(),
+            "challenge_title": str(challenge_obj.get("titulo", "")).strip(),
+            "challenge_target": _challenge_target_label(challenge_obj),
             "pontos": int(pontos_final),
             "status": status_final,
             "done_at": now,
@@ -6980,21 +7082,63 @@ def email_students_by_level(level, assunto, corpo, origem):
     stats["enviados"] = stats["email_ok"]
     return stats
 
-def notify_new_challenge_by_level(level, week_key, titulo, descricao):
-    level_label = _norm_book_level(level)
-    week_label = str(week_key or "").strip()
-    title_label = str(titulo or "Desafio da semana").strip() or "Desafio da semana"
-    description_label = str(descricao or "").strip()
-    assunto = f"[Active] Tem desafio novo - {level_label} ({week_label})"
-    corpo = (
-        "Tem desafio novo para voce no Active.\n"
-        f"Nivel: {level_label}\n"
-        f"Semana: {week_label}\n\n"
-        f"{title_label}\n\n"
-        f"{description_label}\n\n"
-        "Acesse o portal do aluno > Desafios para responder e enviar."
+def notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True):
+    challenge = challenge_obj if isinstance(challenge_obj, dict) else {}
+    title_label = str(challenge.get("titulo", "Desafio da semana")).strip() or "Desafio da semana"
+    description_label = str(challenge.get("descricao", "")).strip()
+    week_label = str(challenge.get("semana", "")).strip()
+    level_label = _norm_book_level(challenge.get("nivel", ""))
+    due_label = str(challenge.get("due_date", "")).strip()
+    target_label = _challenge_target_label(challenge)
+    recipients = _students_for_challenge_target(
+        challenge.get("nivel", ""),
+        target_type=challenge.get("target_type", "nivel"),
+        target_turma=challenge.get("target_turma", ""),
+        target_aluno=challenge.get("target_aluno", ""),
     )
-    return email_students_by_level(level_label, assunto, corpo, "Desafios")
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    for student in recipients:
+        aluno_nome = str(student.get("nome", "")).strip()
+        if not aluno_nome:
+            continue
+        mensagem = (
+            f"Novo desafio liberado no Active.\n"
+            f"{target_label}\n"
+            f"Semana: {week_label}\n"
+            f"Nivel: {level_label or '-'}\n"
+            f"Prazo: {due_label or 'sem prazo'}\n\n"
+            f"{description_label}\n\n"
+            f"Acesse o portal do aluno > Desafios para responder."
+        )
+        partial = post_message_and_notify(
+            autor=str(challenge.get("autor", "Coordenacao")).strip() or "Coordenacao",
+            titulo=title_label,
+            mensagem=mensagem,
+            turma=str(student.get("turma", "")).strip() or "Sem Turma",
+            origem="Desafios",
+            publico="Alunos",
+            send_email=bool(send_email),
+            send_whatsapp=bool(send_whatsapp),
+            aluno=aluno_nome,
+        )
+        for key in stats:
+            stats[key] += int(partial.get(key, 0))
+    stats["total"] = stats["email_total"]
+    stats["enviados"] = stats["email_ok"]
+    return stats
+
+def notify_new_challenge_by_level(level, week_key, titulo, descricao):
+    challenge_obj = {
+        "nivel": level,
+        "semana": week_key,
+        "titulo": titulo,
+        "descricao": descricao,
+        "target_type": "nivel",
+        "target_turma": "",
+        "target_aluno": "",
+        "autor": st.session_state.get("user_name", "Coordenacao"),
+    }
+    return notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True)
 
 def post_message_and_notify(
     autor,
@@ -10168,70 +10312,76 @@ elif st.session_state["role"] == "Aluno":
         total_pts = student_points(aluno_nome)
         st.markdown(f"**Pontuacao total:** {total_pts} ponto(s)")
 
-        ch = get_weekly_challenge(nivel, semana)
-        if not ch:
-            st.info("Ainda nao foi publicado um desafio para sua semana/nivel.")
+        desafios_semana = get_student_weekly_challenges(aluno_obj, semana)
+        if not desafios_semana:
+            st.info("Ainda nao foi publicado desafio para voce nesta semana.")
         else:
-            st.markdown(f"### {ch.get('titulo','Desafio')}")
-            st.write(ch.get("descricao", ""))
-            if str(ch.get("dica", "")).strip():
-                st.info(f"Dica: {str(ch.get('dica','')).strip()}")
-            st.caption(f"Pontos: {ch.get('pontos', 0)} | Publicado por: {ch.get('autor','')} | Prazo: {ch.get('due_date','') or 'sem prazo'}")
-            cid = ch.get("id", "")
-            sub = get_challenge_submission(cid, aluno_nome) or {}
-            done = has_completed_challenge(cid, aluno_nome)
+            st.markdown("### Desafios disponiveis")
+            for idx, ch in enumerate(desafios_semana, start=1):
+                st.markdown(f"### {idx}. {ch.get('titulo','Desafio')}")
+                st.caption(
+                    f"{_challenge_target_label(ch)} | Pontos: {ch.get('pontos', 0)} | "
+                    f"Publicado por: {ch.get('autor','')} | Prazo: {ch.get('due_date','') or 'sem prazo'}"
+                )
+                st.write(ch.get("descricao", ""))
+                if str(ch.get("dica", "")).strip():
+                    st.info(f"Dica: {str(ch.get('dica','')).strip()}")
+                cid = ch.get("id", "")
+                sub = get_challenge_submission(cid, aluno_nome) or {}
+                done = has_completed_challenge(cid, aluno_nome)
 
-            if sub:
-                st.markdown("#### Sua avaliacao")
-                cols = st.columns([1, 1, 1])
-                cols[0].metric("Status", str(sub.get("status", "") or "Concluido"))
-                if "score" in sub:
-                    try:
-                        cols[1].metric("Nota", int(sub.get("score") or 0))
-                    except Exception:
-                        cols[1].metric("Nota", str(sub.get("score", "")))
-                cols[2].metric("Pontos", int(sub.get("pontos") or 0))
-                if str(sub.get("feedback", "")).strip():
-                    st.write(sub.get("feedback", ""))
-                if str(sub.get("resposta", "")).strip():
-                    with st.expander("Ver minha resposta"):
-                        st.write(sub.get("resposta", ""))
-
-            if done:
-                st.success("Voce ja concluiu este desafio (aprovado).")
-            else:
-                api_key = get_groq_api_key()
-                if not api_key:
-                    st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY em secrets/variavel de ambiente.")
-                else:
-                    default_answer = str(sub.get("resposta", "") or "")
-                    resp_key = f"challenge_answer_{cid}_{aluno_nome}".replace(" ", "_")
-                    resposta = st.text_area("Sua resposta (escreva aqui)", value=default_answer, height=180, key=resp_key)
-                    if st.button("Enviar resposta para avaliacao", type="primary", key=f"send_ch_{cid}"):
+                if sub:
+                    st.markdown("#### Sua avaliacao")
+                    cols = st.columns([1, 1, 1])
+                    cols[0].metric("Status", str(sub.get("status", "") or "Concluido"))
+                    if "score" in sub:
                         try:
-                            ev = evaluate_challenge_answer_ai(ch, nivel, resposta)
-                        except Exception as exc:
-                            st.error(f"Falha ao avaliar com IA: {exc}")
-                        else:
-                            pontos_awarded = int(ch.get("pontos") or 0) if ev.get("passed") else 0
-                            status = "Aprovado" if ev.get("passed") else "Reprovado"
-                            ok, msg = complete_challenge(
-                                ch,
-                                aluno_nome,
-                                resposta=resposta,
-                                score=ev.get("score"),
-                                feedback=ev.get("feedback"),
-                                status=status,
-                                pontos_awarded=pontos_awarded,
-                            )
-                            if ok:
-                                if pontos_awarded > 0:
-                                    st.success("Resposta enviada e aprovada! Pontos adicionados.")
-                                else:
-                                    st.warning("Resposta enviada, mas ainda nao atingiu a nota minima. Voce pode melhorar e reenviar.")
-                                st.rerun()
+                            cols[1].metric("Nota", int(sub.get("score") or 0))
+                        except Exception:
+                            cols[1].metric("Nota", str(sub.get("score", "")))
+                    cols[2].metric("Pontos", int(sub.get("pontos") or 0))
+                    if str(sub.get("feedback", "")).strip():
+                        st.write(sub.get("feedback", ""))
+                    if str(sub.get("resposta", "")).strip():
+                        with st.expander(f"Ver minha resposta - {ch.get('titulo','Desafio')}"):
+                            st.write(sub.get("resposta", ""))
+
+                if done:
+                    st.success("Voce ja concluiu este desafio (aprovado).")
+                else:
+                    api_key = get_groq_api_key()
+                    if not api_key:
+                        st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY em secrets/variavel de ambiente.")
+                    else:
+                        default_answer = str(sub.get("resposta", "") or "")
+                        resp_key = f"challenge_answer_{cid}_{aluno_nome}".replace(" ", "_")
+                        resposta = st.text_area("Sua resposta (escreva aqui)", value=default_answer, height=180, key=resp_key)
+                        if st.button("Enviar resposta para avaliacao", type="primary", key=f"send_ch_{cid}"):
+                            try:
+                                ev = evaluate_challenge_answer_ai(ch, _norm_book_level(ch.get("nivel", "")) or nivel, resposta)
+                            except Exception as exc:
+                                st.error(f"Falha ao avaliar com IA: {exc}")
                             else:
-                                st.error(msg)
+                                pontos_awarded = int(ch.get("pontos") or 0) if ev.get("passed") else 0
+                                status = "Aprovado" if ev.get("passed") else "Reprovado"
+                                ok, msg = complete_challenge(
+                                    ch,
+                                    aluno_nome,
+                                    resposta=resposta,
+                                    score=ev.get("score"),
+                                    feedback=ev.get("feedback"),
+                                    status=status,
+                                    pontos_awarded=pontos_awarded,
+                                )
+                                if ok:
+                                    if pontos_awarded > 0:
+                                        st.success("Resposta enviada e aprovada! Pontos adicionados.")
+                                    else:
+                                        st.warning("Resposta enviada, mas ainda nao atingiu a nota minima. Voce pode melhorar e reenviar.")
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                st.divider()
 
         st.markdown("### Historico de concluidos")
         concluidos = [c for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome]
@@ -10239,7 +10389,7 @@ elif st.session_state["role"] == "Aluno":
             st.info("Nenhum desafio concluido ainda.")
         else:
             df = pd.DataFrame(concluidos)
-            col_order = [c for c in ["done_at", "semana", "nivel", "status", "score", "pontos", "challenge_id"] if c in df.columns]
+            col_order = [c for c in ["done_at", "semana", "challenge_title", "challenge_target", "nivel", "status", "score", "pontos", "challenge_id"] if c in df.columns]
             if col_order:
                 df = df[col_order]
             st.dataframe(df, use_container_width=True)
@@ -14781,7 +14931,33 @@ elif st.session_state["role"] == "Coordenador":
 
         with c_pub:
             st.markdown("### Publicar / editar")
-            nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
+            target_options = ["Nivel (Livro)", "Turma", "Aluno VIP"]
+            target_choice = st.selectbox("Diretorio do desafio", target_options, key="coord_ch_target_type")
+            target_type = _challenge_target_type(target_choice)
+            target_turma = ""
+            target_aluno = ""
+            nivel = "Livro 1"
+            if target_type == "turma":
+                turma_options = class_names()
+                if not turma_options:
+                    st.warning("Nenhuma turma cadastrada para direcionar o desafio.")
+                else:
+                    target_turma = st.selectbox("Turma de destino", turma_options, key="coord_ch_target_turma")
+                    turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == target_turma), {})
+                    nivel = _norm_book_level(turma_obj.get("livro", "")) or "Livro 1"
+                    st.caption(f"Nivel detectado pela turma: {nivel}")
+            elif target_type == "aluno_vip":
+                vip_students = [s for s in st.session_state.get("students", []) if _student_vip_summary(s)]
+                vip_names = [str(s.get("nome", "")).strip() for s in vip_students if str(s.get("nome", "")).strip()]
+                if not vip_names:
+                    st.warning("Nenhum aluno VIP cadastrado para direcionar o desafio.")
+                else:
+                    target_aluno = st.selectbox("Aluno VIP de destino", vip_names, key="coord_ch_target_aluno")
+                    aluno_vip_obj = next((s for s in vip_students if str(s.get("nome", "")).strip() == target_aluno), {})
+                    nivel = student_book_level(aluno_vip_obj) or "Livro 1"
+                    st.caption(f"Nivel detectado pelo aluno VIP: {nivel}")
+            else:
+                nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
             base_date = st.date_input(
                 "Semana (escolha uma data)",
                 value=datetime.date.today(),
@@ -14791,8 +14967,15 @@ elif st.session_state["role"] == "Coordenador":
             semana = current_week_key(base_date)
             st.caption(f"Chave da semana: {semana}")
 
-            existing = get_weekly_challenge(nivel, semana) or {}
-            key_prefix = f"coord_ch_{str(nivel).replace(' ', '_')}_{str(semana).replace('-', '_')}"
+            existing = get_weekly_challenge_for_target(
+                nivel,
+                semana,
+                target_type=target_type,
+                target_turma=target_turma,
+                target_aluno=target_aluno,
+            ) or {}
+            target_key_label = target_turma or target_aluno or nivel
+            key_prefix = f"coord_ch_{target_type}_{str(target_key_label).replace(' ', '_')}_{str(semana).replace('-', '_')}"
 
             titulo = st.text_input("Titulo", value=str(existing.get("titulo", "")), key=f"{key_prefix}_titulo")
             descricao = st.text_area(
@@ -14839,10 +15022,14 @@ elif st.session_state["role"] == "Coordenador":
                 api_key = get_groq_api_key()
                 if not api_key:
                     st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
+                elif target_type == "turma" and not target_turma:
+                    st.error("Selecione a turma de destino antes de gerar o desafio.")
+                elif target_type == "aluno_vip" and not target_aluno:
+                    st.error("Selecione o aluno VIP de destino antes de gerar o desafio.")
                 else:
                     try:
                         gen = generate_weekly_challenge_ai(nivel, semana)
-                        upsert_weekly_challenge(
+                        saved_challenge = upsert_weekly_challenge(
                             level=nivel,
                             week_key=semana,
                             titulo=gen.get("titulo", ""),
@@ -14852,16 +15039,12 @@ elif st.session_state["role"] == "Coordenador":
                             due_date=due_date,
                             rubrica=gen.get("rubrica", ""),
                             dica=gen.get("dica", ""),
+                            target_type=target_type,
+                            target_turma=target_turma,
+                            target_aluno=target_aluno,
                         )
-                        if enviar_email:
-                            assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
-                            corpo = (
-                                f"Novo desafio semanal publicado.\n"
-                                f"Nivel: {nivel}\nSemana: {semana}\n\n"
-                                f"{gen.get('titulo','Desafio')}\n\n{gen.get('descricao','')}\n\n"
-                                "Acesse o portal do aluno > Desafios para responder e ser avaliado."
-                            )
-                            stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
+                        if enviar_comunicado:
+                            stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                             st.info(
                                 "Disparos dos desafios: "
                                 f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
@@ -14908,8 +15091,12 @@ elif st.session_state["role"] == "Coordenador":
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 if not str(titulo).strip() or not str(descricao).strip():
                     st.error("Preencha titulo e descricao.")
+                elif target_type == "turma" and not target_turma:
+                    st.error("Selecione a turma de destino.")
+                elif target_type == "aluno_vip" and not target_aluno:
+                    st.error("Selecione o aluno VIP de destino.")
                 else:
-                    upsert_weekly_challenge(
+                    saved_challenge = upsert_weekly_challenge(
                         level=nivel,
                         week_key=semana,
                         titulo=titulo,
@@ -14919,16 +15106,12 @@ elif st.session_state["role"] == "Coordenador":
                         due_date=due_date,
                         rubrica=rubrica,
                         dica=dica,
+                        target_type=target_type,
+                        target_turma=target_turma,
+                        target_aluno=target_aluno,
                     )
-                    if enviar_email:
-                        assunto = f"[Active] Desafio semanal - {nivel} ({semana})"
-                        corpo = (
-                            f"Novo desafio semanal publicado.\n"
-                            f"Nivel: {nivel}\nSemana: {semana}\n\n"
-                            f"{titulo}\n\n{descricao}\n\n"
-                            "Acesse o portal do aluno > Desafios para responder e ser avaliado."
-                        )
-                        stats = email_students_by_level(nivel, assunto, corpo, "Desafios")
+                    if enviar_comunicado:
+                        stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                         st.info(
                             "Disparos dos desafios: "
                             f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
@@ -14966,7 +15149,11 @@ elif st.session_state["role"] == "Coordenador":
             if df.empty:
                 st.info("Nenhum desafio publicado ainda.")
             else:
-                col_order = [c for c in ["semana", "nivel", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                df["destino"] = [
+                    _challenge_target_label(ch) if isinstance(ch, dict) else "-"
+                    for ch in chs
+                ]
+                col_order = [c for c in ["semana", "destino", "nivel", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
