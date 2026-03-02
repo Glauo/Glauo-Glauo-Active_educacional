@@ -7646,6 +7646,32 @@ def _teacher_payment_ref_for_session(session_obj):
     ]
     return "CLS-" + re.sub(r"[^A-Z0-9]+", "-", normalize_text("|".join(parts)).upper()).strip("-")
 
+def _class_session_effective_date(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    for field in ("data", "fim_em", "inicio_em"):
+        raw = str(sess.get(field, "")).strip()
+        if not raw:
+            continue
+        parsed = parse_date(raw)
+        if parsed:
+            return parsed
+        if " " in raw:
+            parsed = parse_date(raw.split(" ", 1)[0].strip())
+            if parsed:
+                return parsed
+    return None
+
+def _class_session_is_finalized(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    status_norm = normalize_text(sess.get("status", ""))
+    if status_norm in ("finalizada", "finalizado", "concluida", "concluido", "encerrada", "encerrado", "fechada", "fechado"):
+        return True
+    if str(sess.get("hora_fim_real", "")).strip():
+        return True
+    if str(sess.get("fim_em", "")).strip():
+        return True
+    return False
+
 def _session_duration_minutes_from_times(session_obj, turma_obj=None):
     sess = session_obj if isinstance(session_obj, dict) else {}
     turma = turma_obj if isinstance(turma_obj, dict) else {}
@@ -7704,19 +7730,21 @@ def _teacher_payment_info_for_session(session_obj):
         (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome),
         {},
     )
+    sess_date = _class_session_effective_date(sess)
     modulo_label = str(turma_obj.get("modulo", "")).strip() or str(sess.get("modulo", "")).strip()
+    professor_label = str(sess.get("professor", "")).strip() or str(turma_obj.get("professor", "")).strip()
     minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
     valor = _teacher_payment_value_for_minutes(minutos)
     return {
         "ref": _teacher_payment_ref_for_session(sess),
-        "professor": str(sess.get("professor", "")).strip(),
+        "professor": professor_label,
         "turma": turma_nome,
         "modulo": modulo_label,
-        "data": str(sess.get("data", "")).strip(),
+        "data": sess_date.strftime("%d/%m/%Y") if sess_date else str(sess.get("data", "")).strip(),
         "hora": str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip(),
         "minutos": int(minutos),
         "valor": float(valor),
-        "descricao": f"Pagamento aula {turma_nome} - {str(sess.get('data', '')).strip()}",
+        "descricao": f"Pagamento aula {turma_nome} - {(sess_date.strftime('%d/%m/%Y') if sess_date else str(sess.get('data', '')).strip())}",
         "session_id": str(sess.get("id", "")).strip(),
     }
 
@@ -7731,16 +7759,26 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
     month_start, month_end = _current_month_bounds(month_ref)
     prof_target = str(professor_name or "Todos").strip() or "Todos"
     turma_target = str(turma_name or "Todas").strip() or "Todas"
+    prof_target_norm = normalize_text(prof_target)
+    turma_target_norm = normalize_text(turma_target)
     out = []
     for sess in st.session_state.get("class_sessions", []):
-        if normalize_text(sess.get("status", "")) != "finalizada":
+        if not _class_session_is_finalized(sess):
             continue
-        sess_date = parse_date(sess.get("data", ""))
+        turma_nome = str(sess.get("turma", "")).strip()
+        turma_obj = next(
+            (c for c in st.session_state.get("classes", []) if normalize_text(c.get("nome", "")) == normalize_text(turma_nome)),
+            {},
+        )
+        sess_date = _class_session_effective_date(sess)
         if not sess_date or sess_date < month_start or sess_date > month_end:
             continue
-        if prof_target != "Todos" and str(sess.get("professor", "")).strip() != prof_target:
-            continue
-        if turma_target != "Todas" and str(sess.get("turma", "")).strip() != turma_target:
+        professor_session = str(sess.get("professor", "")).strip()
+        professor_turma = str(turma_obj.get("professor", "")).strip()
+        if prof_target != "Todos":
+            if normalize_text(professor_session) != prof_target_norm and normalize_text(professor_turma) != prof_target_norm:
+                continue
+        if turma_target != "Todas" and normalize_text(turma_nome) != turma_target_norm:
             continue
         if _teacher_payment_already_launched(sess):
             continue
