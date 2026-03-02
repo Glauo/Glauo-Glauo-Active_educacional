@@ -13679,6 +13679,9 @@ elif st.session_state["role"] == "Coordenador":
                 st.info("Nenhum recebimento encontrado.")
 
             st.markdown("### Acoes em massa (Recebimentos)")
+            if st.session_state.pop("fin_rec_bulk_reset_pending", False):
+                st.session_state.pop("fin_rec_bulk_codes", None)
+                st.session_state.pop("fin_rec_bulk_confirm_delete", None)
             rec_bulk_all_codes = list(
                 dict.fromkeys(
                     [
@@ -13755,7 +13758,7 @@ elif st.session_state["role"] == "Coordenador":
                         ]
                         removed_rec = before_rec - len(st.session_state.get("receivables", []))
                         save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.session_state["fin_rec_bulk_codes"] = []
+                        st.session_state["fin_rec_bulk_reset_pending"] = True
                         st.success(f"{removed_rec} recebimento(s) excluido(s).")
                         st.rerun()
 
@@ -14224,6 +14227,9 @@ elif st.session_state["role"] == "Coordenador":
                 st.info("Nenhuma conta a pagar cadastrada.")
 
             st.markdown("### Acoes em massa (Despesas)")
+            if st.session_state.pop("fin_pag_bulk_reset_pending", False):
+                st.session_state.pop("fin_pag_bulk_codes", None)
+                st.session_state.pop("fin_pag_bulk_confirm_delete", None)
             pag_bulk_all_codes = list(
                 dict.fromkeys(
                     [
@@ -14287,7 +14293,7 @@ elif st.session_state["role"] == "Coordenador":
                         ]
                         removed_pag = before_pag - len(st.session_state.get("payables", []))
                         save_list(PAYABLES_FILE, st.session_state["payables"])
-                        st.session_state["fin_pag_bulk_codes"] = []
+                        st.session_state["fin_pag_bulk_reset_pending"] = True
                         st.success(f"{removed_pag} despesa(s) excluida(s).")
                         st.rerun()
 
