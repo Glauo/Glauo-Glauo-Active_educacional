@@ -4357,6 +4357,63 @@ def student_book_level(student_obj):
     turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
     return _norm_book_level(turma_obj.get("livro", ""))
 
+def _is_vip_module_label(value):
+    modulo_norm = normalize_text(value)
+    return "vip" in modulo_norm
+
+def _vip_plan_total(plan_label):
+    plan_norm = normalize_text(plan_label)
+    if "avulsa" in plan_norm:
+        return 1
+    if "pacote" in plan_norm and "10" in plan_norm:
+        return 10
+    return 0
+
+def _student_vip_summary(student_obj):
+    if not isinstance(student_obj, dict):
+        return None
+    modulo = str(student_obj.get("modulo", "")).strip()
+    if not _is_vip_module_label(modulo):
+        return None
+    plano = str(student_obj.get("vip_tipo_plano", "")).strip()
+    if not plano:
+        return None
+    total = max(0, parse_int(student_obj.get("vip_aulas_total", 0)))
+    restantes = max(0, parse_int(student_obj.get("vip_aulas_restantes", total)))
+    return {
+        "plano": plano,
+        "total": total,
+        "restantes": restantes,
+    }
+
+def _consume_vip_package_for_class(turma_nome):
+    turma_label = str(turma_nome or "").strip()
+    if not turma_label:
+        return []
+    consumidos = []
+    changed = False
+    for aluno in st.session_state.get("students", []):
+        if str(aluno.get("turma", "")).strip() != turma_label:
+            continue
+        resumo_vip = _student_vip_summary(aluno)
+        if not resumo_vip:
+            continue
+        restantes = int(resumo_vip.get("restantes", 0))
+        if restantes <= 0:
+            continue
+        aluno["vip_aulas_total"] = int(resumo_vip.get("total", 0))
+        aluno["vip_aulas_restantes"] = max(0, restantes - 1)
+        consumidos.append(
+            {
+                "nome": str(aluno.get("nome", "")).strip(),
+                "restantes": int(aluno.get("vip_aulas_restantes", 0)),
+            }
+        )
+        changed = True
+    if changed:
+        save_list(STUDENTS_FILE, st.session_state.get("students", []))
+    return consumidos
+
 def _ensure_challenge_id(ch):
     if not isinstance(ch, dict):
         return False
@@ -9806,6 +9863,12 @@ elif st.session_state["role"] == "Aluno":
                 f"""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">{proxima_prova_data_label}</div></div><div class="card-sub"><span style="color:#64748b">{proxima_prova_titulo_label}</span></div></div>""",
                 unsafe_allow_html=True,
             )
+        vip_resumo_dashboard = _student_vip_summary(aluno_obj)
+        if vip_resumo_dashboard:
+            st.info(
+                f"Plano VIP: {vip_resumo_dashboard.get('plano', '-')} | "
+                f"Aulas restantes: {int(vip_resumo_dashboard.get('restantes', 0))}/{int(vip_resumo_dashboard.get('total', 0))}"
+            )
         if isinstance(turma_obj, dict) and turma_obj:
             st.caption(
                 f"Turma: {turma_aluno or '-'} | Modulo: {str(turma_obj.get('modulo', '')).strip() or '-'} | "
@@ -10427,8 +10490,24 @@ elif st.session_state["role"] == "Professor":
                             sessao_ativa["hora_fim_real"] = now_dt.strftime("%H:%M")
                             if not sessao_ativa.get("data"):
                                 sessao_ativa["data"] = now_dt.strftime("%d/%m/%Y")
+                            vip_consumidos = _consume_vip_package_for_class(sessao_ativa.get("turma", ""))
+                            if vip_consumidos:
+                                sessao_ativa["vip_consumed_students"] = [
+                                    {
+                                        "nome": item.get("nome", ""),
+                                        "restantes": int(item.get("restantes", 0)),
+                                    }
+                                    for item in vip_consumidos
+                                ]
                             save_list(CLASS_SESSIONS_FILE, st.session_state["class_sessions"])
-                            st.success("Aula fechada e salva no historico dos alunos.")
+                            if vip_consumidos:
+                                resumo_vip = ", ".join(
+                                    f"{item.get('nome', '')}: {int(item.get('restantes', 0))} aula(s)"
+                                    for item in vip_consumidos
+                                )
+                                st.success(f"Aula fechada. Pacote VIP atualizado automaticamente: {resumo_vip}.")
+                            else:
+                                st.success("Aula fechada e salva no historico dos alunos.")
                             st.rerun()
 
                 st.markdown("### Ultimas aulas finalizadas da turma")
@@ -11976,6 +12055,9 @@ elif st.session_state["role"] == "Coordenador":
                         "nome",
                         "matricula",
                         "turma",
+                        "modulo",
+                        "vip_tipo_plano",
+                        "vip_aulas_restantes",
                         "email",
                         "celular",
                         "data_nascimento",
@@ -12040,6 +12122,8 @@ elif st.session_state["role"] == "Coordenador":
                 _sfk("add_student_turma"): "Sem Turma",
                 _sfk("add_student_modulo"): modulos[0],
                 _sfk("add_student_livro"): "Automatico (Turma)",
+                _sfk("add_student_vip_tipo"): "Aula avulsa",
+                _sfk("add_student_vip_restantes"): 1,
                 _sfk("add_student_login"): "",
                 _sfk("add_student_senha"): "",
                 _sfk("add_student_resp_nome"): "",
@@ -12121,6 +12205,13 @@ elif st.session_state["role"] == "Coordenador":
                         st.session_state[_sfk("add_student_turma")] = str(aluno_src.get("turma", "Sem Turma")).strip() or "Sem Turma"
                         st.session_state[_sfk("add_student_modulo")] = str(aluno_src.get("modulo", modulos[0])).strip() or modulos[0]
                         st.session_state[_sfk("add_student_livro")] = str(aluno_src.get("livro", "Automatico (Turma)")).strip() or "Automatico (Turma)"
+                        vip_tipo_src = str(aluno_src.get("vip_tipo_plano", "Aula avulsa")).strip() or "Aula avulsa"
+                        vip_total_src = _vip_plan_total(vip_tipo_src)
+                        vip_restantes_src = parse_int(aluno_src.get("vip_aulas_restantes", vip_total_src))
+                        if vip_restantes_src is None or vip_restantes_src < 0:
+                            vip_restantes_src = vip_total_src
+                        st.session_state[_sfk("add_student_vip_tipo")] = vip_tipo_src
+                        st.session_state[_sfk("add_student_vip_restantes")] = int(vip_restantes_src)
                         st.session_state[_sfk("add_student_login")] = str(aluno_src.get("usuario", "")).strip()
                         st.session_state[_sfk("add_student_senha")] = str(aluno_src.get("senha", "")).strip()
                         st.session_state[_sfk("add_student_resp_nome")] = str(resp_src.get("nome", "")).strip()
@@ -12193,6 +12284,32 @@ elif st.session_state["role"] == "Coordenador":
                 turma = st.selectbox("Vincular a Turma", turma_opts, key=turma_key)
                 modulo_sel = st.selectbox("Modulo do curso", modulos, key=modulo_key)
                 livro_sel = st.selectbox("Livro/Nivel", livro_opts, key=livro_key)
+                vip_tipo_plano = ""
+                vip_aulas_total = 0
+                vip_aulas_restantes = 0
+                if _is_vip_module_label(modulo_sel):
+                    st.markdown("### Plano VIP")
+                    vip_tipo_key = _sfk("add_student_vip_tipo")
+                    vip_restantes_key = _sfk("add_student_vip_restantes")
+                    vip_opcoes = ["Aula avulsa", "Pacote 10 aulas"]
+                    if st.session_state.get(vip_tipo_key) not in vip_opcoes:
+                        st.session_state[vip_tipo_key] = vip_opcoes[0]
+                    vip_tipo_plano = st.selectbox("Tipo do plano VIP", vip_opcoes, key=vip_tipo_key)
+                    vip_aulas_total = _vip_plan_total(vip_tipo_plano)
+                    valor_restante_padrao = parse_int(st.session_state.get(vip_restantes_key, vip_aulas_total))
+                    if valor_restante_padrao is None:
+                        valor_restante_padrao = vip_aulas_total
+                    valor_restante_padrao = max(0, min(vip_aulas_total, int(valor_restante_padrao)))
+                    st.session_state[vip_restantes_key] = valor_restante_padrao
+                    vip_aulas_restantes = int(
+                        st.number_input(
+                            "Aulas restantes no pacote",
+                            min_value=0,
+                            max_value=max(1, vip_aulas_total),
+                            step=1,
+                            key=vip_restantes_key,
+                        )
+                    )
 
                 st.divider()
                 st.markdown("### Acesso do Aluno (opcional)")
@@ -12286,6 +12403,9 @@ elif st.session_state["role"] == "Coordenador":
                                 "turma": turma,
                                 "modulo": modulo_sel,
                                 "livro": livro_final,
+                                "vip_tipo_plano": vip_tipo_plano if _is_vip_module_label(modulo_sel) else "",
+                                "vip_aulas_total": int(vip_aulas_total) if _is_vip_module_label(modulo_sel) else 0,
+                                "vip_aulas_restantes": int(vip_aulas_restantes) if _is_vip_module_label(modulo_sel) else 0,
                                 "usuario": login_final,
                                 "senha": senha_final,
                                 "responsavel": {
@@ -12481,6 +12601,33 @@ elif st.session_state["role"] == "Coordenador":
                             livro_opts.append(livro_atual)
                         livro_index = livro_opts.index(livro_atual) if livro_atual in livro_opts else 0
                         new_livro = st.selectbox("Livro/Nivel", livro_opts, index=livro_index)
+                        new_vip_tipo = ""
+                        new_vip_total = 0
+                        new_vip_restantes = 0
+                        if _is_vip_module_label(new_modulo):
+                            vip_edit_opcoes = ["Aula avulsa", "Pacote 10 aulas"]
+                            vip_tipo_atual = str(aluno_obj.get("vip_tipo_plano", vip_edit_opcoes[0])).strip() or vip_edit_opcoes[0]
+                            if vip_tipo_atual not in vip_edit_opcoes:
+                                vip_edit_opcoes.append(vip_tipo_atual)
+                            new_vip_tipo = st.selectbox(
+                                "Tipo do plano VIP",
+                                vip_edit_opcoes,
+                                index=vip_edit_opcoes.index(vip_tipo_atual) if vip_tipo_atual in vip_edit_opcoes else 0,
+                            )
+                            new_vip_total = _vip_plan_total(new_vip_tipo)
+                            vip_restantes_atual = parse_int(aluno_obj.get("vip_aulas_restantes", new_vip_total))
+                            if vip_restantes_atual is None:
+                                vip_restantes_atual = new_vip_total
+                            vip_restantes_atual = max(0, min(new_vip_total, int(vip_restantes_atual)))
+                            new_vip_restantes = int(
+                                st.number_input(
+                                    "Aulas restantes no pacote",
+                                    min_value=0,
+                                    max_value=max(1, new_vip_total),
+                                    step=1,
+                                    value=vip_restantes_atual,
+                                )
+                            )
 
                         st.divider()
                         st.markdown("### Acesso do Aluno (opcional)")
@@ -12564,6 +12711,9 @@ elif st.session_state["role"] == "Coordenador":
                                         aluno_obj["complemento"] = str(new_complemento or "").strip()
                                         aluno_obj["modulo"] = str(new_modulo or "").strip()
                                         aluno_obj["livro"] = str(livro_final or "").strip()
+                                        aluno_obj["vip_tipo_plano"] = str(new_vip_tipo or "").strip() if _is_vip_module_label(new_modulo) else ""
+                                        aluno_obj["vip_aulas_total"] = int(new_vip_total) if _is_vip_module_label(new_modulo) else 0
+                                        aluno_obj["vip_aulas_restantes"] = int(new_vip_restantes) if _is_vip_module_label(new_modulo) else 0
                                         aluno_obj["usuario"] = str(login or "").strip()
                                         aluno_obj["senha"] = str(senha or "").strip()
                                         aluno_obj["responsavel"] = {
