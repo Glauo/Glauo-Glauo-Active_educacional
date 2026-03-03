@@ -8033,6 +8033,285 @@ def get_tutor_wiz_prompt(contexto_aluno=None):
     return "\n".join(base)
 
 
+def _student_bot_state_key(student_name, suffix):
+    return f"student_wiz:{suffix}:{_wiz_norm_text(student_name)}"
+
+
+def _student_cpf_matches(student_obj, raw_text):
+    student = student_obj if isinstance(student_obj, dict) else {}
+    expected = _wiz_digits(student.get("cpf", ""))
+    informed = _wiz_digits(raw_text)
+    return bool(expected and informed and expected == informed)
+
+
+def _student_active_info_request(text):
+    norm = _wiz_norm_text(text)
+    if not norm:
+        return False
+    keywords = [
+        "financeiro", "boleto", "mensalidade", "pagamento", "vencimento", "cobranca",
+        "turma", "horario", "agenda", "aula", "zoom", "link da aula",
+        "material", "materiais", "livro", "apostila",
+        "nota", "notas", "media", "frequencia", "frequencia", "presenca", "presenca",
+        "prova", "certificado", "matricula", "professor", "desafio", "portal", "cadastro",
+    ]
+    return any(token in norm for token in keywords)
+
+
+def _student_material_request_intent(text):
+    norm = _wiz_norm_text(text)
+    if not norm:
+        return False
+    material_terms = ["material", "materiais", "livro", "apostila", "book", "kit"]
+    request_terms = [
+        "pedido", "pedir", "solicitar", "solicito", "preciso", "quero", "gostaria",
+        "comprar", "adquirir", "receber", "entregar", "enviar", "separar", "retirar",
+        "nao recebi", "nao tenho", "sem material", "faltando", "falta", "perdi",
+    ]
+    return any(term in norm for term in material_terms) and any(term in norm for term in request_terms)
+
+
+def _student_admin_contacts():
+    admins = []
+    coords = []
+    for user in st.session_state.get("users", []):
+        if not isinstance(user, dict):
+            continue
+        perfil = str(user.get("perfil", "")).strip()
+        if perfil == "Admin":
+            admins.append(user)
+        elif perfil == "Coordenador":
+            coords.append(user)
+    selected = admins or coords
+    names = []
+    emails = set()
+    whatsapps = set()
+    for user in selected:
+        nome = str(user.get("nome", user.get("usuario", ""))).strip()
+        if nome:
+            names.append(nome)
+        email = str(user.get("email", "")).strip().lower()
+        celular = str(user.get("celular", "")).strip()
+        if email:
+            emails.add(email)
+        if celular:
+            whatsapps.add(celular)
+    return {
+        "names": names,
+        "emails": sorted(emails),
+        "whatsapps": sorted(whatsapps),
+    }
+
+
+def _create_material_order_from_student_bot(student_obj, request_text):
+    student = student_obj if isinstance(student_obj, dict) else {}
+    aluno_nome = str(student.get("nome", st.session_state.get("user_name", ""))).strip() or "Aluno"
+    turma = str(student.get("turma", "")).strip() or "Sem Turma"
+    livro = student_book_level(student) or str(student.get("livro", "")).strip()
+    request_norm = _wiz_norm_text(request_text)
+    is_book_request = any(token in request_norm for token in ("livro", "apostila", "book"))
+    tipo = "Livro didático" if is_book_request else "Material"
+    item_codigo = livro if is_book_request else ""
+    item_desc = f"Livro didático {livro}" if is_book_request and livro else "Pedido de material do aluno"
+    pedido = {
+        "id": uuid.uuid4().hex[:10],
+        "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "solicitante": aluno_nome,
+        "tipo": tipo,
+        "item_codigo": item_codigo,
+        "item": item_desc,
+        "quantidade": 1,
+        "status": "Aberto",
+        "observacao": f"Pedido via Bot Mister Wiz: {str(request_text or '').strip()}",
+        "aluno": aluno_nome,
+        "turma": turma,
+        "livro": livro,
+        "origem": "Bot Mister Wiz",
+    }
+    st.session_state["material_orders"].append(pedido)
+    save_list(MATERIAL_ORDERS_FILE, st.session_state["material_orders"])
+    return pedido
+
+
+def _notify_admin_material_request(order_obj):
+    order = order_obj if isinstance(order_obj, dict) else {}
+    contacts = _student_admin_contacts()
+    assunto = "[Active] Novo pedido de material via Bot Mister Wiz"
+    corpo = (
+        "Novo pedido de material aberto automaticamente pelo Bot Mister Wiz.\n\n"
+        f"Aluno: {str(order.get('aluno', '')).strip() or str(order.get('solicitante', 'Aluno')).strip()}\n"
+        f"Turma: {str(order.get('turma', '')).strip() or 'Sem Turma'}\n"
+        f"Livro/Nivel: {str(order.get('livro', '')).strip() or '-'}\n"
+        f"Tipo: {str(order.get('tipo', '')).strip() or 'Material'}\n"
+        f"Item: {str(order.get('item', '')).strip() or 'Pedido de material'}\n"
+        f"Data: {str(order.get('data', '')).strip()}\n"
+        f"Observacao: {str(order.get('observacao', '')).strip() or '-'}"
+    )
+    return _notify_direct_contacts(
+        ", ".join(contacts.get("names", []) or ["Administrador"]),
+        [],
+        contacts.get("whatsapps", []),
+        assunto,
+        corpo,
+        "Bot Mister Wiz",
+    )
+
+
+def _student_active_account_context(student_obj):
+    student = student_obj if isinstance(student_obj, dict) else {}
+    aluno_nome = str(student.get("nome", st.session_state.get("user_name", ""))).strip()
+    turma = str(student.get("turma", "")).strip() or "Sem Turma"
+    livro = student_book_level(student) or str(student.get("livro", "")).strip() or "Livro 1"
+    matricula = str(student.get("matricula", "")).strip() or "-"
+    turma_obj = next(
+        (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma),
+        {},
+    )
+    professor = str(turma_obj.get("professor", "")).strip() or "Nao informado"
+    modulo = str(turma_obj.get("modulo", "")).strip() or "Nao informado"
+    dias_raw = turma_obj.get("dias_semana", turma_obj.get("dias", []))
+    if isinstance(dias_raw, list):
+        dias_txt = ", ".join(str(d).strip() for d in dias_raw if str(d).strip())
+    else:
+        dias_txt = str(dias_raw or "").strip()
+    hora_inicio = str(turma_obj.get("hora_inicio", "")).strip()
+    hora_fim = str(turma_obj.get("hora_fim", "")).strip()
+
+    recebiveis = [
+        r for r in st.session_state.get("receivables", [])
+        if str(r.get("aluno", "")).strip() == aluno_nome
+    ]
+    abertos = [r for r in recebiveis if str(r.get("status", "")).strip().lower() != "pago"]
+    total_aberto = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in abertos)
+    proximos_boletos = sorted(
+        abertos,
+        key=lambda r: parse_date(r.get("vencimento", "")) or datetime.date(2100, 1, 1),
+    )[:3]
+
+    notas_aprovadas = [
+        g for g in st.session_state.get("grades", [])
+        if str(g.get("aluno", "")).strip() == aluno_nome and str(g.get("status", "")).strip().lower() == "aprovado"
+    ]
+    notas_numericas = []
+    presencas = []
+    for nota_obj in notas_aprovadas:
+        avaliacao_norm = _wiz_norm_text(nota_obj.get("avaliacao", ""))
+        nota_txt = str(nota_obj.get("nota", "")).strip()
+        match_num = re.search(r"-?\d+(?:[.,]\d+)?", nota_txt)
+        if not match_num:
+            continue
+        valor_nota = _parse_float(match_num.group(0), default=0.0)
+        if "%" in nota_txt or "presenca" in avaliacao_norm:
+            presencas.append(max(0.0, min(100.0, valor_nota)))
+        else:
+            notas_numericas.append(valor_nota)
+    media_label = f"{(sum(notas_numericas) / len(notas_numericas)):.1f}" if notas_numericas else "Sem notas"
+    frequencia_label = f"{(sum(presencas) / len(presencas)):.0f}%" if presencas else "Sem frequencia"
+
+    provas = []
+    hoje = datetime.date.today()
+    for nota_obj in st.session_state.get("grades", []):
+        if str(nota_obj.get("aluno", "")).strip() != aluno_nome:
+            continue
+        avaliacao_txt = str(nota_obj.get("avaliacao", "")).strip()
+        if "prova" not in _wiz_norm_text(avaliacao_txt) and "test" not in _wiz_norm_text(avaliacao_txt):
+            continue
+        data_prova = parse_date(nota_obj.get("data", ""))
+        if data_prova and data_prova >= hoje:
+            provas.append(f"{data_prova.strftime('%d/%m/%Y')} - {avaliacao_txt or 'Prova'}")
+
+    materiais = sorted(
+        filter_items_by_turma(st.session_state.get("materials", []), turma),
+        key=lambda m: str(m.get("data", "")),
+        reverse=True,
+    )[:5]
+    mensagens = [
+        m for m in st.session_state.get("messages", [])
+        if _message_matches_student(m, aluno_nome, turma)
+    ]
+    mensagens = sorted(mensagens, key=lambda m: str(m.get("data", "")), reverse=True)[:5]
+
+    desafios = get_student_weekly_challenges(student, current_week_key())[:5]
+    sessoes = [
+        s for s in st.session_state.get("class_sessions", [])
+        if str(s.get("turma", "")).strip() == turma and str(s.get("status", "")).strip().lower() == "finalizada"
+    ]
+    sessoes = sorted(
+        sessoes,
+        key=lambda s: (
+            parse_date(s.get("data", "")) or datetime.date(1900, 1, 1),
+            parse_time(s.get("hora_inicio_real", s.get("hora_inicio_prevista", "00:00"))),
+        ),
+        reverse=True,
+    )[:3]
+
+    lines = [
+        "Dados confirmados do aluno no Active:",
+        f"Aluno: {aluno_nome or 'Nao informado'}",
+        f"Matricula: {matricula}",
+        f"Turma: {turma}",
+        f"Livro/Nivel: {livro}",
+        f"Professor da turma: {professor}",
+        f"Modulo da turma: {modulo}",
+    ]
+    if dias_txt or hora_inicio or hora_fim:
+        lines.append(f"Horario da turma: {dias_txt or '-'} | {hora_inicio or '--:--'} as {hora_fim or '--:--'}")
+    lines.append(f"Financeiro em aberto: {len(abertos)} lancamento(s) | Total {format_money(total_aberto)}")
+    if proximos_boletos:
+        lines.append(
+            "Proximos vencimentos: " + " ; ".join(
+                f"{str(item.get('vencimento', '')).strip()} - {str(item.get('descricao', 'Lancamento')).strip()} - {format_money(parse_money(item.get('valor_parcela', item.get('valor', 0))))}"
+                for item in proximos_boletos
+            )
+        )
+    lines.append(f"Media geral atual: {media_label}")
+    lines.append(f"Frequencia atual: {frequencia_label}")
+    if provas:
+        lines.append("Proximas provas: " + " ; ".join(provas[:3]))
+    if materiais:
+        lines.append(
+            "Materiais recentes: " + " ; ".join(
+                str(m.get("titulo", "Material")).strip() or "Material"
+                for m in materiais
+            )
+        )
+    if mensagens:
+        lines.append(
+            "Mensagens recentes do aluno: " + " ; ".join(
+                f"{str(m.get('data', '')).strip()} - {str(m.get('titulo', 'Mensagem')).strip() or 'Mensagem'}"
+                for m in mensagens
+            )
+        )
+    if desafios:
+        lines.append(
+            "Desafios vigentes: " + " ; ".join(
+                f"{str(ch.get('titulo', 'Desafio')).strip()} ({_challenge_target_label(ch)})"
+                for ch in desafios
+            )
+        )
+    if sessoes:
+        lines.append(
+            "Ultimas aulas finalizadas: " + " ; ".join(
+                f"{str(s.get('data', '')).strip()} - {str(s.get('licao', s.get('resumo_final', 'Aula finalizada'))).strip() or 'Aula finalizada'}"
+                for s in sessoes
+            )
+        )
+    return "\n".join(lines)
+
+
+def get_student_active_prompt(student_obj):
+    return "\n".join(
+        [
+            "Voce e o Bot Mister Wiz integrado ao sistema Active Educacional.",
+            "O CPF do aluno ja foi confirmado nesta sessao antes desta consulta.",
+            "Responda somente com dados do proprio aluno informado abaixo.",
+            "Nunca exponha dados de outros alunos, professores ou usuarios.",
+            "Nao invente informacoes. Se o dado nao estiver no contexto, diga claramente que nao foi encontrado no Active.",
+            _student_active_account_context(student_obj),
+        ]
+    )
+
+
 def run_active_chatbot():
     st.markdown('<div class="main-header">Professor Wiz</div>', unsafe_allow_html=True)
     st.caption("Assistente dedicado ao contexto da Active Educacional e Mister Wiz.")
@@ -8050,7 +8329,7 @@ def run_active_chatbot():
     if role == "Aluno":
         mode = "Pedagogico"
         chat_key = f"tutor:{chat_key}"
-        st.caption("Modo automatico do aluno: estudo de ingles por livro, licao e materiais da turma.")
+        st.caption("Modo automatico do aluno: ingles por livro/licao da turma. Consultas do Active e pedido de material exigem confirmacao de CPF.")
     elif role == "Professor":
         mode = "Pedagogico"
         chat_key = f"prof:{chat_key}"
@@ -8140,35 +8419,114 @@ def run_active_chatbot():
 
     user_text = st.chat_input(prompt_label)
     if user_text:
-        chat_history.append({"role": "user", "content": user_text})
+        user_text = str(user_text).strip()
+        answer = ""
+        request_messages = []
 
         if role == "Aluno":
-            contexto_aluno = student_wiz_context(st.session_state.get("user_name", ""))
-            system_prompt = get_tutor_wiz_prompt(contexto_aluno)
-        elif role == "Professor":
-            system_prompt = get_active_system_prompt("Pedagogico", include_context=include_context) + (
-                "\nAtenda apenas temas pedagogicos da escola de ingles: plano de aula, tarefa, avaliacao, rubrica e reforco."
-            )
+            aluno_nome = str(st.session_state.get("user_name", "")).strip()
+            aluno_obj = _find_student_by_name(aluno_nome)
+            contexto_aluno = student_wiz_context(aluno_nome)
+            verified_key = _student_bot_state_key(aluno_nome, "cpf_verified")
+            pending_key = _student_bot_state_key(aluno_nome, "pending_question")
+            pending_kind_key = _student_bot_state_key(aluno_nome, "pending_kind")
+            pending_question = str(st.session_state.get(pending_key, "")).strip()
+            pending_kind = str(st.session_state.get(pending_kind_key, "")).strip()
+            display_user_text = "CPF informado para confirmacao." if _wiz_digits(user_text) else user_text
+            chat_history.append({"role": "user", "content": display_user_text})
+
+            if _wiz_norm_text(user_text) in ("cancelar", "cancela", "deixa pra la", "deixa pra lá"):
+                st.session_state.pop(pending_key, None)
+                st.session_state.pop(pending_kind_key, None)
+                answer = "Solicitacao cancelada. Se quiser consultar dados do Active ou pedir material, envie a mensagem novamente."
+            elif pending_question:
+                if _student_cpf_matches(aluno_obj, user_text):
+                    st.session_state[verified_key] = True
+                    st.session_state.pop(pending_key, None)
+                    st.session_state.pop(pending_kind_key, None)
+                    if pending_kind == "material":
+                        pedido = _create_material_order_from_student_bot(aluno_obj, pending_question)
+                        notify_stats = _notify_admin_material_request(pedido)
+                        admin_msg = "Administrador avisado no WhatsApp." if int(notify_stats.get("whatsapp_ok", 0)) > 0 else "Pedido registrado; verifique a configuracao do WhatsApp do administrador."
+                        answer = (
+                            "Pedido de material registrado com sucesso.\n\n"
+                            f"Tipo: {str(pedido.get('tipo', '')).strip() or 'Material'}\n"
+                            f"Item: {str(pedido.get('item', '')).strip() or 'Pedido de material'}\n"
+                            f"Turma: {str(pedido.get('turma', '')).strip() or 'Sem Turma'}\n"
+                            f"{admin_msg}"
+                        )
+                    else:
+                        system_prompt = get_student_active_prompt(aluno_obj)
+                        request_messages = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": pending_question},
+                        ]
+                else:
+                    answer = (
+                        "CPF nao confirmado. Envie seu CPF exatamente como esta no cadastro para liberar consulta do Active ou pedido de material."
+                        if _wiz_digits(user_text)
+                        else "Para continuar, confirme seu CPF cadastrado. Se quiser cancelar, envie: cancelar."
+                    )
+            elif _student_material_request_intent(user_text):
+                if not _wiz_digits((aluno_obj or {}).get("cpf", "")):
+                    answer = "Seu CPF nao esta cadastrado no Active. Procure a secretaria para liberar esse atendimento."
+                elif not bool(st.session_state.get(verified_key, False)):
+                    st.session_state[pending_key] = user_text
+                    st.session_state[pending_kind_key] = "material"
+                    answer = "Para abrir seu pedido de material, confirme primeiro seu CPF cadastrado."
+                else:
+                    pedido = _create_material_order_from_student_bot(aluno_obj, user_text)
+                    notify_stats = _notify_admin_material_request(pedido)
+                    admin_msg = "Administrador avisado no WhatsApp." if int(notify_stats.get("whatsapp_ok", 0)) > 0 else "Pedido registrado; verifique a configuracao do WhatsApp do administrador."
+                    answer = (
+                        "Pedido de material registrado com sucesso.\n\n"
+                        f"Tipo: {str(pedido.get('tipo', '')).strip() or 'Material'}\n"
+                        f"Item: {str(pedido.get('item', '')).strip() or 'Pedido de material'}\n"
+                        f"Turma: {str(pedido.get('turma', '')).strip() or 'Sem Turma'}\n"
+                        f"{admin_msg}"
+                    )
+            elif _student_active_info_request(user_text):
+                if not _wiz_digits((aluno_obj or {}).get("cpf", "")):
+                    answer = "Seu CPF nao esta cadastrado no Active. Procure a secretaria para liberar consultas administrativas no bot."
+                elif not bool(st.session_state.get(verified_key, False)):
+                    st.session_state[pending_key] = user_text
+                    st.session_state[pending_kind_key] = "active_info"
+                    answer = "Para consultar seus dados do Active, confirme primeiro seu CPF cadastrado."
+                else:
+                    system_prompt = get_student_active_prompt(aluno_obj)
+                    request_messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text},
+                    ]
+            else:
+                system_prompt = get_tutor_wiz_prompt(contexto_aluno)
+                request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-16:]
         else:
-            system_prompt = get_active_system_prompt(mode, include_context)
-
-        request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-16:]
-
-        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
-        with st.spinner("Gerando resposta..."):
-            try:
-                result = client.chat.completions.create(
-                    model=model_name,
-                    messages=request_messages,
-                    temperature=float(st.session_state["active_chat_temp"]),
-                    max_tokens=1000,
+            chat_history.append({"role": "user", "content": user_text})
+            if role == "Professor":
+                system_prompt = get_active_system_prompt("Pedagogico", include_context=include_context) + (
+                    "\nAtenda apenas temas pedagogicos da escola de ingles: plano de aula, tarefa, avaliacao, rubrica e reforco."
                 )
-                answer = (result.choices[0].message.content or "").strip()
-                if not answer:
-                    answer = "Nao consegui gerar resposta no momento. Tente novamente."
-            except Exception as ex:
-                answer = f"Falha ao consultar IA: {ex}"
+            else:
+                system_prompt = get_active_system_prompt(mode, include_context)
+            request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-16:]
+
+        if not answer:
+            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+            with st.spinner("Gerando resposta..."):
+                try:
+                    result = client.chat.completions.create(
+                        model=model_name,
+                        messages=request_messages,
+                        temperature=float(st.session_state["active_chat_temp"]),
+                        max_tokens=1000,
+                    )
+                    answer = (result.choices[0].message.content or "").strip()
+                    if not answer:
+                        answer = "Nao consegui gerar resposta no momento. Tente novamente."
+                except Exception as ex:
+                    answer = f"Falha ao consultar IA: {ex}"
 
         chat_history.append({"role": "assistant", "content": answer})
         st.session_state["active_chat_histories"][chat_key] = chat_history
