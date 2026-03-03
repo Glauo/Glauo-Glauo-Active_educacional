@@ -7375,28 +7375,40 @@ def post_message_and_notify(
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
     publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
+    corpo_linhas = [
+        "📢 *Active Educacional*",
+        "",
+        f"✨ *{mensagem_obj['titulo']}*",
+        "",
+        f"👤 Enviado por: {mensagem_obj['autor']}",
+        f"👥 Publico: {publico_label}",
+    ]
     if mensagem_obj["aluno"]:
-        destino_label = f"Destinatario: {mensagem_obj['aluno']}\nTurma: {mensagem_obj['turma']}"
+        corpo_linhas.append(f"🎓 Aluno: {mensagem_obj['aluno']}")
+        if str(mensagem_obj.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {mensagem_obj['turma']}")
     elif str(mensagem_obj.get("professor_individual", "")).strip():
-        destino_label = f"Destinatario: {mensagem_obj.get('professor_individual', '')}\nTipo: Professor"
+        corpo_linhas.append(f"👨‍🏫 Professor: {mensagem_obj.get('professor_individual', '')}")
     elif str(mensagem_obj.get("destinatario_unico", "")).strip():
-        destino_label = f"Destinatario: {mensagem_obj.get('destinatario_unico', '')}\nTipo: Usuario especifico"
+        corpo_linhas.append(f"🙋 Destinatario: {mensagem_obj.get('destinatario_unico', '')}")
     elif publico_label == "Professores":
-        destino_label = f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
+        corpo_linhas.append(f"👨‍🏫 Professor(es): {mensagem_obj.get('professor', 'Todos')}")
     elif publico_label == "Alunos e Professores":
-        destino_label = (
-            f"Turma: {mensagem_obj.get('turma', 'Todas')}\n"
-            f"Professor(es): {mensagem_obj.get('professor', 'Todos')}"
-        )
+        if str(mensagem_obj.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {mensagem_obj.get('turma', 'Todas')}")
+        corpo_linhas.append(f"👨‍🏫 Professor(es): {mensagem_obj.get('professor', 'Todos')}")
     else:
-        destino_label = f"Turma: {mensagem_obj.get('turma', 'Todas')}"
-    corpo = (
-        f"Mensagem publicada por {mensagem_obj['autor']}\n"
-        f"Publico: {publico_label}\n"
-        f"{destino_label}\n"
-        f"Data: {mensagem_obj['data']}\n\n"
-        f"{mensagem_obj['mensagem']}"
+        if str(mensagem_obj.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {mensagem_obj.get('turma', 'Todas')}")
+    corpo_linhas.extend(
+        [
+            f"📅 Data: {mensagem_obj['data']}",
+            "",
+            "💬 *Mensagem:*",
+            str(mensagem_obj.get("mensagem", "")).strip(),
+        ]
     )
+    corpo = "\n".join(corpo_linhas)
     if mensagem_obj["aluno"] and student_obj:
         stats = _notify_direct_contacts(
             student_obj.get("nome", "Aluno"),
