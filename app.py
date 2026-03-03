@@ -14356,6 +14356,14 @@ elif st.session_state["role"] == "Coordenador":
                     rel.append(idx)
             return rel or [base_idx]
 
+        def _month_due_date(base_date, due_day):
+            ref_date = base_date if isinstance(base_date, datetime.date) else datetime.date.today()
+            due_day_int = max(1, min(30, parse_int(due_day) or ref_date.day))
+            month_start = ref_date.replace(day=1)
+            month_end = add_months(month_start, 1) - datetime.timedelta(days=1)
+            safe_day = min(due_day_int, month_end.day)
+            return ref_date.replace(day=safe_day)
+
         tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial"])
         with tab1:
             with st.expander("Configuracao automatica de e-mail e boleto", expanded=False):
@@ -14478,9 +14486,16 @@ elif st.session_state["role"] == "Coordenador":
                         "Outro": "Referencia",
                     }.get(categoria_lancamento, "Referencia")
                     aluno = st.text_input(f"{ref_label} *")
-                c4, c5, c6 = st.columns(3)
+                c4, c5, c6, c6b = st.columns(4)
                 with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                 with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c6b:
+                    rec_due_day = st.selectbox(
+                        "Dia do vencimento",
+                        list(range(1, 31)),
+                        index=max(0, min(29, datetime.date.today().day - 1)),
+                        format_func=lambda d: f"Dia {d}",
+                    )
                 material_payment = "A vista"
                 if categoria == "Material":
                     with c6:
@@ -14547,9 +14562,10 @@ elif st.session_state["role"] == "Coordenador":
                         before_count = len(st.session_state.get("receivables", []))
                         total_lancados = 0
                         lote_id_rec = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                        venc_base = _month_due_date(venc, rec_due_day)
                         if categoria == "Mensalidade":
                             for i in range(qtd_parcelas_calc):
-                                data_venc = add_months(venc, i)
+                                data_venc = add_months(venc_base, i)
                                 parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}"
                                 add_receivable(
                                     aluno,
@@ -14569,7 +14585,7 @@ elif st.session_state["role"] == "Coordenador":
                         elif categoria == "Material":
                             qtd_material = qtd_parcelas_calc
                             for i in range(qtd_material):
-                                data_venc = add_months(venc, i)
+                                data_venc = add_months(venc_base, i)
                                 parcela = f"{1 + i}/{qtd_material}" if qtd_material > 1 else "1"
                                 add_receivable(
                                     aluno,
@@ -14588,7 +14604,7 @@ elif st.session_state["role"] == "Coordenador":
                             st.success(f"Material lancado com parcelamento em {qtd_material}x.")
                         else:
                             for i in range(qtd_parcelas_calc):
-                                data_venc = add_months(venc, i) if qtd_parcelas_calc > 1 else venc
+                                data_venc = add_months(venc_base, i) if qtd_parcelas_calc > 1 else venc_base
                                 parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}" if qtd_parcelas_calc > 1 else str(parcela_inicial)
                                 add_receivable(
                                     aluno,
@@ -15037,6 +15053,13 @@ elif st.session_state["role"] == "Coordenador":
                             turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
                         data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
                         venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
+                        due_day_mat = st.selectbox(
+                            "Dia do vencimento",
+                            list(range(1, 31)),
+                            index=max(0, min(29, datetime.date.today().day - 1)),
+                            format_func=lambda d: f"Dia {d}",
+                            key="due_day_mat_fin",
+                        )
                         material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
                         material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
                         parcelas_material = st.number_input(
@@ -15057,6 +15080,7 @@ elif st.session_state["role"] == "Coordenador":
                             else:
                                 parcelas = 1
                             cobranca = material_payment
+                            venc_base_mat = _month_due_date(venc, due_day_mat)
                             descricao = item_obj.get("descricao", "Material")
                             item_codigo = item_obj.get("codigo", "")
                             alunos_destino = []
@@ -15071,7 +15095,7 @@ elif st.session_state["role"] == "Coordenador":
                             for aluno_dest in alunos_destino:
                                 lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
                                 for i in range(parcelas):
-                                    data_venc = add_months(venc, i)
+                                    data_venc = add_months(venc_base_mat, i)
                                     parcela = f"{1 + i}/{parcelas}"
                                     add_receivable(
                                         aluno_dest,
@@ -15208,6 +15232,13 @@ elif st.session_state["role"] == "Coordenador":
                         ["Aberto", "Pago"],
                         key="fin_teacher_pay_status",
                     )
+                teacher_pay_due_day = st.selectbox(
+                    "Dia do vencimento",
+                    list(range(1, 31)),
+                    index=max(0, min(29, datetime.date.today().day - 1)),
+                    format_func=lambda d: f"Dia {d}",
+                    key="fin_teacher_pay_due_day",
+                )
                 teacher_pay_cobranca = st.selectbox(
                     "Forma de pagamento",
                     ["Transferencia", "Pix", "Dinheiro", "Boleto", "Cartao"],
@@ -15248,7 +15279,7 @@ elif st.session_state["role"] == "Coordenador":
                                     "data_aula": str(item.get("data", "")).strip(),
                                     "duracao_minutos": int(item.get("minutos", 0) or 0),
                                     "data": teacher_pay_data.strftime("%d/%m/%Y"),
-                                    "vencimento": teacher_pay_venc.strftime("%d/%m/%Y"),
+                                    "vencimento": _month_due_date(teacher_pay_venc, teacher_pay_due_day).strftime("%d/%m/%Y"),
                                     "cobranca": teacher_pay_cobranca,
                                     "status": teacher_pay_status,
                                     "lote_id": lote_id_teacher,
@@ -15329,7 +15360,7 @@ elif st.session_state["role"] == "Coordenador":
                                     "quantidade_aulas": int(teacher_manual_qtd),
                                     "valor_unitario_aula": f"{float(valor_unitario_manual):.2f}".replace(".", ","),
                                     "data": teacher_pay_data.strftime("%d/%m/%Y"),
-                                    "vencimento": teacher_pay_venc.strftime("%d/%m/%Y"),
+                                    "vencimento": _month_due_date(teacher_pay_venc, teacher_pay_due_day).strftime("%d/%m/%Y"),
                                     "cobranca": teacher_pay_cobranca,
                                     "status": teacher_pay_status,
                                     "lote_id": f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}",
@@ -15358,13 +15389,20 @@ elif st.session_state["role"] == "Coordenador":
                     "Aluno": "Aluno",
                     "Outro": "Referencia",
                 }.get(categoria_lancamento_pag, "Referencia")
-                c4, c5, c6 = st.columns(3)
+                c4, c5, c6, c6b = st.columns(4)
                 with c4:
                     forn = st.text_input(f"{ref_pag}")
                 with c5:
                     data_pag = st.date_input("Data do lancamento", value=datetime.date.today(), format="DD/MM/YYYY")
                 with c6:
                     venc_pag = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                with c6b:
+                    pag_due_day = st.selectbox(
+                        "Dia do vencimento",
+                        list(range(1, 31)),
+                        index=max(0, min(29, datetime.date.today().day - 1)),
+                        format_func=lambda d: f"Dia {d}",
+                    )
 
                 c7, c8, c9 = st.columns(3)
                 with c7:
@@ -15390,8 +15428,9 @@ elif st.session_state["role"] == "Coordenador":
                         st.error("Informe descricao, referencia e valor da parcela valido.")
                     else:
                         lote_id_pag = f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+                        venc_pag_base = _month_due_date(venc_pag, pag_due_day)
                         for i in range(qtd_pag_int):
-                            venc_item = add_months(venc_pag, i) if qtd_pag_int > 1 else venc_pag
+                            venc_item = add_months(venc_pag_base, i) if qtd_pag_int > 1 else venc_pag_base
                             parcela_txt = f"{1 + i}/{qtd_pag_int}" if qtd_pag_int > 1 else "1"
                             st.session_state["payables"].append(
                                 {
