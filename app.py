@@ -7317,6 +7317,88 @@ def notify_new_challenge_by_level(level, week_key, titulo, descricao):
     }
     return notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True)
 
+
+def _notification_theme(origem, titulo, mensagem):
+    origem_norm = _wiz_norm_text(origem)
+    titulo_norm = _wiz_norm_text(titulo)
+    mensagem_norm = _wiz_norm_text(mensagem)
+    combined = " ".join([origem_norm, titulo_norm, mensagem_norm]).strip()
+    if any(token in combined for token in ("financeiro", "boleto", "mensalidade", "vencimento", "pagamento", "cobranca")):
+        return {
+            "header": "💸 *Financeiro Active*",
+            "title_emoji": "📌",
+            "meta_emoji": "💼",
+            "message_emoji": "💰",
+            "footer": "📲 Consulte seu portal ou fale com a administracao para regularizacao.",
+        }
+    if any(token in combined for token in ("desafio", "atividade da semana", "weekly challenge")):
+        return {
+            "header": "🚀 *Novo Desafio no Active*",
+            "title_emoji": "🏆",
+            "meta_emoji": "🎯",
+            "message_emoji": "✍️",
+            "footer": "📚 Acesse o portal do aluno e conclua dentro do prazo.",
+        }
+    if any(token in combined for token in ("material", "livro", "apostila", "biblioteca", "pedido de material")):
+        return {
+            "header": "📚 *Atualizacao de Material*",
+            "title_emoji": "📝",
+            "meta_emoji": "📦",
+            "message_emoji": "📘",
+            "footer": "✅ Em caso de duvida, responda esta mensagem ou fale com a administracao.",
+        }
+    return {
+        "header": "📢 *Active Educacional*",
+        "title_emoji": "✨",
+        "meta_emoji": "👤",
+        "message_emoji": "💬",
+        "footer": "😊 Qualquer duvida, estamos a disposicao.",
+    }
+
+
+def _build_notification_body(mensagem_obj, origem="Mensagens"):
+    mensagem = mensagem_obj if isinstance(mensagem_obj, dict) else {}
+    publico_label = str(mensagem.get("publico", "Alunos")).strip() or "Alunos"
+    theme = _notification_theme(origem, mensagem.get("titulo", ""), mensagem.get("mensagem", ""))
+    corpo_linhas = [
+        theme["header"],
+        "",
+        f"{theme['title_emoji']} *{str(mensagem.get('titulo', 'Aviso')).strip() or 'Aviso'}*",
+        "",
+        f"{theme['meta_emoji']} Enviado por: {str(mensagem.get('autor', 'Sistema')).strip() or 'Sistema'}",
+        f"👥 Publico: {publico_label}",
+    ]
+    if str(mensagem.get("aluno", "")).strip():
+        corpo_linhas.append(f"🎓 Aluno: {str(mensagem.get('aluno', '')).strip()}")
+        if str(mensagem.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {str(mensagem.get('turma', '')).strip()}")
+    elif str(mensagem.get("professor_individual", "")).strip():
+        corpo_linhas.append(f"👨‍🏫 Professor: {str(mensagem.get('professor_individual', '')).strip()}")
+    elif str(mensagem.get("destinatario_unico", "")).strip():
+        corpo_linhas.append(f"🙋 Destinatario: {str(mensagem.get('destinatario_unico', '')).strip()}")
+    elif publico_label == "Professores":
+        corpo_linhas.append(f"👨‍🏫 Professor(es): {str(mensagem.get('professor', 'Todos')).strip() or 'Todos'}")
+    elif publico_label == "Alunos e Professores":
+        if str(mensagem.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {str(mensagem.get('turma', '')).strip()}")
+        corpo_linhas.append(f"👨‍🏫 Professor(es): {str(mensagem.get('professor', 'Todos')).strip() or 'Todos'}")
+    else:
+        if str(mensagem.get("turma", "")).strip():
+            corpo_linhas.append(f"🏫 Turma: {str(mensagem.get('turma', '')).strip()}")
+    corpo_linhas.extend(
+        [
+            f"📅 Data: {str(mensagem.get('data', '')).strip()}",
+            "",
+            f"{theme['message_emoji']} *Mensagem:*",
+            str(mensagem.get("mensagem", "")).strip(),
+        ]
+    )
+    footer = str(theme.get("footer", "")).strip()
+    if footer:
+        corpo_linhas.extend(["", footer])
+    return "\n".join(corpo_linhas)
+
+
 def post_message_and_notify(
     autor,
     titulo,
@@ -7374,41 +7456,7 @@ def post_message_and_notify(
     st.session_state["messages"].append(mensagem_obj)
     save_list(MESSAGES_FILE, st.session_state["messages"])
     assunto = f"[Active] {mensagem_obj['titulo']}"
-    publico_label = str(mensagem_obj.get("publico", "Alunos")).strip() or "Alunos"
-    corpo_linhas = [
-        "📢 *Active Educacional*",
-        "",
-        f"✨ *{mensagem_obj['titulo']}*",
-        "",
-        f"👤 Enviado por: {mensagem_obj['autor']}",
-        f"👥 Publico: {publico_label}",
-    ]
-    if mensagem_obj["aluno"]:
-        corpo_linhas.append(f"🎓 Aluno: {mensagem_obj['aluno']}")
-        if str(mensagem_obj.get("turma", "")).strip():
-            corpo_linhas.append(f"🏫 Turma: {mensagem_obj['turma']}")
-    elif str(mensagem_obj.get("professor_individual", "")).strip():
-        corpo_linhas.append(f"👨‍🏫 Professor: {mensagem_obj.get('professor_individual', '')}")
-    elif str(mensagem_obj.get("destinatario_unico", "")).strip():
-        corpo_linhas.append(f"🙋 Destinatario: {mensagem_obj.get('destinatario_unico', '')}")
-    elif publico_label == "Professores":
-        corpo_linhas.append(f"👨‍🏫 Professor(es): {mensagem_obj.get('professor', 'Todos')}")
-    elif publico_label == "Alunos e Professores":
-        if str(mensagem_obj.get("turma", "")).strip():
-            corpo_linhas.append(f"🏫 Turma: {mensagem_obj.get('turma', 'Todas')}")
-        corpo_linhas.append(f"👨‍🏫 Professor(es): {mensagem_obj.get('professor', 'Todos')}")
-    else:
-        if str(mensagem_obj.get("turma", "")).strip():
-            corpo_linhas.append(f"🏫 Turma: {mensagem_obj.get('turma', 'Todas')}")
-    corpo_linhas.extend(
-        [
-            f"📅 Data: {mensagem_obj['data']}",
-            "",
-            "💬 *Mensagem:*",
-            str(mensagem_obj.get("mensagem", "")).strip(),
-        ]
-    )
-    corpo = "\n".join(corpo_linhas)
+    corpo = _build_notification_body(mensagem_obj, origem=origem)
     if mensagem_obj["aluno"] and student_obj:
         stats = _notify_direct_contacts(
             student_obj.get("nome", "Aluno"),
