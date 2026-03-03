@@ -15824,9 +15824,10 @@ elif st.session_state["role"] == "Coordenador":
                 due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
 
             autor = st.session_state.get("user_name", "Coordenacao")
-            enviar_email = st.checkbox(
-                "Enviar email para alunos deste livro",
-                value=False,
+            notify_new_challenge_enabled = False
+            notify_new_challenge_enabled = st.checkbox(
+                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
+                value=True,
                 key=f"{key_prefix}_notify_level",
             )
 
@@ -15856,7 +15857,7 @@ elif st.session_state["role"] == "Coordenador":
                             target_turma=target_turma,
                             target_aluno=target_aluno,
                         )
-                        if enviar_comunicado:
+                        if notify_new_challenge_enabled:
                             stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                             st.info(
                                 "Disparos dos desafios: "
@@ -15877,6 +15878,7 @@ elif st.session_state["role"] == "Coordenador":
                     levels = book_levels()
                     created = 0
                     failed = 0
+                    notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                     for lv in levels:
                         if get_weekly_challenge(lv, week_now):
                             continue
@@ -15893,10 +15895,25 @@ elif st.session_state["role"] == "Coordenador":
                                 rubrica=gen.get("rubrica", ""),
                                 dica=gen.get("dica", ""),
                             )
+                            if notify_new_challenge_enabled:
+                                partial_stats = notify_new_challenge_by_level(
+                                    lv,
+                                    week_now,
+                                    gen.get("titulo", "Desafio da semana"),
+                                    gen.get("descricao", ""),
+                                )
+                                for key in notify_stats:
+                                    notify_stats[key] += int(partial_stats.get(key, 0))
                             created += 1
                         except Exception:
                             failed += 1
                     if created:
+                        if notify_new_challenge_enabled:
+                            st.info(
+                                "Comunicado de novo desafio enviado: "
+                                f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
+                                f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
+                            )
                         st.success(f"Gerados {created} desafio(s) para a semana {week_now}.")
                         st.rerun()
                     if not created and not failed:
@@ -15923,7 +15940,7 @@ elif st.session_state["role"] == "Coordenador":
                         target_turma=target_turma,
                         target_aluno=target_aluno,
                     )
-                    if enviar_comunicado:
+                    if notify_new_challenge_enabled:
                         stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                         st.info(
                             "Disparos dos desafios: "
