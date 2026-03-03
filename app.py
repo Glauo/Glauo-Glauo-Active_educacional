@@ -16633,7 +16633,8 @@ elif st.session_state["role"] == "Coordenador":
                 due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
 
             autor = st.session_state.get("user_name", "Coordenacao")
-            enviar_comunicado = st.checkbox(
+            notify_new_challenge_enabled = False
+            notify_new_challenge_enabled = st.checkbox(
                 "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
                 value=True,
                 key=f"{key_prefix}_notify_level",
@@ -16665,7 +16666,7 @@ elif st.session_state["role"] == "Coordenador":
                             target_turma=target_turma,
                             target_aluno=target_aluno,
                         )
-                        if enviar_comunicado:
+                        if notify_new_challenge_enabled:
                             stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                             st.info(
                                 "Comunicado de novo desafio enviado: "
@@ -16703,7 +16704,7 @@ elif st.session_state["role"] == "Coordenador":
                                 rubrica=gen.get("rubrica", ""),
                                 dica=gen.get("dica", ""),
                             )
-                            if enviar_comunicado:
+                            if notify_new_challenge_enabled:
                                 partial_stats = notify_new_challenge_by_level(
                                     lv,
                                     week_now,
@@ -16716,7 +16717,7 @@ elif st.session_state["role"] == "Coordenador":
                         except Exception:
                             failed += 1
                     if created:
-                        if enviar_comunicado:
+                        if notify_new_challenge_enabled:
                             st.info(
                                 "Comunicado de novo desafio enviado: "
                                 f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
@@ -16748,7 +16749,7 @@ elif st.session_state["role"] == "Coordenador":
                         target_turma=target_turma,
                         target_aluno=target_aluno,
                     )
-                    if enviar_comunicado:
+                    if notify_new_challenge_enabled:
                         stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                         st.info(
                             "Comunicado de novo desafio enviado: "
