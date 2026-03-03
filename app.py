@@ -16659,49 +16659,76 @@ elif st.session_state["role"] == "Coordenador":
             target_key_label = target_turma or target_aluno or nivel
             key_prefix = f"coord_ch_{target_type}_{str(target_key_label).replace(' ', '_')}_{str(semana).replace('-', '_')}"
 
-            titulo = st.text_input("Titulo", value=str(existing.get("titulo", "")), key=f"{key_prefix}_titulo")
+            titulo_key = f"{key_prefix}_titulo"
+            descricao_key = f"{key_prefix}_descricao"
+            rubrica_key = f"{key_prefix}_rubrica"
+            dica_key = f"{key_prefix}_dica"
+            pontos_key = f"{key_prefix}_pontos"
+            sem_prazo_key = f"{key_prefix}_sem_prazo"
+            due_key = f"{key_prefix}_due"
+            notify_key = f"{key_prefix}_notify_level"
+            draft_info_key = f"{key_prefix}_draft_info"
+
+            if titulo_key not in st.session_state:
+                st.session_state[titulo_key] = str(existing.get("titulo", ""))
+            if descricao_key not in st.session_state:
+                st.session_state[descricao_key] = str(existing.get("descricao", ""))
+            if rubrica_key not in st.session_state:
+                st.session_state[rubrica_key] = str(existing.get("rubrica", ""))
+            if dica_key not in st.session_state:
+                st.session_state[dica_key] = str(existing.get("dica", ""))
+            if pontos_key not in st.session_state:
+                st.session_state[pontos_key] = int(existing.get("pontos") or 10)
+            if sem_prazo_key not in st.session_state:
+                st.session_state[sem_prazo_key] = not bool(str(existing.get("due_date", "")).strip())
+            if due_key not in st.session_state:
+                st.session_state[due_key] = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
+            if notify_key not in st.session_state:
+                st.session_state[notify_key] = True
+            if draft_info_key not in st.session_state:
+                st.session_state[draft_info_key] = ""
+
+            st.markdown("#### Rascunho do desafio")
+            st.caption("Voce pode criar manualmente ou gerar com IA, revisar os campos e salvar quando estiver bom.")
+
+            titulo = st.text_input("Titulo", key=titulo_key)
             descricao = st.text_area(
                 "Descricao",
-                value=str(existing.get("descricao", "")),
                 height=160,
-                key=f"{key_prefix}_descricao",
+                key=descricao_key,
             )
             rubrica = st.text_input(
                 "Rubrica (como sera avaliado)",
-                value=str(existing.get("rubrica", "")),
-                key=f"{key_prefix}_rubrica",
+                key=rubrica_key,
             )
             dica = st.text_input(
                 "Dica (opcional)",
-                value=str(existing.get("dica", "")),
-                key=f"{key_prefix}_dica",
+                key=dica_key,
             )
-            pontos_default = int(existing.get("pontos") or 10)
             pontos = st.number_input(
                 "Pontos",
                 min_value=0,
                 max_value=100,
-                value=pontos_default,
                 step=1,
-                key=f"{key_prefix}_pontos",
+                key=pontos_key,
             )
-            sem_prazo_default = not bool(str(existing.get("due_date", "")).strip())
-            sem_prazo = st.checkbox("Sem prazo", value=sem_prazo_default, key=f"{key_prefix}_sem_prazo")
+            sem_prazo = st.checkbox("Sem prazo", key=sem_prazo_key)
             due_date = None
             if not sem_prazo:
-                due_default = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
-                due_date = st.date_input("Prazo", value=due_default, format="DD/MM/YYYY", key=f"{key_prefix}_due")
+                due_date = st.date_input("Prazo", format="DD/MM/YYYY", key=due_key)
 
             autor = st.session_state.get("user_name", "Coordenacao")
-            notify_new_challenge_enabled = False
             notify_new_challenge_enabled = st.checkbox(
                 "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
-                value=True,
-                key=f"{key_prefix}_notify_level",
+                key=notify_key,
             )
 
+            draft_info = str(st.session_state.get(draft_info_key, "")).strip()
+            if draft_info:
+                st.info(draft_info)
+
             ai_col1, ai_col2 = st.columns([1, 1])
-            if ai_col1.button("Gerar e salvar com IA", key=f"{key_prefix}_gen_ai"):
+            if ai_col1.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
                 api_key = get_groq_api_key()
                 if not api_key:
                     st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
@@ -16712,28 +16739,14 @@ elif st.session_state["role"] == "Coordenador":
                 else:
                     try:
                         gen = generate_weekly_challenge_ai(nivel, semana)
-                        saved_challenge = upsert_weekly_challenge(
-                            level=nivel,
-                            week_key=semana,
-                            titulo=gen.get("titulo", ""),
-                            descricao=gen.get("descricao", ""),
-                            pontos=int(gen.get("pontos") or 10),
-                            autor=autor,
-                            due_date=due_date,
-                            rubrica=gen.get("rubrica", ""),
-                            dica=gen.get("dica", ""),
-                            target_type=target_type,
-                            target_turma=target_turma,
-                            target_aluno=target_aluno,
+                        st.session_state[titulo_key] = str(gen.get("titulo", "")).strip()
+                        st.session_state[descricao_key] = str(gen.get("descricao", "")).strip()
+                        st.session_state[rubrica_key] = str(gen.get("rubrica", "")).strip()
+                        st.session_state[dica_key] = str(gen.get("dica", "")).strip()
+                        st.session_state[pontos_key] = int(gen.get("pontos") or 10)
+                        st.session_state[draft_info_key] = (
+                            f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio."
                         )
-                        if notify_new_challenge_enabled:
-                            stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
-                            st.info(
-                                "Comunicado de novo desafio enviado: "
-                                f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
-                                f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
-                            )
-                        st.success(f"Desafio gerado e salvo para {nivel} - {semana}.")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Falha ao gerar desafio com IA: {exc}")
@@ -16787,6 +16800,29 @@ elif st.session_state["role"] == "Coordenador":
                         st.rerun()
                     if not created and not failed:
                         st.info(f"Ja existem desafios publicados para a semana {week_now}.")
+            manual_col1, manual_col2 = st.columns([1, 1])
+            if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
+                st.session_state[titulo_key] = ""
+                st.session_state[descricao_key] = ""
+                st.session_state[rubrica_key] = ""
+                st.session_state[dica_key] = ""
+                st.session_state[pontos_key] = 10
+                st.session_state[draft_info_key] = "Formulario limpo para criacao manual."
+                st.rerun()
+            if manual_col2.button("Carregar desafio salvo", key=f"{key_prefix}_load_existing"):
+                st.session_state[titulo_key] = str(existing.get("titulo", ""))
+                st.session_state[descricao_key] = str(existing.get("descricao", ""))
+                st.session_state[rubrica_key] = str(existing.get("rubrica", ""))
+                st.session_state[dica_key] = str(existing.get("dica", ""))
+                st.session_state[pontos_key] = int(existing.get("pontos") or 10)
+                st.session_state[sem_prazo_key] = not bool(str(existing.get("due_date", "")).strip())
+                st.session_state[due_key] = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
+                st.session_state[draft_info_key] = (
+                    "Desafio salvo carregado no formulario."
+                    if existing else
+                    "Nao existe desafio salvo para esse destino/semana."
+                )
+                st.rerun()
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 if not str(titulo).strip() or not str(descricao).strip():
                     st.error("Preencha titulo e descricao.")
@@ -16816,6 +16852,7 @@ elif st.session_state["role"] == "Coordenador":
                             f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
                             f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
                         )
+                    st.session_state[draft_info_key] = ""
                     st.success(f"Desafio salvo para {nivel} - {semana}.")
                     st.rerun()
 
