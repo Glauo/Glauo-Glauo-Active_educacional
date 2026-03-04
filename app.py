@@ -15262,432 +15262,435 @@ elif st.session_state["role"] == "Coordenador":
                         f"{str(r.get('valor_parcela', r.get('valor', ''))).strip()} | {str(r.get('status', '')).strip()}"
                     )
 
-            rbk1, rbk2, rbk3, rbk4 = st.columns(4)
-            with rbk1:
-                if st.button("Selecionar filtrados", key="fin_rec_bulk_sel_filtered"):
-                    st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_filtered_codes)
-                    st.rerun()
-            with rbk2:
-                if st.button("Selecionar TODOS", key="fin_rec_bulk_sel_all"):
-                    st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_all_codes)
-                    st.rerun()
-            with rbk3:
-                if st.button("Limpar selecao", key="fin_rec_bulk_sel_clear"):
-                    st.session_state["fin_rec_bulk_codes"] = []
-                    st.rerun()
-            with rbk4:
-                st.caption(f"Filtrados: {len(rec_bulk_filtered_codes)} | Base: {len(rec_bulk_all_codes)}")
-
-            selected_rec_codes = st.multiselect(
-                "Selecionar recebimentos",
-                rec_bulk_all_codes,
-                key="fin_rec_bulk_codes",
-                format_func=lambda code: rec_labels_by_code.get(code, code),
-            )
-            rbk5, rbk6 = st.columns([1.6, 2.4])
-            with rbk5:
-                rec_bulk_confirm = st.checkbox(
-                    "Confirmo exclusao em massa",
-                    value=False,
-                    key="fin_rec_bulk_confirm_delete",
-                )
-            with rbk6:
-                if st.button(
-                    "Excluir recebimentos selecionados",
-                    type="primary",
-                    key="fin_rec_bulk_delete_btn",
-                    disabled=not bool(selected_rec_codes),
-                ):
-                    if not rec_bulk_confirm:
-                        st.error("Marque a confirmacao para excluir em massa.")
-                    else:
-                        before_rec = len(st.session_state.get("receivables", []))
-                        st.session_state["receivables"] = [
-                            r
-                            for r in st.session_state.get("receivables", [])
-                            if str(r.get("codigo", "")).strip() not in selected_rec_codes
-                        ]
-                        removed_rec = before_rec - len(st.session_state.get("receivables", []))
-                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.session_state["fin_rec_bulk_reset_pending"] = True
-                        st.success(f"{removed_rec} recebimento(s) excluido(s).")
+                rbk1, rbk2, rbk3, rbk4 = st.columns(4)
+                with rbk1:
+                    if st.button("Selecionar filtrados", key="fin_rec_bulk_sel_filtered"):
+                        st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_filtered_codes)
                         st.rerun()
+                with rbk2:
+                    if st.button("Selecionar TODOS", key="fin_rec_bulk_sel_all"):
+                        st.session_state["fin_rec_bulk_codes"] = list(rec_bulk_all_codes)
+                        st.rerun()
+                with rbk3:
+                    if st.button("Limpar selecao", key="fin_rec_bulk_sel_clear"):
+                        st.session_state["fin_rec_bulk_codes"] = []
+                        st.rerun()
+                with rbk4:
+                    st.caption(f"Filtrados: {len(rec_bulk_filtered_codes)} | Base: {len(rec_bulk_all_codes)}")
 
-            st.markdown("### Gerenciamento de Recebimentos (Editar/Excluir Cobranca)")
-            if not recebimentos:
-                st.info("Nenhum recebimento para gerenciar.")
-            else:
-                opcoes_rec = [
-                    f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}"
-                    for r in recebimentos
-                ]
-                idx_rec = st.selectbox(
-                    "Selecione a cobranca para editar/excluir",
-                    list(range(len(recebimentos))),
-                    format_func=lambda i: opcoes_rec[i],
-                    key="manage_rec_idx",
+                selected_rec_codes = st.multiselect(
+                    "Selecionar recebimentos",
+                    rec_bulk_all_codes,
+                    key="fin_rec_bulk_codes",
+                    format_func=lambda code: rec_labels_by_code.get(code, code),
                 )
-                rec_obj = recebimentos[idx_rec]
-                rec_obj.setdefault("boleto_url", "")
-                rec_obj.setdefault("boleto_linha_digitavel", "")
-                rec_obj.setdefault("boleto_status", "Nao Gerado")
-                rec_obj.setdefault("boleto_gerado_em", "")
-                rec_obj.setdefault("boleto_enviado_em", "")
-                rec_obj.setdefault("boleto_enviado_canais", "")
-                parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
-                venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
-
-                categoria_opts_rec = ["Mensalidade", "Material", "Taxa de Matricula"]
-                if rec_obj.get("categoria", "") and rec_obj.get("categoria", "") not in categoria_opts_rec:
-                    categoria_opts_rec.append(rec_obj.get("categoria", ""))
-
-                cat_lanc_opts_rec = ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"]
-                if rec_obj.get("categoria_lancamento", "") and rec_obj.get("categoria_lancamento", "") not in cat_lanc_opts_rec:
-                    cat_lanc_opts_rec.append(rec_obj.get("categoria_lancamento", ""))
-
-                cobranca_opts_rec = ["Boleto", "Pix", "Cartao", "Dinheiro", "A vista", "Parcelado no Cartao", "Parcelado no Boleto"]
-                if rec_obj.get("cobranca", "") and rec_obj.get("cobranca", "") not in cobranca_opts_rec:
-                    cobranca_opts_rec.append(rec_obj.get("cobranca", ""))
-
-                status_opts_rec = ["Aberto", "Pago", "Cancelado"]
-                if rec_obj.get("status", "") and rec_obj.get("status", "") not in status_opts_rec:
-                    status_opts_rec.append(rec_obj.get("status", ""))
-
-                with st.form("manage_rec_form"):
-                    mr1, mr2, mr3 = st.columns(3)
-                    with mr1:
-                        new_desc_rec = st.text_input("Descricao", value=str(rec_obj.get("descricao", "")))
-                    with mr2:
-                        new_val_total_rec = st.text_input("Valor total", value=str(rec_obj.get("valor", rec_obj.get("valor_parcela", ""))))
-                    with mr3:
-                        new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
-
-                    mr4, mr5, mr6 = st.columns(3)
-                    with mr4:
-                        new_ref_rec = st.text_input("Aluno/Referencia", value=str(rec_obj.get("aluno", "")))
-                    with mr5:
-                        cat_rec = str(rec_obj.get("categoria", "Mensalidade"))
-                        new_cat_rec = st.selectbox(
-                            "Categoria",
-                            categoria_opts_rec,
-                            index=categoria_opts_rec.index(cat_rec) if cat_rec in categoria_opts_rec else 0,
-                        )
-                    with mr6:
-                        cat_lanc_rec = str(rec_obj.get("categoria_lancamento", "Aluno"))
-                        new_cat_lanc_rec = st.selectbox(
-                            "Categoria do lancamento",
-                            cat_lanc_opts_rec,
-                            index=cat_lanc_opts_rec.index(cat_lanc_rec) if cat_lanc_rec in cat_lanc_opts_rec else 0,
-                        )
-
-                    mr7, mr8, mr9 = st.columns(3)
-                    with mr7:
-                        new_venc_rec = st.date_input("Vencimento", value=venc_atual_rec, format="DD/MM/YYYY")
-                    with mr8:
-                        cob_rec = str(rec_obj.get("cobranca", "Boleto"))
-                        new_cobranca_rec = st.selectbox(
-                            "Cobranca",
-                            cobranca_opts_rec,
-                            index=cobranca_opts_rec.index(cob_rec) if cob_rec in cobranca_opts_rec else 0,
-                        )
-                    with mr9:
-                        stat_rec = str(rec_obj.get("status", "Aberto"))
-                        new_status_rec = st.selectbox(
-                            "Status",
-                            status_opts_rec,
-                            index=status_opts_rec.index(stat_rec) if stat_rec in status_opts_rec else 0,
-                        )
-
-                    new_val_total_num = parse_money(new_val_total_rec)
-                    new_qtd_rec_int = max(1, int(new_qtd_rec))
-                    new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
-                    st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
-
-                    mb1, mb2 = st.columns(2)
-                    with mb1:
-                        new_boleto_url = st.text_input("Link do boleto", value=str(rec_obj.get("boleto_url", "")))
-                    with mb2:
-                        new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
-
-                    related_preview_idx = _related_receivable_indices(recebimentos, idx_rec)
-                    total_relacionados = len(set(related_preview_idx)) if related_preview_idx else 1
-                    apply_all_rec = True
-                    st.info(
-                        "Edicao em lote ativa: ao salvar, o sistema atualiza todas as parcelas do mesmo lancamento "
-                        f"({total_relacionados} parcela(s))."
+                rbk5, rbk6 = st.columns([1.6, 2.4])
+                with rbk5:
+                    rec_bulk_confirm = st.checkbox(
+                        "Confirmo exclusao em massa",
+                        value=False,
+                        key="fin_rec_bulk_confirm_delete",
                     )
-
-                    mc1, mc2 = st.columns(2)
-                    with mc1:
-                        salvar_rec = st.form_submit_button("Salvar cobranca (todas parcelas)")
-                    with mc2:
-                        excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
-
-                    if salvar_rec:
-                        if not new_ref_rec.strip() or new_val_total_num <= 0:
-                            st.error("Informe referencia e valor total valido.")
-                        else:
-                            lote_id_rec = str(rec_obj.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
-                            ref_data_rec = str(rec_obj.get("data", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
-                            ref_item_codigo = str(rec_obj.get("item_codigo", "")).strip()
-                            new_boleto_url_txt = str(new_boleto_url).strip()
-                            new_boleto_linha_txt = _format_boleto_linha(new_boleto_linha)
-                            new_boleto_status = "Gerado" if (new_boleto_url_txt or new_boleto_linha_txt) else "Nao Gerado"
-                            new_boleto_em = datetime.datetime.now().strftime("%d/%m/%Y %H:%M") if new_boleto_status == "Gerado" else ""
-
-                            if apply_all_rec:
-                                related_idx = _related_receivable_indices(recebimentos, idx_rec)
-                                related_idx = _sort_indices_by_parcela(recebimentos, related_idx)
-                                if not related_idx:
-                                    related_idx = [idx_rec]
-                                related_items = [recebimentos[i] for i in related_idx if 0 <= i < len(recebimentos)]
-                                existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
-                                if not existing_codes:
-                                    existing_codes = [str(rec_obj.get("codigo", "")).strip()] if str(rec_obj.get("codigo", "")).strip() else []
-
-                                parcela_base = max(1, parcela_atual_rec)
-                                primeiro_venc = add_months(new_venc_rec, -(parcela_base - 1)) if parcela_base > 1 else new_venc_rec
-                                if primeiro_venc is None:
-                                    primeiro_venc = new_venc_rec
-
-                                related_set = set(related_idx)
-                                st.session_state["receivables"] = [
-                                    r for pos, r in enumerate(recebimentos) if pos not in related_set
-                                ]
-                                recebimentos = st.session_state["receivables"]
-
-                                prefix_rec = re.sub(r"[^A-Z0-9]+", "", str(new_cobranca_rec).upper()) or "REC"
-                                for i in range(new_qtd_rec_int):
-                                    codigo_item = (
-                                        existing_codes[i]
-                                        if i < len(existing_codes) and existing_codes[i]
-                                        else f"{prefix_rec}-{uuid.uuid4().hex[:8].upper()}"
-                                    )
-                                    venc_item = add_months(primeiro_venc, i) or new_venc_rec
-                                    parcela_txt = f"{i + 1}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else "1"
-                                    st.session_state["receivables"].append(
-                                        {
-                                            "descricao": new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade"),
-                                            "aluno": new_ref_rec.strip(),
-                                            "categoria": new_cat_rec,
-                                            "categoria_lancamento": new_cat_lanc_rec,
-                                            "cobranca": new_cobranca_rec,
-                                            "codigo": codigo_item,
-                                            "valor": new_val_total_rec.strip(),
-                                            "data": ref_data_rec,
-                                            "valor_parcela": new_valor_parcela_rec,
-                                            "parcela": parcela_txt,
-                                            "numero_pedido": "",
-                                            "item_codigo": ref_item_codigo,
-                                            "lote_id": lote_id_rec,
-                                            "vencimento": venc_item.strftime("%d/%m/%Y"),
-                                            "status": new_status_rec,
-                                            "boleto_url": new_boleto_url_txt,
-                                            "boleto_linha_digitavel": new_boleto_linha_txt,
-                                            "boleto_status": new_boleto_status,
-                                            "boleto_gerado_em": new_boleto_em,
-                                            "boleto_enviado_em": "",
-                                            "boleto_enviado_canais": "",
-                                        }
-                                    )
-                            else:
-                                rec_obj["descricao"] = new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade")
-                                rec_obj["aluno"] = new_ref_rec.strip()
-                                rec_obj["categoria"] = new_cat_rec
-                                rec_obj["categoria_lancamento"] = new_cat_lanc_rec
-                                rec_obj["cobranca"] = new_cobranca_rec
-                                rec_obj["valor"] = new_val_total_rec.strip()
-                                rec_obj["valor_parcela"] = new_valor_parcela_rec
-                                rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
-                                rec_obj["status"] = new_status_rec
-                                rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
-                                rec_obj["numero_pedido"] = ""
-                                rec_obj["item_codigo"] = ref_item_codigo
-                                rec_obj["lote_id"] = lote_id_rec
-                                rec_obj["boleto_url"] = new_boleto_url_txt
-                                rec_obj["boleto_linha_digitavel"] = new_boleto_linha_txt
-                                rec_obj["boleto_status"] = new_boleto_status
-                                if new_boleto_status == "Gerado":
-                                    if not rec_obj.get("boleto_gerado_em"):
-                                        rec_obj["boleto_gerado_em"] = new_boleto_em
-                                else:
-                                    rec_obj["boleto_gerado_em"] = ""
-                                rec_obj["boleto_enviado_em"] = ""
-                                rec_obj["boleto_enviado_canais"] = ""
-                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                            st.success("Cobranca atualizada em lote!")
-                            st.rerun()
-
-                    if excluir_rec:
-                        related_del_idx = _related_receivable_indices(recebimentos, idx_rec)
-                        related_del_idx = sorted(set(related_del_idx), reverse=True)
-                        removed_count = 0
-                        for del_idx in related_del_idx:
-                            if 0 <= del_idx < len(st.session_state.get("receivables", [])):
-                                st.session_state["receivables"].pop(del_idx)
-                                removed_count += 1
-                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                        st.success(f"Cobranca excluida em lote ({removed_count} parcela(s)).")
-                        st.rerun()
-
-                aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
-                st.caption("Boleto automatico: gere o boleto e envie diretamente por e-mail e WhatsApp.")
-                rb1, rb2, rb3 = st.columns([1, 1, 2])
-                with rb1:
-                    if st.button("Gerar boleto", key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}"):
-                        ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
-                        if ok_bol:
-                            st.success(f"Boleto gerado: {status_bol}.")
-                        else:
-                            st.error(f"Falha ao gerar boleto: {status_bol}.")
-                        st.rerun()
-                with rb2:
+                with rbk6:
                     if st.button(
-                        "Gerar e enviar",
-                        key=f"fin_send_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
-                        disabled=not aluno_lancamento,
-                        help="Disponivel somente para lancamentos com categoria 'Aluno'.",
+                        "Excluir recebimentos selecionados",
+                        type="primary",
+                        key="fin_rec_bulk_delete_btn",
+                        disabled=not bool(selected_rec_codes),
                     ):
-                        ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
-                        if ok_send:
-                            st.success(
-                                "Boleto enviado. "
-                                f"E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
-                                f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                        if not rec_bulk_confirm:
+                            st.error("Marque a confirmacao para excluir em massa.")
+                        else:
+                            before_rec = len(st.session_state.get("receivables", []))
+                            st.session_state["receivables"] = [
+                                r
+                                for r in st.session_state.get("receivables", [])
+                                if str(r.get("codigo", "")).strip() not in selected_rec_codes
+                            ]
+                            removed_rec = before_rec - len(st.session_state.get("receivables", []))
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.session_state["fin_rec_bulk_reset_pending"] = True
+                            st.success(f"{removed_rec} recebimento(s) excluido(s).")
+                            st.rerun()
+
+            if finance_receber_menu == "Gerenciamento de Recebimentos":
+                st.markdown("### Gerenciamento de Recebimentos (Editar/Excluir Cobranca)")
+                if not recebimentos:
+                    st.info("Nenhum recebimento para gerenciar.")
+                else:
+                    opcoes_rec = [
+                        f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}"
+                        for r in recebimentos
+                    ]
+                    idx_rec = st.selectbox(
+                        "Selecione a cobranca para editar/excluir",
+                        list(range(len(recebimentos))),
+                        format_func=lambda i: opcoes_rec[i],
+                        key="manage_rec_idx",
+                    )
+                    rec_obj = recebimentos[idx_rec]
+                    rec_obj.setdefault("boleto_url", "")
+                    rec_obj.setdefault("boleto_linha_digitavel", "")
+                    rec_obj.setdefault("boleto_status", "Nao Gerado")
+                    rec_obj.setdefault("boleto_gerado_em", "")
+                    rec_obj.setdefault("boleto_enviado_em", "")
+                    rec_obj.setdefault("boleto_enviado_canais", "")
+                    parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
+                    venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
+
+                    categoria_opts_rec = ["Mensalidade", "Material", "Taxa de Matricula"]
+                    if rec_obj.get("categoria", "") and rec_obj.get("categoria", "") not in categoria_opts_rec:
+                        categoria_opts_rec.append(rec_obj.get("categoria", ""))
+
+                    cat_lanc_opts_rec = ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"]
+                    if rec_obj.get("categoria_lancamento", "") and rec_obj.get("categoria_lancamento", "") not in cat_lanc_opts_rec:
+                        cat_lanc_opts_rec.append(rec_obj.get("categoria_lancamento", ""))
+
+                    cobranca_opts_rec = ["Boleto", "Pix", "Cartao", "Dinheiro", "A vista", "Parcelado no Cartao", "Parcelado no Boleto"]
+                    if rec_obj.get("cobranca", "") and rec_obj.get("cobranca", "") not in cobranca_opts_rec:
+                        cobranca_opts_rec.append(rec_obj.get("cobranca", ""))
+
+                    status_opts_rec = ["Aberto", "Pago", "Cancelado"]
+                    if rec_obj.get("status", "") and rec_obj.get("status", "") not in status_opts_rec:
+                        status_opts_rec.append(rec_obj.get("status", ""))
+
+                    with st.form("manage_rec_form"):
+                        mr1, mr2, mr3 = st.columns(3)
+                        with mr1:
+                            new_desc_rec = st.text_input("Descricao", value=str(rec_obj.get("descricao", "")))
+                        with mr2:
+                            new_val_total_rec = st.text_input("Valor total", value=str(rec_obj.get("valor", rec_obj.get("valor_parcela", ""))))
+                        with mr3:
+                            new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
+
+                        mr4, mr5, mr6 = st.columns(3)
+                        with mr4:
+                            new_ref_rec = st.text_input("Aluno/Referencia", value=str(rec_obj.get("aluno", "")))
+                        with mr5:
+                            cat_rec = str(rec_obj.get("categoria", "Mensalidade"))
+                            new_cat_rec = st.selectbox(
+                                "Categoria",
+                                categoria_opts_rec,
+                                index=categoria_opts_rec.index(cat_rec) if cat_rec in categoria_opts_rec else 0,
                             )
-                        else:
-                            st.error(f"Falha no envio: {status_send}.")
-                        st.rerun()
-                with rb3:
-                    if rec_obj.get("boleto_url"):
-                        st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
-                    if rec_obj.get("boleto_linha_digitavel"):
-                        st.caption(f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}")
-                    if rec_obj.get("boleto_enviado_em"):
-                        st.caption(
-                            f"Enviado em {rec_obj.get('boleto_enviado_em')} "
-                            f"({rec_obj.get('boleto_enviado_canais', '')})"
+                        with mr6:
+                            cat_lanc_rec = str(rec_obj.get("categoria_lancamento", "Aluno"))
+                            new_cat_lanc_rec = st.selectbox(
+                                "Categoria do lancamento",
+                                cat_lanc_opts_rec,
+                                index=cat_lanc_opts_rec.index(cat_lanc_rec) if cat_lanc_rec in cat_lanc_opts_rec else 0,
+                            )
+
+                        mr7, mr8, mr9 = st.columns(3)
+                        with mr7:
+                            new_venc_rec = st.date_input("Vencimento", value=venc_atual_rec, format="DD/MM/YYYY")
+                        with mr8:
+                            cob_rec = str(rec_obj.get("cobranca", "Boleto"))
+                            new_cobranca_rec = st.selectbox(
+                                "Cobranca",
+                                cobranca_opts_rec,
+                                index=cobranca_opts_rec.index(cob_rec) if cob_rec in cobranca_opts_rec else 0,
+                            )
+                        with mr9:
+                            stat_rec = str(rec_obj.get("status", "Aberto"))
+                            new_status_rec = st.selectbox(
+                                "Status",
+                                status_opts_rec,
+                                index=status_opts_rec.index(stat_rec) if stat_rec in status_opts_rec else 0,
+                            )
+
+                        new_val_total_num = parse_money(new_val_total_rec)
+                        new_qtd_rec_int = max(1, int(new_qtd_rec))
+                        new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
+                        st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
+
+                        mb1, mb2 = st.columns(2)
+                        with mb1:
+                            new_boleto_url = st.text_input("Link do boleto", value=str(rec_obj.get("boleto_url", "")))
+                        with mb2:
+                            new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
+
+                        related_preview_idx = _related_receivable_indices(recebimentos, idx_rec)
+                        total_relacionados = len(set(related_preview_idx)) if related_preview_idx else 1
+                        apply_all_rec = True
+                        st.info(
+                            "Edicao em lote ativa: ao salvar, o sistema atualiza todas as parcelas do mesmo lancamento "
+                            f"({total_relacionados} parcela(s))."
                         )
 
-            with st.container(border=True):
-                st.markdown("### Lançar Material do Estoque")
-                itens_estoque = st.session_state["inventory"]
-                if not itens_estoque:
-                    st.info("Nenhum item de estoque cadastrado.")
-                else:
-                    with st.form("add_rec_stock", clear_on_submit=True):
-                        opcoes = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in itens_estoque]
-                        item_sel = st.selectbox("Item", opcoes)
-                        modo_destino = st.selectbox("Destino", ["Aluno", "Turma"])
-                        aluno_mat = ""
-                        turma_mat = ""
-                        if modo_destino == "Aluno":
-                            aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
-                        else:
-                            turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
-                        data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                        venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
-                        due_day_mat = st.selectbox(
-                            "Dia do vencimento",
-                            list(range(1, 31)),
-                            index=max(0, min(29, datetime.date.today().day - 1)),
-                            format_func=lambda d: f"Dia {d}",
-                            key="due_day_mat_fin",
-                        )
-                        material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
-                        material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
-                        parcelas_material = st.number_input(
-                            "Parcelamento do material (maximo 6x)",
-                            min_value=1,
-                            max_value=6,
-                            value=2 if material_parcelado else 1,
-                            disabled=not material_parcelado,
-                            key="parcelas_mat_fin",
-                        )
-                        if st.form_submit_button("Lançar material"):
-                            item_obj = itens_estoque[opcoes.index(item_sel)]
-                            preco = parse_money(item_obj.get("preco", 0))
-                            parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
-                            parcelas = min(6, parcelas_item)
-                            if material_parcelado:
-                                parcelas = int(parcelas_material)
+                        mc1, mc2 = st.columns(2)
+                        with mc1:
+                            salvar_rec = st.form_submit_button("Salvar cobranca (todas parcelas)")
+                        with mc2:
+                            excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
+
+                        if salvar_rec:
+                            if not new_ref_rec.strip() or new_val_total_num <= 0:
+                                st.error("Informe referencia e valor total valido.")
                             else:
-                                parcelas = 1
-                            cobranca = material_payment
-                            venc_base_mat = _month_due_date(venc, due_day_mat)
-                            descricao = item_obj.get("descricao", "Material")
-                            item_codigo = item_obj.get("codigo", "")
-                            alunos_destino = []
-                            if modo_destino == "Aluno":
-                                alunos_destino = [aluno_mat] if aluno_mat else []
-                            else:
-                                alunos_destino = [
-                                    s.get("nome") for s in st.session_state["students"]
-                                    if s.get("turma") == turma_mat
-                                ]
-                            count = 0
-                            for aluno_dest in alunos_destino:
-                                lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
-                                for i in range(parcelas):
-                                    data_venc = add_months(venc_base_mat, i)
-                                    parcela = f"{1 + i}/{parcelas}"
-                                    add_receivable(
-                                        aluno_dest,
-                                        descricao,
-                                        str(preco),
-                                        data_venc,
-                                        cobranca,
-                                        "Material",
-                                        data_lancamento=data_lanc,
-                                        valor_parcela=str(preco),
-                                        parcela=parcela,
-                                        item_codigo=item_codigo,
-                                        categoria_lancamento="Aluno",
-                                        lote_id=lote_id_mat,
-                                    )
-                                    count += 1
-                            st.success(f"Material lançado no financeiro! ({count} parcelas)")
-                            st.rerun()
+                                lote_id_rec = str(rec_obj.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                                ref_data_rec = str(rec_obj.get("data", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
+                                ref_item_codigo = str(rec_obj.get("item_codigo", "")).strip()
+                                new_boleto_url_txt = str(new_boleto_url).strip()
+                                new_boleto_linha_txt = _format_boleto_linha(new_boleto_linha)
+                                new_boleto_status = "Gerado" if (new_boleto_url_txt or new_boleto_linha_txt) else "Nao Gerado"
+                                new_boleto_em = datetime.datetime.now().strftime("%d/%m/%Y %H:%M") if new_boleto_status == "Gerado" else ""
 
-            with st.container(border=True):
-                st.markdown("### Baixa de Recebimentos")
-                abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
-                if not abertos:
-                    st.info("Nenhum recebimento em aberto.")
-                else:
-                    cba1, cba2 = st.columns(2)
-                    with cba1:
-                        alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
-                        aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
-                    with cba2:
-                        modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
+                                if apply_all_rec:
+                                    related_idx = _related_receivable_indices(recebimentos, idx_rec)
+                                    related_idx = _sort_indices_by_parcela(recebimentos, related_idx)
+                                    if not related_idx:
+                                        related_idx = [idx_rec]
+                                    related_items = [recebimentos[i] for i in related_idx if 0 <= i < len(recebimentos)]
+                                    existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
+                                    if not existing_codes:
+                                        existing_codes = [str(rec_obj.get("codigo", "")).strip()] if str(rec_obj.get("codigo", "")).strip() else []
 
-                    if modo_baixa == "Manual":
-                        opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
-                        item_sel = st.selectbox("Selecione o lançamento", opcoes)
-                        if st.button("Dar baixa manual"):
-                            item_obj = abertos[opcoes.index(item_sel)]
-                            item_obj["status"] = "Pago"
-                            item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-                            item_obj["baixa_tipo"] = "Manual"
+                                    parcela_base = max(1, parcela_atual_rec)
+                                    primeiro_venc = add_months(new_venc_rec, -(parcela_base - 1)) if parcela_base > 1 else new_venc_rec
+                                    if primeiro_venc is None:
+                                        primeiro_venc = new_venc_rec
+
+                                    related_set = set(related_idx)
+                                    st.session_state["receivables"] = [
+                                        r for pos, r in enumerate(recebimentos) if pos not in related_set
+                                    ]
+                                    recebimentos = st.session_state["receivables"]
+
+                                    prefix_rec = re.sub(r"[^A-Z0-9]+", "", str(new_cobranca_rec).upper()) or "REC"
+                                    for i in range(new_qtd_rec_int):
+                                        codigo_item = (
+                                            existing_codes[i]
+                                            if i < len(existing_codes) and existing_codes[i]
+                                            else f"{prefix_rec}-{uuid.uuid4().hex[:8].upper()}"
+                                        )
+                                        venc_item = add_months(primeiro_venc, i) or new_venc_rec
+                                        parcela_txt = f"{i + 1}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else "1"
+                                        st.session_state["receivables"].append(
+                                            {
+                                                "descricao": new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade"),
+                                                "aluno": new_ref_rec.strip(),
+                                                "categoria": new_cat_rec,
+                                                "categoria_lancamento": new_cat_lanc_rec,
+                                                "cobranca": new_cobranca_rec,
+                                                "codigo": codigo_item,
+                                                "valor": new_val_total_rec.strip(),
+                                                "data": ref_data_rec,
+                                                "valor_parcela": new_valor_parcela_rec,
+                                                "parcela": parcela_txt,
+                                                "numero_pedido": "",
+                                                "item_codigo": ref_item_codigo,
+                                                "lote_id": lote_id_rec,
+                                                "vencimento": venc_item.strftime("%d/%m/%Y"),
+                                                "status": new_status_rec,
+                                                "boleto_url": new_boleto_url_txt,
+                                                "boleto_linha_digitavel": new_boleto_linha_txt,
+                                                "boleto_status": new_boleto_status,
+                                                "boleto_gerado_em": new_boleto_em,
+                                                "boleto_enviado_em": "",
+                                                "boleto_enviado_canais": "",
+                                            }
+                                        )
+                                else:
+                                    rec_obj["descricao"] = new_desc_rec.strip() or rec_obj.get("descricao", "Mensalidade")
+                                    rec_obj["aluno"] = new_ref_rec.strip()
+                                    rec_obj["categoria"] = new_cat_rec
+                                    rec_obj["categoria_lancamento"] = new_cat_lanc_rec
+                                    rec_obj["cobranca"] = new_cobranca_rec
+                                    rec_obj["valor"] = new_val_total_rec.strip()
+                                    rec_obj["valor_parcela"] = new_valor_parcela_rec
+                                    rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
+                                    rec_obj["status"] = new_status_rec
+                                    rec_obj["parcela"] = f"{parcela_atual_rec}/{new_qtd_rec_int}" if new_qtd_rec_int > 1 else str(parcela_atual_rec)
+                                    rec_obj["numero_pedido"] = ""
+                                    rec_obj["item_codigo"] = ref_item_codigo
+                                    rec_obj["lote_id"] = lote_id_rec
+                                    rec_obj["boleto_url"] = new_boleto_url_txt
+                                    rec_obj["boleto_linha_digitavel"] = new_boleto_linha_txt
+                                    rec_obj["boleto_status"] = new_boleto_status
+                                    if new_boleto_status == "Gerado":
+                                        if not rec_obj.get("boleto_gerado_em"):
+                                            rec_obj["boleto_gerado_em"] = new_boleto_em
+                                    else:
+                                        rec_obj["boleto_gerado_em"] = ""
+                                    rec_obj["boleto_enviado_em"] = ""
+                                    rec_obj["boleto_enviado_canais"] = ""
+                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                st.success("Cobranca atualizada em lote!")
+                                st.rerun()
+
+                        if excluir_rec:
+                            related_del_idx = _related_receivable_indices(recebimentos, idx_rec)
+                            related_del_idx = sorted(set(related_del_idx), reverse=True)
+                            removed_count = 0
+                            for del_idx in related_del_idx:
+                                if 0 <= del_idx < len(st.session_state.get("receivables", [])):
+                                    st.session_state["receivables"].pop(del_idx)
+                                    removed_count += 1
                             save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                            st.success("Baixa realizada!")
+                            st.success(f"Cobranca excluida em lote ({removed_count} parcela(s)).")
                             st.rerun()
+
+                    aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                    st.caption("Boleto automatico: gere o boleto e envie diretamente por e-mail e WhatsApp.")
+                    rb1, rb2, rb3 = st.columns([1, 1, 2])
+                    with rb1:
+                        if st.button("Gerar boleto", key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}"):
+                            ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
+                            if ok_bol:
+                                st.success(f"Boleto gerado: {status_bol}.")
+                            else:
+                                st.error(f"Falha ao gerar boleto: {status_bol}.")
+                            st.rerun()
+                    with rb2:
+                        if st.button(
+                            "Gerar e enviar",
+                            key=f"fin_send_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
+                            disabled=not aluno_lancamento,
+                            help="Disponivel somente para lancamentos com categoria 'Aluno'.",
+                        ):
+                            ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                            if ok_send:
+                                st.success(
+                                    "Boleto enviado. "
+                                    f"E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                    f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                                )
+                            else:
+                                st.error(f"Falha no envio: {status_send}.")
+                            st.rerun()
+                    with rb3:
+                        if rec_obj.get("boleto_url"):
+                            st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
+                        if rec_obj.get("boleto_linha_digitavel"):
+                            st.caption(f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}")
+                        if rec_obj.get("boleto_enviado_em"):
+                            st.caption(
+                                f"Enviado em {rec_obj.get('boleto_enviado_em')} "
+                                f"({rec_obj.get('boleto_enviado_canais', '')})"
+                            )
+
+            if finance_receber_menu == "Lancar Material do Estoque":
+                with st.container(border=True):
+                    st.markdown("### Lançar Material do Estoque")
+                    itens_estoque = st.session_state["inventory"]
+                    if not itens_estoque:
+                        st.info("Nenhum item de estoque cadastrado.")
                     else:
-                        if st.button("Baixar automaticamente vencidos (Aluno)"):
-                            hoje = datetime.date.today()
-                            count = 0
-                            for r in st.session_state["receivables"]:
-                                if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
-                                    vencimento = parse_date(r.get("vencimento", ""))
-                                    if vencimento and vencimento <= hoje:
-                                        r["status"] = "Pago"
-                                        r["baixa_data"] = hoje.strftime("%d/%m/%Y")
-                                        r["baixa_tipo"] = "Automática"
+                        with st.form("add_rec_stock", clear_on_submit=True):
+                            opcoes = [f"{i.get('codigo','')} - {i.get('descricao','')}" for i in itens_estoque]
+                            item_sel = st.selectbox("Item", opcoes)
+                            modo_destino = st.selectbox("Destino", ["Aluno", "Turma"])
+                            aluno_mat = ""
+                            turma_mat = ""
+                            if modo_destino == "Aluno":
+                                aluno_mat = st.selectbox("Aluno", [s["nome"] for s in st.session_state["students"]])
+                            else:
+                                turma_mat = st.selectbox("Turma", ["Sem Turma"] + class_names())
+                            data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                            venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="venc_mat")
+                            due_day_mat = st.selectbox(
+                                "Dia do vencimento",
+                                list(range(1, 31)),
+                                index=max(0, min(29, datetime.date.today().day - 1)),
+                                format_func=lambda d: f"Dia {d}",
+                                key="due_day_mat_fin",
+                            )
+                            material_payment = st.selectbox("Pagamento do Material", material_payment_options(), key="cobranca_mat")
+                            material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                            parcelas_material = st.number_input(
+                                "Parcelamento do material (maximo 6x)",
+                                min_value=1,
+                                max_value=6,
+                                value=2 if material_parcelado else 1,
+                                disabled=not material_parcelado,
+                                key="parcelas_mat_fin",
+                            )
+                            if st.form_submit_button("Lançar material"):
+                                item_obj = itens_estoque[opcoes.index(item_sel)]
+                                preco = parse_money(item_obj.get("preco", 0))
+                                parcelas_item = parse_int(item_obj.get("parcelas", 1)) or 1
+                                parcelas = min(6, parcelas_item)
+                                if material_parcelado:
+                                    parcelas = int(parcelas_material)
+                                else:
+                                    parcelas = 1
+                                cobranca = material_payment
+                                venc_base_mat = _month_due_date(venc, due_day_mat)
+                                descricao = item_obj.get("descricao", "Material")
+                                item_codigo = item_obj.get("codigo", "")
+                                alunos_destino = []
+                                if modo_destino == "Aluno":
+                                    alunos_destino = [aluno_mat] if aluno_mat else []
+                                else:
+                                    alunos_destino = [
+                                        s.get("nome") for s in st.session_state["students"]
+                                        if s.get("turma") == turma_mat
+                                    ]
+                                count = 0
+                                for aluno_dest in alunos_destino:
+                                    lote_id_mat = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                                    for i in range(parcelas):
+                                        data_venc = add_months(venc_base_mat, i)
+                                        parcela = f"{1 + i}/{parcelas}"
+                                        add_receivable(
+                                            aluno_dest,
+                                            descricao,
+                                            str(preco),
+                                            data_venc,
+                                            cobranca,
+                                            "Material",
+                                            data_lancamento=data_lanc,
+                                            valor_parcela=str(preco),
+                                            parcela=parcela,
+                                            item_codigo=item_codigo,
+                                            categoria_lancamento="Aluno",
+                                            lote_id=lote_id_mat,
+                                        )
                                         count += 1
-                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                            st.success(f"Baixa automática realizada: {count} lançamento(s).")
-                            st.rerun()
+                                st.success(f"Material lançado no financeiro! ({count} parcelas)")
+                                st.rerun()
+
+            if finance_receber_menu == "Baixa de Recebimentos":
+                with st.container(border=True):
+                    st.markdown("### Baixa de Recebimentos")
+                    abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
+                    if not abertos:
+                        st.info("Nenhum recebimento em aberto.")
+                    else:
+                        cba1, cba2 = st.columns(2)
+                        with cba1:
+                            alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
+                            aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
+                        with cba2:
+                            modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
+
+                        if modo_baixa == "Manual":
+                            opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
+                            item_sel = st.selectbox("Selecione o lançamento", opcoes)
+                            if st.button("Dar baixa manual"):
+                                item_obj = abertos[opcoes.index(item_sel)]
+                                item_obj["status"] = "Pago"
+                                item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+                                item_obj["baixa_tipo"] = "Manual"
+                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                st.success("Baixa realizada!")
+                                st.rerun()
+                        else:
+                            if st.button("Baixar automaticamente vencidos (Aluno)"):
+                                hoje = datetime.date.today()
+                                count = 0
+                                for r in st.session_state["receivables"]:
+                                    if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
+                                        vencimento = parse_date(r.get("vencimento", ""))
+                                        if vencimento and vencimento <= hoje:
+                                            r["status"] = "Pago"
+                                            r["baixa_data"] = hoje.strftime("%d/%m/%Y")
+                                            r["baixa_tipo"] = "Automática"
+                                            count += 1
+                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                st.success(f"Baixa automática realizada: {count} lançamento(s).")
+                                st.rerun()
         if finance_main == "Contas a Pagar":
             finance_pagar_options = [
                 "Pagamento de Aulas do Professor",
