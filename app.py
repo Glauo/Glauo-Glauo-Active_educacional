@@ -15362,7 +15362,10 @@ elif st.session_state["role"] == "Coordenador":
                         with mr1:
                             new_desc_rec = st.text_input("Descricao", value=str(rec_obj.get("descricao", "")))
                         with mr2:
-                            new_val_total_rec = st.text_input("Valor total", value=str(rec_obj.get("valor", rec_obj.get("valor_parcela", ""))))
+                            new_val_parcela_rec_input = st.text_input(
+                                "Valor da parcela",
+                                value=str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))),
+                            )
                         with mr3:
                             new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
 
@@ -15402,10 +15405,12 @@ elif st.session_state["role"] == "Coordenador":
                                 index=status_opts_rec.index(stat_rec) if stat_rec in status_opts_rec else 0,
                             )
 
-                        new_val_total_num = parse_money(new_val_total_rec)
+                        new_val_parcela_num = parse_money(new_val_parcela_rec_input)
                         new_qtd_rec_int = max(1, int(new_qtd_rec))
-                        new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
-                        st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
+                        new_val_total_num = new_val_parcela_num * new_qtd_rec_int
+                        new_valor_parcela_rec = f"{new_val_parcela_num:.2f}".replace(".", ",") if new_val_parcela_num > 0 else "0,00"
+                        new_val_total_rec_auto = f"{new_val_total_num:.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
+                        st.text_input("Valor total (automatico)", value=new_val_total_rec_auto, disabled=True, key="rec_edit_valor_total_auto")
 
                         mb1, mb2 = st.columns(2)
                         with mb1:
@@ -15428,8 +15433,8 @@ elif st.session_state["role"] == "Coordenador":
                             excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
 
                         if salvar_rec:
-                            if not new_ref_rec.strip() or new_val_total_num <= 0:
-                                st.error("Informe referencia e valor total valido.")
+                            if not new_ref_rec.strip() or new_val_parcela_num <= 0:
+                                st.error("Informe referencia e valor da parcela valido.")
                             else:
                                 lote_id_rec = str(rec_obj.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
                                 ref_data_rec = str(rec_obj.get("data", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
@@ -15477,7 +15482,7 @@ elif st.session_state["role"] == "Coordenador":
                                                 "categoria_lancamento": new_cat_lanc_rec,
                                                 "cobranca": new_cobranca_rec,
                                                 "codigo": codigo_item,
-                                                "valor": new_val_total_rec.strip(),
+                                                "valor": new_val_total_rec_auto,
                                                 "data": ref_data_rec,
                                                 "valor_parcela": new_valor_parcela_rec,
                                                 "parcela": parcela_txt,
@@ -15500,7 +15505,7 @@ elif st.session_state["role"] == "Coordenador":
                                     rec_obj["categoria"] = new_cat_rec
                                     rec_obj["categoria_lancamento"] = new_cat_lanc_rec
                                     rec_obj["cobranca"] = new_cobranca_rec
-                                    rec_obj["valor"] = new_val_total_rec.strip()
+                                    rec_obj["valor"] = new_val_total_rec_auto
                                     rec_obj["valor_parcela"] = new_valor_parcela_rec
                                     rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
                                     rec_obj["status"] = new_status_rec
