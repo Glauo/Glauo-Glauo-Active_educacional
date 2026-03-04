@@ -4951,6 +4951,639 @@ def activity_submission_final_score(submission_obj):
         return _parse_float(score_prof, default=0.0)
     return _parse_float(submission_obj.get("score_auto", 0), default=0.0)
 
+def _is_homework_activity(activity_obj):
+    activity_obj = activity_obj if isinstance(activity_obj, dict) else {}
+    tipo = normalize_text(activity_obj.get("tipo", ""))
+    titulo = normalize_text(activity_obj.get("titulo", ""))
+    markers = ("licao de casa", "licoes de casa", "tarefa de casa", "homework")
+    return any(tag in tipo for tag in markers) or any(tag in titulo for tag in markers)
+
+def _recent_class_lessons_for_homework(turma_nome, limit=4):
+    turma_nome = str(turma_nome or "").strip()
+    sessions = [
+        s for s in st.session_state.get("class_sessions", [])
+        if str(s.get("turma", "")).strip() == turma_nome and str(s.get("status", "")).strip().lower() == "finalizada"
+    ]
+    sessions = sorted(
+        sessions,
+        key=lambda x: (
+            parse_date(x.get("data", "")) or datetime.date(1900, 1, 1),
+            parse_time(x.get("hora_inicio_real", x.get("hora_inicio_prevista", "00:00"))),
+        ),
+        reverse=True,
+    )
+    out = []
+    for sess in sessions:
+        txt = str(sess.get("licao", "")).strip() or str(sess.get("resumo_final", "")).strip()
+        if txt:
+            out.append(txt)
+        if len(out) >= max(1, int(limit or 4)):
+            break
+    return out
+
+def _current_subject_for_challenge(turma_nome, turma_obj=None):
+    turma_nome = str(turma_nome or "").strip()
+    turma_obj = turma_obj if isinstance(turma_obj, dict) else {}
+    lesson_reader = globals().get("_recent_class_lessons_for_homework")
+    if turma_nome and callable(lesson_reader):
+        try:
+            latest = lesson_reader(turma_nome, limit=1) or [""]
+            subject = str(latest[0] or "").strip()
+            if subject:
+                return subject
+        except Exception:
+            pass
+    for field in ("materia", "conteudo", "disciplina", "modulo"):
+        value = str(turma_obj.get(field, "")).strip()
+        if value:
+            return value
+    return ""
+def _normalize_activity_questions_from_ai(raw_questions, fallback_count=3):
+    items = raw_questions if isinstance(raw_questions, list) else []
+    normalized = []
+    for idx, question in enumerate(items, start=1):
+        q = question if isinstance(question, dict) else {}
+        q_type_raw = normalize_text(q.get("tipo", "aberta"))
+        is_multiple = any(token in q_type_raw for token in ("multipla", "multiple", "objetiva", "escolha"))
+        enunciado = str(q.get("enunciado", q.get("pergunta", ""))).strip() or f"Questao {idx}"
+        pontos = parse_int(q.get("pontos", 10))
+        if pontos <= 0:
+            pontos = 10
+        pontos = max(1, min(100, pontos))
+
+        if is_multiple:
+            opcoes_raw = q.get("opcoes", q.get("alternativas", []))
+            if isinstance(opcoes_raw, str):
+                opcoes = [line.strip() for line in opcoes_raw.splitlines() if line.strip()]
+            elif isinstance(opcoes_raw, list):
+                opcoes = [str(opt).strip() for opt in opcoes_raw if str(opt).strip()]
+            else:
+                opcoes = []
+            if len(opcoes) < 2:
+                normalized.append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "tipo": "aberta",
+                        "enunciado": enunciado,
+                        "opcoes": [],
+                        "correta_idx": None,
+                        "pontos": pontos,
+                    }
+                )
+                continue
+            correta_idx = q.get("correta_idx", q.get("correta", None))
+            try:
+                correta_idx = int(correta_idx)
+            except Exception:
+                correta_idx = None
+            # Aceita 1-based vindo da IA e converte para 0-based.
+            if correta_idx is not None and 1 <= correta_idx <= len(opcoes):
+                correta_idx = correta_idx - 1
+            if correta_idx is not None and (correta_idx < 0 or correta_idx >= len(opcoes)):
+                correta_idx = None
+            normalized.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "tipo": "multipla_escolha",
+                    "enunciado": enunciado,
+                    "opcoes": opcoes,
+                    "correta_idx": correta_idx,
+                    "pontos": pontos,
+                }
+            )
+        else:
+            normalized.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "tipo": "aberta",
+                    "enunciado": enunciado,
+                    "opcoes": [],
+                    "correta_idx": None,
+                    "pontos": pontos,
+                }
+            )
+
+    if normalized:
+        return normalized
+
+    fallback_total = max(1, min(10, parse_int(fallback_count or 3)))
+    return [
+        {
+            "id": uuid.uuid4().hex,
+            "tipo": "aberta",
+            "enunciado": f"Questao {idx}",
+            "opcoes": [],
+            "correta_idx": None,
+            "pontos": 10,
+        }
+        for idx in range(1, fallback_total + 1)
+    ]
+
+def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context, question_count=5, foco_extra=""):
+    turma_nome = str(turma_nome or "").strip() or "Turma"
+    livro_nome = _norm_book_level(livro_nome or "")
+    week_key = str(week_key or "").strip()
+    question_count = max(1, min(10, parse_int(question_count or 5)))
+    lesson_context = [str(x).strip() for x in (lesson_context or []) if str(x).strip()]
+    focus = str(foco_extra or "").strip()
+    lessons_text = "; ".join(lesson_context[:4]) if lesson_context else "Sem licao registrada."
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Voce e o Professor Wiz (IA) e cria licoes de casa semanais de ingles para turmas escolares.\n"
+                "Responda SOMENTE em JSON valido, sem markdown."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Turma: {turma_nome}\n"
+                f"Livro/Nivel: {livro_nome}\n"
+                f"Semana: {week_key}\n"
+                f"Licoes recentes da turma: {lessons_text}\n"
+                f"Foco opcional informado pelo professor/coordenador: {focus or 'Nenhum'}\n\n"
+                f"Crie uma licao de casa semanal com {question_count} questoes.\n"
+                "A atividade deve poder ser respondida no portal do aluno.\n\n"
+                "Retorne JSON com campos:\n"
+                "titulo (string), descricao (string), questions (array).\n"
+                "Cada item de questions deve ter:\n"
+                "tipo ('aberta' ou 'multipla_escolha'), enunciado (string), pontos (int),\n"
+                "opcoes (array, somente para multipla_escolha) e correta_idx (int opcional).\n"
+            ),
+        },
+    ]
+    raw = _groq_chat_text(messages, temperature=0.3, max_tokens=1400)
+    obj = _extract_json_object(raw)
+    titulo = str(obj.get("titulo", "")).strip() or f"Licao de Casa Semanal - {turma_nome}"
+    descricao = str(obj.get("descricao", "")).strip() or "Resolva as questoes com base no conteudo da semana."
+    questions_payload = _normalize_activity_questions_from_ai(obj.get("questions", []), fallback_count=question_count)
+    return {
+        "turma": turma_nome,
+        "livro": livro_nome,
+        "semana": week_key,
+        "titulo": titulo,
+        "descricao": descricao,
+        "questions": questions_payload,
+    }
+
+def _publish_homework_activity(
+    turma_nome,
+    titulo,
+    descricao,
+    due_date,
+    questions_payload,
+    autor_nome,
+    allow_resubmission=False,
+    notify_students=True,
+):
+    turma_nome = str(turma_nome or "").strip()
+    titulo = str(titulo or "").strip() or "Licao de Casa"
+    descricao = str(descricao or "").strip()
+    if isinstance(due_date, datetime.datetime):
+        due_obj = due_date.date()
+    elif isinstance(due_date, datetime.date):
+        due_obj = due_date
+    else:
+        due_obj = parse_date(str(due_date or ""))
+    due_txt = due_obj.strftime("%d/%m/%Y") if due_obj else ""
+    questions_payload = _normalize_activity_questions_from_ai(questions_payload, fallback_count=3)
+
+    activity_obj = {
+        "id": uuid.uuid4().hex,
+        "turma": turma_nome,
+        "tipo": "Licao de Casa",
+        "titulo": titulo,
+        "descricao": descricao,
+        "questions": questions_payload,
+        "allow_resubmission": bool(allow_resubmission),
+        "status": "Ativa",
+        "autor": str(autor_nome or "Professor").strip() or "Professor",
+        "due_date": due_txt,
+        "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "updated_at": "",
+    }
+    st.session_state["activities"].append(activity_obj)
+    save_list(ACTIVITIES_FILE, st.session_state["activities"])
+
+    stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+    if notify_students and turma_nome:
+        assunto = f"[Active] Nova licao de casa - Turma {turma_nome}"
+        corpo = (
+            f"Nova licao de casa semanal publicada.\n"
+            f"Turma: {turma_nome}\n"
+            f"Prazo: {due_txt or 'Sem prazo'}\n\n"
+            f"{titulo}\n\n"
+            f"{descricao}\n\n"
+            "Acesse o portal do aluno > Licoes de Casa para responder."
+        )
+        stats = email_students_by_turma(turma_nome, assunto, corpo, "Licoes de Casa")
+    return activity_obj, stats
+
+def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
+    turmas = sorted({str(t).strip() for t in (turmas_disponiveis or []) if str(t).strip()})
+    st.markdown('<div class="main-header">Licoes de Casa Semanais</div>', unsafe_allow_html=True)
+    st.caption("Publique licoes de casa semanais por turma. O aluno responde direto no portal.")
+    if not turmas:
+        st.info("Nenhuma turma disponivel para publicar licao de casa.")
+        return
+
+    draft_key = f"{panel_key}_homework_ai_draft"
+    tab_ia, tab_manual, tab_publicadas, tab_respostas = st.tabs(
+        ["Gerar com IA (Wiz)", "Publicar manual", "Licoes publicadas", "Respostas dos alunos"]
+    )
+
+    with tab_ia:
+        turma_sel = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_ia_turma")
+        turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_sel), {})
+        livro_turma = _norm_book_level(turma_obj.get("livro", ""))
+        semana = current_week_key(datetime.date.today())
+        licoes_recentes = _recent_class_lessons_for_homework(turma_sel, limit=4)
+        st.caption(f"Livro/Nivel da turma: {livro_turma or 'Nao definido'}")
+        if licoes_recentes:
+            st.caption("Ultimas licoes da turma: " + " | ".join(licoes_recentes[:3]))
+        else:
+            st.caption("Sem licoes finalizadas registradas para esta turma.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            qtd_questoes = st.number_input(
+                "Quantidade de questoes",
+                min_value=1,
+                max_value=10,
+                value=4,
+                step=1,
+                key=f"{panel_key}_hw_ia_qtd",
+            )
+            prazo_dias = st.number_input(
+                "Prazo (dias a partir de hoje)",
+                min_value=1,
+                max_value=30,
+                value=7,
+                step=1,
+                key=f"{panel_key}_hw_ia_prazo",
+            )
+        with c2:
+            allow_resubmission = st.checkbox(
+                "Permitir reenvio do aluno",
+                value=False,
+                key=f"{panel_key}_hw_ia_reenvio",
+            )
+            enviar_comunicado = st.checkbox(
+                "Enviar comunicado automatico (e-mail + WhatsApp)",
+                value=True,
+                key=f"{panel_key}_hw_ia_notify",
+            )
+        foco_extra = st.text_input(
+            "Foco da semana (opcional)",
+            key=f"{panel_key}_hw_ia_foco",
+            placeholder="Ex: Simple Present, leitura da Unit 3, vocabulario de rotina...",
+        )
+        if st.button("Gerar licao semanal com IA", type="primary", key=f"{panel_key}_hw_ia_generate"):
+            api_key = get_groq_api_key()
+            if not api_key:
+                st.error("Configure GROQ_API_KEY para gerar licao com IA.")
+            else:
+                try:
+                    draft = generate_weekly_homework_ai(
+                        turma_sel,
+                        livro_turma,
+                        semana,
+                        licoes_recentes,
+                        question_count=qtd_questoes,
+                        foco_extra=foco_extra,
+                    )
+                    draft["allow_resubmission"] = bool(allow_resubmission)
+                    draft["notify_students"] = bool(enviar_comunicado)
+                    draft["due_date"] = datetime.date.today() + datetime.timedelta(days=int(prazo_dias))
+                    st.session_state[draft_key] = draft
+                    st.success("Licao de casa gerada com IA. Revise e publique.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Falha ao gerar licao com IA: {exc}")
+
+        draft = st.session_state.get(draft_key)
+        if isinstance(draft, dict):
+            st.markdown("---")
+            st.markdown("### Rascunho gerado")
+            st.markdown(f"**Titulo:** {draft.get('titulo', '')}")
+            st.write(str(draft.get("descricao", "")).strip())
+            due_obj = draft.get("due_date")
+            due_txt = due_obj.strftime("%d/%m/%Y") if isinstance(due_obj, (datetime.date, datetime.datetime)) else str(due_obj or "")
+            st.caption(f"Turma: {draft.get('turma', '')} | Prazo: {due_txt or 'Sem prazo'}")
+
+            for idx, q in enumerate(draft.get("questions", []), start=1):
+                st.markdown(f"**{idx}. {q.get('enunciado', '')}**")
+                st.caption(f"Tipo: {q.get('tipo', 'aberta')} | Pontos: {q.get('pontos', 0)}")
+                if q.get("tipo") == "multipla_escolha":
+                    for opt_idx, opt in enumerate(q.get("opcoes", []), start=1):
+                        st.write(f"{opt_idx}) {opt}")
+
+            p1, p2 = st.columns([1, 1])
+            with p1:
+                if st.button("Publicar no portal do aluno", type="primary", key=f"{panel_key}_hw_ia_publish"):
+                    _, stats = _publish_homework_activity(
+                        turma_nome=draft.get("turma", ""),
+                        titulo=draft.get("titulo", ""),
+                        descricao=draft.get("descricao", ""),
+                        due_date=draft.get("due_date", ""),
+                        questions_payload=draft.get("questions", []),
+                        autor_nome=autor_nome,
+                        allow_resubmission=bool(draft.get("allow_resubmission", False)),
+                        notify_students=bool(draft.get("notify_students", True)),
+                    )
+                    st.success("Licao publicada com sucesso.")
+                    if bool(draft.get("notify_students", True)):
+                        st.info(
+                            "Comunicado enviado: "
+                            f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                            f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                        )
+                    st.session_state.pop(draft_key, None)
+                    st.rerun()
+            with p2:
+                if st.button("Descartar rascunho", key=f"{panel_key}_hw_ia_discard"):
+                    st.session_state.pop(draft_key, None)
+                    st.rerun()
+
+    with tab_manual:
+        with st.form(f"{panel_key}_hw_manual_form"):
+            turma_atividade = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_manual_turma")
+            titulo_atividade = st.text_input("Titulo", key=f"{panel_key}_hw_manual_titulo")
+            descricao_atividade = st.text_area("Descricao / instrucoes", key=f"{panel_key}_hw_manual_desc")
+            due_date = st.date_input(
+                "Prazo final",
+                value=datetime.date.today() + datetime.timedelta(days=7),
+                format="DD/MM/YYYY",
+                key=f"{panel_key}_hw_manual_due",
+            )
+            allow_resubmission = st.checkbox(
+                "Permitir reenvio do aluno",
+                value=False,
+                key=f"{panel_key}_hw_manual_reenvio",
+            )
+            enviar_comunicado = st.checkbox(
+                "Enviar comunicado automatico (e-mail + WhatsApp)",
+                value=True,
+                key=f"{panel_key}_hw_manual_notify",
+            )
+            qtd_questoes = st.number_input(
+                "Quantidade de questoes",
+                min_value=1,
+                max_value=20,
+                value=3,
+                step=1,
+                key=f"{panel_key}_hw_manual_qtd",
+            )
+            st.caption("Monte as questoes abaixo. Em multipla escolha, informe uma opcao por linha.")
+
+            questions_payload = []
+            validation_errors = []
+            for idx in range(int(qtd_questoes)):
+                st.markdown(f"#### Questao {idx + 1}")
+                q_tipo_label = st.selectbox(
+                    "Tipo da questao",
+                    ["Multipla escolha", "Resposta aberta"],
+                    key=f"{panel_key}_hw_manual_qtype_{idx}",
+                )
+                q_enunciado = st.text_area("Enunciado", key=f"{panel_key}_hw_manual_qtext_{idx}")
+                q_pontos = st.number_input(
+                    "Pontos da questao",
+                    min_value=1,
+                    max_value=100,
+                    value=10,
+                    step=1,
+                    key=f"{panel_key}_hw_manual_qpoints_{idx}",
+                )
+                if not str(q_enunciado).strip():
+                    validation_errors.append(f"Questao {idx + 1}: informe o enunciado.")
+                if q_tipo_label == "Multipla escolha":
+                    q_opcoes_text = st.text_area(
+                        "Opcoes (uma por linha)",
+                        value="Opcao A\nOpcao B\nOpcao C\nOpcao D",
+                        key=f"{panel_key}_hw_manual_qopts_{idx}",
+                    )
+                    q_opcoes = [line.strip() for line in str(q_opcoes_text or "").splitlines() if line.strip()]
+                    if len(q_opcoes) < 2:
+                        validation_errors.append(f"Questao {idx + 1}: multipla escolha precisa de ao menos 2 opcoes.")
+                    corretas_opts = ["Nao definir"] + q_opcoes if q_opcoes else ["Nao definir"]
+                    q_correta = st.selectbox(
+                        "Resposta correta (opcional)",
+                        corretas_opts,
+                        key=f"{panel_key}_hw_manual_qcorrect_{idx}",
+                    )
+                    correta_idx = q_opcoes.index(q_correta) if q_correta != "Nao definir" and q_correta in q_opcoes else None
+                    questions_payload.append(
+                        {
+                            "id": uuid.uuid4().hex,
+                            "tipo": "multipla_escolha",
+                            "enunciado": str(q_enunciado).strip(),
+                            "opcoes": q_opcoes,
+                            "correta_idx": correta_idx,
+                            "pontos": int(q_pontos),
+                        }
+                    )
+                else:
+                    questions_payload.append(
+                        {
+                            "id": uuid.uuid4().hex,
+                            "tipo": "aberta",
+                            "enunciado": str(q_enunciado).strip(),
+                            "opcoes": [],
+                            "correta_idx": None,
+                            "pontos": int(q_pontos),
+                        }
+                    )
+
+            if st.form_submit_button("Publicar licao de casa", type="primary"):
+                if not str(titulo_atividade).strip():
+                    st.error("Informe o titulo da licao.")
+                elif validation_errors:
+                    st.error(validation_errors[0])
+                else:
+                    _, stats = _publish_homework_activity(
+                        turma_nome=turma_atividade,
+                        titulo=titulo_atividade,
+                        descricao=descricao_atividade,
+                        due_date=due_date,
+                        questions_payload=questions_payload,
+                        autor_nome=autor_nome,
+                        allow_resubmission=bool(allow_resubmission),
+                        notify_students=bool(enviar_comunicado),
+                    )
+                    st.success("Licao de casa publicada com sucesso.")
+                    if enviar_comunicado:
+                        st.info(
+                            "Comunicado enviado: "
+                            f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                            f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}."
+                        )
+                    st.rerun()
+
+    with tab_publicadas:
+        homework_items = [
+            a for a in st.session_state.get("activities", [])
+            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
+        ]
+        homework_items = sorted(
+            homework_items,
+            key=lambda a: (
+                0 if _is_activity_open(a) else 1,
+                parse_date(a.get("due_date", "")) or datetime.date(2100, 1, 1),
+                str(a.get("created_at", "")),
+            ),
+        )
+        if not homework_items:
+            st.info("Nenhuma licao de casa publicada ainda.")
+        else:
+            for atividade in homework_items:
+                activity_id = str(atividade.get("id", "")).strip()
+                titulo = str(atividade.get("titulo", "Licao de Casa")).strip() or "Licao de Casa"
+                turma = str(atividade.get("turma", "")).strip()
+                status = "Ativa" if _is_activity_open(atividade) else "Encerrada"
+                due_date = str(atividade.get("due_date", "")).strip() or "Sem prazo"
+                total_pontos = _activity_points_total(atividade)
+                total_submissoes = len(
+                    [s for s in st.session_state.get("activity_submissions", []) if str(s.get("activity_id", "")).strip() == activity_id]
+                )
+                alunos_turma = [
+                    s.get("nome", "")
+                    for s in st.session_state.get("students", [])
+                    if str(s.get("turma", "")).strip() == turma
+                ]
+                with st.expander(f"{titulo} | {turma} | {status}"):
+                    st.caption(
+                        f"Prazo: {due_date} | Questoes: {len(atividade.get('questions', []) or [])} | Pontos: {total_pontos}"
+                    )
+                    st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
+                    if str(atividade.get("descricao", "")).strip():
+                        st.write(str(atividade.get("descricao", "")).strip())
+                    if _is_activity_open(atividade):
+                        if st.button("Encerrar licao", key=f"{panel_key}_close_hw_{activity_id}"):
+                            atividade["status"] = "Encerrada"
+                            atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            save_list(ACTIVITIES_FILE, st.session_state["activities"])
+                            st.success("Licao encerrada.")
+                            st.rerun()
+                    else:
+                        if st.button("Reabrir licao", key=f"{panel_key}_open_hw_{activity_id}"):
+                            atividade["status"] = "Ativa"
+                            atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            save_list(ACTIVITIES_FILE, st.session_state["activities"])
+                            st.success("Licao reaberta.")
+                            st.rerun()
+
+    with tab_respostas:
+        homework_items = [
+            a for a in st.session_state.get("activities", [])
+            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
+        ]
+        homework_items = sorted(
+            homework_items,
+            key=lambda a: (
+                parse_date(a.get("due_date", "")) or datetime.date(2100, 1, 1),
+                str(a.get("created_at", "")),
+            ),
+            reverse=True,
+        )
+        if not homework_items:
+            st.info("Nenhuma licao de casa publicada para acompanhar respostas.")
+        else:
+            atividade_labels = []
+            atividade_map = {}
+            for atividade in homework_items:
+                aid = str(atividade.get("id", "")).strip()
+                label = (
+                    f"{str(atividade.get('turma', '')).strip()} | "
+                    f"{str(atividade.get('titulo', 'Licao de Casa')).strip()} | "
+                    f"#{aid[:6]}"
+                )
+                atividade_labels.append(label)
+                atividade_map[label] = atividade
+            atividade_sel_label = st.selectbox("Licao", atividade_labels, key=f"{panel_key}_hw_ans_select")
+            atividade_sel = atividade_map.get(atividade_sel_label, {})
+            aid_sel = str(atividade_sel.get("id", "")).strip()
+            turma_sel = str(atividade_sel.get("turma", "")).strip()
+            total_pontos = _activity_points_total(atividade_sel)
+            alunos_turma = [
+                s.get("nome", "")
+                for s in st.session_state.get("students", [])
+                if str(s.get("turma", "")).strip() == turma_sel
+            ]
+            submissions = [
+                s for s in st.session_state.get("activity_submissions", [])
+                if str(s.get("activity_id", "")).strip() == aid_sel
+            ]
+            submissions = sorted(submissions, key=lambda s: str(s.get("submitted_at", "")), reverse=True)
+
+            st.caption(f"Respostas recebidas: {len(submissions)}/{len(alunos_turma)}")
+            if not submissions:
+                st.info("Ainda nao ha respostas para esta licao.")
+            else:
+                for sub in submissions:
+                    sub_id = str(sub.get("id", "")).strip() or uuid.uuid4().hex
+                    aluno = str(sub.get("aluno", "")).strip() or "Aluno"
+                    nota_final = activity_submission_final_score(sub)
+                    nota_auto = _parse_float(sub.get("score_auto", 0), 0.0)
+                    nota_total = _parse_float(sub.get("score_total", total_pontos), 0.0)
+                    status_sub = str(sub.get("status", "Enviada")).strip() or "Enviada"
+
+                    st.markdown("---")
+                    st.markdown(f"### {aluno}")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Status", status_sub)
+                    c2.metric("Nota final", f"{nota_final:.1f}/{nota_total:.1f}")
+                    c3.metric("Auto", f"{nota_auto:.1f}/{nota_total:.1f}")
+                    st.caption(f"Enviado em: {str(sub.get('submitted_at', '')).strip() or '-'}")
+
+                    with st.expander("Ver respostas"):
+                        respostas = sub.get("respostas", []) or []
+                        if not respostas:
+                            st.caption("Sem respostas registradas.")
+                        for idx, resp in enumerate(respostas, start=1):
+                            enunciado = str(resp.get("enunciado", "")).strip()
+                            tipo_resp = str(resp.get("tipo", "")).strip()
+                            st.markdown(f"**{idx}. {enunciado or 'Questao'}**")
+                            if tipo_resp == "multipla_escolha":
+                                st.write(f"Resposta: {str(resp.get('resposta_texto', '')).strip() or '(nao respondida)'}")
+                                if resp.get("correta_idx", None) is not None:
+                                    st.caption(
+                                        "Correta: "
+                                        + (str(resp.get("correta_texto", "")).strip() or "(nao definida)")
+                                    )
+                                    acertou = resp.get("acertou", None)
+                                    if acertou is True:
+                                        st.success("Resposta correta.")
+                                    elif acertou is False:
+                                        st.error("Resposta incorreta.")
+                            else:
+                                st.write(str(resp.get("resposta_texto", "")).strip() or "(nao respondida)")
+
+                    with st.form(f"{panel_key}_grade_hw_{sub_id}"):
+                        nota_default = activity_submission_final_score(sub)
+                        nota_prof = st.number_input(
+                            "Nota final do professor",
+                            min_value=0.0,
+                            max_value=float(nota_total if nota_total > 0 else 100.0),
+                            value=float(min(max(nota_default, 0.0), nota_total if nota_total > 0 else 100.0)),
+                            step=0.5,
+                            key=f"{panel_key}_grade_hw_value_{sub_id}",
+                        )
+                        feedback_prof = st.text_area(
+                            "Feedback para o aluno",
+                            value=str(sub.get("feedback_professor", "")).strip(),
+                            key=f"{panel_key}_grade_hw_feedback_{sub_id}",
+                        )
+                        if st.form_submit_button("Salvar avaliacao"):
+                            sub["score_professor"] = float(nota_prof)
+                            sub["feedback_professor"] = str(feedback_prof).strip()
+                            sub["status"] = "Avaliada"
+                            sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+                            st.success("Avaliacao salva.")
+                            st.rerun()
+
 def sales_lead_status_options():
     return [
         "Novo contato",
@@ -16096,7 +16729,7 @@ elif st.session_state["role"] == "Coordenador":
                     target_turma = st.selectbox("Turma de destino", turma_options, key="coord_ch_target_turma")
                     turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == target_turma), {})
                     nivel = _norm_book_level(turma_obj.get("livro", "")) or "Livro 1"
-                    materia_atual = (_recent_class_lessons_for_homework(target_turma, limit=1) or [""])[0]
+                    materia_atual = _current_subject_for_challenge(target_turma, turma_obj)
                     st.caption(f"Nivel detectado pela turma: {nivel}")
             elif target_type == "aluno_vip":
                 vip_students = [s for s in st.session_state.get("students", []) if _student_vip_summary(s)]
@@ -16108,7 +16741,7 @@ elif st.session_state["role"] == "Coordenador":
                     aluno_vip_obj = next((s for s in vip_students if str(s.get("nome", "")).strip() == target_aluno), {})
                     nivel = student_book_level(aluno_vip_obj) or "Livro 1"
                     turma_aluno_vip = str(aluno_vip_obj.get("turma", "")).strip()
-                    materia_atual = (_recent_class_lessons_for_homework(turma_aluno_vip, limit=1) or [""])[0] if turma_aluno_vip else ""
+                    materia_atual = _current_subject_for_challenge(turma_aluno_vip) if turma_aluno_vip else ""
                     st.caption(f"Nivel detectado pelo aluno VIP: {nivel}")
             else:
                 nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
