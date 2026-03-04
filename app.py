@@ -17042,6 +17042,7 @@ elif st.session_state["role"] == "Coordenador":
             ref_subject_key = f"{key_prefix}_reference_subject"
             ref_note_key = f"{key_prefix}_reference_note"
             preview_key = f"{key_prefix}_preview_box"
+            preview_seed_key = f"{key_prefix}_preview_seed"
             send_turmas_key = f"{key_prefix}_send_turmas"
             draft_patch_key = f"{key_prefix}_draft_patch"
             draft_action_key = f"{key_prefix}_draft_action"
@@ -17331,10 +17332,40 @@ elif st.session_state["role"] == "Coordenador":
                 "\n--- DICA ---\n"
                 f"{str(dica).strip() or '-'}"
             )
-            st.session_state[preview_key] = preview_text
-            st.text_area("Pre-visualizacao antes de postar (somente leitura)", height=240, key=preview_key, disabled=True)
+            previous_seed = str(st.session_state.get(preview_seed_key, ""))
+            current_preview = str(st.session_state.get(preview_key, ""))
+            if preview_key not in st.session_state or current_preview.strip() == previous_seed.strip():
+                st.session_state[preview_key] = preview_text
+            st.session_state[preview_seed_key] = preview_text
+            st.text_area(
+                "Pre-visualizacao e edicao antes de postar",
+                height=240,
+                key=preview_key,
+                help="Voce pode ajustar o texto aqui. O sistema usa TITULO/DESCRICAO/RUBRICA/DICA dessa caixa no salvamento.",
+            )
 
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
+                preview_source = str(st.session_state.get(preview_key, "")).strip()
+
+                def _extract_preview_section(section_name):
+                    pattern = rf"---\s*{section_name}\s*---\s*(.*?)(?=\n---\s*(?:TITULO|DESCRICAO|RUBRICA|DICA)\s*---|\Z)"
+                    match = re.search(pattern, preview_source, flags=re.IGNORECASE | re.DOTALL)
+                    return str(match.group(1)).strip() if match else ""
+
+                if preview_source:
+                    parsed_titulo = _extract_preview_section("TITULO")
+                    parsed_descricao = _extract_preview_section("DESCRICAO")
+                    parsed_rubrica = _extract_preview_section("RUBRICA")
+                    parsed_dica = _extract_preview_section("DICA")
+                    if parsed_titulo:
+                        titulo = parsed_titulo
+                    if parsed_descricao:
+                        descricao = parsed_descricao
+                    if parsed_rubrica:
+                        rubrica = parsed_rubrica
+                    if parsed_dica:
+                        dica = parsed_dica
+
                 if not str(titulo).strip() or not str(descricao).strip():
                     st.error("Preencha titulo e descricao.")
                 elif target_type == "turma" and not target_turma:
