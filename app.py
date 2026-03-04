@@ -4611,13 +4611,28 @@ def _challenge_target_parts(challenge_obj):
         str(ch.get("target_aluno", "")).strip(),
     )
 
+
+def _challenge_send_turmas(challenge_obj):
+    ch = challenge_obj if isinstance(challenge_obj, dict) else {}
+    raw = ch.get("target_turmas_envio", [])
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if isinstance(raw, str):
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    return []
+
+
 def _challenge_target_label(challenge_obj):
     target_type, target_turma, target_aluno = _challenge_target_parts(challenge_obj)
     if target_type == "turma":
         return f"Turma: {target_turma or '-'}"
     if target_type == "aluno_vip":
         return f"Aluno VIP: {target_aluno or '-'}"
-    return f"Nivel: {_norm_book_level((challenge_obj or {}).get('nivel', '')) or '-'}"
+    extra_turmas = _challenge_send_turmas(challenge_obj)
+    base = f"Nivel: {_norm_book_level((challenge_obj or {}).get('nivel', '')) or '-'}"
+    if extra_turmas:
+        base += f" | Turmas: {', '.join(extra_turmas)}"
+    return base
 
 def get_weekly_challenge_for_target(level, week_key, target_type="nivel", target_turma="", target_aluno=""):
     level = _norm_book_level(level)
@@ -4651,17 +4666,22 @@ def _challenge_matches_student(challenge_obj, student_obj):
     target_type, target_turma, target_aluno = _challenge_target_parts(challenge_obj)
     aluno_nome = str(student_obj.get("nome", "")).strip()
     turma_nome = str(student_obj.get("turma", "")).strip()
+    allowed_turmas = set(_challenge_send_turmas(challenge_obj))
     if target_type == "turma":
         return bool(target_turma) and target_turma == turma_nome
     if target_type == "aluno_vip":
         return bool(target_aluno) and target_aluno == aluno_nome
+    if allowed_turmas and turma_nome not in allowed_turmas:
+        return False
     return student_book_level(student_obj) == _norm_book_level(challenge_obj.get("nivel", ""))
 
-def _students_for_challenge_target(level, target_type="nivel", target_turma="", target_aluno=""):
+def _students_for_challenge_target(level, target_type="nivel", target_turma="", target_aluno="", target_turmas_envio=None):
     level = _norm_book_level(level)
     target_type = _challenge_target_type(target_type)
     target_turma = str(target_turma or "").strip()
     target_aluno = str(target_aluno or "").strip()
+    raw_turmas = target_turmas_envio if isinstance(target_turmas_envio, (list, tuple, set)) else []
+    allowed_turmas = {str(x).strip() for x in raw_turmas if str(x).strip()}
     out = []
     for student in st.session_state.get("students", []):
         if target_type == "turma":
@@ -4670,8 +4690,11 @@ def _students_for_challenge_target(level, target_type="nivel", target_turma="", 
         elif target_type == "aluno_vip":
             if str(student.get("nome", "")).strip() != target_aluno:
                 continue
-        elif student_book_level(student) != level:
-            continue
+        else:
+            if allowed_turmas and str(student.get("turma", "")).strip() not in allowed_turmas:
+                continue
+            if student_book_level(student) != level:
+                continue
         out.append(student)
     return out
 
@@ -4689,7 +4712,7 @@ def get_student_weekly_challenges(student_obj, week_key):
     )
     return desafios
 
-def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno="", reference_theme="", reference_book="", reference_subject="", reference_note=""):
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno="", reference_theme="", reference_book="", reference_subject="", reference_note="", target_turmas_envio=None):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     titulo = str(titulo or "").strip()
@@ -4702,6 +4725,7 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
     target_type = _challenge_target_type(target_type)
     target_turma = str(target_turma or "").strip()
     target_aluno = str(target_aluno or "").strip()
+    target_turmas_envio = [str(x).strip() for x in (target_turmas_envio or []) if str(x).strip()]
     reference_theme = str(reference_theme or "").strip()
     reference_book = str(reference_book or "").strip()
     reference_subject = str(reference_subject or "").strip()
@@ -4722,6 +4746,7 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
         existing["target_type"] = target_type
         existing["target_turma"] = target_turma
         existing["target_aluno"] = target_aluno
+        existing["target_turmas_envio"] = target_turmas_envio
         existing["reference_theme"] = reference_theme
         existing["reference_book"] = reference_book
         existing["reference_subject"] = reference_subject
@@ -4743,6 +4768,7 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             "target_type": target_type,
             "target_turma": target_turma,
             "target_aluno": target_aluno,
+            "target_turmas_envio": target_turmas_envio,
             "reference_theme": reference_theme,
             "reference_book": reference_book,
             "reference_subject": reference_subject,
@@ -7984,6 +8010,7 @@ def notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True):
         target_type=challenge.get("target_type", "nivel"),
         target_turma=challenge.get("target_turma", ""),
         target_aluno=challenge.get("target_aluno", ""),
+        target_turmas_envio=_challenge_send_turmas(challenge),
     )
     stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     for student in recipients:
@@ -8016,7 +8043,7 @@ def notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True):
     stats["enviados"] = stats["email_ok"]
     return stats
 
-def notify_new_challenge_by_level(level, week_key, titulo, descricao):
+def notify_new_challenge_by_level(level, week_key, titulo, descricao, target_turmas_envio=None):
     challenge_obj = {
         "nivel": level,
         "semana": week_key,
@@ -8025,6 +8052,7 @@ def notify_new_challenge_by_level(level, week_key, titulo, descricao):
         "target_type": "nivel",
         "target_turma": "",
         "target_aluno": "",
+        "target_turmas_envio": [str(x).strip() for x in (target_turmas_envio or []) if str(x).strip()],
         "autor": st.session_state.get("user_name", "Coordenacao"),
     }
     return notify_new_challenge(challenge_obj, send_email=True, send_whatsapp=True)
@@ -16632,11 +16660,14 @@ elif st.session_state["role"] == "Coordenador":
 
         with c_pub:
             st.markdown("### Publicar / editar")
-            target_options = ["Nivel (Livro)", "Turma", "Aluno VIP"]
+            target_options = ["Por livro", "Turma", "Aluno VIP"]
+            if st.session_state.get("coord_ch_target_type") not in target_options:
+                st.session_state["coord_ch_target_type"] = target_options[0]
             target_choice = st.selectbox("Diretorio do desafio", target_options, key="coord_ch_target_type")
             target_type = _challenge_target_type(target_choice)
             target_turma = ""
             target_aluno = ""
+            target_turmas_envio = []
             nivel = "Livro 1"
             turma_obj = {}
             aluno_vip_obj = {}
@@ -16698,6 +16729,7 @@ elif st.session_state["role"] == "Coordenador":
             ref_subject_key = f"{key_prefix}_reference_subject"
             ref_note_key = f"{key_prefix}_reference_note"
             preview_key = f"{key_prefix}_preview_box"
+            send_turmas_key = f"{key_prefix}_send_turmas"
 
             if titulo_key not in st.session_state:
                 st.session_state[titulo_key] = str(existing.get("titulo", ""))
@@ -16717,6 +16749,11 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[notify_key] = True
             if draft_info_key not in st.session_state:
                 st.session_state[draft_info_key] = ""
+            if send_turmas_key not in st.session_state:
+                raw_send_turmas = existing.get("target_turmas_envio", [])
+                if isinstance(raw_send_turmas, str):
+                    raw_send_turmas = [part.strip() for part in raw_send_turmas.split(",") if part.strip()]
+                st.session_state[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
             if theme_key not in st.session_state:
                 st.session_state[theme_key] = str(existing.get("reference_theme", "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual"
             default_book_reference = (
@@ -16743,6 +16780,13 @@ elif st.session_state["role"] == "Coordenador":
             st.caption("Voce pode criar manualmente ou gerar com IA, revisar os campos e salvar quando estiver bom.")
 
             st.markdown("#### Referencia do desafio")
+            if target_type == "nivel":
+                target_turmas_envio = st.multiselect(
+                    "Turmas para enviar o desafio",
+                    class_names(),
+                    key=send_turmas_key,
+                    help="Se nao selecionar nenhuma turma, o desafio vai para todos os alunos do livro selecionado.",
+                )
             reference_theme = st.selectbox(
                 "Linha do desafio",
                 ["Livro / Conteudo atual", "Empreendedorismo", "Inteligencia Emocional"],
@@ -16873,6 +16917,7 @@ elif st.session_state["role"] == "Coordenador":
                                     week_now,
                                     gen.get("titulo", "Desafio da semana"),
                                     gen.get("descricao", ""),
+                                    target_turmas_envio=target_turmas_envio,
                                 )
                                 for key in notify_stats:
                                     notify_stats[key] += int(partial_stats.get(key, 0))
@@ -16911,6 +16956,10 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[ref_book_key] = str(existing.get("reference_book", "")).strip() or default_book_reference
                 st.session_state[ref_subject_key] = str(existing.get("reference_subject", "")).strip() or materia_atual
                 st.session_state[ref_note_key] = str(existing.get("reference_note", "")).strip() or st.session_state.get(ref_note_key, "")
+                raw_send_turmas = existing.get("target_turmas_envio", [])
+                if isinstance(raw_send_turmas, str):
+                    raw_send_turmas = [part.strip() for part in raw_send_turmas.split(",") if part.strip()]
+                st.session_state[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
                 st.session_state[draft_info_key] = (
                     "Desafio salvo carregado no formulario."
                     if existing else
@@ -16919,7 +16968,8 @@ elif st.session_state["role"] == "Coordenador":
                 st.rerun()
 
             preview_text = (
-                f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel})}\n"
+                f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel, 'target_turmas_envio': target_turmas_envio})}\n"
+                f"Turmas de envio: {', '.join(target_turmas_envio) if target_turmas_envio else 'Todas do livro'}\n"
                 f"Linha do desafio: {reference_theme}\n"
                 f"Livro/Nivel de referencia: {reference_book or '-'}\n"
                 f"Materia/Conteudo de referencia: {reference_subject or '-'}\n"
@@ -16963,6 +17013,7 @@ elif st.session_state["role"] == "Coordenador":
                         reference_book=reference_book,
                         reference_subject=reference_subject,
                         reference_note=str(st.session_state.get(ref_note_key, "")).strip(),
+                        target_turmas_envio=target_turmas_envio,
                     )
                     if notify_new_challenge_enabled:
                         stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
@@ -17008,7 +17059,7 @@ elif st.session_state["role"] == "Coordenador":
                     _challenge_target_label(ch) if isinstance(ch, dict) else "-"
                     for ch in chs
                 ]
-                col_order = [c for c in ["semana", "destino", "nivel", "reference_theme", "reference_book", "reference_subject", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                col_order = [c for c in ["semana", "destino", "nivel", "target_turmas_envio", "reference_theme", "reference_book", "reference_subject", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
