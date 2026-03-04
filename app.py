@@ -16332,7 +16332,10 @@ elif st.session_state["role"] == "Coordenador":
                     with mp1:
                         new_desc_pag = st.text_input("Descricao", value=str(pag_obj.get("descricao", "")))
                     with mp2:
-                        new_val_total_pag = st.text_input("Valor total", value=str(pag_obj.get("valor", pag_obj.get("valor_parcela", ""))))
+                        new_val_parcela_pag_input = st.text_input(
+                            "Valor da parcela",
+                            value=str(pag_obj.get("valor_parcela", pag_obj.get("valor", ""))),
+                        )
                     with mp3:
                         new_qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_pag)), step=1)
 
@@ -16371,11 +16374,13 @@ elif st.session_state["role"] == "Coordenador":
                             index=status_opts_pag.index(status_pag_atual) if status_pag_atual in status_opts_pag else 0,
                         )
 
-                    new_val_total_pag_num = parse_money(new_val_total_pag)
+                    new_val_parcela_pag_num = parse_money(new_val_parcela_pag_input)
                     new_qtd_pag_int = max(1, int(new_qtd_pag))
-                    new_valor_parcela_pag = f"{(new_val_total_pag_num / new_qtd_pag_int):.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
+                    new_val_total_pag_num = new_val_parcela_pag_num * new_qtd_pag_int
+                    new_valor_parcela_pag = f"{new_val_parcela_pag_num:.2f}".replace(".", ",") if new_val_parcela_pag_num > 0 else "0,00"
+                    new_val_total_pag = f"{new_val_total_pag_num:.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
                     with mp11:
-                        st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_pag, disabled=True, key="pag_edit_valor_parcela_auto")
+                        st.text_input("Valor total (automatico)", value=new_val_total_pag, disabled=True, key="pag_edit_valor_total_auto")
 
                     apply_all_pag = st.checkbox(
                         "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
@@ -16390,8 +16395,8 @@ elif st.session_state["role"] == "Coordenador":
                         excluir_pag = st.form_submit_button("Excluir despesa", type="primary")
 
                     if salvar_pag:
-                        if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_total_pag_num <= 0:
-                            st.error("Informe descricao, referencia e valor total valido.")
+                        if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_parcela_pag_num <= 0:
+                            st.error("Informe descricao, referencia e valor da parcela valido.")
                         else:
                             lote_id_pag = str(pag_obj.get("lote_id", "")).strip() or f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
 
@@ -16428,7 +16433,7 @@ elif st.session_state["role"] == "Coordenador":
                                         {
                                             "codigo": codigo_pag_item,
                                             "descricao": new_desc_pag.strip(),
-                                            "valor": new_val_total_pag.strip(),
+                                            "valor": new_val_total_pag,
                                             "valor_parcela": new_valor_parcela_pag,
                                             "parcela": parcela_txt_pag,
                                             "fornecedor": new_forn_pag.strip(),
@@ -16443,7 +16448,7 @@ elif st.session_state["role"] == "Coordenador":
                                     )
                             else:
                                 pag_obj["descricao"] = new_desc_pag.strip()
-                                pag_obj["valor"] = new_val_total_pag.strip()
+                                pag_obj["valor"] = new_val_total_pag
                                 pag_obj["valor_parcela"] = new_valor_parcela_pag
                                 pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
                                 pag_obj["fornecedor"] = new_forn_pag.strip()
