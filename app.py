@@ -16833,6 +16833,12 @@ elif st.session_state["role"] == "Coordenador":
             ref_note_key = f"{key_prefix}_reference_note"
             preview_key = f"{key_prefix}_preview_box"
             send_turmas_key = f"{key_prefix}_send_turmas"
+            draft_patch_key = f"{key_prefix}_draft_patch"
+
+            pending_draft_patch = st.session_state.pop(draft_patch_key, None)
+            if isinstance(pending_draft_patch, dict):
+                for patch_key, patch_value in pending_draft_patch.items():
+                    st.session_state[patch_key] = patch_value
 
             if titulo_key not in st.session_state:
                 st.session_state[titulo_key] = str(existing.get("titulo", ""))
@@ -16966,14 +16972,14 @@ elif st.session_state["role"] == "Coordenador":
                             reference_text=str(st.session_state.get(ref_note_key, "")).strip(),
                             challenge_theme=reference_theme,
                         )
-                        st.session_state[titulo_key] = str(gen.get("titulo", "")).strip()
-                        st.session_state[descricao_key] = str(gen.get("descricao", "")).strip()
-                        st.session_state[rubrica_key] = str(gen.get("rubrica", "")).strip()
-                        st.session_state[dica_key] = str(gen.get("dica", "")).strip()
-                        st.session_state[pontos_key] = int(gen.get("pontos") or 10)
-                        st.session_state[draft_info_key] = (
-                            f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio."
-                        )
+                        st.session_state[draft_patch_key] = {
+                            titulo_key: str(gen.get("titulo", "")).strip(),
+                            descricao_key: str(gen.get("descricao", "")).strip(),
+                            rubrica_key: str(gen.get("rubrica", "")).strip(),
+                            dica_key: str(gen.get("dica", "")).strip(),
+                            pontos_key: int(gen.get("pontos") or 10),
+                            draft_info_key: f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio.",
+                        }
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Falha ao gerar desafio com IA: {exc}")
@@ -17040,34 +17046,35 @@ elif st.session_state["role"] == "Coordenador":
                         st.info(f"Ja existem desafios publicados para a semana {week_now}.")
             manual_col1, manual_col2 = st.columns([1, 1])
             if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
-                st.session_state[titulo_key] = ""
-                st.session_state[descricao_key] = ""
-                st.session_state[rubrica_key] = ""
-                st.session_state[dica_key] = ""
-                st.session_state[pontos_key] = 10
-                st.session_state[draft_info_key] = "Formulario limpo para criacao manual."
+                st.session_state[draft_patch_key] = {
+                    titulo_key: "",
+                    descricao_key: "",
+                    rubrica_key: "",
+                    dica_key: "",
+                    pontos_key: 10,
+                    draft_info_key: "Formulario limpo para criacao manual.",
+                }
                 st.rerun()
             if manual_col2.button("Carregar desafio salvo", key=f"{key_prefix}_load_existing"):
-                st.session_state[titulo_key] = str(existing.get("titulo", ""))
-                st.session_state[descricao_key] = str(existing.get("descricao", ""))
-                st.session_state[rubrica_key] = str(existing.get("rubrica", ""))
-                st.session_state[dica_key] = str(existing.get("dica", ""))
-                st.session_state[pontos_key] = int(existing.get("pontos") or 10)
-                st.session_state[sem_prazo_key] = not bool(str(existing.get("due_date", "")).strip())
-                st.session_state[due_key] = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
-                st.session_state[theme_key] = str(existing.get("reference_theme", "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual"
-                st.session_state[ref_book_key] = str(existing.get("reference_book", "")).strip() or default_book_reference
-                st.session_state[ref_subject_key] = str(existing.get("reference_subject", "")).strip() or materia_atual
-                st.session_state[ref_note_key] = str(existing.get("reference_note", "")).strip() or st.session_state.get(ref_note_key, "")
+                load_patch = {
+                    titulo_key: str(existing.get("titulo", "")),
+                    descricao_key: str(existing.get("descricao", "")),
+                    rubrica_key: str(existing.get("rubrica", "")),
+                    dica_key: str(existing.get("dica", "")),
+                    pontos_key: int(existing.get("pontos") or 10),
+                    sem_prazo_key: not bool(str(existing.get("due_date", "")).strip()),
+                    due_key: parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7)),
+                    theme_key: str(existing.get("reference_theme", "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual",
+                    ref_book_key: str(existing.get("reference_book", "")).strip() or default_book_reference,
+                    ref_subject_key: str(existing.get("reference_subject", "")).strip() or materia_atual,
+                    ref_note_key: str(existing.get("reference_note", "")).strip() or st.session_state.get(ref_note_key, ""),
+                }
                 raw_send_turmas = existing.get("target_turmas_envio", [])
                 if isinstance(raw_send_turmas, str):
                     raw_send_turmas = [part.strip() for part in raw_send_turmas.split(",") if part.strip()]
-                st.session_state[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
-                st.session_state[draft_info_key] = (
-                    "Desafio salvo carregado no formulario."
-                    if existing else
-                    "Nao existe desafio salvo para esse destino/semana."
-                )
+                load_patch[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
+                load_patch[draft_info_key] = "Desafio salvo carregado no formulario." if existing else "Nao existe desafio salvo para esse destino/semana."
+                st.session_state[draft_patch_key] = load_patch
                 st.rerun()
 
             preview_text = (
