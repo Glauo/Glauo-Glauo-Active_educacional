@@ -6918,6 +6918,25 @@ def _financial_due_total_for_month(items, date_field="vencimento", ref_date=None
         total += parse_money((item or {}).get("valor_parcela", (item or {}).get("valor", 0)))
     return total
 
+
+def _financial_is_overdue(item_obj, date_field="vencimento", ref_date=None):
+    if not _financial_open_status(item_obj):
+        return False
+    today_ref = ref_date if isinstance(ref_date, datetime.date) else datetime.date.today()
+    due_date = parse_date((item_obj or {}).get(date_field, ""))
+    return bool(due_date and due_date < today_ref)
+
+
+def _financial_overdue_items(items, date_field="vencimento", ref_date=None):
+    return [item for item in (items or []) if _financial_is_overdue(item, date_field=date_field, ref_date=ref_date)]
+
+
+def _financial_overdue_total(items, date_field="vencimento", ref_date=None):
+    return sum(
+        parse_money((item or {}).get("valor_parcela", (item or {}).get("valor", 0)))
+        for item in _financial_overdue_items(items, date_field=date_field, ref_date=ref_date)
+    )
+
 def _teacher_payment_ref_for_session(session_obj):
     sess = session_obj if isinstance(session_obj, dict) else {}
     sess_id = str(sess.get("id", "")).strip()
@@ -11852,6 +11871,10 @@ elif st.session_state["role"] == "Coordenador":
         )
         total_rec_mes = _financial_due_total_for_month(st.session_state.get("receivables", []), date_field="vencimento")
         total_pag_mes = _financial_due_total_for_month(st.session_state.get("payables", []), date_field="vencimento")
+        total_rec_venc = _financial_overdue_total(st.session_state.get("receivables", []), date_field="vencimento")
+        total_pag_venc = _financial_overdue_total(st.session_state.get("payables", []), date_field="vencimento")
+        qtd_rec_venc = len(_financial_overdue_items(st.session_state.get("receivables", []), date_field="vencimento"))
+        qtd_pag_venc = len(_financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento"))
         saldo = total_rec - total_pag
         c4, c5, c6 = st.columns(3)
         with c4: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Receber</div><div class=\"card-value\" style=\"color:#2563eb;\">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
@@ -11878,6 +11901,38 @@ elif st.session_state["role"] == "Coordenador":
             """,
             unsafe_allow_html=True,
         )
+        st.markdown("<br>", unsafe_allow_html=True)
+        vd1, vd2 = st.columns(2)
+        with vd1:
+            st.markdown(
+                f"""
+                <div class="dash-card">
+                  <div class="card-title">Vencidos a Receber</div>
+                  <div class="card-value" style="color:#dc2626;">{format_money(total_rec_venc)}</div>
+                  <div class="card-sub"><span class="trend-neutral">{qtd_rec_venc} lançamento(s) vencido(s)</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Ver vencidos a receber", key="dash_overdue_receivables_btn"):
+                st.session_state["menu_coord"] = "Financeiro"
+                st.session_state["finance_overdue_focus"] = "receber"
+                st.rerun()
+        with vd2:
+            st.markdown(
+                f"""
+                <div class="dash-card">
+                  <div class="card-title">Vencidos a Pagar</div>
+                  <div class="card-value" style="color:#dc2626;">{format_money(total_pag_venc)}</div>
+                  <div class="card-sub"><span class="trend-neutral">{qtd_pag_venc} lançamento(s) vencido(s)</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Ver vencidos a pagar", key="dash_overdue_payables_btn"):
+                st.session_state["menu_coord"] = "Financeiro"
+                st.session_state["finance_overdue_focus"] = "pagar"
+                st.rerun()
 
     elif menu_coord == "Agenda":
         st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
@@ -13919,6 +13974,8 @@ elif st.session_state["role"] == "Coordenador":
 
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        finance_focus = str(st.session_state.get("finance_overdue_focus", "")).strip().lower()
+
         def _parse_parcela_info(parcela_txt):
             parcela_str = str(parcela_txt or "").strip()
             atual = 1
@@ -14026,7 +14083,157 @@ elif st.session_state["role"] == "Coordenador":
             safe_day = min(due_day_int, month_end.day)
             return ref_date.replace(day=safe_day)
 
-        tab1, tab2, tab3 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial"])
+        def _render_overdue_receivables_panel():
+            overdue_receivables = [
+                r for r in _financial_overdue_items(st.session_state.get("receivables", []), date_field="vencimento")
+                if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno" and str(r.get("aluno", "")).strip()
+            ]
+            if not overdue_receivables:
+                st.info("Nenhum recebimento vencido para alunos.")
+                return
+            summary_map = {}
+            for item in overdue_receivables:
+                aluno_nome = str(item.get("aluno", "")).strip()
+                row = summary_map.setdefault(
+                    aluno_nome,
+                    {"aluno": aluno_nome, "qtd_vencidos": 0, "total_vencido": 0.0, "ultimo_vencimento": ""},
+                )
+                row["qtd_vencidos"] += 1
+                row["total_vencido"] += parse_money(item.get("valor_parcela", item.get("valor", 0)))
+                venc_txt = str(item.get("vencimento", "")).strip()
+                venc_dt = parse_date(venc_txt)
+                last_dt = parse_date(row.get("ultimo_vencimento", ""))
+                if venc_dt and (not last_dt or venc_dt > last_dt):
+                    row["ultimo_vencimento"] = venc_txt
+            summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["aluno"].lower()))
+            st.markdown("#### Alunos com recebimentos vencidos")
+            summary_df = pd.DataFrame(
+                [
+                    {
+                        "aluno": row["aluno"],
+                        "qtd_vencidos": row["qtd_vencidos"],
+                        "total_vencido": format_money(row["total_vencido"]),
+                        "ultimo_vencimento": row["ultimo_vencimento"],
+                    }
+                    for row in summary_rows
+                ]
+            )
+            st.dataframe(summary_df, use_container_width=True)
+            st.markdown("#### Selecionar aluno")
+            selected_student = str(st.session_state.get("finance_overdue_selected_student", "")).strip()
+            for row in summary_rows:
+                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
+                with c1:
+                    st.markdown(f"**{row['aluno']}**")
+                with c2:
+                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
+                with c3:
+                    st.caption(format_money(row["total_vencido"]))
+                with c4:
+                    if st.button("Ver", key=f"finance_overdue_student_btn_{row['aluno']}"):
+                        st.session_state["finance_overdue_selected_student"] = row["aluno"]
+                        selected_student = row["aluno"]
+                        st.rerun()
+            if not selected_student and summary_rows:
+                selected_student = summary_rows[0]["aluno"]
+            if selected_student:
+                st.markdown(f"#### Pagamentos vencidos de {selected_student}")
+                student_items = [
+                    {
+                        "codigo": str(item.get("codigo", "")).strip(),
+                        "descricao": str(item.get("descricao", "")).strip(),
+                        "categoria": str(item.get("categoria", "")).strip(),
+                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
+                        "parcela": str(item.get("parcela", "")).strip(),
+                        "vencimento": str(item.get("vencimento", "")).strip(),
+                        "cobranca": str(item.get("cobranca", "")).strip(),
+                        "status": str(item.get("status", "")).strip(),
+                    }
+                    for item in overdue_receivables
+                    if str(item.get("aluno", "")).strip() == selected_student
+                ]
+                st.dataframe(pd.DataFrame(student_items), use_container_width=True)
+
+        def _render_overdue_payables_panel():
+            overdue_payables = _financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento")
+            if not overdue_payables:
+                st.info("Nenhuma conta a pagar vencida.")
+                return
+            summary_map = {}
+            for item in overdue_payables:
+                fornecedor = str(item.get("fornecedor", "")).strip() or "Sem fornecedor"
+                row = summary_map.setdefault(
+                    fornecedor,
+                    {"fornecedor": fornecedor, "qtd_vencidos": 0, "total_vencido": 0.0, "ultimo_vencimento": ""},
+                )
+                row["qtd_vencidos"] += 1
+                row["total_vencido"] += parse_money(item.get("valor_parcela", item.get("valor", 0)))
+                venc_txt = str(item.get("vencimento", "")).strip()
+                venc_dt = parse_date(venc_txt)
+                last_dt = parse_date(row.get("ultimo_vencimento", ""))
+                if venc_dt and (not last_dt or venc_dt > last_dt):
+                    row["ultimo_vencimento"] = venc_txt
+            summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["fornecedor"].lower()))
+            st.markdown("#### Contas a pagar vencidas")
+            summary_df = pd.DataFrame(
+                [
+                    {
+                        "fornecedor": row["fornecedor"],
+                        "qtd_vencidos": row["qtd_vencidos"],
+                        "total_vencido": format_money(row["total_vencido"]),
+                        "ultimo_vencimento": row["ultimo_vencimento"],
+                    }
+                    for row in summary_rows
+                ]
+            )
+            st.dataframe(summary_df, use_container_width=True)
+            selected_supplier = str(st.session_state.get("finance_overdue_selected_supplier", "")).strip()
+            for row in summary_rows:
+                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
+                with c1:
+                    st.markdown(f"**{row['fornecedor']}**")
+                with c2:
+                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
+                with c3:
+                    st.caption(format_money(row["total_vencido"]))
+                with c4:
+                    if st.button("Ver", key=f"finance_overdue_supplier_btn_{row['fornecedor']}"):
+                        st.session_state["finance_overdue_selected_supplier"] = row["fornecedor"]
+                        selected_supplier = row["fornecedor"]
+                        st.rerun()
+            if not selected_supplier and summary_rows:
+                selected_supplier = summary_rows[0]["fornecedor"]
+            if selected_supplier:
+                st.markdown(f"#### Contas vencidas de {selected_supplier}")
+                supplier_items = [
+                    {
+                        "codigo": str(item.get("codigo", "")).strip(),
+                        "descricao": str(item.get("descricao", "")).strip(),
+                        "categoria_lancamento": str(item.get("categoria_lancamento", "")).strip(),
+                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
+                        "parcela": str(item.get("parcela", "")).strip(),
+                        "vencimento": str(item.get("vencimento", "")).strip(),
+                        "cobranca": str(item.get("cobranca", "")).strip(),
+                        "status": str(item.get("status", "")).strip(),
+                    }
+                    for item in overdue_payables
+                    if (str(item.get("fornecedor", "")).strip() or "Sem fornecedor") == selected_supplier
+                ]
+                st.dataframe(pd.DataFrame(supplier_items), use_container_width=True)
+
+        if finance_focus in ("receber", "pagar"):
+            with st.container(border=True):
+                st.markdown("### Vencimentos em destaque")
+                st.caption("Atalho aberto a partir do Painel do Coordenador.")
+                if finance_focus == "receber":
+                    _render_overdue_receivables_panel()
+                else:
+                    _render_overdue_payables_panel()
+                if st.button("Fechar destaque de vencimentos", key="finance_close_overdue_focus"):
+                    st.session_state.pop("finance_overdue_focus", None)
+                    st.rerun()
+
+        tab1, tab2, tab3, tab4 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial", "Vencimentos"])
         with tab1:
             with st.expander("Configuracao automatica de e-mail e boleto", expanded=False):
                 smtp_diag = _smtp_config_diagnostics()
@@ -15483,6 +15690,24 @@ elif st.session_state["role"] == "Coordenador":
                             st.error(msg)
                 else:
                     st.info("Nenhum pagamento encontrado para o filtro selecionado.")
+
+        with tab4:
+            if finance_focus == "receber":
+                st.session_state["finance_overdue_mode"] = "A receber vencidos"
+            elif finance_focus == "pagar":
+                st.session_state["finance_overdue_mode"] = "A pagar vencidos"
+            if st.session_state.get("finance_overdue_mode") not in ("A receber vencidos", "A pagar vencidos"):
+                st.session_state["finance_overdue_mode"] = "A receber vencidos"
+            overdue_mode = st.radio(
+                "Visualizar",
+                ["A receber vencidos", "A pagar vencidos"],
+                horizontal=True,
+                key="finance_overdue_mode",
+            )
+            if overdue_mode == "A receber vencidos":
+                _render_overdue_receivables_panel()
+            else:
+                _render_overdue_payables_panel()
 
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
