@@ -5123,6 +5123,24 @@ def _recent_class_lessons_for_homework(turma_nome, limit=4):
             break
     return out
 
+def _current_subject_for_challenge(turma_nome, turma_obj=None):
+    turma_nome = str(turma_nome or "").strip()
+    turma_obj = turma_obj if isinstance(turma_obj, dict) else {}
+    lesson_reader = globals().get("_recent_class_lessons_for_homework")
+    if turma_nome and callable(lesson_reader):
+        try:
+            latest = lesson_reader(turma_nome, limit=1) or [""]
+            subject = str(latest[0] or "").strip()
+            if subject:
+                return subject
+        except Exception:
+            pass
+    for field in ("materia", "conteudo", "disciplina", "modulo"):
+        value = str(turma_obj.get(field, "")).strip()
+        if value:
+            return value
+    return ""
+
 def _normalize_activity_questions_from_ai(raw_questions, fallback_count=3):
     items = raw_questions if isinstance(raw_questions, list) else []
     normalized = []
@@ -16905,7 +16923,7 @@ elif st.session_state["role"] == "Coordenador":
                     target_turma = st.selectbox("Turma de destino", turma_options, key="coord_ch_target_turma")
                     turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == target_turma), {})
                     nivel = _norm_book_level(turma_obj.get("livro", "")) or "Livro 1"
-                    materia_atual = (_recent_class_lessons_for_homework(target_turma, limit=1) or [""])[0]
+                    materia_atual = _current_subject_for_challenge(target_turma, turma_obj)
                     st.caption(f"Nivel detectado pela turma: {nivel}")
             elif target_type == "aluno_vip":
                 vip_students = [s for s in st.session_state.get("students", []) if _student_vip_summary(s)]
@@ -16917,7 +16935,7 @@ elif st.session_state["role"] == "Coordenador":
                     aluno_vip_obj = next((s for s in vip_students if str(s.get("nome", "")).strip() == target_aluno), {})
                     nivel = student_book_level(aluno_vip_obj) or "Livro 1"
                     turma_aluno_vip = str(aluno_vip_obj.get("turma", "")).strip()
-                    materia_atual = (_recent_class_lessons_for_homework(turma_aluno_vip, limit=1) or [""])[0] if turma_aluno_vip else ""
+                    materia_atual = _current_subject_for_challenge(turma_aluno_vip) if turma_aluno_vip else ""
                     st.caption(f"Nivel detectado pelo aluno VIP: {nivel}")
             else:
                 nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
