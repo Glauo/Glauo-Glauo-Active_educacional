@@ -17111,6 +17111,39 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[draft_patch_key] = load_patch
                 st.rerun()
 
+            st.markdown("#### Ajuste final antes de salvar")
+            st.caption("Edite o desafio aqui antes de publicar. A caixa abaixo tambem aceita edicao direta.")
+
+            titulo = st.text_input("Titulo", key=titulo_key)
+            descricao = st.text_area(
+                "Descricao",
+                height=160,
+                key=descricao_key,
+            )
+            rubrica = st.text_input(
+                "Rubrica (como sera avaliado)",
+                key=rubrica_key,
+            )
+            dica = st.text_input(
+                "Dica (opcional)",
+                key=dica_key,
+            )
+            pontos = st.number_input(
+                "Pontos",
+                min_value=0,
+                max_value=100,
+                step=1,
+                key=pontos_key,
+            )
+            sem_prazo = st.checkbox("Sem prazo", key=sem_prazo_key)
+            due_date = None
+            if not sem_prazo:
+                due_date = st.date_input("Prazo", format="DD/MM/YYYY", key=due_key)
+
+            notify_new_challenge_enabled = st.checkbox(
+                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
+                key=notify_key,
+            )
             preview_text = (
                 f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel, 'target_turmas_envio': target_turmas_envio})}\n"
                 f"Turmas de envio: {', '.join(target_turmas_envio) if target_turmas_envio else 'Todas do livro'}\n"
