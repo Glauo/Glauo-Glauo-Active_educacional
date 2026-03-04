@@ -4265,8 +4265,38 @@ def teacher_names():
 
 def parse_money(value):
     try:
-        return float(str(value).replace(",", "."))
-    except ValueError:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        raw = str(value).strip()
+        if not raw:
+            return 0.0
+
+        clean = re.sub(r"[^\d,.\-]", "", raw)
+        if not clean:
+            return 0.0
+
+        if "," in clean and "." in clean:
+            # Formato brasileiro: 1.234,56
+            if clean.rfind(",") > clean.rfind("."):
+                clean = clean.replace(".", "").replace(",", ".")
+            else:
+                # Formato internacional: 1,234.56
+                clean = clean.replace(",", "")
+        elif "," in clean:
+            clean = clean.replace(".", "").replace(",", ".")
+        elif clean.count(".") > 1:
+            parts = clean.split(".")
+            clean = "".join(parts[:-1]) + "." + parts[-1]
+        elif "." in clean:
+            left, right = clean.split(".", 1)
+            # 3.588 -> 3588 (milhar), 299.50 -> decimal
+            if len(right) == 3 and left.isdigit() and right.isdigit():
+                clean = left + right
+
+        return float(clean)
+    except Exception:
         return 0.0
 
 def format_money(value):
@@ -15528,6 +15558,17 @@ elif st.session_state["role"] == "Coordenador":
                     rec_obj.setdefault("boleto_enviado_canais", "")
                     parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
                     venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
+                    qtd_base_rec = max(1, int(qtd_atual_rec))
+                    valor_parcela_base_rec_num = parse_money(rec_obj.get("valor_parcela", ""))
+                    if valor_parcela_base_rec_num <= 0:
+                        valor_total_base_rec_num = parse_money(rec_obj.get("valor", ""))
+                        if valor_total_base_rec_num > 0:
+                            valor_parcela_base_rec_num = valor_total_base_rec_num / qtd_base_rec
+                    valor_parcela_base_rec_txt = (
+                        f"{valor_parcela_base_rec_num:.2f}".replace(".", ",")
+                        if valor_parcela_base_rec_num > 0
+                        else ""
+                    )
 
                     categoria_opts_rec = ["Mensalidade", "Material", "Taxa de Matricula"]
                     if rec_obj.get("categoria", "") and rec_obj.get("categoria", "") not in categoria_opts_rec:
@@ -15552,7 +15593,7 @@ elif st.session_state["role"] == "Coordenador":
                         with mr2:
                             new_val_parcela_rec_input = st.text_input(
                                 "Valor da parcela",
-                                value=str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))),
+                                value=valor_parcela_base_rec_txt,
                             )
                         with mr3:
                             new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
@@ -15597,8 +15638,8 @@ elif st.session_state["role"] == "Coordenador":
                         new_qtd_rec_int = max(1, int(new_qtd_rec))
                         new_val_total_num = new_val_parcela_num * new_qtd_rec_int
                         new_valor_parcela_rec = f"{new_val_parcela_num:.2f}".replace(".", ",") if new_val_parcela_num > 0 else "0,00"
-                        new_val_total_rec = f"{new_val_total_num:.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
-                        st.text_input("Valor total (automatico)", value=new_val_total_rec, disabled=True, key="rec_edit_valor_total_auto")
+                        new_val_total_rec_auto = f"{new_val_total_num:.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
+                        st.text_input("Valor total (automatico)", value=new_val_total_rec_auto, disabled=True)
 
                         mb1, mb2 = st.columns(2)
                         with mb1:
@@ -15670,7 +15711,7 @@ elif st.session_state["role"] == "Coordenador":
                                                 "categoria_lancamento": new_cat_lanc_rec,
                                                 "cobranca": new_cobranca_rec,
                                                 "codigo": codigo_item,
-                                                "valor": new_val_total_rec.strip(),
+                                                "valor": new_val_total_rec_auto,
                                                 "data": ref_data_rec,
                                                 "valor_parcela": new_valor_parcela_rec,
                                                 "parcela": parcela_txt,
@@ -15693,7 +15734,7 @@ elif st.session_state["role"] == "Coordenador":
                                     rec_obj["categoria"] = new_cat_rec
                                     rec_obj["categoria_lancamento"] = new_cat_lanc_rec
                                     rec_obj["cobranca"] = new_cobranca_rec
-                                    rec_obj["valor"] = new_val_total_rec.strip()
+                                    rec_obj["valor"] = new_val_total_rec_auto
                                     rec_obj["valor_parcela"] = new_valor_parcela_rec
                                     rec_obj["vencimento"] = new_venc_rec.strftime("%d/%m/%Y")
                                     rec_obj["status"] = new_status_rec
@@ -16314,6 +16355,17 @@ elif st.session_state["role"] == "Coordenador":
                 parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
                 data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
                 venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
+                qtd_base_pag = max(1, int(qtd_atual_pag))
+                valor_parcela_base_pag_num = parse_money(pag_obj.get("valor_parcela", ""))
+                if valor_parcela_base_pag_num <= 0:
+                    valor_total_base_pag_num = parse_money(pag_obj.get("valor", ""))
+                    if valor_total_base_pag_num > 0:
+                        valor_parcela_base_pag_num = valor_total_base_pag_num / qtd_base_pag
+                valor_parcela_base_pag_txt = (
+                    f"{valor_parcela_base_pag_num:.2f}".replace(".", ",")
+                    if valor_parcela_base_pag_num > 0
+                    else ""
+                )
 
                 cat_lanc_opts_pag = ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"]
                 if pag_obj.get("categoria_lancamento", "") and pag_obj.get("categoria_lancamento", "") not in cat_lanc_opts_pag:
@@ -16334,7 +16386,7 @@ elif st.session_state["role"] == "Coordenador":
                     with mp2:
                         new_val_parcela_pag_input = st.text_input(
                             "Valor da parcela",
-                            value=str(pag_obj.get("valor_parcela", pag_obj.get("valor", ""))),
+                            value=valor_parcela_base_pag_txt,
                         )
                     with mp3:
                         new_qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_pag)), step=1)
@@ -16380,7 +16432,7 @@ elif st.session_state["role"] == "Coordenador":
                     new_valor_parcela_pag = f"{new_val_parcela_pag_num:.2f}".replace(".", ",") if new_val_parcela_pag_num > 0 else "0,00"
                     new_val_total_pag = f"{new_val_total_pag_num:.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
                     with mp11:
-                        st.text_input("Valor total (automatico)", value=new_val_total_pag, disabled=True, key="pag_edit_valor_total_auto")
+                        st.text_input("Valor total (automatico)", value=new_val_total_pag, disabled=True)
 
                     apply_all_pag = st.checkbox(
                         "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
