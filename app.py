@@ -15550,7 +15550,10 @@ elif st.session_state["role"] == "Coordenador":
                         with mr1:
                             new_desc_rec = st.text_input("Descricao", value=str(rec_obj.get("descricao", "")))
                         with mr2:
-                            new_val_total_rec = st.text_input("Valor total", value=str(rec_obj.get("valor", rec_obj.get("valor_parcela", ""))))
+                            new_val_parcela_rec_input = st.text_input(
+                                "Valor da parcela",
+                                value=str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))),
+                            )
                         with mr3:
                             new_qtd_rec = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_rec)), step=1)
 
@@ -15590,10 +15593,12 @@ elif st.session_state["role"] == "Coordenador":
                                 index=status_opts_rec.index(stat_rec) if stat_rec in status_opts_rec else 0,
                             )
 
-                        new_val_total_num = parse_money(new_val_total_rec)
+                        new_val_parcela_num = parse_money(new_val_parcela_rec_input)
                         new_qtd_rec_int = max(1, int(new_qtd_rec))
-                        new_valor_parcela_rec = f"{(new_val_total_num / new_qtd_rec_int):.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
-                        st.text_input("Valor da parcela (automatico)", value=new_valor_parcela_rec, disabled=True, key="rec_edit_valor_parcela_auto")
+                        new_val_total_num = new_val_parcela_num * new_qtd_rec_int
+                        new_valor_parcela_rec = f"{new_val_parcela_num:.2f}".replace(".", ",") if new_val_parcela_num > 0 else "0,00"
+                        new_val_total_rec = f"{new_val_total_num:.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
+                        st.text_input("Valor total (automatico)", value=new_val_total_rec, disabled=True, key="rec_edit_valor_total_auto")
 
                         mb1, mb2 = st.columns(2)
                         with mb1:
@@ -15615,10 +15620,10 @@ elif st.session_state["role"] == "Coordenador":
                         with mc2:
                             excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
 
-                        if salvar_rec:
-                            if not new_ref_rec.strip() or new_val_total_num <= 0:
-                                st.error("Informe referencia e valor total valido.")
-                            else:
+                    if salvar_rec:
+                        if not new_ref_rec.strip() or new_val_parcela_num <= 0:
+                            st.error("Informe referencia e valor da parcela valido.")
+                        else:
                                 lote_id_rec = str(rec_obj.get("lote_id", "")).strip() or f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
                                 ref_data_rec = str(rec_obj.get("data", "")).strip() or datetime.date.today().strftime("%d/%m/%Y")
                                 ref_item_codigo = str(rec_obj.get("item_codigo", "")).strip()
@@ -17152,37 +17157,7 @@ elif st.session_state["role"] == "Coordenador":
                 key=ref_note_key,
             )
 
-            titulo = st.text_input("Titulo", key=titulo_key)
-            descricao = st.text_area(
-                "Descricao",
-                height=160,
-                key=descricao_key,
-            )
-            rubrica = st.text_input(
-                "Rubrica (como sera avaliado)",
-                key=rubrica_key,
-            )
-            dica = st.text_input(
-                "Dica (opcional)",
-                key=dica_key,
-            )
-            pontos = st.number_input(
-                "Pontos",
-                min_value=0,
-                max_value=100,
-                step=1,
-                key=pontos_key,
-            )
-            sem_prazo = st.checkbox("Sem prazo", key=sem_prazo_key)
-            due_date = None
-            if not sem_prazo:
-                due_date = st.date_input("Prazo", format="DD/MM/YYYY", key=due_key)
-
             autor = st.session_state.get("user_name", "Coordenacao")
-            notify_new_challenge_enabled = st.checkbox(
-                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
-                key=notify_key,
-            )
 
             draft_info = str(st.session_state.get(draft_info_key, "")).strip()
             if draft_info:
@@ -17289,6 +17264,40 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[draft_patch_key] = load_patch
                 st.rerun()
 
+            st.markdown("#### Ajuste final antes de salvar")
+            st.caption("Edite o desafio aqui antes de publicar. A caixa de pre-visualizacao abaixo e somente leitura.")
+
+            titulo = st.text_input("Titulo", key=titulo_key)
+            descricao = st.text_area(
+                "Descricao",
+                height=160,
+                key=descricao_key,
+            )
+            rubrica = st.text_input(
+                "Rubrica (como sera avaliado)",
+                key=rubrica_key,
+            )
+            dica = st.text_input(
+                "Dica (opcional)",
+                key=dica_key,
+            )
+            pontos = st.number_input(
+                "Pontos",
+                min_value=0,
+                max_value=100,
+                step=1,
+                key=pontos_key,
+            )
+            sem_prazo = st.checkbox("Sem prazo", key=sem_prazo_key)
+            due_date = None
+            if not sem_prazo:
+                due_date = st.date_input("Prazo", format="DD/MM/YYYY", key=due_key)
+
+            notify_new_challenge_enabled = st.checkbox(
+                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
+                key=notify_key,
+            )
+
             preview_text = (
                 f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel, 'target_turmas_envio': target_turmas_envio})}\n"
                 f"Turmas de envio: {', '.join(target_turmas_envio) if target_turmas_envio else 'Todas do livro'}\n"
@@ -17308,7 +17317,7 @@ elif st.session_state["role"] == "Coordenador":
                 f"{str(dica).strip() or '-'}"
             )
             st.session_state[preview_key] = preview_text
-            st.text_area("Pre-visualizacao antes de postar", height=240, key=preview_key, disabled=True)
+            st.text_area("Pre-visualizacao antes de postar (somente leitura)", height=240, key=preview_key, disabled=True)
 
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 if not str(titulo).strip() or not str(descricao).strip():
