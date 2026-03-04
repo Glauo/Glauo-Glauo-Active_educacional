@@ -17046,6 +17046,11 @@ elif st.session_state["role"] == "Coordenador":
             draft_patch_key = f"{key_prefix}_draft_patch"
             draft_action_key = f"{key_prefix}_draft_action"
             draft_error_key = f"{key_prefix}_draft_error"
+            editor_titulo_key = f"{key_prefix}_editor_titulo"
+            editor_descricao_key = f"{key_prefix}_editor_descricao"
+            editor_rubrica_key = f"{key_prefix}_editor_rubrica"
+            editor_dica_key = f"{key_prefix}_editor_dica"
+            editor_pontos_key = f"{key_prefix}_editor_pontos"
 
             pending_draft_patch = st.session_state.pop(draft_patch_key, None)
             if isinstance(pending_draft_patch, dict):
@@ -17122,6 +17127,11 @@ elif st.session_state["role"] == "Coordenador":
                             rubrica_key: str(gen.get("rubrica", "")).strip(),
                             dica_key: str(gen.get("dica", "")).strip(),
                             pontos_key: int(gen.get("pontos") or 10),
+                            editor_titulo_key: str(gen.get("titulo", "")).strip(),
+                            editor_descricao_key: str(gen.get("descricao", "")).strip(),
+                            editor_rubrica_key: str(gen.get("rubrica", "")).strip(),
+                            editor_dica_key: str(gen.get("dica", "")).strip(),
+                            editor_pontos_key: int(gen.get("pontos") or 10),
                             draft_info_key: f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio.",
                         }
                         st.session_state[draft_error_key] = ""
@@ -17798,4 +17808,5 @@ elif st.session_state["role"] == "Coordenador":
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
+
 
