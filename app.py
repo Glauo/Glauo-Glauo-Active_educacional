@@ -15356,6 +15356,9 @@ elif st.session_state["role"] == "Coordenador":
                                 )
             recebimentos = st.session_state["receivables"]
             recebimentos_filtrados = list(recebimentos)
+            rec_bulk_all_codes = []
+            rec_bulk_filtered_codes = []
+            rec_labels_by_code = {}
             if finance_receber_menu in ("Recebimentos", "Acoes em massa (Recebimentos)"):
                 st.markdown("### Recebimentos")
                 with st.container(border=True):
@@ -17031,6 +17034,8 @@ elif st.session_state["role"] == "Coordenador":
             preview_key = f"{key_prefix}_preview_box"
             send_turmas_key = f"{key_prefix}_send_turmas"
             draft_patch_key = f"{key_prefix}_draft_patch"
+            draft_action_key = f"{key_prefix}_draft_action"
+            draft_error_key = f"{key_prefix}_draft_error"
 
             pending_draft_patch = st.session_state.pop(draft_patch_key, None)
             if isinstance(pending_draft_patch, dict):
@@ -17081,6 +17086,38 @@ elif st.session_state["role"] == "Coordenador":
                         "Use essa base para gerar um desafio coerente com a turma e com o livro."
                     )
                 st.session_state[ref_note_key] = base_note
+            if draft_error_key not in st.session_state:
+                st.session_state[draft_error_key] = ""
+            pending_draft_action = str(st.session_state.pop(draft_action_key, "")).strip()
+            if pending_draft_action == "gen_ai":
+                api_key = get_groq_api_key()
+                if not api_key:
+                    st.session_state[draft_error_key] = "Configure GROQ_API_KEY para gerar desafios com IA."
+                elif target_type == "turma" and not target_turma:
+                    st.session_state[draft_error_key] = "Selecione a turma de destino antes de gerar o desafio."
+                elif target_type == "aluno_vip" and not target_aluno:
+                    st.session_state[draft_error_key] = "Selecione o aluno VIP de destino antes de gerar o desafio."
+                else:
+                    try:
+                        gen = generate_weekly_challenge_ai(
+                            nivel,
+                            semana,
+                            reference_title=str(st.session_state.get(ref_book_key, default_book_reference)).strip() or default_book_reference,
+                            reference_text=str(st.session_state.get(ref_note_key, "")).strip(),
+                            challenge_theme=str(st.session_state.get(theme_key, "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual",
+                        )
+                        st.session_state[draft_patch_key] = {
+                            titulo_key: str(gen.get("titulo", "")).strip(),
+                            descricao_key: str(gen.get("descricao", "")).strip(),
+                            rubrica_key: str(gen.get("rubrica", "")).strip(),
+                            dica_key: str(gen.get("dica", "")).strip(),
+                            pontos_key: int(gen.get("pontos") or 10),
+                            draft_info_key: f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio.",
+                        }
+                        st.session_state[draft_error_key] = ""
+                        st.rerun()
+                    except Exception as exc:
+                        st.session_state[draft_error_key] = f"Falha ao gerar desafio com IA: {exc}"
 
             st.markdown("#### Rascunho do desafio")
             st.caption("Voce pode criar manualmente ou gerar com IA, revisar os campos e salvar quando estiver bom.")
@@ -17150,36 +17187,14 @@ elif st.session_state["role"] == "Coordenador":
             draft_info = str(st.session_state.get(draft_info_key, "")).strip()
             if draft_info:
                 st.info(draft_info)
+            draft_error = str(st.session_state.get(draft_error_key, "")).strip()
+            if draft_error:
+                st.error(draft_error)
 
             ai_col1, ai_col2 = st.columns([1, 1])
             if ai_col1.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
-                api_key = get_groq_api_key()
-                if not api_key:
-                    st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
-                elif target_type == "turma" and not target_turma:
-                    st.error("Selecione a turma de destino antes de gerar o desafio.")
-                elif target_type == "aluno_vip" and not target_aluno:
-                    st.error("Selecione o aluno VIP de destino antes de gerar o desafio.")
-                else:
-                    try:
-                        gen = generate_weekly_challenge_ai(
-                            nivel,
-                            semana,
-                            reference_title=reference_book,
-                            reference_text=str(st.session_state.get(ref_note_key, "")).strip(),
-                            challenge_theme=reference_theme,
-                        )
-                        st.session_state[draft_patch_key] = {
-                            titulo_key: str(gen.get("titulo", "")).strip(),
-                            descricao_key: str(gen.get("descricao", "")).strip(),
-                            rubrica_key: str(gen.get("rubrica", "")).strip(),
-                            dica_key: str(gen.get("dica", "")).strip(),
-                            pontos_key: int(gen.get("pontos") or 10),
-                            draft_info_key: f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio.",
-                        }
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Falha ao gerar desafio com IA: {exc}")
+                st.session_state[draft_action_key] = "gen_ai"
+                st.rerun()
 
             if ai_col2.button("Gerar com IA para todos livros (semana atual)", key=f"{key_prefix}_gen_ai_all"):
                 api_key = get_groq_api_key()
