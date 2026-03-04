@@ -17281,7 +17281,7 @@ elif st.session_state["role"] == "Coordenador":
                 st.rerun()
 
             st.markdown("#### Ajuste final antes de salvar")
-            st.caption("Edite o desafio aqui antes de publicar. A caixa de pre-visualizacao abaixo e somente leitura.")
+            st.caption("Edite o desafio aqui antes de publicar. A caixa abaixo tambem aceita edicao direta.")
 
             titulo = st.text_input("Titulo", key=titulo_key)
             descricao = st.text_area(
