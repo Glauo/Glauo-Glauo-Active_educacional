@@ -14866,369 +14866,401 @@ elif st.session_state["role"] == "Coordenador":
                     st.session_state.pop("finance_overdue_focus", None)
                     st.rerun()
 
-        tab1, tab2, tab3, tab4 = st.tabs(["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial", "Vencimentos"])
-        with tab1:
-            with st.expander("Configuracao automatica de e-mail e boleto", expanded=False):
-                smtp_diag = _smtp_config_diagnostics()
-                boleto_diag = _boleto_config_diagnostics()
-                whatsapp_diag = _whatsapp_config_diagnostics()
-                smtp_ready = smtp_diag["host_ok"] and smtp_diag["port_ok"] and smtp_diag["from_ok"]
-                boleto_ready = boleto_diag["template_ok"] or boleto_diag["base_url_ok"] or boleto_diag["api_url_ok"]
+        finance_main_options = ["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial", "Vencimentos"]
+        if finance_focus in ("receber", "pagar"):
+            st.session_state["finance_main_menu"] = "Vencimentos"
+        if st.session_state.get("finance_main_menu") not in finance_main_options:
+            st.session_state["finance_main_menu"] = finance_main_options[0]
+        finance_main = st.radio(
+            "Area do financeiro",
+            finance_main_options,
+            horizontal=True,
+            key="finance_main_menu",
+            label_visibility="collapsed",
+        )
 
-                d1, d2, d3 = st.columns(3)
-                with d1:
-                    st.metric("SMTP", "Configurado" if smtp_ready else "Pendente")
-                with d2:
-                    st.metric("Boleto", "Configurado" if boleto_ready else "Pendente")
-                with d3:
-                    st.metric("WhatsApp", "Configurado" if whatsapp_diag.get("wapi_ready") or whatsapp_diag.get("evolution_ready") else "Pendente")
+        if finance_main == "Contas a Receber":
+            finance_receber_options = [
+                "Lancar Recebimento",
+                "Recebimentos",
+                "Acoes em massa (Recebimentos)",
+                "Gerenciamento de Recebimentos",
+                "Lancar Material do Estoque",
+                "Baixa de Recebimentos",
+                "Configuracao automatica de e-mail e boleto",
+            ]
+            if st.session_state.get("finance_receber_menu") not in finance_receber_options:
+                st.session_state["finance_receber_menu"] = finance_receber_options[0]
+            finance_receber_menu = st.radio(
+                "Opcoes de Contas a Receber",
+                finance_receber_options,
+                key="finance_receber_menu",
+            )
+            if finance_receber_menu == "Configuracao automatica de e-mail e boleto":
+                with st.expander("Configuracao automatica de e-mail e boleto", expanded=True):
+                    smtp_diag = _smtp_config_diagnostics()
+                    boleto_diag = _boleto_config_diagnostics()
+                    whatsapp_diag = _whatsapp_config_diagnostics()
+                    smtp_ready = smtp_diag["host_ok"] and smtp_diag["port_ok"] and smtp_diag["from_ok"]
+                    boleto_ready = boleto_diag["template_ok"] or boleto_diag["base_url_ok"] or boleto_diag["api_url_ok"]
 
-                st.caption(
-                    "Se variaveis de ambiente estiverem definidas (ACTIVE_*), elas tem prioridade sobre os campos abaixo."
-                )
+                    d1, d2, d3 = st.columns(3)
+                    with d1:
+                        st.metric("SMTP", "Configurado" if smtp_ready else "Pendente")
+                    with d2:
+                        st.metric("Boleto", "Configurado" if boleto_ready else "Pendente")
+                    with d3:
+                        st.metric("WhatsApp", "Configurado" if whatsapp_diag.get("wapi_ready") or whatsapp_diag.get("evolution_ready") else "Pendente")
 
-                current_cfg = get_finance_settings()
-                with st.form("finance_auto_cfg_form"):
-                    st.markdown("#### SMTP (envio de e-mail)")
-                    sm1, sm2, sm3 = st.columns(3)
-                    with sm1:
-                        cfg_smtp_host = st.text_input("Servidor SMTP", value=str(current_cfg.get("smtp_host", "")))
-                    with sm2:
-                        cfg_smtp_port = st.text_input("Porta SMTP", value=str(current_cfg.get("smtp_port", "587")))
-                    with sm3:
-                        cfg_smtp_tls = st.selectbox(
-                            "TLS",
-                            ["1", "0"],
-                            index=0 if str(current_cfg.get("smtp_tls", "1")) != "0" else 1,
-                            format_func=lambda v: "Ativo" if str(v) == "1" else "Desativado",
-                        )
-                    sm4, sm5, sm6 = st.columns(3)
-                    with sm4:
-                        cfg_smtp_user = st.text_input("Usuario SMTP", value=str(current_cfg.get("smtp_user", "")))
-                    with sm5:
-                        cfg_smtp_pass = st.text_input("Senha SMTP", value=str(current_cfg.get("smtp_pass", "")), type="password")
-                    with sm6:
-                        cfg_smtp_from = st.text_input("E-mail remetente", value=str(current_cfg.get("smtp_from", "")))
-
-                    st.markdown("#### Boleto")
-                    bl1, bl2 = st.columns(2)
-                    with bl1:
-                        cfg_boleto_provider = st.selectbox(
-                            "Provedor",
-                            ["link", "api"],
-                            index=0 if str(current_cfg.get("boleto_provider", "link")).strip().lower() != "api" else 1,
-                        )
-                    with bl2:
-                        cfg_boleto_base_url = st.text_input(
-                            "Base URL do boleto (opcional)",
-                            value=str(current_cfg.get("boleto_base_url", "")),
-                            help="Se informar somente a base URL, o sistema adiciona os parametros automaticamente.",
-                        )
-                    cfg_boleto_template = st.text_input(
-                        "Template do link (opcional)",
-                        value=str(current_cfg.get("boleto_link_template", "")),
-                        help="Exemplo: https://provedor.com/boleto/{codigo}?aluno={aluno}",
+                    st.caption(
+                        "Se variaveis de ambiente estiverem definidas (ACTIVE_*), elas tem prioridade sobre os campos abaixo."
                     )
-                    bl3, bl4, bl5 = st.columns(3)
-                    with bl3:
-                        cfg_boleto_api_url = st.text_input("API URL (opcional)", value=str(current_cfg.get("boleto_api_url", "")))
-                    with bl4:
-                        cfg_boleto_api_key = st.text_input("API Key (opcional)", value=str(current_cfg.get("boleto_api_key", "")), type="password")
-                    with bl5:
-                        cfg_boleto_api_auth = st.text_input(
-                            "Header da API Key",
-                            value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
-                            help="Exemplo: Authorization ou apikey",
+
+                    current_cfg = get_finance_settings()
+                    with st.form("finance_auto_cfg_form"):
+                        st.markdown("#### SMTP (envio de e-mail)")
+                        sm1, sm2, sm3 = st.columns(3)
+                        with sm1:
+                            cfg_smtp_host = st.text_input("Servidor SMTP", value=str(current_cfg.get("smtp_host", "")))
+                        with sm2:
+                            cfg_smtp_port = st.text_input("Porta SMTP", value=str(current_cfg.get("smtp_port", "587")))
+                        with sm3:
+                            cfg_smtp_tls = st.selectbox(
+                                "TLS",
+                                ["1", "0"],
+                                index=0 if str(current_cfg.get("smtp_tls", "1")) != "0" else 1,
+                                format_func=lambda v: "Ativo" if str(v) == "1" else "Desativado",
+                            )
+                        sm4, sm5, sm6 = st.columns(3)
+                        with sm4:
+                            cfg_smtp_user = st.text_input("Usuario SMTP", value=str(current_cfg.get("smtp_user", "")))
+                        with sm5:
+                            cfg_smtp_pass = st.text_input("Senha SMTP", value=str(current_cfg.get("smtp_pass", "")), type="password")
+                        with sm6:
+                            cfg_smtp_from = st.text_input("E-mail remetente", value=str(current_cfg.get("smtp_from", "")))
+
+                        st.markdown("#### Boleto")
+                        bl1, bl2 = st.columns(2)
+                        with bl1:
+                            cfg_boleto_provider = st.selectbox(
+                                "Provedor",
+                                ["link", "api"],
+                                index=0 if str(current_cfg.get("boleto_provider", "link")).strip().lower() != "api" else 1,
+                            )
+                        with bl2:
+                            cfg_boleto_base_url = st.text_input(
+                                "Base URL do boleto (opcional)",
+                                value=str(current_cfg.get("boleto_base_url", "")),
+                                help="Se informar somente a base URL, o sistema adiciona os parametros automaticamente.",
+                            )
+                        cfg_boleto_template = st.text_input(
+                            "Template do link (opcional)",
+                            value=str(current_cfg.get("boleto_link_template", "")),
+                            help="Exemplo: https://provedor.com/boleto/{codigo}?aluno={aluno}",
                         )
+                        bl3, bl4, bl5 = st.columns(3)
+                        with bl3:
+                            cfg_boleto_api_url = st.text_input("API URL (opcional)", value=str(current_cfg.get("boleto_api_url", "")))
+                        with bl4:
+                            cfg_boleto_api_key = st.text_input("API Key (opcional)", value=str(current_cfg.get("boleto_api_key", "")), type="password")
+                        with bl5:
+                            cfg_boleto_api_auth = st.text_input(
+                                "Header da API Key",
+                                value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
+                                help="Exemplo: Authorization ou apikey",
+                            )
 
-                    salvar_fin_cfg = st.form_submit_button("Salvar configuracoes automaticas")
-                    if salvar_fin_cfg:
-                        save_finance_settings(
-                            {
-                                "smtp_host": cfg_smtp_host,
-                                "smtp_port": cfg_smtp_port,
-                                "smtp_user": cfg_smtp_user,
-                                "smtp_pass": cfg_smtp_pass,
-                                "smtp_tls": cfg_smtp_tls,
-                                "smtp_from": cfg_smtp_from,
-                                "boleto_provider": cfg_boleto_provider,
-                                "boleto_base_url": cfg_boleto_base_url,
-                                "boleto_link_template": cfg_boleto_template,
-                                "boleto_api_url": cfg_boleto_api_url,
-                                "boleto_api_key": cfg_boleto_api_key,
-                                "boleto_api_auth_header": cfg_boleto_api_auth,
-                            }
+                        salvar_fin_cfg = st.form_submit_button("Salvar configuracoes automaticas")
+                        if salvar_fin_cfg:
+                            save_finance_settings(
+                                {
+                                    "smtp_host": cfg_smtp_host,
+                                    "smtp_port": cfg_smtp_port,
+                                    "smtp_user": cfg_smtp_user,
+                                    "smtp_pass": cfg_smtp_pass,
+                                    "smtp_tls": cfg_smtp_tls,
+                                    "smtp_from": cfg_smtp_from,
+                                    "boleto_provider": cfg_boleto_provider,
+                                    "boleto_base_url": cfg_boleto_base_url,
+                                    "boleto_link_template": cfg_boleto_template,
+                                    "boleto_api_url": cfg_boleto_api_url,
+                                    "boleto_api_key": cfg_boleto_api_key,
+                                    "boleto_api_auth_header": cfg_boleto_api_auth,
+                                }
+                            )
+                            st.success("Configuracoes financeiras salvas.")
+                            st.rerun()
+
+            if finance_receber_menu == "Lancar Recebimento":
+                with st.form("add_rec"):
+                    st.markdown("### Lançar Recebimento")
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
+                    with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
+                    with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
+                    with c4:
+                        categoria_lancamento = st.selectbox(
+                            "Categoria do lancamento",
+                            ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
                         )
-                        st.success("Configuracoes financeiras salvas.")
-                        st.rerun()
-
-            with st.form("add_rec"):
-                st.markdown("### Lançar Recebimento")
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
-                with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
-                with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
-                with c4:
-                    categoria_lancamento = st.selectbox(
-                        "Categoria do lancamento",
-                        ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
-                    )
-                alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
-                if categoria_lancamento == "Aluno":
-                    if alunos_opts:
-                        aluno = st.selectbox("Aluno", alunos_opts)
-                    else:
-                        aluno = ""
-                        st.info("Nenhum aluno cadastrado para lancar recebimento.")
-                else:
-                    ref_label = {
-                        "Fornecedor": "Fornecedor",
-                        "Professor": "Professor",
-                        "Interno": "Setor interno",
-                        "Outro": "Referencia",
-                    }.get(categoria_lancamento, "Referencia")
-                    aluno = st.text_input(f"{ref_label} *")
-                c4, c5, c6, c6b = st.columns(4)
-                with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c6b:
-                    rec_due_day = st.selectbox(
-                        "Dia do vencimento",
-                        list(range(1, 31)),
-                        index=max(0, min(29, datetime.date.today().day - 1)),
-                        format_func=lambda d: f"Dia {d}",
-                    )
-                material_payment = "A vista"
-                if categoria == "Material":
-                    with c6:
-                        material_payment = st.selectbox(
-                            "Pagamento do Material",
-                            material_payment_options(),
-                        )
-                    cobranca = material_payment
-                else:
-                    with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
-                c7, c8, c9 = st.columns(3)
-                is_material = categoria == "Material"
-                with c7:
-                    parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
-                material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
-                if categoria == "Mensalidade":
-                    qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
-                elif categoria == "Material":
-                    qtd_meses = st.number_input(
-                        "Parcelas *",
-                        min_value=1,
-                        max_value=6,
-                        value=2 if material_parcelado else 1,
-                        disabled=not material_parcelado,
-                    )
-                else:
-                    qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
-
-                if categoria == "Material" and not material_parcelado:
-                    qtd_parcelas_calc = 1
-                else:
-                    qtd_parcelas_calc = max(1, int(qtd_meses))
-
-                valor_parcela_num = parse_money(val_parcela_input)
-                valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
-                valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
-                valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
-                with c9:
-                    st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
-                d1, d2 = st.columns(2)
-                with d1:
-                    enviar_fin_email = st.checkbox(
-                        "Enviar comunicado por e-mail",
-                        value=True,
-                        key="rec_notify_email",
-                        disabled=(categoria_lancamento != "Aluno"),
-                    )
-                with d2:
-                    enviar_fin_whatsapp = st.checkbox(
-                        "Enviar comunicado por WhatsApp",
-                        value=True,
-                        key="rec_notify_whatsapp",
-                        disabled=(categoria_lancamento != "Aluno"),
-                    )
-                if categoria_lancamento != "Aluno":
-                    st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
-
-                if st.form_submit_button("Lancar"):
-                    if not str(aluno).strip() or valor_parcela_num <= 0:
-                        st.error("Informe referencia e valor da parcela valido.")
-                    elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
-                        st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
-                    else:
-                        before_count = len(st.session_state.get("receivables", []))
-                        total_lancados = 0
-                        lote_id_rec = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
-                        venc_base = _month_due_date(venc, rec_due_day)
-                        if categoria == "Mensalidade":
-                            for i in range(qtd_parcelas_calc):
-                                data_venc = add_months(venc_base, i)
-                                parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}"
-                                add_receivable(
-                                    aluno,
-                                    desc,
-                                    valor_total_auto,
-                                    data_venc,
-                                    cobranca,
-                                    categoria,
-                                    data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_txt,
-                                    parcela=parcela,
-                                    categoria_lancamento=categoria_lancamento,
-                                    lote_id=lote_id_rec,
-                                )
-                                total_lancados += 1
-                            st.success(f"Mensalidades lancadas! ({total_lancados} parcelas)")
-                        elif categoria == "Material":
-                            qtd_material = qtd_parcelas_calc
-                            for i in range(qtd_material):
-                                data_venc = add_months(venc_base, i)
-                                parcela = f"{1 + i}/{qtd_material}" if qtd_material > 1 else "1"
-                                add_receivable(
-                                    aluno,
-                                    desc or "Material",
-                                    valor_total_auto,
-                                    data_venc,
-                                    cobranca,
-                                    categoria,
-                                    data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_txt,
-                                    parcela=parcela,
-                                    categoria_lancamento=categoria_lancamento,
-                                    lote_id=lote_id_rec,
-                                )
-                                total_lancados += 1
-                            st.success(f"Material lancado com parcelamento em {qtd_material}x.")
+                    alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
+                    if categoria_lancamento == "Aluno":
+                        if alunos_opts:
+                            aluno = st.selectbox("Aluno", alunos_opts)
                         else:
-                            for i in range(qtd_parcelas_calc):
-                                data_venc = add_months(venc_base, i) if qtd_parcelas_calc > 1 else venc_base
-                                parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}" if qtd_parcelas_calc > 1 else str(parcela_inicial)
-                                add_receivable(
+                            aluno = ""
+                            st.info("Nenhum aluno cadastrado para lancar recebimento.")
+                    else:
+                        ref_label = {
+                            "Fornecedor": "Fornecedor",
+                            "Professor": "Professor",
+                            "Interno": "Setor interno",
+                            "Outro": "Referencia",
+                        }.get(categoria_lancamento, "Referencia")
+                        aluno = st.text_input(f"{ref_label} *")
+                    c4, c5, c6, c6b = st.columns(4)
+                    with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c6b:
+                        rec_due_day = st.selectbox(
+                            "Dia do vencimento",
+                            list(range(1, 31)),
+                            index=max(0, min(29, datetime.date.today().day - 1)),
+                            format_func=lambda d: f"Dia {d}",
+                        )
+                    material_payment = "A vista"
+                    if categoria == "Material":
+                        with c6:
+                            material_payment = st.selectbox(
+                                "Pagamento do Material",
+                                material_payment_options(),
+                            )
+                        cobranca = material_payment
+                    else:
+                        with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
+                    c7, c8, c9 = st.columns(3)
+                    is_material = categoria == "Material"
+                    with c7:
+                        parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
+                    material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                    if categoria == "Mensalidade":
+                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
+                    elif categoria == "Material":
+                        qtd_meses = st.number_input(
+                            "Parcelas *",
+                            min_value=1,
+                            max_value=6,
+                            value=2 if material_parcelado else 1,
+                            disabled=not material_parcelado,
+                        )
+                    else:
+                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
+
+                    if categoria == "Material" and not material_parcelado:
+                        qtd_parcelas_calc = 1
+                    else:
+                        qtd_parcelas_calc = max(1, int(qtd_meses))
+
+                    valor_parcela_num = parse_money(val_parcela_input)
+                    valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
+                    valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
+                    valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
+                    with c9:
+                        st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
+                    d1, d2 = st.columns(2)
+                    with d1:
+                        enviar_fin_email = st.checkbox(
+                            "Enviar comunicado por e-mail",
+                            value=True,
+                            key="rec_notify_email",
+                            disabled=(categoria_lancamento != "Aluno"),
+                        )
+                    with d2:
+                        enviar_fin_whatsapp = st.checkbox(
+                            "Enviar comunicado por WhatsApp",
+                            value=True,
+                            key="rec_notify_whatsapp",
+                            disabled=(categoria_lancamento != "Aluno"),
+                        )
+                    if categoria_lancamento != "Aluno":
+                        st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
+
+                    if st.form_submit_button("Lancar"):
+                        if not str(aluno).strip() or valor_parcela_num <= 0:
+                            st.error("Informe referencia e valor da parcela valido.")
+                        elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
+                            st.error("Ative pelo menos um canal: e-mail ou WhatsApp.")
+                        else:
+                            before_count = len(st.session_state.get("receivables", []))
+                            total_lancados = 0
+                            lote_id_rec = f"REC-LOT-{uuid.uuid4().hex[:10].upper()}"
+                            venc_base = _month_due_date(venc, rec_due_day)
+                            if categoria == "Mensalidade":
+                                for i in range(qtd_parcelas_calc):
+                                    data_venc = add_months(venc_base, i)
+                                    parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}"
+                                    add_receivable(
+                                        aluno,
+                                        desc,
+                                        valor_total_auto,
+                                        data_venc,
+                                        cobranca,
+                                        categoria,
+                                        data_lancamento=data_lanc,
+                                        valor_parcela=valor_parcela_txt,
+                                        parcela=parcela,
+                                        categoria_lancamento=categoria_lancamento,
+                                        lote_id=lote_id_rec,
+                                    )
+                                    total_lancados += 1
+                                st.success(f"Mensalidades lancadas! ({total_lancados} parcelas)")
+                            elif categoria == "Material":
+                                qtd_material = qtd_parcelas_calc
+                                for i in range(qtd_material):
+                                    data_venc = add_months(venc_base, i)
+                                    parcela = f"{1 + i}/{qtd_material}" if qtd_material > 1 else "1"
+                                    add_receivable(
+                                        aluno,
+                                        desc or "Material",
+                                        valor_total_auto,
+                                        data_venc,
+                                        cobranca,
+                                        categoria,
+                                        data_lancamento=data_lanc,
+                                        valor_parcela=valor_parcela_txt,
+                                        parcela=parcela,
+                                        categoria_lancamento=categoria_lancamento,
+                                        lote_id=lote_id_rec,
+                                    )
+                                    total_lancados += 1
+                                st.success(f"Material lancado com parcelamento em {qtd_material}x.")
+                            else:
+                                for i in range(qtd_parcelas_calc):
+                                    data_venc = add_months(venc_base, i) if qtd_parcelas_calc > 1 else venc_base
+                                    parcela = f"{parcela_inicial + i}/{qtd_parcelas_calc}" if qtd_parcelas_calc > 1 else str(parcela_inicial)
+                                    add_receivable(
+                                        aluno,
+                                        desc,
+                                        valor_total_auto,
+                                        data_venc,
+                                        cobranca,
+                                        categoria,
+                                        data_lancamento=data_lanc,
+                                        valor_parcela=valor_parcela_txt,
+                                        parcela=parcela,
+                                        categoria_lancamento=categoria_lancamento,
+                                        lote_id=lote_id_rec,
+                                    )
+                                    total_lancados += 1
+                                st.success(f"Lancado! ({total_lancados} parcela(s))")
+                            if wiz_event_enabled("on_financial_created") and categoria_lancamento == "Aluno":
+                                new_items = st.session_state.get("receivables", [])[before_count:]
+                                stats_fin = notify_student_financial_event(
                                     aluno,
-                                    desc,
-                                    valor_total_auto,
-                                    data_venc,
-                                    cobranca,
-                                    categoria,
-                                    data_lancamento=data_lanc,
-                                    valor_parcela=valor_parcela_txt,
-                                    parcela=parcela,
-                                    categoria_lancamento=categoria_lancamento,
-                                    lote_id=lote_id_rec,
+                                    new_items,
+                                    send_email=bool(enviar_fin_email),
+                                    send_whatsapp=bool(enviar_fin_whatsapp),
                                 )
-                                total_lancados += 1
-                            st.success(f"Lancado! ({total_lancados} parcela(s))")
-                        if wiz_event_enabled("on_financial_created") and categoria_lancamento == "Aluno":
-                            new_items = st.session_state.get("receivables", [])[before_count:]
-                            stats_fin = notify_student_financial_event(
-                                aluno,
-                                new_items,
-                                send_email=bool(enviar_fin_email),
-                                send_whatsapp=bool(enviar_fin_whatsapp),
-                            )
-                            st.info(
-                                "Disparos financeiros: "
-                                f"E-mail {stats_fin.get('email_ok', 0)}/{stats_fin.get('email_total', 0)} | "
-                                f"WhatsApp {stats_fin.get('whatsapp_ok', 0)}/{stats_fin.get('whatsapp_total', 0)}."
-                            )
-            st.markdown("### Recebimentos")
+                                st.info(
+                                    "Disparos financeiros: "
+                                    f"E-mail {stats_fin.get('email_ok', 0)}/{stats_fin.get('email_total', 0)} | "
+                                    f"WhatsApp {stats_fin.get('whatsapp_ok', 0)}/{stats_fin.get('whatsapp_total', 0)}."
+                                )
             recebimentos = st.session_state["receivables"]
-            with st.container(border=True):
-                st.markdown("#### Filtros de Recebimentos")
-                c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
-                with c_f1:
-                    status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
-                    status_sel = st.selectbox("Status", status_opts)
-                with c_f2:
-                    cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
-                    cat_sel = st.selectbox("Categoria", cat_opts)
-                with c_f3:
-                    cat_lanc_opts = ["Todos"] + sorted({r.get("categoria_lancamento", "Aluno") for r in recebimentos if r.get("categoria_lancamento", "Aluno")})
-                    cat_lanc_sel = st.selectbox("Categoria do lancamento", cat_lanc_opts)
-                with c_f4:
-                    aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
-                    aluno_sel = st.selectbox("Aluno/Referencia", aluno_opts)
-                with c_f5:
-                    item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
-                    item_sel = st.selectbox("Item (Codigo)", item_opts)
-                busca = st.text_input("Buscar por descricao")
+            recebimentos_filtrados = list(recebimentos)
+            if finance_receber_menu in ("Recebimentos", "Acoes em massa (Recebimentos)"):
+                st.markdown("### Recebimentos")
+                with st.container(border=True):
+                    st.markdown("#### Filtros de Recebimentos")
+                    c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
+                    with c_f1:
+                        status_opts = ["Todos"] + sorted({r.get("status", "") for r in recebimentos if r.get("status")})
+                        status_sel = st.selectbox("Status", status_opts)
+                    with c_f2:
+                        cat_opts = ["Todos"] + sorted({r.get("categoria", "") for r in recebimentos if r.get("categoria")})
+                        cat_sel = st.selectbox("Categoria", cat_opts)
+                    with c_f3:
+                        cat_lanc_opts = ["Todos"] + sorted({r.get("categoria_lancamento", "Aluno") for r in recebimentos if r.get("categoria_lancamento", "Aluno")})
+                        cat_lanc_sel = st.selectbox("Categoria do lancamento", cat_lanc_opts)
+                    with c_f4:
+                        aluno_opts = ["Todos"] + sorted({r.get("aluno", "") for r in recebimentos if r.get("aluno")})
+                        aluno_sel = st.selectbox("Aluno/Referencia", aluno_opts)
+                    with c_f5:
+                        item_opts = ["Todos"] + sorted({r.get("item_codigo", "") for r in recebimentos if r.get("item_codigo")})
+                        item_sel = st.selectbox("Item (Codigo)", item_opts)
+                    busca = st.text_input("Buscar por descricao")
 
-            recebimentos_filtrados = recebimentos
-            if status_sel != "Todos":
-                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("status") == status_sel]
-            if cat_sel != "Todos":
-                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria") == cat_sel]
-            if cat_lanc_sel != "Todos":
-                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria_lancamento", "Aluno") == cat_lanc_sel]
-            if aluno_sel != "Todos":
-                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("aluno") == aluno_sel]
-            if item_sel != "Todos":
-                recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("item_codigo") == item_sel]
-            if busca:
-                recebimentos_filtrados = [
-                    r for r in recebimentos_filtrados
-                    if busca.lower() in str(r.get("descricao", "")).lower()
-                ]
-
-            if recebimentos_filtrados:
-                df_rec = pd.DataFrame(recebimentos_filtrados)
-                col_order = [
-                    "data",
-                    "aluno",
-                    "descricao",
-                    "categoria",
-                    "categoria_lancamento",
-                    "item_codigo",
-                    "valor_parcela",
-                    "parcela",
-                    "vencimento",
-                    "status",
-                    "cobranca",
-                    "boleto_status",
-                    "boleto_enviado_em",
-                ]
-                df_rec = df_rec[[c for c in col_order if c in df_rec.columns]]
-                st.dataframe(df_rec, use_container_width=True)
-            else:
-                st.info("Nenhum recebimento encontrado.")
-
-            st.markdown("### Acoes em massa (Recebimentos)")
-            if st.session_state.pop("fin_rec_bulk_reset_pending", False):
-                st.session_state.pop("fin_rec_bulk_codes", None)
-                st.session_state.pop("fin_rec_bulk_confirm_delete", None)
-            rec_bulk_all_codes = list(
-                dict.fromkeys(
-                    [
-                        str(r.get("codigo", "")).strip()
-                        for r in recebimentos
-                        if str(r.get("codigo", "")).strip()
+                if status_sel != "Todos":
+                    recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("status") == status_sel]
+                if cat_sel != "Todos":
+                    recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria") == cat_sel]
+                if cat_lanc_sel != "Todos":
+                    recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("categoria_lancamento", "Aluno") == cat_lanc_sel]
+                if aluno_sel != "Todos":
+                    recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("aluno") == aluno_sel]
+                if item_sel != "Todos":
+                    recebimentos_filtrados = [r for r in recebimentos_filtrados if r.get("item_codigo") == item_sel]
+                if busca:
+                    recebimentos_filtrados = [
+                        r for r in recebimentos_filtrados
+                        if busca.lower() in str(r.get("descricao", "")).lower()
                     ]
-                )
-            )
-            rec_bulk_filtered_codes = list(
-                dict.fromkeys(
-                    [
-                        str(r.get("codigo", "")).strip()
-                        for r in recebimentos_filtrados
-                        if str(r.get("codigo", "")).strip()
+
+                if recebimentos_filtrados:
+                    df_rec = pd.DataFrame(recebimentos_filtrados)
+                    col_order = [
+                        "data",
+                        "aluno",
+                        "descricao",
+                        "categoria",
+                        "categoria_lancamento",
+                        "item_codigo",
+                        "valor_parcela",
+                        "parcela",
+                        "vencimento",
+                        "status",
+                        "cobranca",
+                        "boleto_status",
+                        "boleto_enviado_em",
                     ]
+                    df_rec = df_rec[[c for c in col_order if c in df_rec.columns]]
+                    st.dataframe(df_rec, use_container_width=True)
+                else:
+                    st.info("Nenhum recebimento encontrado.")
+
+            if finance_receber_menu == "Acoes em massa (Recebimentos)":
+                st.markdown("### Acoes em massa (Recebimentos)")
+                if st.session_state.pop("fin_rec_bulk_reset_pending", False):
+                    st.session_state.pop("fin_rec_bulk_codes", None)
+                    st.session_state.pop("fin_rec_bulk_confirm_delete", None)
+                rec_bulk_all_codes = list(
+                    dict.fromkeys(
+                        [
+                            str(r.get("codigo", "")).strip()
+                            for r in recebimentos
+                            if str(r.get("codigo", "")).strip()
+                        ]
+                    )
                 )
-            )
-            rec_labels_by_code = {}
-            for r in recebimentos:
-                codigo_item = str(r.get("codigo", "")).strip()
-                if not codigo_item:
-                    continue
-                rec_labels_by_code[codigo_item] = (
-                    f"{codigo_item} | {str(r.get('aluno', '')).strip()} | "
-                    f"{str(r.get('descricao', '')).strip()} | Parcela {str(r.get('parcela', '')).strip()} | "
-                    f"{str(r.get('valor_parcela', r.get('valor', ''))).strip()} | {str(r.get('status', '')).strip()}"
+                rec_bulk_filtered_codes = list(
+                    dict.fromkeys(
+                        [
+                            str(r.get("codigo", "")).strip()
+                            for r in recebimentos_filtrados
+                            if str(r.get("codigo", "")).strip()
+                        ]
+                    )
                 )
+                rec_labels_by_code = {}
+                for r in recebimentos:
+                    codigo_item = str(r.get("codigo", "")).strip()
+                    if not codigo_item:
+                        continue
+                    rec_labels_by_code[codigo_item] = (
+                        f"{codigo_item} | {str(r.get('aluno', '')).strip()} | "
+                        f"{str(r.get('descricao', '')).strip()} | Parcela {str(r.get('parcela', '')).strip()} | "
+                        f"{str(r.get('valor_parcela', r.get('valor', ''))).strip()} | {str(r.get('status', '')).strip()}"
+                    )
 
             rbk1, rbk2, rbk3, rbk4 = st.columns(4)
             with rbk1:
@@ -15656,7 +15688,21 @@ elif st.session_state["role"] == "Coordenador":
                             save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                             st.success(f"Baixa automática realizada: {count} lançamento(s).")
                             st.rerun()
-        with tab2:
+        if finance_main == "Contas a Pagar":
+            finance_pagar_options = [
+                "Pagamento de Aulas do Professor",
+                "Lancar Despesa",
+                "Despesas",
+                "Acoes em massa (Despesas)",
+                "Gerenciamento de Despesas",
+            ]
+            if st.session_state.get("finance_pagar_menu") not in finance_pagar_options:
+                st.session_state["finance_pagar_menu"] = finance_pagar_options[0]
+            finance_pagar_menu = st.radio(
+                "Opcoes de Contas a Pagar",
+                finance_pagar_options,
+                key="finance_pagar_menu",
+            )
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
             with st.container(border=True):
@@ -16219,7 +16265,15 @@ elif st.session_state["role"] == "Coordenador":
                         st.success("Despesa excluida.")
                         st.rerun()
 
-        with tab3:
+        if finance_main == "Aprovacoes Comercial":
+            finance_aprov_options = ["Pagamentos de matricula"]
+            if st.session_state.get("finance_aprov_menu") not in finance_aprov_options:
+                st.session_state["finance_aprov_menu"] = finance_aprov_options[0]
+            st.radio(
+                "Opcoes de Aprovacoes Comercial",
+                finance_aprov_options,
+                key="finance_aprov_menu",
+            )
             st.markdown("### Pagamentos de matricula enviados pelo Comercial")
             pagamentos = st.session_state.get("sales_payments", [])
             if not pagamentos:
@@ -16324,17 +16378,17 @@ elif st.session_state["role"] == "Coordenador":
                 else:
                     st.info("Nenhum pagamento encontrado para o filtro selecionado.")
 
-        with tab4:
+        if finance_main == "Vencimentos":
+            finance_venc_options = ["A receber vencidos", "A pagar vencidos"]
             if finance_focus == "receber":
                 st.session_state["finance_overdue_mode"] = "A receber vencidos"
             elif finance_focus == "pagar":
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
-            if st.session_state.get("finance_overdue_mode") not in ("A receber vencidos", "A pagar vencidos"):
-                st.session_state["finance_overdue_mode"] = "A receber vencidos"
+            if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
+                st.session_state["finance_overdue_mode"] = finance_venc_options[0]
             overdue_mode = st.radio(
-                "Visualizar",
-                ["A receber vencidos", "A pagar vencidos"],
-                horizontal=True,
+                "Opcoes de Vencimentos",
+                finance_venc_options,
                 key="finance_overdue_mode",
             )
             if overdue_mode == "A receber vencidos":
