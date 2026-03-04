@@ -4689,7 +4689,7 @@ def get_student_weekly_challenges(student_obj, week_key):
     )
     return desafios
 
-def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno=""):
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno="", reference_theme="", reference_book="", reference_subject="", reference_note=""):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     titulo = str(titulo or "").strip()
@@ -4702,6 +4702,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
     target_type = _challenge_target_type(target_type)
     target_turma = str(target_turma or "").strip()
     target_aluno = str(target_aluno or "").strip()
+    reference_theme = str(reference_theme or "").strip()
+    reference_book = str(reference_book or "").strip()
+    reference_subject = str(reference_subject or "").strip()
+    reference_note = str(reference_note or "").strip()
     existing = get_weekly_challenge_for_target(level, week_key, target_type=target_type, target_turma=target_turma, target_aluno=target_aluno)
     if existing:
         existing["nivel"] = level
@@ -4718,6 +4722,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
         existing["target_type"] = target_type
         existing["target_turma"] = target_turma
         existing["target_aluno"] = target_aluno
+        existing["reference_theme"] = reference_theme
+        existing["reference_book"] = reference_book
+        existing["reference_subject"] = reference_subject
+        existing["reference_note"] = reference_note
         existing["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
         saved = existing
     else:
@@ -4735,6 +4743,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             "target_type": target_type,
             "target_turma": target_turma,
             "target_aluno": target_aluno,
+            "reference_theme": reference_theme,
+            "reference_book": reference_book,
+            "reference_subject": reference_subject,
+            "reference_note": reference_note,
             "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
             "updated_at": "",
         }
@@ -6777,15 +6789,19 @@ def _groq_chat_text(messages, temperature=0.2, max_tokens=900):
     )
     return (result.choices[0].message.content or "").strip()
 
-def generate_weekly_challenge_ai(level, week_key):
+def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_text="", challenge_theme="Livro / Conteudo atual"):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
+    reference_title = str(reference_title or "").strip()
+    reference_text = str(reference_text or "").strip()
+    challenge_theme = str(challenge_theme or "Livro / Conteudo atual").strip()
     messages = [
         {
             "role": "system",
             "content": (
-                "Voce e o Professor Wiz (IA) e cria desafios semanais de ingles.\n"
-                "Gere UM desafio adequado ao nivel do aluno (Livro 1..4) e que possa ser respondido no portal.\n"
+                "Voce e o Professor Wiz (IA) e cria desafios semanais educacionais da Mister Wiz.\n"
+                "Gere UM desafio adequado ao nivel do aluno e que possa ser respondido no portal.\n"
+                "Use a referencia pedagogica enviada como base obrigatoria do desafio.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -6793,8 +6809,11 @@ def generate_weekly_challenge_ai(level, week_key):
             "role": "user",
             "content": (
                 f"Nivel: {level}\n"
-                f"Semana: {week_key}\n\n"
-                "Crie um desafio de 10 a 20 minutos com foco em ingles.\n"
+                f"Semana: {week_key}\n"
+                f"Linha do desafio: {challenge_theme}\n"
+                f"Livro/Nivel de referencia: {reference_title or level or '-'}\n\n"
+                f"Referencia pedagogica para gerar o desafio:\n{reference_text or 'Sem referencia adicional informada.'}\n\n"
+                "Crie um desafio de 10 a 20 minutos com foco na referencia acima.\n"
                 "Formato: resposta escrita curta (texto).\n\n"
                 "Campos obrigatorios no JSON:\n"
                 "titulo (string), descricao (string), pontos (int 5..50), rubrica (string curta), dica (string opcional).\n"
@@ -16619,6 +16638,9 @@ elif st.session_state["role"] == "Coordenador":
             target_turma = ""
             target_aluno = ""
             nivel = "Livro 1"
+            turma_obj = {}
+            aluno_vip_obj = {}
+            materia_atual = ""
             if target_type == "turma":
                 turma_options = class_names()
                 if not turma_options:
@@ -16627,6 +16649,7 @@ elif st.session_state["role"] == "Coordenador":
                     target_turma = st.selectbox("Turma de destino", turma_options, key="coord_ch_target_turma")
                     turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == target_turma), {})
                     nivel = _norm_book_level(turma_obj.get("livro", "")) or "Livro 1"
+                    materia_atual = (_recent_class_lessons_for_homework(target_turma, limit=1) or [""])[0]
                     st.caption(f"Nivel detectado pela turma: {nivel}")
             elif target_type == "aluno_vip":
                 vip_students = [s for s in st.session_state.get("students", []) if _student_vip_summary(s)]
@@ -16637,6 +16660,8 @@ elif st.session_state["role"] == "Coordenador":
                     target_aluno = st.selectbox("Aluno VIP de destino", vip_names, key="coord_ch_target_aluno")
                     aluno_vip_obj = next((s for s in vip_students if str(s.get("nome", "")).strip() == target_aluno), {})
                     nivel = student_book_level(aluno_vip_obj) or "Livro 1"
+                    turma_aluno_vip = str(aluno_vip_obj.get("turma", "")).strip()
+                    materia_atual = (_recent_class_lessons_for_homework(turma_aluno_vip, limit=1) or [""])[0] if turma_aluno_vip else ""
                     st.caption(f"Nivel detectado pelo aluno VIP: {nivel}")
             else:
                 nivel = st.selectbox("Nivel (Livro)", book_levels(), key="coord_ch_level")
@@ -16668,6 +16693,11 @@ elif st.session_state["role"] == "Coordenador":
             due_key = f"{key_prefix}_due"
             notify_key = f"{key_prefix}_notify_level"
             draft_info_key = f"{key_prefix}_draft_info"
+            theme_key = f"{key_prefix}_reference_theme"
+            ref_book_key = f"{key_prefix}_reference_book"
+            ref_subject_key = f"{key_prefix}_reference_subject"
+            ref_note_key = f"{key_prefix}_reference_note"
+            preview_key = f"{key_prefix}_preview_box"
 
             if titulo_key not in st.session_state:
                 st.session_state[titulo_key] = str(existing.get("titulo", ""))
@@ -16687,9 +16717,53 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[notify_key] = True
             if draft_info_key not in st.session_state:
                 st.session_state[draft_info_key] = ""
+            if theme_key not in st.session_state:
+                st.session_state[theme_key] = str(existing.get("reference_theme", "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual"
+            default_book_reference = (
+                str(existing.get("reference_book", "")).strip()
+                or (str(turma_obj.get("livro", "")).strip() if turma_obj else "")
+                or nivel
+            )
+            if ref_book_key not in st.session_state:
+                st.session_state[ref_book_key] = default_book_reference
+            if ref_subject_key not in st.session_state:
+                st.session_state[ref_subject_key] = str(existing.get("reference_subject", "")).strip() or materia_atual
+            if ref_note_key not in st.session_state:
+                base_note = str(existing.get("reference_note", "")).strip()
+                if not base_note:
+                    base_note = (
+                        f"Linha do desafio: {st.session_state.get(theme_key, 'Livro / Conteudo atual')}\n"
+                        f"Livro/Nivel de referencia: {default_book_reference or '-'}\n"
+                        f"Materia/Conteudo de referencia: {str(materia_atual or 'Nao informado').strip()}\n"
+                        "Use essa base para gerar um desafio coerente com a turma e com o livro."
+                    )
+                st.session_state[ref_note_key] = base_note
 
             st.markdown("#### Rascunho do desafio")
             st.caption("Voce pode criar manualmente ou gerar com IA, revisar os campos e salvar quando estiver bom.")
+
+            st.markdown("#### Referencia do desafio")
+            reference_theme = st.selectbox(
+                "Linha do desafio",
+                ["Livro / Conteudo atual", "Empreendedorismo", "Inteligencia Emocional"],
+                key=theme_key,
+            )
+            ref_col1, ref_col2 = st.columns(2)
+            with ref_col1:
+                reference_book = st.text_input("Livro/Nivel de referencia", key=ref_book_key)
+            with ref_col2:
+                st.text_input(
+                    "Materia/Conteudo atual da turma",
+                    key=ref_subject_key,
+                    placeholder="Ex: Unit 3 - Simple Present",
+                )
+            reference_subject = str(st.session_state.get(ref_subject_key, "")).strip()
+            st.caption("Opcoes especiais disponiveis: Empreendedorismo e Inteligencia Emocional.")
+            st.text_area(
+                "Base de referencia para IA (visualize e edite antes de gerar)",
+                height=120,
+                key=ref_note_key,
+            )
 
             titulo = st.text_input("Titulo", key=titulo_key)
             descricao = st.text_area(
@@ -16738,7 +16812,13 @@ elif st.session_state["role"] == "Coordenador":
                     st.error("Selecione o aluno VIP de destino antes de gerar o desafio.")
                 else:
                     try:
-                        gen = generate_weekly_challenge_ai(nivel, semana)
+                        gen = generate_weekly_challenge_ai(
+                            nivel,
+                            semana,
+                            reference_title=reference_book,
+                            reference_text=str(st.session_state.get(ref_note_key, "")).strip(),
+                            challenge_theme=reference_theme,
+                        )
                         st.session_state[titulo_key] = str(gen.get("titulo", "")).strip()
                         st.session_state[descricao_key] = str(gen.get("descricao", "")).strip()
                         st.session_state[rubrica_key] = str(gen.get("rubrica", "")).strip()
@@ -16765,7 +16845,13 @@ elif st.session_state["role"] == "Coordenador":
                         if get_weekly_challenge(lv, week_now):
                             continue
                         try:
-                            gen = generate_weekly_challenge_ai(lv, week_now)
+                            gen = generate_weekly_challenge_ai(
+                                lv,
+                                week_now,
+                                reference_title=lv,
+                                reference_text=f"Linha do desafio: Livro / Conteudo atual\nLivro/Nivel de referencia: {lv}\nGere um desafio semanal alinhado ao livro selecionado.",
+                                challenge_theme="Livro / Conteudo atual",
+                            )
                             upsert_weekly_challenge(
                                 level=lv,
                                 week_key=week_now,
@@ -16776,6 +16862,10 @@ elif st.session_state["role"] == "Coordenador":
                                 due_date=None,
                                 rubrica=gen.get("rubrica", ""),
                                 dica=gen.get("dica", ""),
+                                reference_theme="Livro / Conteudo atual",
+                                reference_book=lv,
+                                reference_subject="",
+                                reference_note=f"Linha do desafio: Livro / Conteudo atual\nLivro/Nivel de referencia: {lv}",
                             )
                             if notify_new_challenge_enabled:
                                 partial_stats = notify_new_challenge_by_level(
@@ -16817,12 +16907,37 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[pontos_key] = int(existing.get("pontos") or 10)
                 st.session_state[sem_prazo_key] = not bool(str(existing.get("due_date", "")).strip())
                 st.session_state[due_key] = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
+                st.session_state[theme_key] = str(existing.get("reference_theme", "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual"
+                st.session_state[ref_book_key] = str(existing.get("reference_book", "")).strip() or default_book_reference
+                st.session_state[ref_subject_key] = str(existing.get("reference_subject", "")).strip() or materia_atual
+                st.session_state[ref_note_key] = str(existing.get("reference_note", "")).strip() or st.session_state.get(ref_note_key, "")
                 st.session_state[draft_info_key] = (
                     "Desafio salvo carregado no formulario."
                     if existing else
                     "Nao existe desafio salvo para esse destino/semana."
                 )
                 st.rerun()
+
+            preview_text = (
+                f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel})}\n"
+                f"Linha do desafio: {reference_theme}\n"
+                f"Livro/Nivel de referencia: {reference_book or '-'}\n"
+                f"Materia/Conteudo de referencia: {reference_subject or '-'}\n"
+                f"Semana: {semana}\n"
+                f"Pontos: {int(pontos)}\n"
+                f"Prazo: {'Sem prazo' if sem_prazo else (due_date.strftime('%d/%m/%Y') if isinstance(due_date, datetime.date) else '-')}\n"
+                "\n--- TITULO ---\n"
+                f"{str(titulo).strip() or '-'}\n"
+                "\n--- DESCRICAO ---\n"
+                f"{str(descricao).strip() or '-'}\n"
+                "\n--- RUBRICA ---\n"
+                f"{str(rubrica).strip() or '-'}\n"
+                "\n--- DICA ---\n"
+                f"{str(dica).strip() or '-'}"
+            )
+            st.session_state[preview_key] = preview_text
+            st.text_area("Pre-visualizacao antes de postar", height=240, key=preview_key, disabled=True)
+
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 if not str(titulo).strip() or not str(descricao).strip():
                     st.error("Preencha titulo e descricao.")
@@ -16844,6 +16959,10 @@ elif st.session_state["role"] == "Coordenador":
                         target_type=target_type,
                         target_turma=target_turma,
                         target_aluno=target_aluno,
+                        reference_theme=reference_theme,
+                        reference_book=reference_book,
+                        reference_subject=reference_subject,
+                        reference_note=str(st.session_state.get(ref_note_key, "")).strip(),
                     )
                     if notify_new_challenge_enabled:
                         stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
@@ -16889,7 +17008,7 @@ elif st.session_state["role"] == "Coordenador":
                     _challenge_target_label(ch) if isinstance(ch, dict) else "-"
                     for ch in chs
                 ]
-                col_order = [c for c in ["semana", "destino", "nivel", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                col_order = [c for c in ["semana", "destino", "nivel", "reference_theme", "reference_book", "reference_subject", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
