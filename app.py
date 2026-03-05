@@ -4988,9 +4988,8 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
     if not aluno_nome:
         return False, "Aluno invalido."
     existing = get_challenge_submission(cid, aluno_nome)
-    existing_status = str((existing or {}).get("status", "")).strip().lower()
-    if existing and (not existing_status or existing_status in ("aprovado", "concluido", "concluído", "ok", "done", "true", "1")):
-        return False, "Desafio ja concluido."
+    if existing:
+        return False, "Tentativa unica: voce ja enviou resposta para este desafio."
 
     pontos_base = int(challenge_obj.get("pontos") or 0)
     pontos_final = pontos_base if pontos_awarded is None else int(pontos_awarded or 0)
@@ -8553,6 +8552,59 @@ def _message_destination_label(message_obj):
         return f"Publico: Alunos e Professores | Turma: {turma_msg} | Professor(es): {professor_msg}"
     return f"Publico: {publico_msg} | Turma: {turma_msg}"
 
+def _message_uid(message_obj):
+    msg = message_obj if isinstance(message_obj, dict) else {}
+    msg_id = str(msg.get("id", "")).strip()
+    if msg_id:
+        return msg_id
+    raw = "|".join(
+        [
+            str(msg.get("data", "")).strip(),
+            str(msg.get("autor", "")).strip(),
+            str(msg.get("titulo", "")).strip(),
+            str(msg.get("mensagem", "")).strip(),
+            str(msg.get("publico", "")).strip(),
+            str(msg.get("turma", "")).strip(),
+            str(msg.get("aluno", "")).strip(),
+            str(msg.get("professor_individual", "")).strip(),
+            str(msg.get("destinatario_unico", "")).strip(),
+        ]
+    )
+    return hashlib.md5(raw.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+def _student_read_message_ids(student_obj):
+    student = student_obj if isinstance(student_obj, dict) else {}
+    raw = student.get("mensagens_lidas", [])
+    if isinstance(raw, list):
+        return {str(x).strip() for x in raw if str(x).strip()}
+    if isinstance(raw, str):
+        return {part.strip() for part in raw.split(",") if part.strip()}
+    return set()
+
+def _mark_student_messages_read(student_name, messages_list):
+    aluno_nome = str(student_name or "").strip()
+    if not aluno_nome:
+        return 0
+    student = next(
+        (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno_nome),
+        None,
+    )
+    if not isinstance(student, dict):
+        return 0
+    current = _student_read_message_ids(student)
+    incoming = {_message_uid(m) for m in (messages_list or []) if isinstance(m, dict)}
+    incoming = {x for x in incoming if x}
+    if not incoming:
+        return 0
+    new_ids = incoming - current
+    if not new_ids:
+        return 0
+    merged = list(current | incoming)
+    # Evita crescimento indefinido do cadastro.
+    student["mensagens_lidas"] = merged[-800:]
+    save_list(STUDENTS_FILE, st.session_state.get("students", []))
+    return len(new_ids)
+
 def sidebar_menu(title, options, key):
     icon_map = {
         "Dashboard": "🏠",
@@ -11609,6 +11661,48 @@ elif st.session_state["role"] == "Aluno":
         st.error("AULA AO VIVO AGORA")
         st.link_button("ENTRAR NA AULA (ZOOM)", link_aula, type="primary")
 
+        mensagens_aluno_dashboard = [
+            m for m in st.session_state.get("messages", [])
+            if _message_matches_student(m, aluno_nome, turma_aluno)
+        ]
+        lidas_ids = _student_read_message_ids(aluno_obj)
+        mensagens_nao_lidas = [
+            m for m in mensagens_aluno_dashboard
+            if _message_uid(m) not in lidas_ids
+        ]
+        semana_atual_dashboard = current_week_key()
+        desafios_dashboard = get_student_weekly_challenges(aluno_obj, semana_atual_dashboard)
+        desafios_pendentes = [
+            ch for ch in desafios_dashboard
+            if not get_challenge_submission(str(ch.get("id", "")).strip(), aluno_nome)
+        ]
+        atividades_turma_dashboard = [
+            a for a in st.session_state.get("activities", [])
+            if str(a.get("turma", "")).strip() == turma_aluno and _is_activity_open(a)
+        ]
+        atividades_pendentes = [
+            a for a in atividades_turma_dashboard
+            if not get_activity_submission(str(a.get("id", "")).strip(), aluno_nome)
+        ]
+        total_notificacoes = len(mensagens_nao_lidas) + len(desafios_pendentes) + len(atividades_pendentes)
+        if total_notificacoes > 0:
+            st.warning(f"Você tem {total_notificacoes} notificacao(oes) pendente(s).")
+            n1, n2, n3 = st.columns(3)
+            with n1:
+                st.metric("Desafios pendentes", len(desafios_pendentes))
+            with n2:
+                st.metric("Tarefas pendentes", len(atividades_pendentes))
+            with n3:
+                st.metric("Mensagens nao lidas", len(mensagens_nao_lidas))
+            if desafios_pendentes:
+                st.caption("Desafios: " + " | ".join(str(ch.get("titulo", "Desafio")).strip() for ch in desafios_pendentes[:3]))
+            if atividades_pendentes:
+                st.caption("Tarefas: " + " | ".join(str(a.get("titulo", "Atividade")).strip() for a in atividades_pendentes[:3]))
+            if mensagens_nao_lidas:
+                st.caption("Mensagens: " + " | ".join(str(m.get("titulo", "Mensagem")).strip() for m in mensagens_nao_lidas[:3]))
+        else:
+            st.success("Sem pendencias no momento: desafios, tarefas e mensagens em dia.")
+
         sessoes_finalizadas = [
             s for s in st.session_state.get("class_sessions", [])
             if str(s.get("turma", "")).strip() == turma_aluno
@@ -11818,6 +11912,10 @@ elif st.session_state["role"] == "Aluno":
             m for m in st.session_state["messages"]
             if _message_matches_student(m, aluno_nome, turma_aluno)
         ]
+        if mensagens_aluno:
+            novos_lidos = _mark_student_messages_read(aluno_nome, mensagens_aluno)
+            if novos_lidos > 0:
+                st.caption(f"{novos_lidos} mensagem(ns) marcada(s) como lida(s).")
         if not mensagens_aluno: st.info("Sem mensagens.")
         for msg in reversed(mensagens_aluno):
             destino_txt = _message_destination_label(msg)
@@ -12009,6 +12107,7 @@ elif st.session_state["role"] == "Aluno":
                 cid = ch.get("id", "")
                 sub = get_challenge_submission(cid, aluno_nome) or {}
                 done = has_completed_challenge(cid, aluno_nome)
+                ja_enviado = bool(sub)
 
                 if sub:
                     st.markdown("#### Sua avaliacao")
@@ -12026,8 +12125,12 @@ elif st.session_state["role"] == "Aluno":
                         with st.expander(f"Ver minha resposta - {ch.get('titulo','Desafio')}"):
                             st.write(sub.get("resposta", ""))
 
-                if done:
-                    st.success("Voce ja concluiu este desafio (aprovado).")
+                if ja_enviado:
+                    if done:
+                        st.success("Voce ja concluiu este desafio (aprovado).")
+                    else:
+                        st.warning("Tentativa unica registrada. Este desafio ja foi respondido.")
+                    st.info("Regra ativa: apenas 1 tentativa por desafio.")
                 else:
                     api_key = get_groq_api_key()
                     if not api_key:
@@ -12057,7 +12160,7 @@ elif st.session_state["role"] == "Aluno":
                                     if pontos_awarded > 0:
                                         st.success("Resposta enviada e aprovada! Pontos adicionados.")
                                     else:
-                                        st.warning("Resposta enviada, mas ainda nao atingiu a nota minima. Voce pode melhorar e reenviar.")
+                                        st.warning("Resposta enviada e avaliada como reprovada. Tentativa unica encerrada.")
                                     st.rerun()
                                 else:
                                     st.error(msg)
