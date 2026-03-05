@@ -17500,6 +17500,7 @@ elif st.session_state["role"] == "Coordenador":
             ref_note_key = f"{key_prefix}_reference_note"
             preview_key = f"{key_prefix}_preview_box"
             preview_seed_key = f"{key_prefix}_preview_seed"
+            use_preview_on_save_key = f"{key_prefix}_use_preview_on_save"
             send_turmas_key = f"{key_prefix}_send_turmas"
             draft_patch_key = f"{key_prefix}_draft_patch"
             draft_action_key = f"{key_prefix}_draft_action"
@@ -17531,6 +17532,8 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[due_key] = parse_date(existing.get("due_date", "")) or (base_date + datetime.timedelta(days=7))
             if notify_key not in st.session_state:
                 st.session_state[notify_key] = True
+            if use_preview_on_save_key not in st.session_state:
+                st.session_state[use_preview_on_save_key] = False
             if draft_info_key not in st.session_state:
                 st.session_state[draft_info_key] = ""
             if send_turmas_key not in st.session_state:
@@ -17798,18 +17801,24 @@ elif st.session_state["role"] == "Coordenador":
                 "Pre-visualizacao e edicao antes de postar",
                 height=240,
                 key=preview_key,
-                help="Voce pode ajustar o texto aqui. O sistema usa TITULO/DESCRICAO/RUBRICA/DICA dessa caixa no salvamento.",
+                help="Voce pode ajustar o texto aqui. Para salvar usando esta caixa, marque a opcao abaixo.",
+            )
+            st.checkbox(
+                "Salvar usando o texto da pre-visualizacao (opcional)",
+                key=use_preview_on_save_key,
+                help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
             )
 
             if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
                 preview_source = str(st.session_state.get(preview_key, "")).strip()
+                use_preview_on_save = bool(st.session_state.get(use_preview_on_save_key, False))
 
                 def _extract_preview_section(section_name):
                     pattern = rf"---\s*{section_name}\s*---\s*(.*?)(?=\n---\s*(?:TITULO|DESCRICAO|RUBRICA|DICA)\s*---|\Z)"
                     match = re.search(pattern, preview_source, flags=re.IGNORECASE | re.DOTALL)
                     return str(match.group(1)).strip() if match else ""
 
-                if preview_source:
+                if use_preview_on_save and preview_source:
                     parsed_titulo = _extract_preview_section("TITULO")
                     parsed_descricao = _extract_preview_section("DESCRICAO")
                     parsed_rubrica = _extract_preview_section("RUBRICA")
