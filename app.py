@@ -1010,8 +1010,14 @@ def _save_json_dict(path, data):
     with DATA_IO_LOCK:
         _atomic_write_json(path, data)
 
-def get_wiz_settings():
-    raw = st.session_state.get("wiz_settings") or {}
+def get_wiz_settings(refresh=True):
+    raw = {}
+    if refresh:
+        raw = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
+        if isinstance(raw, dict):
+            st.session_state["wiz_settings"] = dict(raw)
+    else:
+        raw = st.session_state.get("wiz_settings") or {}
     out = dict(DEFAULT_WIZ_SETTINGS)
     if isinstance(raw, dict):
         for key in out:
@@ -1213,6 +1219,76 @@ def handle_wiz_control_from_admin_number(sender_number, text):
     set_wiz_chatbot_paused(paused)
     status = "pausado (atendimento humano)" if paused else "retomado (bot ativo)"
     return True, f"Controle recebido do admin. Mister Wiz {status}."
+
+def apply_wiz_control_from_operator_message(message_text, assume_control=False):
+    cmd = _wiz_control_command(message_text)
+    if cmd == "resume":
+        set_wiz_chatbot_paused(False)
+        return "Bot Mister Wiz retomado por comando do operador."
+    if cmd == "stop" or bool(assume_control):
+        set_wiz_chatbot_paused(True)
+        if cmd == "stop":
+            return "Bot Mister Wiz pausado por comando do operador."
+        return "Bot Mister Wiz pausado automaticamente: atendimento humano assumido."
+    return ""
+
+def _query_param_value(*keys):
+    for key in keys:
+        try:
+            value = st.query_params.get(key, "")
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            value = str(value or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+        try:
+            params = st.experimental_get_query_params() or {}
+            value = params.get(key, [""])
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            value = str(value or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+    return ""
+
+def _clear_query_params(*keys):
+    clean_keys = [str(k).strip() for k in keys if str(k).strip()]
+    if not clean_keys:
+        return
+    try:
+        for k in clean_keys:
+            if k in st.query_params:
+                del st.query_params[k]
+        return
+    except Exception:
+        pass
+    try:
+        params = st.experimental_get_query_params() or {}
+        for k in clean_keys:
+            params.pop(k, None)
+        st.experimental_set_query_params(**params)
+    except Exception:
+        pass
+
+def process_wiz_remote_control_from_query():
+    sender = _query_param_value("wiz_from", "from", "sender", "number", "phone")
+    text = _query_param_value("wiz_text", "text", "message", "body", "cmd")
+    if not (sender and text):
+        return False, ""
+
+    required_token = str(_get_config_value("ACTIVE_WIZ_REMOTE_TOKEN", "")).strip()
+    provided_token = _query_param_value("wiz_token", "token", "key")
+    if required_token and provided_token != required_token:
+        _clear_query_params("wiz_from", "from", "sender", "number", "phone", "wiz_text", "text", "message", "body", "cmd", "wiz_token", "token", "key")
+        return False, "Comando remoto ignorado: token invalido."
+
+    handled, msg = handle_wiz_control_from_admin_number(sender, text)
+    _clear_query_params("wiz_from", "from", "sender", "number", "phone", "wiz_text", "text", "message", "body", "cmd", "wiz_token", "token", "key")
+    return handled, (msg or "")
 
 def wiz_event_enabled(event_key):
     settings = get_wiz_settings()
@@ -8401,12 +8477,44 @@ def _message_destination_label(message_obj):
         return f"Publico: Alunos e Professores | Turma: {turma_msg} | Professor(es): {professor_msg}"
     return f"Publico: {publico_msg} | Turma: {turma_msg}"
 def sidebar_menu(title, options, key):
+    icon_map = {
+        "Dashboard": "🏠",
+        "Painel": "🏠",
+        "Agenda": "📅",
+        "Links Ao Vivo": "🔗",
+        "Minhas Turmas": "👩‍🏫",
+        "Minhas Aulas": "🧑‍🏫",
+        "Alunos": "🎓",
+        "Professores": "👨‍🏫",
+        "Usuários": "👥",
+        "Usuarios": "👥",
+        "Turmas": "🏫",
+        "Financeiro": "💸",
+        "Estoque": "📦",
+        "Certificados": "📜",
+        "Biblioteca": "📚",
+        "Livros": "📚",
+        "Aprovação Notas": "✅",
+        "Caixa de Entrada": "📨",
+        "Conteúdos": "🗂️",
+        "Desafios": "🧩",
+        "Atividades": "📝",
+        "Mensagens": "💬",
+        "Aulas Gravadas": "🎬",
+        "Materiais de Estudo": "🧠",
+        "WhatsApp (Evolution)": "🟢",
+        "Backup": "🛟",
+        "ASSISTENTE WIZ": "🤖",
+        "Professor Wiz": "✨",
+    }
     st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state or st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
     for option in options:
         active = st.session_state[key] == option
-        if st.button(option, key=f"{key}_{option}", type="primary" if active else "secondary"):
+        icon = icon_map.get(str(option).strip(), "•")
+        option_label = f"{icon}  {option}"
+        if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
             st.session_state[key] = option
             st.rerun()
     return st.session_state[key]
@@ -9625,35 +9733,36 @@ def render_sales_leads_manage(vendedor_atual):
         }
     )
 
-    f1, f2, f3, f4 = st.columns(4)
-    with f1:
-        segmento = st.selectbox(
-            "Segmentacao",
-            [
-                "Todos",
-                "Sem contato ha 7 dias",
-                "Leads quentes sem agendamento",
-                "Com conversoes",
-                "Sem e-mail",
-            ],
-            key="sales_lead_segmento",
-        )
-    with f2:
-        busca = st.text_input("Busca rapida", key="sales_lead_busca")
-    with f3:
-        status_filter = st.multiselect("Status", sales_lead_status_options(), key="sales_lead_status_filter")
-    with f4:
-        estagio_filter = st.multiselect("Estagio no funil", sales_pipeline_stage_options(), key="sales_lead_estagio_filter")
+    with st.expander("Filtro", expanded=False):
+        f1, f2, f3, f4 = st.columns(4)
+        with f1:
+            segmento = st.selectbox(
+                "Segmentacao",
+                [
+                    "Todos",
+                    "Sem contato ha 7 dias",
+                    "Leads quentes sem agendamento",
+                    "Com conversoes",
+                    "Sem e-mail",
+                ],
+                key="sales_lead_segmento",
+            )
+        with f2:
+            busca = st.text_input("Busca rapida", key="sales_lead_busca")
+        with f3:
+            status_filter = st.multiselect("Status", sales_lead_status_options(), key="sales_lead_status_filter")
+        with f4:
+            estagio_filter = st.multiselect("Estagio no funil", sales_pipeline_stage_options(), key="sales_lead_estagio_filter")
 
-    f5, f6, f7, f8 = st.columns(4)
-    with f5:
-        origem_filter = st.multiselect("Origem", all_origens, key="sales_lead_origem_filter")
-    with f6:
-        estado_filter = st.multiselect("Estado (UF)", all_estados, key="sales_lead_estado_filter")
-    with f7:
-        tag_filter = st.multiselect("Tags", all_tags, key="sales_lead_tag_filter")
-    with f8:
-        vendedor_filter = st.multiselect("Consultor", all_vendedores, key="sales_lead_vendedor_filter")
+        f5, f6, f7, f8 = st.columns(4)
+        with f5:
+            origem_filter = st.multiselect("Origem", all_origens, key="sales_lead_origem_filter")
+        with f6:
+            estado_filter = st.multiselect("Estado (UF)", all_estados, key="sales_lead_estado_filter")
+        with f7:
+            tag_filter = st.multiselect("Tags", all_tags, key="sales_lead_tag_filter")
+        with f8:
+            vendedor_filter = st.multiselect("Consultor", all_vendedores, key="sales_lead_vendedor_filter")
 
     agenda = st.session_state.get("sales_agenda", [])
     lead_ids_com_agenda = {
@@ -9789,12 +9898,13 @@ def render_sales_leads_manage(vendedor_atual):
             "Consultor",
             "Ultimo Contato",
         ]
-        visible_cols = st.multiselect(
-            "Colunas visiveis",
-            all_cols,
-            default=[c for c in default_cols if c in all_cols],
-            key="sales_lead_visible_cols",
-        )
+        with st.expander("Filtro de colunas", expanded=False):
+            visible_cols = st.multiselect(
+                "Colunas visiveis",
+                all_cols,
+                default=[c for c in default_cols if c in all_cols],
+                key="sales_lead_visible_cols",
+            )
         if not visible_cols:
             visible_cols = ["Nome", "Email", "Celular", "Status"]
         if "Celular" in all_cols and "Celular" not in visible_cols:
@@ -11102,16 +11212,16 @@ else:
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
         .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
-        :root { --sidebar-width: 352px; --sidebar-menu-btn-width: 320px; }
+        :root { --sidebar-width: 336px; --sidebar-menu-btn-width: 300px; }
         section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(30,58,138,0.08) 0%, rgba(22,163,74,0.08) 52%, rgba(234,88,12,0.08) 100%); border: 1px solid #d7e3f5; color: #334155; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 8px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); height: 56px !important; min-height: 56px !important; max-height: 56px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(16,185,129,0.08) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 13px; transition: all 0.2s ease; margin-bottom: 7px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 56px !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 56px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
         .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
         .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
         .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
@@ -11130,8 +11240,65 @@ else:
         .card-sub { font-size: 0.85rem; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
         .trend-up { color: #10b981; background: #ecfdf5; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
         .trend-neutral { color: #64748b; }
+        .finance-radio-anchor { display:none; }
+        div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] > label {
+            background: #ffffff;
+            border: 1px solid #dbe5f2;
+            border-radius: 12px;
+            padding: 7px 12px;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+            margin: 0 !important;
+            transition: all 0.2s ease;
+        }
+        div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] > label:hover {
+            border-color: #93c5fd;
+            transform: translateY(-1px);
+        }
+        div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) {
+            background: linear-gradient(90deg, #1d4ed8 0%, #0f766e 100%);
+            border-color: #1d4ed8;
+            color: #ffffff;
+            box-shadow: 0 8px 18px rgba(29, 78, 216, 0.25);
+        }
+        div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p {
+            color: #ffffff !important;
+            font-weight: 700;
+        }
         div[data-testid="stDataFrame"] { background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); margin-bottom: 16px; }
         div[data-testid="stForm"] { background: white; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        div[data-baseweb="tag"] {
+            background: #e8f1ff !important;
+            border: 1px solid #bfd7ff !important;
+            border-radius: 10px !important;
+            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.06);
+        }
+        div[data-baseweb="tag"] span,
+        div[data-baseweb="tag"] p {
+            color: #1e3a8a !important;
+            font-weight: 700 !important;
+        }
+        div[data-baseweb="tag"] button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: #2563eb !important;
+        }
+        div[data-baseweb="tag"] button:hover {
+            background: rgba(37, 99, 235, 0.12) !important;
+            border-radius: 8px !important;
+        }
+        div[data-baseweb="tag"] svg {
+            color: #2563eb !important;
+        }
+        div[data-baseweb="tag"]:hover {
+            background: #dbeafe !important;
+            border-color: #93c5fd !important;
+        }
         input, textarea, select { border-radius: 8px !important; border: 1px solid #cbd5e1 !important; }
         input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important; }
         button[kind="primary"] { background: #1e3a8a; border-radius: 8px; }
@@ -11151,6 +11318,12 @@ if not st.session_state.get("_active_users_loaded", False):
     st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
     st.session_state["finance_settings"] = _load_json_dict(FINANCE_SETTINGS_FILE, DEFAULT_FINANCE_SETTINGS)
     st.session_state["_active_users_loaded"] = True
+
+remote_handled, remote_msg = process_wiz_remote_control_from_query()
+if remote_handled:
+    st.session_state["wiz_remote_control_notice"] = remote_msg or "Comando remoto processado."
+elif remote_msg:
+    st.session_state["wiz_remote_control_notice"] = remote_msg
 
 if st.session_state.get("logged_in", False) and not st.session_state.get("_active_runtime_loaded", False):
     st.session_state["messages"] = load_list(MESSAGES_FILE)
@@ -13687,12 +13860,30 @@ elif st.session_state["role"] == "Coordenador":
                     for c in st.session_state["classes"]
                     if str(c.get("professor", "")).strip()
                 })
+                filtro_panel_key = "students_list_filter_open"
+                turma_filter_key = "students_list_turma_filter"
+                prof_filter_key = "students_list_prof_filter"
+                st.session_state.setdefault(filtro_panel_key, False)
 
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    turma_filtro = st.selectbox("Filtrar por Turma", turmas_opts)
-                with col_f2:
-                    prof_filtro = st.selectbox("Filtrar por Professor", profs_opts if profs_opts else ["Todos"])
+                cbtn1, _ = st.columns([1, 5])
+                with cbtn1:
+                    if st.button("Filtro", key="students_list_filter_toggle"):
+                        st.session_state[filtro_panel_key] = not bool(st.session_state.get(filtro_panel_key, False))
+
+                if st.session_state.get(turma_filter_key) not in turmas_opts:
+                    st.session_state[turma_filter_key] = "Todas"
+                if st.session_state.get(prof_filter_key) not in (profs_opts if profs_opts else ["Todos"]):
+                    st.session_state[prof_filter_key] = "Todos"
+
+                if st.session_state.get(filtro_panel_key, False):
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        st.selectbox("Filtrar por Turma", turmas_opts, key=turma_filter_key)
+                    with col_f2:
+                        st.selectbox("Filtrar por Professor", profs_opts if profs_opts else ["Todos"], key=prof_filter_key)
+
+                turma_filtro = str(st.session_state.get(turma_filter_key, "Todas"))
+                prof_filtro = str(st.session_state.get(prof_filter_key, "Todos"))
 
                 alunos_filtrados = st.session_state["students"]
                 if turma_filtro != "Todas":
@@ -13737,11 +13928,24 @@ elif st.session_state["role"] == "Coordenador":
                         "responsavel.email",
                     ]
                     colunas = list(df_alunos.columns)
-                    colunas_sel = st.multiselect(
-                        "Colunas visíveis",
-                        colunas,
-                        default=[c for c in col_default if c in colunas],
-                    )
+                    colunas_key = "students_list_visible_cols"
+                    colunas_default = [c for c in col_default if c in colunas]
+                    colunas_saved = [c for c in st.session_state.get(colunas_key, colunas_default) if c in colunas]
+                    if not colunas_saved:
+                        colunas_saved = list(colunas_default)
+                    st.session_state[colunas_key] = colunas_saved
+
+                    if st.session_state.get(filtro_panel_key, False):
+                        st.multiselect(
+                            "Colunas visíveis",
+                            colunas,
+                            default=colunas_saved,
+                            key=colunas_key,
+                        )
+
+                    colunas_sel = [c for c in st.session_state.get(colunas_key, []) if c in colunas]
+                    if not colunas_sel:
+                        colunas_sel = list(colunas_default)
                     if colunas_sel:
                         df_alunos = df_alunos[colunas_sel]
                     st.dataframe(df_alunos, use_container_width=True)
@@ -13769,6 +13973,7 @@ elif st.session_state["role"] == "Coordenador":
                 _sfk("add_student_nome"): "",
                 _sfk("add_student_data_nascimento"): datetime.date.today(),
                 _sfk("add_student_genero"): "Masculino",
+                _sfk("add_student_status"): "Ativo",
                 _sfk("add_student_celular"): "",
                 _sfk("add_student_email"): "",
                 _sfk("add_student_rg"): "",
@@ -13813,6 +14018,10 @@ elif st.session_state["role"] == "Coordenador":
             genero_key = _sfk("add_student_genero")
             if st.session_state.get(genero_key) not in ("Masculino", "Feminino"):
                 st.session_state[genero_key] = "Masculino"
+            status_opts = ["Ativo", "Inativo", "Pausado"]
+            status_key = _sfk("add_student_status")
+            if st.session_state.get(status_key) not in status_opts:
+                st.session_state[status_key] = "Ativo"
 
             feedback = st.session_state.pop("add_student_feedback", None)
             if feedback:
@@ -13852,6 +14061,7 @@ elif st.session_state["role"] == "Coordenador":
                         st.session_state[_sfk("add_student_nome")] = str(aluno_src.get("nome", "")).strip()
                         st.session_state[_sfk("add_student_data_nascimento")] = dn_src
                         st.session_state[_sfk("add_student_genero")] = str(aluno_src.get("genero", "Masculino")).strip() or "Masculino"
+                        st.session_state[_sfk("add_student_status")] = str(aluno_src.get("status", "Ativo")).strip() or "Ativo"
                         st.session_state[_sfk("add_student_celular")] = str(aluno_src.get("celular", "")).strip()
                         st.session_state[_sfk("add_student_email")] = str(aluno_src.get("email", "")).strip()
                         st.session_state[_sfk("add_student_rg")] = str(aluno_src.get("rg", "")).strip()
@@ -13923,11 +14133,12 @@ elif st.session_state["role"] == "Coordenador":
                 with c5: email = st.text_input("E-mail do Aluno *", key=_sfk("add_student_email"))
                 with c6: rg = st.text_input("RG", key=_sfk("add_student_rg"))
 
-                c7, c8, c9, c10 = st.columns(4)
+                c7, c8, c9, c10, c11 = st.columns(5)
                 with c7: cpf = st.text_input("CPF", key=_sfk("add_student_cpf"))
                 with c8: natal = st.text_input("Cidade Natal", key=_sfk("add_student_natal"))
                 with c9: pais = st.text_input("Pais de Origem", key=_sfk("add_student_pais"))
                 with c10: genero = st.selectbox("Sexo", ["Masculino", "Feminino"], key=genero_key)
+                with c11: status_aluno = st.selectbox("Status do aluno", status_opts, key=status_key)
 
                 st.divider()
                 st.markdown("### Endereco")
@@ -14050,6 +14261,7 @@ elif st.session_state["role"] == "Coordenador":
                                 "matricula": matricula_final,
                                 "idade": idade_final,
                                 "genero": genero,
+                                "status": status_aluno,
                                 "data_nascimento": data_nascimento.strftime("%d/%m/%Y") if data_nascimento else "",
                                 "celular": celular,
                                 "email": email,
@@ -14201,7 +14413,7 @@ elif st.session_state["role"] == "Coordenador":
                         with c7:
                             new_rg = st.text_input("RG", value=aluno_obj.get("rg", ""))
 
-                        c8, c9, c10, c11 = st.columns(4)
+                        c8, c9, c10, c11, c12 = st.columns(5)
                         with c8:
                             new_cpf = st.text_input("CPF", value=aluno_obj.get("cpf", ""))
                         with c9:
@@ -14217,6 +14429,16 @@ elif st.session_state["role"] == "Coordenador":
                                 "Sexo",
                                 generos,
                                 index=generos.index(genero_atual) if genero_atual in generos else 0,
+                            )
+                        with c12:
+                            status_edit_opts = ["Ativo", "Inativo", "Pausado"]
+                            status_atual = str(aluno_obj.get("status", "Ativo")).strip() or "Ativo"
+                            if status_atual not in status_edit_opts:
+                                status_edit_opts.append(status_atual)
+                            new_status = st.selectbox(
+                                "Status do aluno",
+                                status_edit_opts,
+                                index=status_edit_opts.index(status_atual) if status_atual in status_edit_opts else 0,
                             )
 
                         st.divider()
@@ -14363,6 +14585,7 @@ elif st.session_state["role"] == "Coordenador":
                                         aluno_obj["data_nascimento"] = new_dn.strftime("%d/%m/%Y") if new_dn else ""
                                         aluno_obj["idade"] = idade_final
                                         aluno_obj["genero"] = str(new_genero or "").strip()
+                                        aluno_obj["status"] = str(new_status or "").strip() or "Ativo"
                                         aluno_obj["rg"] = str(new_rg or "").strip()
                                         aluno_obj["cpf"] = str(new_cpf or "").strip()
                                         aluno_obj["cidade_natal"] = str(new_natal or "").strip()
@@ -15002,6 +15225,7 @@ elif st.session_state["role"] == "Coordenador":
             st.session_state["finance_main_menu"] = "Vencimentos"
         if st.session_state.get("finance_main_menu") not in finance_main_options:
             st.session_state["finance_main_menu"] = finance_main_options[0]
+        st.markdown('<div class="finance-radio-anchor"></div>', unsafe_allow_html=True)
         finance_main = st.radio(
             "Area do financeiro",
             finance_main_options,
@@ -16862,6 +17086,11 @@ elif st.session_state["role"] == "Coordenador":
                                 "emails": [str(coord_ref.get("email", "")).strip().lower()],
                                 "whatsapps": [str(coord_ref.get("celular", "")).strip()],
                             }
+                        assume_control_auto = bool(send_msg_whatsapp) and (
+                            publico_msg in ("Aluno (individual)", "Professor (individual)")
+                            or extra_tipo in ("aluno", "professor")
+                        )
+                        pause_feedback = apply_wiz_control_from_operator_message(corpo_msg, assume_control=assume_control_auto)
                         stats = post_message_and_notify(
                             autor=st.session_state.get("user_name", "Coordenacao"),
                             titulo=titulo_msg,
@@ -16876,6 +17105,8 @@ elif st.session_state["role"] == "Coordenador":
                             professor_individual=professor_individual_msg,
                             recipient_entry=recipient_entry_msg,
                         )
+                        if pause_feedback:
+                            st.info(pause_feedback)
                         st.success(
                             "Mensagem publicada. "
                             f"E-mail: {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
@@ -17404,6 +17635,10 @@ elif st.session_state["role"] == "Coordenador":
     elif menu_coord == "WhatsApp":
         st.markdown('<div class="main-header">WhatsApp (Evolution)</div>', unsafe_allow_html=True)
         st.caption("Tenta obter o QR code da sua instancia do WhatsApp via Evolution API.")
+
+        remote_notice = str(st.session_state.pop("wiz_remote_control_notice", "")).strip()
+        if remote_notice:
+            st.success(remote_notice)
 
         wiz_paused = wiz_chatbot_paused()
         st.info(
