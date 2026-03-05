@@ -17809,9 +17809,16 @@ elif st.session_state["role"] == "Coordenador":
                 help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
             )
 
-            if st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar"):
+            save_col1, save_col2 = st.columns([1, 1])
+            save_clicked = save_col1.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar")
+            save_manual_clicked = save_col2.button("Salvar manual (sem IA)", key=f"{key_prefix}_salvar_manual")
+
+            if save_clicked or save_manual_clicked:
                 preview_source = str(st.session_state.get(preview_key, "")).strip()
                 use_preview_on_save = bool(st.session_state.get(use_preview_on_save_key, False))
+                if save_manual_clicked:
+                    use_preview_on_save = False
+                    st.session_state[use_preview_on_save_key] = False
 
                 def _extract_preview_section(section_name):
                     pattern = rf"---\s*{section_name}\s*---\s*(.*?)(?=\n---\s*(?:TITULO|DESCRICAO|RUBRICA|DICA)\s*---|\Z)"
