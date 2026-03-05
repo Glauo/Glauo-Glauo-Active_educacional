@@ -965,6 +965,7 @@ DEFAULT_WIZ_SETTINGS = {
     "enabled": True,
     "notify_email": True,
     "notify_whatsapp": True,
+    "mister_wiz_paused": False,
     "auto_daily_backup": False,
     "on_student_created": True,
     "on_teacher_created": True,
@@ -1140,6 +1141,78 @@ def _run_wiz_daily_backup(force=False):
 
 def wiz_enabled():
     return bool(get_wiz_settings().get("enabled", True))
+
+def wiz_chatbot_paused():
+    return bool(get_wiz_settings().get("mister_wiz_paused", False))
+
+def set_wiz_chatbot_paused(paused):
+    settings = get_wiz_settings()
+    settings["mister_wiz_paused"] = bool(paused)
+    save_wiz_settings(settings)
+    return bool(settings.get("mister_wiz_paused", False))
+
+def _wiz_control_command(text):
+    norm = _wiz_norm_text(text)
+    norm_simple = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9! ]+", " ", norm)).strip()
+    stop_cmds = {
+        "!parar",
+        "parar",
+        "!pausar",
+        "pausar",
+        "assumir controle",
+        "assumir atendimento",
+        "!assumir",
+        "bot parar",
+    }
+    resume_cmds = {
+        "!retomar",
+        "retomar",
+        "!continuar",
+        "continuar",
+        "!iniciar",
+        "iniciar bot",
+        "retomar bot",
+        "bot retomar",
+    }
+    if norm in stop_cmds or norm_simple in stop_cmds:
+        return "stop"
+    if norm in resume_cmds or norm_simple in resume_cmds:
+        return "resume"
+    return ""
+
+def _wiz_admin_whatsapp_numbers():
+    numbers = set()
+    raw_env = (
+        _get_config_value("ACTIVE_ADMIN_WHATSAPP", "")
+        or _get_config_value("ACTIVE_ADMIN_WHATSAPPS", "")
+        or _get_config_value("ACTIVE_ADMIN_NUMBERS", "")
+    )
+    for chunk in re.split(r"[;, \n]+", str(raw_env or "").strip()):
+        normalized = _normalize_whatsapp_number(chunk)
+        if normalized:
+            numbers.add(normalized)
+    for user in st.session_state.get("users", []):
+        if not isinstance(user, dict):
+            continue
+        perfil = str(user.get("perfil", "")).strip()
+        if perfil not in ("Admin", "Coordenador"):
+            continue
+        normalized = _normalize_whatsapp_number(user.get("celular", ""))
+        if normalized:
+            numbers.add(normalized)
+    return numbers
+
+def handle_wiz_control_from_admin_number(sender_number, text):
+    sender = _normalize_whatsapp_number(sender_number)
+    cmd = _wiz_control_command(text)
+    if not sender or not cmd:
+        return False, ""
+    if sender not in _wiz_admin_whatsapp_numbers():
+        return False, ""
+    paused = (cmd == "stop")
+    set_wiz_chatbot_paused(paused)
+    status = "pausado (atendimento humano)" if paused else "retomado (bot ativo)"
+    return True, f"Controle recebido do admin. Mister Wiz {status}."
 
 def wiz_event_enabled(event_key):
     settings = get_wiz_settings()
@@ -9111,9 +9184,16 @@ def run_active_chatbot():
         return
 
     role = st.session_state.get("role", "")
+    account_profile = str(st.session_state.get("account_profile") or role or "").strip()
+    admin_operator = bool(role == "Coordenador" and account_profile in ("Admin", "Coordenador"))
     include_context = True
     mode = "Pedagogico"
     chat_key = get_active_chat_history_key()
+
+    if wiz_chatbot_paused():
+        st.warning("Bot Mister Wiz em atendimento humano: respostas automáticas pausadas.")
+    else:
+        st.success("Bot Mister Wiz ativo.")
 
     if role == "Aluno":
         mode = "Pedagogico"
@@ -9211,6 +9291,27 @@ def run_active_chatbot():
         user_text = str(user_text).strip()
         answer = ""
         request_messages = []
+
+        control_cmd = _wiz_control_command(user_text) if admin_operator else ""
+        if control_cmd:
+            chat_history.append({"role": "user", "content": user_text})
+            paused = (control_cmd == "stop")
+            set_wiz_chatbot_paused(paused)
+            answer = (
+                "Controle assumido. Bot Mister Wiz pausado para atendimento humano."
+                if paused
+                else "Bot Mister Wiz retomado. Respostas automáticas reativadas."
+            )
+            chat_history.append({"role": "assistant", "content": answer})
+            st.session_state["active_chat_histories"][chat_key] = chat_history
+            st.rerun()
+
+        if wiz_chatbot_paused() and role in ("Aluno", "Professor"):
+            chat_history.append({"role": "user", "content": user_text})
+            answer = "Atendimento humano em andamento. Aguarde o retorno da equipe administrativa."
+            chat_history.append({"role": "assistant", "content": answer})
+            st.session_state["active_chat_histories"][chat_key] = chat_history
+            st.rerun()
 
         if role == "Aluno":
             aluno_nome = str(st.session_state.get("user_name", "")).strip()
@@ -17303,6 +17404,41 @@ elif st.session_state["role"] == "Coordenador":
     elif menu_coord == "WhatsApp":
         st.markdown('<div class="main-header">WhatsApp (Evolution)</div>', unsafe_allow_html=True)
         st.caption("Tenta obter o QR code da sua instancia do WhatsApp via Evolution API.")
+
+        wiz_paused = wiz_chatbot_paused()
+        st.info(
+            "Status do Bot Mister Wiz: "
+            + ("Pausado (atendimento humano)." if wiz_paused else "Ativo.")
+        )
+        wc1, wc2 = st.columns([1, 1])
+        if wc1.button("Assumir controle (!parar)", key="wa_wiz_pause_btn", disabled=wiz_paused):
+            set_wiz_chatbot_paused(True)
+            st.success("Bot Mister Wiz pausado.")
+            st.rerun()
+        if wc2.button("Retomar bot (!retomar)", key="wa_wiz_resume_btn", disabled=not wiz_paused):
+            set_wiz_chatbot_paused(False)
+            st.success("Bot Mister Wiz retomado.")
+            st.rerun()
+
+        with st.expander("Comando remoto por numero admin (teste)"):
+            admin_sender = st.text_input(
+                "Numero do admin (com DDI)",
+                value="",
+                placeholder="Ex: 5516999999999",
+                key="wa_wiz_admin_sender",
+            )
+            admin_text = st.text_input(
+                "Mensagem recebida",
+                value="!parar",
+                key="wa_wiz_admin_text",
+            )
+            if st.button("Processar comando remoto", key="wa_wiz_process_remote"):
+                handled, remote_msg = handle_wiz_control_from_admin_number(admin_sender, admin_text)
+                if handled:
+                    st.success(remote_msg)
+                    st.rerun()
+                else:
+                    st.warning("Comando ignorado. Verifique numero admin cadastrado e comando (!parar ou !retomar).")
 
         base_default = _evolution_base_url()
         key_default = _evolution_api_key()
