@@ -17031,37 +17031,7 @@ elif st.session_state["role"] == "Coordenador":
                 key=ref_note_key,
             )
 
-            titulo = st.text_input("Titulo", key=titulo_key)
-            descricao = st.text_area(
-                "Descricao",
-                height=160,
-                key=descricao_key,
-            )
-            rubrica = st.text_input(
-                "Rubrica (como sera avaliado)",
-                key=rubrica_key,
-            )
-            dica = st.text_input(
-                "Dica (opcional)",
-                key=dica_key,
-            )
-            pontos = st.number_input(
-                "Pontos",
-                min_value=0,
-                max_value=100,
-                step=1,
-                key=pontos_key,
-            )
-            sem_prazo = st.checkbox("Sem prazo", key=sem_prazo_key)
-            due_date = None
-            if not sem_prazo:
-                due_date = st.date_input("Prazo", format="DD/MM/YYYY", key=due_key)
-
             autor = st.session_state.get("user_name", "Coordenacao")
-            notify_new_challenge_enabled = st.checkbox(
-                "Enviar comunicado de novo desafio (e-mail + WhatsApp)",
-                key=notify_key,
-            )
 
             draft_info = str(st.session_state.get(draft_info_key, "")).strip()
             if draft_info:
