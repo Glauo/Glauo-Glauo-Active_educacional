@@ -17097,10 +17097,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
             with st.form("new_user", clear_on_submit=True):
-                current_account_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
-                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador"]
-                if current_account_profile == "Admin":
-                    role_create_opts.append("Admin")
+                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
                 c1, c2, c3 = st.columns(3)
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
@@ -17152,12 +17149,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 user_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_sel), None)
                 if user_obj:
                     with st.form("edit_user"):
-                        current_account_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
                         new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
-                        role_opts = ["Aluno", "Professor", "Comercial", "Coordenador"]
-                        if current_account_profile == "Admin":
-                            role_opts.append("Admin")
+                        role_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
                         new_role = st.selectbox(
                             "Perfil",
                             role_opts,
