@@ -17291,6 +17291,97 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     key="manage_pag_idx",
                 )
                 pag_obj = despesas[idx_pag]
+                cat_pag_obj = str(pag_obj.get("categoria_lancamento", "")).strip().lower()
+                professor_pag_obj = str(pag_obj.get("fornecedor", "")).strip()
+                if cat_pag_obj == "professor" and professor_pag_obj:
+                    st.markdown("#### Recibo rapido do professor selecionado")
+                    base_data_recibo = (
+                        parse_date(pag_obj.get("data_aula", ""))
+                        or parse_date(pag_obj.get("data", ""))
+                        or datetime.date.today()
+                    )
+                    mes_ini, mes_fim = _current_month_bounds(base_data_recibo)
+                    rr1, rr2 = st.columns(2)
+                    with rr1:
+                        recibo_ini = st.date_input(
+                            "Periodo inicial (recibo rapido)",
+                            value=mes_ini,
+                            format="DD/MM/YYYY",
+                            key=f"fin_fast_receipt_start_{idx_pag}",
+                        )
+                    with rr2:
+                        recibo_fim = st.date_input(
+                            "Periodo final (recibo rapido)",
+                            value=mes_fim,
+                            format="DD/MM/YYYY",
+                            key=f"fin_fast_receipt_end_{idx_pag}",
+                        )
+                    if st.button(
+                        f"Gerar recibo do professor {professor_pag_obj}",
+                        key=f"fin_fast_receipt_btn_{idx_pag}",
+                    ):
+                        if recibo_fim < recibo_ini:
+                            st.error("Periodo final nao pode ser menor que o inicial.")
+                        else:
+                            receipt_sessions = _teacher_payment_sessions_for_receipt(
+                                recibo_ini,
+                                recibo_fim,
+                                professor_name=professor_pag_obj,
+                            )
+                            if not receipt_sessions:
+                                st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                            else:
+                                teacher_obj_fast = next(
+                                    (
+                                        t for t in st.session_state.get("teachers", [])
+                                        if str(t.get("nome", "")).strip() == professor_pag_obj
+                                    ),
+                                    {},
+                                )
+                                whatsapp_fast = str(teacher_obj_fast.get("celular", "")).strip()
+                                responsavel_fast = str(st.session_state.get("user_name", "")).strip()
+                                html_fast = _teacher_payment_receipt_html(
+                                    professor_pag_obj,
+                                    recibo_ini,
+                                    recibo_fim,
+                                    receipt_sessions,
+                                    contato_whatsapp=whatsapp_fast,
+                                    data_pagamento=datetime.date.today(),
+                                    forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
+                                    responsavel=responsavel_fast,
+                                )
+                                file_fast = (
+                                    f"Relatorio_Pagamento_Professor_{professor_pag_obj.replace(' ', '_')}_"
+                                    f"{recibo_ini.strftime('%Y%m%d')}_{recibo_fim.strftime('%Y%m%d')}"
+                                )
+                                st.success(f"Recibo gerado com {len(receipt_sessions)} aula(s).")
+                                st.download_button(
+                                    "Baixar recibo rapido (HTML)",
+                                    data=html_fast,
+                                    file_name=f"{file_fast}.html",
+                                    mime="text/html",
+                                    key=f"fin_fast_receipt_html_{idx_pag}",
+                                )
+                                pdf_fast = _teacher_payment_receipt_pdf_bytes(
+                                    professor_pag_obj,
+                                    recibo_ini,
+                                    recibo_fim,
+                                    receipt_sessions,
+                                    contato_whatsapp=whatsapp_fast,
+                                    data_pagamento=datetime.date.today(),
+                                    forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
+                                    responsavel=responsavel_fast,
+                                )
+                                if pdf_fast:
+                                    st.download_button(
+                                        "Baixar recibo rapido (PDF)",
+                                        data=pdf_fast,
+                                        file_name=f"{file_fast}.pdf",
+                                        mime="application/pdf",
+                                        key=f"fin_fast_receipt_pdf_{idx_pag}",
+                                    )
+                                else:
+                                    st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
                 parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
                 data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
                 venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
