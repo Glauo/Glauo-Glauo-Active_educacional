@@ -15993,11 +15993,29 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ]
             if st.session_state.get("finance_receber_menu") not in finance_receber_options:
                 st.session_state["finance_receber_menu"] = finance_receber_options[0]
-            finance_receber_menu = st.radio(
-                "Opcoes de Contas a Receber",
-                finance_receber_options,
-                key="finance_receber_menu",
-            )
+            st.markdown("### Opcoes de Contas a Receber")
+            fr_cols_top = st.columns(4)
+            fr_cols_bottom = st.columns(3)
+            fr_layout = [
+                (fr_cols_top[0], finance_receber_options[0], 0),
+                (fr_cols_top[1], finance_receber_options[1], 1),
+                (fr_cols_top[2], finance_receber_options[2], 2),
+                (fr_cols_top[3], finance_receber_options[3], 3),
+                (fr_cols_bottom[0], finance_receber_options[4], 4),
+                (fr_cols_bottom[1], finance_receber_options[5], 5),
+                (fr_cols_bottom[2], finance_receber_options[6], 6),
+            ]
+            for col_ref, option, idx_option in fr_layout:
+                selected = str(st.session_state.get("finance_receber_menu", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_receber_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_receber_menu"] = option
+                    st.rerun()
+            finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             if finance_receber_menu == "Configuracao automatica de e-mail e boleto":
                 with st.expander("Configuracao automatica de e-mail e boleto", expanded=True):
                     smtp_diag = _smtp_config_diagnostics()
@@ -17100,123 +17118,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.rerun()
 
                 st.divider()
-                st.markdown("### Gerar recibo de pagamento do professor")
-                st.caption("Gera um relatorio/recibo no formato do fechamento para assinatura.")
-                rp1, rp2, rp3 = st.columns(3)
-                with rp1:
-                    receipt_start = st.date_input(
-                        "Periodo inicial",
-                        value=_current_month_bounds(teacher_pay_month_ref)[0],
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_start",
-                    )
-                with rp2:
-                    receipt_end = st.date_input(
-                        "Periodo final",
-                        value=_current_month_bounds(teacher_pay_month_ref)[1],
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_end",
-                    )
-                with rp3:
-                    receipt_prof = st.selectbox(
-                        "Professor do recibo",
-                        teacher_options,
-                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
-                        key="fin_teacher_receipt_prof",
-                    )
-                receipt_teacher_obj = next(
-                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == str(receipt_prof).strip()),
-                    {},
-                )
-                rp4, rp5, rp6 = st.columns(3)
-                with rp4:
-                    receipt_whatsapp = st.text_input(
-                        "WhatsApp do professor",
-                        value=str(receipt_teacher_obj.get("celular", "")).strip(),
-                        key="fin_teacher_receipt_whatsapp",
-                    )
-                with rp5:
-                    receipt_pay_date = st.date_input(
-                        "Data do pagamento (campo controle)",
-                        value=datetime.date.today(),
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_date",
-                    )
-                with rp6:
-                    receipt_pay_method = st.selectbox(
-                        "Forma de pagamento (campo controle)",
-                        ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
-                        key="fin_teacher_receipt_method",
-                    )
-                receipt_responsavel = st.text_input(
-                    "Responsavel (campo controle)",
-                    value=str(st.session_state.get("user_name", "")).strip(),
-                    key="fin_teacher_receipt_responsavel",
-                )
-                btn_col_html, btn_col_pdf = st.columns(2)
-                click_html = btn_col_html.button("Gerar recibo (HTML)", key="fin_teacher_receipt_btn", type="secondary")
-                click_pdf = btn_col_pdf.button("Gerar recibo (PDF)", key="fin_teacher_receipt_btn_pdf", type="primary")
-                if click_html or click_pdf:
-                    if str(receipt_prof).strip() in ("", "Todos"):
-                        st.error("Selecione um professor especifico para gerar o recibo.")
-                    elif receipt_end < receipt_start:
-                        st.error("Periodo final nao pode ser menor que o inicial.")
-                    else:
-                        receipt_sessions = _teacher_payment_sessions_for_receipt(
-                            receipt_start,
-                            receipt_end,
-                            professor_name=receipt_prof,
-                        )
-                        if not receipt_sessions:
-                            st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
-                        else:
-                            receipt_html = _teacher_payment_receipt_html(
-                                receipt_prof,
-                                receipt_start,
-                                receipt_end,
-                                receipt_sessions,
-                                contato_whatsapp=receipt_whatsapp,
-                                data_pagamento=receipt_pay_date,
-                                forma_pagamento=receipt_pay_method,
-                                responsavel=receipt_responsavel,
-                            )
-                            file_name = (
-                                f"Relatorio_Pagamento_Professor_{str(receipt_prof).strip().replace(' ', '_')}_"
-                                f"{receipt_start.strftime('%Y%m%d')}_{receipt_end.strftime('%Y%m%d')}.html"
-                            )
-                            st.success(
-                                f"Recibo gerado com {len(receipt_sessions)} aula(s) finalizada(s)."
-                            )
-                            if click_html:
-                                st.download_button(
-                                    "Baixar recibo (HTML)",
-                                    data=receipt_html,
-                                    file_name=file_name,
-                                    mime="text/html",
-                                    key=f"fin_teacher_receipt_download_{file_name}",
-                                )
-                            receipt_pdf = _teacher_payment_receipt_pdf_bytes(
-                                receipt_prof,
-                                receipt_start,
-                                receipt_end,
-                                receipt_sessions,
-                                contato_whatsapp=receipt_whatsapp,
-                                data_pagamento=receipt_pay_date,
-                                forma_pagamento=receipt_pay_method,
-                                responsavel=receipt_responsavel,
-                            )
-                            if receipt_pdf and click_pdf:
-                                st.download_button(
-                                    "Baixar recibo (PDF)",
-                                    data=receipt_pdf,
-                                    file_name=file_name.replace(".html", ".pdf"),
-                                    mime="application/pdf",
-                                    key=f"fin_teacher_receipt_download_pdf_{file_name}",
-                                )
-                            elif click_pdf:
-                                st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
-
-                st.divider()
                 st.markdown("### Lancamento manual de pagamento")
                 manual_turma_options = class_names()
                 if not manual_turma_options:
@@ -17808,11 +17709,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_aprov_options = ["Pagamentos de matricula"]
             if st.session_state.get("finance_aprov_menu") not in finance_aprov_options:
                 st.session_state["finance_aprov_menu"] = finance_aprov_options[0]
-            st.radio(
-                "Opcoes de Aprovacoes Comercial",
-                finance_aprov_options,
-                key="finance_aprov_menu",
-            )
+            st.markdown("### Opcoes de Aprovacoes Comercial")
+            aprov_selected = str(st.session_state.get("finance_aprov_menu", "")) == finance_aprov_options[0]
+            if st.button(
+                finance_aprov_options[0],
+                key="finance_aprov_box_0",
+                use_container_width=True,
+                type="primary" if aprov_selected else "secondary",
+            ):
+                st.session_state["finance_aprov_menu"] = finance_aprov_options[0]
+                st.rerun()
             st.markdown("### Pagamentos de matricula enviados pelo Comercial")
             pagamentos = st.session_state.get("sales_payments", [])
             if not pagamentos:
@@ -17925,11 +17831,20 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
             if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
                 st.session_state["finance_overdue_mode"] = finance_venc_options[0]
-            overdue_mode = st.radio(
-                "Opcoes de Vencimentos",
-                finance_venc_options,
-                key="finance_overdue_mode",
-            )
+            st.markdown("### Opcoes de Vencimentos")
+            fv1, fv2 = st.columns(2)
+            venc_layout = [(fv1, finance_venc_options[0], 0), (fv2, finance_venc_options[1], 1)]
+            for col_ref, option, idx_option in venc_layout:
+                selected = str(st.session_state.get("finance_overdue_mode", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_venc_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_overdue_mode"] = option
+                    st.rerun()
+            overdue_mode = st.session_state.get("finance_overdue_mode", finance_venc_options[0])
             if overdue_mode == "A receber vencidos":
                 _render_overdue_receivables_panel()
             else:
