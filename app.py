@@ -2,6 +2,7 @@
 import datetime
 import hashlib
 import hmac
+import html
 import importlib
 import io
 import json
@@ -4889,7 +4890,75 @@ def get_student_weekly_challenges(student_obj, week_key):
     )
     return desafios
 
-def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno="", reference_theme="", reference_book="", reference_subject="", reference_note="", target_turmas_envio=None):
+def _challenge_color(value, default="#1e3a8a"):
+    raw = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", raw):
+        return raw
+    return default
+
+
+def _challenge_style_values(challenge_obj):
+    ch = challenge_obj if isinstance(challenge_obj, dict) else {}
+    return {
+        "title_bold": bool(ch.get("title_bold", False)),
+        "title_color": _challenge_color(ch.get("title_color", "#1e3a8a"), "#1e3a8a"),
+        "description_bold": bool(ch.get("description_bold", False)),
+        "description_color": _challenge_color(ch.get("description_color", "#111827"), "#111827"),
+    }
+
+
+def _render_challenge_title(challenge_obj, number=None):
+    ch = challenge_obj if isinstance(challenge_obj, dict) else {}
+    style = _challenge_style_values(ch)
+    label = str(ch.get("titulo", "Desafio")).strip() or "Desafio"
+    prefix = f"{int(number)}. " if isinstance(number, int) and number > 0 else ""
+    weight = "700" if style["title_bold"] else "500"
+    st.markdown(
+        f"<h3 style='margin:0.2rem 0 0.35rem 0; color:{style['title_color']}; font-weight:{weight};'>{html.escape(prefix + label)}</h3>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_challenge_description(challenge_obj):
+    ch = challenge_obj if isinstance(challenge_obj, dict) else {}
+    style = _challenge_style_values(ch)
+    body = str(ch.get("descricao", "")).strip()
+    if not body:
+        return
+    weight = "700" if style["description_bold"] else "400"
+    safe = html.escape(body).replace("\n", "<br>")
+    st.markdown(
+        f"<div style='margin-bottom:0.4rem; color:{style['description_color']}; font-weight:{weight};'>{safe}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def delete_weekly_challenge_for_target(level, week_key, target_type="nivel", target_turma="", target_aluno=""):
+    existing = get_weekly_challenge_for_target(
+        level,
+        week_key,
+        target_type=target_type,
+        target_turma=target_turma,
+        target_aluno=target_aluno,
+    )
+    if not existing:
+        return False
+    challenge_id = str(existing.get("id", "")).strip()
+    st.session_state["challenges"] = [
+        ch for ch in st.session_state.get("challenges", [])
+        if ch is not existing and (not challenge_id or str(ch.get("id", "")).strip() != challenge_id)
+    ]
+    save_list(CHALLENGES_FILE, st.session_state["challenges"])
+    if challenge_id:
+        st.session_state["challenge_completions"] = [
+            comp for comp in st.session_state.get("challenge_completions", [])
+            if str(comp.get("challenge_id", "")).strip() != challenge_id
+        ]
+        save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state["challenge_completions"])
+    return True
+
+
+def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, due_date=None, rubrica="", dica="", target_type="nivel", target_turma="", target_aluno="", reference_theme="", reference_book="", reference_subject="", reference_note="", target_turmas_envio=None, title_bold=False, title_color="#1e3a8a", description_bold=False, description_color="#111827"):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     titulo = str(titulo or "").strip()
@@ -4907,6 +4976,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
     reference_book = str(reference_book or "").strip()
     reference_subject = str(reference_subject or "").strip()
     reference_note = str(reference_note or "").strip()
+    title_bold = bool(title_bold)
+    title_color = _challenge_color(title_color, "#1e3a8a")
+    description_bold = bool(description_bold)
+    description_color = _challenge_color(description_color, "#111827")
     existing = get_weekly_challenge_for_target(level, week_key, target_type=target_type, target_turma=target_turma, target_aluno=target_aluno)
     if existing:
         existing["nivel"] = level
@@ -4928,6 +5001,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
         existing["reference_book"] = reference_book
         existing["reference_subject"] = reference_subject
         existing["reference_note"] = reference_note
+        existing["title_bold"] = title_bold
+        existing["title_color"] = title_color
+        existing["description_bold"] = description_bold
+        existing["description_color"] = description_color
         existing["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
         saved = existing
     else:
@@ -4950,6 +5027,10 @@ def upsert_weekly_challenge(level, week_key, titulo, descricao, pontos, autor, d
             "reference_book": reference_book,
             "reference_subject": reference_subject,
             "reference_note": reference_note,
+            "title_bold": title_bold,
+            "title_color": title_color,
+            "description_bold": description_bold,
+            "description_color": description_color,
             "created_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
             "updated_at": "",
         }
@@ -12096,12 +12177,12 @@ elif st.session_state["role"] == "Aluno":
         else:
             st.markdown("### Desafios disponiveis")
             for idx, ch in enumerate(desafios_semana, start=1):
-                st.markdown(f"### {idx}. {ch.get('titulo','Desafio')}")
+                _render_challenge_title(ch, number=idx)
                 st.caption(
                     f"{_challenge_target_label(ch)} | Pontos: {ch.get('pontos', 0)} | "
                     f"Publicado por: {ch.get('autor','')} | Prazo: {ch.get('due_date','') or 'sem prazo'}"
                 )
-                st.write(ch.get("descricao", ""))
+                _render_challenge_description(ch)
                 if str(ch.get("dica", "")).strip():
                     st.info(f"Dica: {str(ch.get('dica','')).strip()}")
                 cid = ch.get("id", "")
@@ -17512,6 +17593,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             editor_rubrica_key = f"{key_prefix}_editor_rubrica"
             editor_dica_key = f"{key_prefix}_editor_dica"
             editor_pontos_key = f"{key_prefix}_editor_pontos"
+            title_bold_key = f"{key_prefix}_title_bold"
+            title_color_key = f"{key_prefix}_title_color"
+            desc_bold_key = f"{key_prefix}_desc_bold"
+            desc_color_key = f"{key_prefix}_desc_color"
 
             pending_draft_patch = st.session_state.pop(draft_patch_key, None)
             if isinstance(pending_draft_patch, dict):
@@ -17526,6 +17611,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state[rubrica_key] = str(existing.get("rubrica", ""))
             if dica_key not in st.session_state:
                 st.session_state[dica_key] = str(existing.get("dica", ""))
+            if title_bold_key not in st.session_state:
+                st.session_state[title_bold_key] = bool(existing.get("title_bold", False))
+            if title_color_key not in st.session_state:
+                st.session_state[title_color_key] = _challenge_color(existing.get("title_color", "#1e3a8a"), "#1e3a8a")
+            if desc_bold_key not in st.session_state:
+                st.session_state[desc_bold_key] = bool(existing.get("description_bold", False))
+            if desc_color_key not in st.session_state:
+                st.session_state[desc_color_key] = _challenge_color(existing.get("description_color", "#111827"), "#111827")
             if pontos_key not in st.session_state:
                 st.session_state[pontos_key] = int(existing.get("pontos") or 10)
             if sem_prazo_key not in st.session_state:
@@ -17677,7 +17770,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if st.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
                     st.session_state[draft_action_key] = "gen_ai"
                     st.rerun()
-            manual_col1, manual_col2 = st.columns([1, 1])
+            manual_col1, manual_col2, manual_col3 = st.columns([1, 1, 1])
             if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
                 st.session_state[draft_patch_key] = {
                     titulo_key: "",
@@ -17685,6 +17778,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     rubrica_key: "",
                     dica_key: "",
                     pontos_key: 10,
+                    title_bold_key: False,
+                    title_color_key: "#1e3a8a",
+                    desc_bold_key: False,
+                    desc_color_key: "#111827",
                     draft_info_key: "Formulario limpo para criacao manual.",
                 }
                 st.rerun()
@@ -17701,6 +17798,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     ref_book_key: str(existing.get("reference_book", "")).strip() or default_book_reference,
                     ref_subject_key: str(existing.get("reference_subject", "")).strip() or materia_atual,
                     ref_note_key: str(existing.get("reference_note", "")).strip() or st.session_state.get(ref_note_key, ""),
+                    title_bold_key: bool(existing.get("title_bold", False)),
+                    title_color_key: _challenge_color(existing.get("title_color", "#1e3a8a"), "#1e3a8a"),
+                    desc_bold_key: bool(existing.get("description_bold", False)),
+                    desc_color_key: _challenge_color(existing.get("description_color", "#111827"), "#111827"),
                 }
                 raw_send_turmas = existing.get("target_turmas_envio", [])
                 if isinstance(raw_send_turmas, str):
@@ -17709,6 +17810,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 load_patch[draft_info_key] = "Desafio salvo carregado no formulario." if existing else "Nao existe desafio salvo para esse destino/semana."
                 st.session_state[draft_patch_key] = load_patch
                 st.rerun()
+            if manual_col3.button("Excluir desafio salvo", key=f"{key_prefix}_delete_existing"):
+                if not existing:
+                    st.info("Nao existe desafio salvo para esse destino/semana.")
+                else:
+                    deleted = delete_weekly_challenge_for_target(
+                        nivel,
+                        semana,
+                        target_type=target_type,
+                        target_turma=target_turma,
+                        target_aluno=target_aluno,
+                    )
+                    if deleted:
+                        st.success("Desafio excluido com sucesso.")
+                        st.rerun()
+                    st.error("Nao foi possivel excluir o desafio selecionado.")
 
             st.markdown("#### Ajuste final antes de salvar")
             st.caption("Edite o desafio aqui antes de publicar. A caixa abaixo tambem aceita edicao direta.")
@@ -17719,6 +17835,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 height=160,
                 key=descricao_key,
             )
+            st.markdown("##### Formatacao visual")
+            fmt_col1, fmt_col2 = st.columns(2)
+            with fmt_col1:
+                st.checkbox("Titulo em negrito", key=title_bold_key)
+                st.color_picker("Cor do titulo", key=title_color_key)
+            with fmt_col2:
+                st.checkbox("Descricao em negrito", key=desc_bold_key)
+                st.color_picker("Cor da descricao", key=desc_color_key)
             rubrica = st.text_input(
                 "Rubrica (como sera avaliado)",
                 key=rubrica_key,
@@ -17750,6 +17874,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 f"Linha do desafio: {reference_theme}\n"
                 f"Livro/Nivel de referencia: {reference_book or '-'}\n"
                 f"Materia/Conteudo de referencia: {reference_subject or '-'}\n"
+                f"Titulo: cor {st.session_state.get(title_color_key, '#1e3a8a')} | negrito {'sim' if st.session_state.get(title_bold_key, False) else 'nao'}\n"
+                f"Descricao: cor {st.session_state.get(desc_color_key, '#111827')} | negrito {'sim' if st.session_state.get(desc_bold_key, False) else 'nao'}\n"
                 f"Semana: {semana}\n"
                 f"Pontos: {int(pontos)}\n"
                 f"Prazo: {'Sem prazo' if sem_prazo else (due_date.strftime('%d/%m/%Y') if isinstance(due_date, datetime.date) else '-')}\n"
@@ -17832,6 +17958,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         reference_subject=reference_subject,
                         reference_note=reference_note,
                         target_turmas_envio=target_turmas_envio,
+                        title_bold=bool(st.session_state.get(title_bold_key, False)),
+                        title_color=_challenge_color(st.session_state.get(title_color_key, "#1e3a8a"), "#1e3a8a"),
+                        description_bold=bool(st.session_state.get(desc_bold_key, False)),
+                        description_color=_challenge_color(st.session_state.get(desc_color_key, "#111827"), "#111827"),
                     )
                     recipients_preview = _students_for_challenge_target(
                         saved_challenge.get("nivel", ""),
