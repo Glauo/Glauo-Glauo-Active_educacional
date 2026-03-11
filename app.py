@@ -5110,6 +5110,124 @@ def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
 
+def _student_points_ranking():
+    points_by_student = {}
+    for student in st.session_state.get("students", []):
+        nome = str(student.get("nome", "")).strip()
+        if nome:
+            points_by_student[nome] = 0
+    for comp in st.session_state.get("challenge_completions", []):
+        aluno = str(comp.get("aluno", "")).strip()
+        if not aluno:
+            continue
+        points_by_student[aluno] = points_by_student.get(aluno, 0) + int(comp.get("pontos") or 0)
+    ranking = sorted(points_by_student.items(), key=lambda item: (-int(item[1]), normalize_text(item[0])))
+    return ranking
+
+def _parse_record_date(raw_value):
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return None
+    date_obj = parse_date(raw)
+    if date_obj:
+        return date_obj
+    if " " in raw:
+        date_obj = parse_date(raw.split(" ", 1)[0])
+        if date_obj:
+            return date_obj
+    return None
+
+def _student_all_assessment_rows(aluno_nome):
+    aluno = str(aluno_nome or "").strip()
+    if not aluno:
+        return []
+    rows = []
+
+    for grade in st.session_state.get("grades", []):
+        if str(grade.get("aluno", "")).strip() != aluno:
+            continue
+        avaliacao = str(grade.get("avaliacao", "")).strip() or "Avaliacao"
+        nota_txt = str(grade.get("nota", "")).strip()
+        data_txt = str(grade.get("data", "")).strip()
+        status_txt = str(grade.get("status", "")).strip() or "-"
+        rows.append(
+            {
+                "Data": data_txt or "-",
+                "Tipo": "Nota",
+                "Avaliacao": avaliacao,
+                "Nota": nota_txt or "-",
+                "Pontuacao": "-",
+                "Status": status_txt,
+                "Origem": "Lancamento de notas",
+                "_date_obj": _parse_record_date(data_txt),
+            }
+        )
+
+    activity_map = {
+        str(a.get("id", "")).strip(): a
+        for a in st.session_state.get("activities", [])
+        if str(a.get("id", "")).strip()
+    }
+    for sub in st.session_state.get("activity_submissions", []):
+        if str(sub.get("aluno", "")).strip() != aluno:
+            continue
+        activity_id = str(sub.get("activity_id", "")).strip()
+        activity_obj = activity_map.get(activity_id, {})
+        titulo = str(activity_obj.get("titulo", "")).strip() or "Atividade"
+        tipo_atividade = str(activity_obj.get("tipo", "")).strip() or "Atividade"
+        nota_final = activity_submission_final_score(sub)
+        nota_total = _parse_float(sub.get("score_total", 0), default=0.0)
+        if nota_total <= 0:
+            nota_total = _activity_points_total(activity_obj)
+        nota_label = f"{nota_final:.1f}/{max(0.0, nota_total):.1f}" if nota_total > 0 else f"{nota_final:.1f}"
+        data_txt = str(sub.get("avaliado_em", "")).strip() or str(sub.get("submitted_at", "")).strip()
+        status_txt = str(sub.get("status", "")).strip() or "Enviada"
+        rows.append(
+            {
+                "Data": data_txt or "-",
+                "Tipo": tipo_atividade,
+                "Avaliacao": titulo,
+                "Nota": nota_label,
+                "Pontuacao": f"{nota_final:.1f}",
+                "Status": status_txt,
+                "Origem": "Licao de casa" if _is_homework_activity(activity_obj) else "Atividade",
+                "_date_obj": _parse_record_date(data_txt),
+            }
+        )
+
+    for comp in st.session_state.get("challenge_completions", []):
+        if str(comp.get("aluno", "")).strip() != aluno:
+            continue
+        titulo = str(comp.get("challenge_title", "")).strip() or "Desafio"
+        score = comp.get("score", None)
+        nota_label = f"{_parse_float(score, 0.0):.1f}/100" if score not in (None, "") else "-"
+        pontos = int(comp.get("pontos") or 0)
+        data_txt = str(comp.get("done_at", "")).strip()
+        status_txt = str(comp.get("status", "")).strip() or "-"
+        rows.append(
+            {
+                "Data": data_txt or "-",
+                "Tipo": "Desafio",
+                "Avaliacao": titulo,
+                "Nota": nota_label,
+                "Pontuacao": str(pontos),
+                "Status": status_txt,
+                "Origem": "Desafio semanal",
+                "_date_obj": _parse_record_date(data_txt),
+            }
+        )
+
+    rows.sort(
+        key=lambda item: (
+            item.get("_date_obj") or datetime.date(1900, 1, 1),
+            str(item.get("Avaliacao", "")).strip().lower(),
+        ),
+        reverse=True,
+    )
+    for row in rows:
+        row.pop("_date_obj", None)
+    return rows
+
 def _parse_float(value, default=0.0):
     try:
         return float(str(value).replace(",", "."))
@@ -12295,6 +12413,7 @@ elif st.session_state["role"] == "Aluno":
             if str(g.get("aluno", "")).strip() == aluno_nome
             and str(g.get("status", "")).strip().lower() == "aprovado"
         ]
+        notas_completas_aluno = _student_all_assessment_rows(aluno_nome)
         notas_numericas = []
         presencas_percent = []
         for nota_obj in notas_aluno_aprovadas:
@@ -12375,6 +12494,32 @@ elif st.session_state["role"] == "Aluno":
                 f"""<div class="dash-card"><div><div class="card-title">Próxima Prova</div><div class="card-value">{proxima_prova_data_label}</div></div><div class="card-sub"><span style="color:#64748b">{proxima_prova_titulo_label}</span></div></div>""",
                 unsafe_allow_html=True,
             )
+        ranking_pontos = _student_points_ranking()
+        pontos_aluno = int(student_points(aluno_nome))
+        rank_pos = next((idx for idx, (nome_rank, _) in enumerate(ranking_pontos, start=1) if nome_rank == aluno_nome), None)
+        top3 = ranking_pontos[:3]
+        r1, r2, r3 = st.columns(3)
+        with r1:
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Pontuação (Desafios)</div><div class="card-value">{pontos_aluno}</div></div><div class="card-sub"><span class="trend-neutral">pontos acumulados</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        with r2:
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Ranking</div><div class="card-value">{f'#{rank_pos}' if rank_pos else '--'}</div></div><div class="card-sub"><span class="trend-neutral">entre alunos</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        with r3:
+            top_preview = " | ".join(f"{idx+1}º {nome}" for idx, (nome, _) in enumerate(top3)) if top3 else "Sem dados"
+            st.markdown(
+                f"""<div class="dash-card"><div><div class="card-title">Top 3</div><div class="card-value">{len(top3)}</div></div><div class="card-sub"><span class="trend-neutral">{top_preview}</span></div></div>""",
+                unsafe_allow_html=True,
+            )
+        st.markdown("### Notas e Avaliacoes (todas)")
+        if notas_completas_aluno:
+            st.dataframe(pd.DataFrame(notas_completas_aluno), use_container_width=True)
+        else:
+            st.info("Ainda nao ha notas/avaliacoes registradas.")
         vip_resumo_dashboard = _student_vip_summary(aluno_obj)
         if vip_resumo_dashboard:
             st.info(
@@ -12465,8 +12610,24 @@ elif st.session_state["role"] == "Aluno":
         aluno_nome = st.session_state["user_name"]
         notas = [g for g in st.session_state["grades"] if g.get("aluno") == aluno_nome and g.get("status") == "Aprovado"]
         with tab1:
-            if notas: st.dataframe(pd.DataFrame(notas), use_container_width=True)
-            else: st.info("Nenhuma nota lançada.")
+            notas_completas = _student_all_assessment_rows(aluno_nome)
+            if notas_completas:
+                st.dataframe(pd.DataFrame(notas_completas), use_container_width=True)
+                qtd_desafios = len([r for r in notas_completas if str(r.get("Tipo", "")).strip().lower() == "desafio"])
+                qtd_atividades = len([r for r in notas_completas if "atividade" in normalize_text(r.get("Origem", "")) or "licao de casa" in normalize_text(r.get("Origem", ""))])
+                qtd_notas = len([r for r in notas_completas if str(r.get("Tipo", "")).strip().lower() == "nota"])
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Notas lançadas", qtd_notas)
+                s2.metric("Lições/Atividades", qtd_atividades)
+                s3.metric("Desafios", qtd_desafios)
+                ranking_pontos = _student_points_ranking()
+                rank_pos = next((idx for idx, (nome_rank, _) in enumerate(ranking_pontos, start=1) if nome_rank == aluno_nome), None)
+                st.caption(
+                    f"Pontuação em desafios: {int(student_points(aluno_nome))} | "
+                    f"Ranking: {f'#{rank_pos}' if rank_pos else '--'}"
+                )
+            else:
+                st.info("Nenhuma nota lançada.")
         with tab2:
             presencas = []
             for nota_obj in notas:
