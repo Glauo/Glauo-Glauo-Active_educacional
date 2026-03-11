@@ -16842,6 +16842,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.session_state["finance_pagar_menu"] = option
                     st.rerun()
             finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
+            if finance_pagar_menu != "Pagamento de Aulas do Professor":
+                st.caption("Recibo de pagamento do professor fica em: Pagamento de Aulas do Professor.")
+                if st.button("Abrir Gerador de Recibo (Professor)", key="finance_open_teacher_receipt_shortcut"):
+                    st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
+                    st.rerun()
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
             if finance_pagar_menu == "Pagamento de Aulas do Professor":
@@ -17247,6 +17252,36 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             step=1,
                             key="fin_teacher_manual_qtd",
                         )
+                    mp4, mp5 = st.columns(2)
+                    with mp4:
+                        teacher_manual_data_aula = st.date_input(
+                            "Data da aula (manual)",
+                            value=datetime.date.today(),
+                            format="DD/MM/YYYY",
+                            key="fin_teacher_manual_data_aula",
+                        )
+                    with mp5:
+                        teacher_manual_data_pag = st.date_input(
+                            "Data de pagamento (manual)",
+                            value=datetime.date.today(),
+                            format="DD/MM/YYYY",
+                            key="fin_teacher_manual_data_pag",
+                        )
+                    mp6, mp7 = st.columns(2)
+                    with mp6:
+                        livro_manual_default = str(turma_manual_obj.get("livro", "")).strip() or ""
+                        teacher_manual_livro = st.text_input(
+                            "Livro (manual)",
+                            value=livro_manual_default,
+                            key="fin_teacher_manual_livro",
+                        )
+                    with mp7:
+                        teacher_manual_licao = st.text_input(
+                            "Licao (manual)",
+                            value="",
+                            placeholder="Ex: Unit 4 - Present Continuous",
+                            key="fin_teacher_manual_licao",
+                        )
                     st.caption(
                         f"Professor: {professor_manual or '-'} | Modulo: {modulo_manual or '-'} | "
                         f"Duracao por aula: {minutos_manual} min | Valor unitario: {format_money(valor_unitario_manual)}"
@@ -17260,9 +17295,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     ):
                         if not professor_manual or not modulo_manual:
                             st.error("A turma selecionada precisa ter professor e modulo cadastrados.")
+                        elif not str(teacher_manual_licao).strip():
+                            st.error("Informe a licao da aula manual.")
                         else:
                             mes_manual_label = teacher_manual_month_ref.strftime("%m/%Y") if teacher_manual_month_ref else datetime.date.today().strftime("%m/%Y")
                             valor_total_manual_txt = f"{teacher_manual_total:.2f}".replace(".", ",")
+                            data_aula_manual_txt = teacher_manual_data_aula.strftime("%d/%m/%Y")
+                            data_pag_manual_txt = teacher_manual_data_pag.strftime("%d/%m/%Y")
+                            livro_manual_txt = str(teacher_manual_livro or "").strip()
+                            licao_manual_txt = str(teacher_manual_licao or "").strip()
                             st.session_state["payables"].append(
                                 {
                                     "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
@@ -17275,10 +17316,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     "numero_pedido": f"MANUAL-{uuid.uuid4().hex[:6].upper()}",
                                     "turma": str(teacher_manual_turma).strip(),
                                     "modulo": modulo_manual,
+                                    "livro": livro_manual_txt,
+                                    "licao": licao_manual_txt,
+                                    "data_aula": data_aula_manual_txt,
+                                    "data_pagamento": data_pag_manual_txt,
                                     "duracao_minutos": int(minutos_manual),
                                     "quantidade_aulas": int(teacher_manual_qtd),
                                     "valor_unitario_aula": f"{float(valor_unitario_manual):.2f}".replace(".", ","),
-                                    "data": teacher_pay_data.strftime("%d/%m/%Y"),
+                                    "data": data_pag_manual_txt,
                                     "vencimento": _month_due_date(teacher_pay_venc, teacher_pay_due_day).strftime("%d/%m/%Y"),
                                     "cobranca": teacher_pay_cobranca,
                                     "status": teacher_pay_status,
@@ -17381,12 +17426,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     col_order_pag = [
                         "codigo",
                         "data",
+                        "data_pagamento",
+                        "data_aula",
                         "fornecedor",
                         "descricao",
                         "categoria_lancamento",
                         "turma",
                         "modulo",
-                        "data_aula",
+                        "livro",
+                        "licao",
                         "duracao_minutos",
                         "numero_pedido",
                         "valor_parcela",
