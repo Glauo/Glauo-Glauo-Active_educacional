@@ -8260,7 +8260,7 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     try:
         from fpdf import FPDF
     except Exception:
-        return None
+        FPDF = None
 
     def _safe(txt):
         raw = str(txt or "")
@@ -8287,6 +8287,58 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
             str(item.get("dias_turma", "")).strip(),
         )
         grouped.setdefault(key, []).append(item)
+
+    # Fallback backend if FPDF is unavailable.
+    if FPDF is None:
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas
+        except Exception:
+            return None
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        y = height - 40
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, _safe("Relatorio de Aulas e Pagamento"))
+        y -= 18
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, _safe(f"Professor: {prof_label}"))
+        y -= 14
+        c.drawString(40, y, _safe(f"Periodo: {period_start_txt} a {period_end_txt}"))
+        y -= 14
+        c.drawString(40, y, _safe(f"Contato (WhatsApp): {contato_txt or '-'}"))
+        y -= 20
+        total_geral = 0.0
+        for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
+            turma, tipo, hora_ini, hora_fim, valor_aula, _dias_turma = key
+            itens = grouped.get(key, [])
+            qtd = len(itens)
+            total = float(valor_aula) * qtd
+            total_geral += total
+            line = f"{turma} | {tipo} | {hora_ini}-{hora_fim} | Aulas: {qtd} | Valor/aula: {format_money(valor_aula)} | Total: {format_money(total)}"
+            for part in re.findall(r".{1,115}(?:\s|$)", line):
+                if y < 60:
+                    c.showPage()
+                    c.setFont("Helvetica", 10)
+                    y = height - 40
+                c.drawString(40, y, _safe(part.strip()))
+                y -= 13
+        y -= 4
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, _safe(f"Total Geral: {format_money(total_geral)}"))
+        y -= 18
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, _safe(f"Data do pagamento: {data_pag_txt or '____/____/________'}"))
+        y -= 14
+        c.drawString(40, y, _safe(f"Forma: {forma_txt or 'Pix / Dinheiro / Transferencia / Outro'}"))
+        y -= 14
+        c.drawString(40, y, _safe(f"Responsavel: {responsavel_txt or '______________________________'}"))
+        y -= 14
+        c.drawString(40, y, _safe("Assinatura: ______________________________"))
+        c.showPage()
+        c.save()
+        return buffer.getvalue()
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
@@ -16959,7 +17011,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     value=str(st.session_state.get("user_name", "")).strip(),
                     key="fin_teacher_receipt_responsavel",
                 )
-                if st.button("Gerar recibo (HTML)", key="fin_teacher_receipt_btn", type="secondary"):
+                btn_col_html, btn_col_pdf = st.columns(2)
+                click_html = btn_col_html.button("Gerar recibo (HTML)", key="fin_teacher_receipt_btn", type="secondary")
+                click_pdf = btn_col_pdf.button("Gerar recibo (PDF)", key="fin_teacher_receipt_btn_pdf", type="primary")
+                if click_html or click_pdf:
                     if str(receipt_prof).strip() in ("", "Todos"):
                         st.error("Selecione um professor especifico para gerar o recibo.")
                     elif receipt_end < receipt_start:
@@ -16990,13 +17045,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success(
                                 f"Recibo gerado com {len(receipt_sessions)} aula(s) finalizada(s)."
                             )
-                            st.download_button(
-                                "Baixar recibo (HTML)",
-                                data=receipt_html,
-                                file_name=file_name,
-                                mime="text/html",
-                                key=f"fin_teacher_receipt_download_{file_name}",
-                            )
+                            if click_html:
+                                st.download_button(
+                                    "Baixar recibo (HTML)",
+                                    data=receipt_html,
+                                    file_name=file_name,
+                                    mime="text/html",
+                                    key=f"fin_teacher_receipt_download_{file_name}",
+                                )
                             receipt_pdf = _teacher_payment_receipt_pdf_bytes(
                                 receipt_prof,
                                 receipt_start,
@@ -17007,7 +17063,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 forma_pagamento=receipt_pay_method,
                                 responsavel=receipt_responsavel,
                             )
-                            if receipt_pdf:
+                            if receipt_pdf and click_pdf:
                                 st.download_button(
                                     "Baixar recibo (PDF)",
                                     data=receipt_pdf,
@@ -17015,7 +17071,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     mime="application/pdf",
                                     key=f"fin_teacher_receipt_download_pdf_{file_name}",
                                 )
-                            else:
+                            elif click_pdf:
                                 st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
 
                 st.divider()
@@ -17316,10 +17372,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             format="DD/MM/YYYY",
                             key=f"fin_fast_receipt_end_{idx_pag}",
                         )
-                    if st.button(
-                        f"Gerar recibo do professor {professor_pag_obj}",
-                        key=f"fin_fast_receipt_btn_{idx_pag}",
-                    ):
+                    rb_html, rb_pdf = st.columns(2)
+                    fast_html = rb_html.button(
+                        f"Gerar recibo HTML - {professor_pag_obj}",
+                        key=f"fin_fast_receipt_btn_html_{idx_pag}",
+                    )
+                    fast_pdf = rb_pdf.button(
+                        f"Gerar recibo PDF - {professor_pag_obj}",
+                        key=f"fin_fast_receipt_btn_pdf_{idx_pag}",
+                    )
+                    if fast_html or fast_pdf:
                         if recibo_fim < recibo_ini:
                             st.error("Periodo final nao pode ser menor que o inicial.")
                         else:
@@ -17355,13 +17417,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     f"{recibo_ini.strftime('%Y%m%d')}_{recibo_fim.strftime('%Y%m%d')}"
                                 )
                                 st.success(f"Recibo gerado com {len(receipt_sessions)} aula(s).")
-                                st.download_button(
-                                    "Baixar recibo rapido (HTML)",
-                                    data=html_fast,
-                                    file_name=f"{file_fast}.html",
-                                    mime="text/html",
-                                    key=f"fin_fast_receipt_html_{idx_pag}",
-                                )
+                                if fast_html:
+                                    st.download_button(
+                                        "Baixar recibo rapido (HTML)",
+                                        data=html_fast,
+                                        file_name=f"{file_fast}.html",
+                                        mime="text/html",
+                                        key=f"fin_fast_receipt_html_{idx_pag}",
+                                    )
                                 pdf_fast = _teacher_payment_receipt_pdf_bytes(
                                     professor_pag_obj,
                                     recibo_ini,
@@ -17372,7 +17435,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
                                     responsavel=responsavel_fast,
                                 )
-                                if pdf_fast:
+                                if pdf_fast and fast_pdf:
                                     st.download_button(
                                         "Baixar recibo rapido (PDF)",
                                         data=pdf_fast,
@@ -17380,7 +17443,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         mime="application/pdf",
                                         key=f"fin_fast_receipt_pdf_{idx_pag}",
                                     )
-                                else:
+                                elif fast_pdf:
                                     st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
                 parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
                 data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
