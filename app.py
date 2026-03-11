@@ -16847,6 +16847,121 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 with tp3:
                     teacher_pay_turma = st.selectbox("Turma", turma_options_pay, key="fin_teacher_pay_turma")
 
+                # Gerador rapido no topo (visivel sem rolagem longa)
+                st.markdown("### Gerador de Recibo de Pagamento (PDF/HTML)")
+                rt1, rt2, rt3 = st.columns(3)
+                month_start_top, month_end_top = _current_month_bounds(teacher_pay_month_ref)
+                with rt1:
+                    receipt_start_top = st.date_input(
+                        "Periodo inicial (recibo)",
+                        value=month_start_top,
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_start_top",
+                    )
+                with rt2:
+                    receipt_end_top = st.date_input(
+                        "Periodo final (recibo)",
+                        value=month_end_top,
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_end_top",
+                    )
+                with rt3:
+                    receipt_prof_top = st.selectbox(
+                        "Professor do recibo",
+                        teacher_options,
+                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
+                        key="fin_teacher_receipt_prof_top",
+                    )
+                teacher_obj_top = next(
+                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == str(receipt_prof_top).strip()),
+                    {},
+                )
+                rt4, rt5, rt6 = st.columns(3)
+                with rt4:
+                    receipt_whatsapp_top = st.text_input(
+                        "WhatsApp (recibo)",
+                        value=str(teacher_obj_top.get("celular", "")).strip(),
+                        key="fin_teacher_receipt_whatsapp_top",
+                    )
+                with rt5:
+                    receipt_pay_date_top = st.date_input(
+                        "Data do pagamento",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_date_top",
+                    )
+                with rt6:
+                    receipt_pay_method_top = st.selectbox(
+                        "Forma de pagamento",
+                        ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
+                        key="fin_teacher_receipt_method_top",
+                    )
+                receipt_responsavel_top = st.text_input(
+                    "Responsavel",
+                    value=str(st.session_state.get("user_name", "")).strip(),
+                    key="fin_teacher_receipt_responsavel_top",
+                )
+                bth, btp = st.columns(2)
+                gerar_html_top = bth.button("Gerar recibo HTML (Topo)", key="fin_teacher_receipt_btn_top_html", type="secondary")
+                gerar_pdf_top = btp.button("Gerar recibo PDF (Topo)", key="fin_teacher_receipt_btn_top_pdf", type="primary")
+                if gerar_html_top or gerar_pdf_top:
+                    if str(receipt_prof_top).strip() in ("", "Todos"):
+                        st.error("Selecione um professor especifico para gerar o recibo.")
+                    elif receipt_end_top < receipt_start_top:
+                        st.error("Periodo final nao pode ser menor que o inicial.")
+                    else:
+                        receipt_sessions_top = _teacher_payment_sessions_for_receipt(
+                            receipt_start_top,
+                            receipt_end_top,
+                            professor_name=receipt_prof_top,
+                        )
+                        if not receipt_sessions_top:
+                            st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                        else:
+                            file_name_top = (
+                                f"Relatorio_Pagamento_Professor_{str(receipt_prof_top).strip().replace(' ', '_')}_"
+                                f"{receipt_start_top.strftime('%Y%m%d')}_{receipt_end_top.strftime('%Y%m%d')}"
+                            )
+                            if gerar_html_top:
+                                receipt_html_top = _teacher_payment_receipt_html(
+                                    receipt_prof_top,
+                                    receipt_start_top,
+                                    receipt_end_top,
+                                    receipt_sessions_top,
+                                    contato_whatsapp=receipt_whatsapp_top,
+                                    data_pagamento=receipt_pay_date_top,
+                                    forma_pagamento=receipt_pay_method_top,
+                                    responsavel=receipt_responsavel_top,
+                                )
+                                st.download_button(
+                                    "Baixar recibo HTML (Topo)",
+                                    data=receipt_html_top,
+                                    file_name=f"{file_name_top}.html",
+                                    mime="text/html",
+                                    key=f"fin_teacher_receipt_download_top_html_{file_name_top}",
+                                )
+                            if gerar_pdf_top:
+                                receipt_pdf_top = _teacher_payment_receipt_pdf_bytes(
+                                    receipt_prof_top,
+                                    receipt_start_top,
+                                    receipt_end_top,
+                                    receipt_sessions_top,
+                                    contato_whatsapp=receipt_whatsapp_top,
+                                    data_pagamento=receipt_pay_date_top,
+                                    forma_pagamento=receipt_pay_method_top,
+                                    responsavel=receipt_responsavel_top,
+                                )
+                                if receipt_pdf_top:
+                                    st.download_button(
+                                        "Baixar recibo PDF (Topo)",
+                                        data=receipt_pdf_top,
+                                        file_name=f"{file_name_top}.pdf",
+                                        mime="application/pdf",
+                                        key=f"fin_teacher_receipt_download_top_pdf_{file_name_top}",
+                                    )
+                                else:
+                                    st.error("Nao foi possivel gerar PDF neste ambiente.")
+
                 teacher_candidates = _teacher_payment_candidates(
                     month_ref=teacher_pay_month_ref,
                     professor_name=teacher_pay_prof,
