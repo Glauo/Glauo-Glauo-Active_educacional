@@ -8291,28 +8291,46 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 8, _safe("Relatorio de Aulas e Pagamento"), ln=1)
+    pdf.set_margins(12, 12, 12)
+
+    def _section_header(text):
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_fill_color(30, 58, 138)
+        pdf.cell(0, 7, _safe(text), ln=1, fill=True)
+        pdf.set_text_color(15, 23, 42)
+
+    # Frame
+    pdf.set_draw_color(148, 163, 184)
+    pdf.set_line_width(0.3)
+    pdf.rect(9, 9, 192, 279)
+
+    # Header
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 8, _safe("Relatorio de Aulas e Pagamento"), ln=1, align="L")
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _safe(f"Professor: {prof_label}"), ln=1)
-    pdf.cell(0, 6, _safe(f"Periodo: {period_start_txt} a {period_end_txt}"), ln=1)
-    pdf.cell(0, 6, _safe(f"Contato (WhatsApp): {contato_txt or '-'}"), ln=1)
+    pdf.set_text_color(51, 65, 85)
+    pdf.cell(0, 5.5, _safe(f"Professor: {prof_label}"), ln=1)
+    pdf.cell(0, 5.5, _safe(f"Periodo: {period_start_txt} a {period_end_txt}"), ln=1)
+    pdf.cell(0, 5.5, _safe(f"Contato (WhatsApp): {contato_txt or '-'}"), ln=1)
     pdf.ln(2)
 
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _safe("Resumo por Turma"), ln=1)
+    # Summary table
+    _section_header("Resumo por Turma")
     pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(226, 232, 240)
     headers = [
-        ("Turma", 30),
+        ("Turma", 26),
         ("Tipo", 30),
-        ("Dias", 36),
-        ("Horario", 28),
+        ("Dias", 34),
+        ("Horario", 24),
         ("Aulas", 14),
-        ("Valor/aula", 24),
-        ("Total", 24),
+        ("Valor/aula", 26),
+        ("Total", 26),
     ]
     for h, w in headers:
-        pdf.cell(w, 6, _safe(h), border=1)
+        pdf.cell(w, 6, _safe(h), border=1, fill=True)
     pdf.ln(6)
     pdf.set_font("Helvetica", "", 8)
     total_geral = 0.0
@@ -8325,26 +8343,28 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
             total_geral += total
             horario = f"{hora_ini} - {hora_fim}".strip(" -")
             row = [
-                (turma or "-", 30),
-                (tipo or "-", 30),
-                (dias_turma or "-", 36),
-                (horario or "-", 28),
-                (str(qtd_aulas), 14),
-                (format_money(valor_aula), 24),
-                (format_money(total), 24),
+                (turma or "-", 26, "L"),
+                (tipo or "-", 30, "L"),
+                (dias_turma or "-", 34, "L"),
+                (horario or "-", 24, "L"),
+                (str(qtd_aulas), 14, "C"),
+                (format_money(valor_aula), 26, "R"),
+                (format_money(total), 26, "R"),
             ]
-            for value, width in row:
-                pdf.cell(width, 6, _safe(value), border=1)
+            for value, width, align in row:
+                pdf.cell(width, 6, _safe(value), border=1, align=align)
             pdf.ln(6)
     else:
-        pdf.cell(sum(w for _, w in headers), 6, _safe("Sem aulas no periodo."), border=1, ln=1)
+        pdf.cell(sum(w for _, w in headers), 6, _safe("Sem aulas no periodo."), border=1, ln=1, align="C")
 
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 7, _safe(f"Total Geral: {format_money(total_geral)}"), ln=1)
-    pdf.ln(1)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(241, 245, 249)
+    pdf.cell(sum(w for _, w in headers[:-1]), 7, _safe("Total Geral"), border=1, fill=True)
+    pdf.cell(headers[-1][1], 7, _safe(format_money(total_geral)), border=1, ln=1, align="R", fill=True)
+    pdf.ln(2)
 
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _safe("Detalhamento de Datas"), ln=1)
+    # Detailed dates
+    _section_header("Detalhamento de Datas")
     pdf.set_font("Helvetica", "", 9)
     if grouped:
         for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
@@ -8361,25 +8381,54 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
             if datas and isinstance(itens[-1].get("data_obj"), datetime.date):
                 datas[-1] = f"{datas[-1]}/{itens[-1]['data_obj'].strftime('%Y')}"
             total = float(valor_aula) * len(itens)
+
+            block_x = pdf.get_x()
+            block_y = pdf.get_y()
+            pdf.set_draw_color(203, 213, 225)
+            pdf.rect(block_x, block_y, 186, 18)
+            pdf.set_xy(block_x + 2, block_y + 1.5)
             pdf.set_font("Helvetica", "B", 9)
-            pdf.multi_cell(0, 5, _safe(f"{turma or '-'} ({tipo or '-'}) - {horario or '-'}"))
-            pdf.set_font("Helvetica", "", 9)
-            pdf.multi_cell(0, 5, _safe(f"Datas: {', '.join(datas) or '-'}"))
-            pdf.multi_cell(0, 5, _safe(f"Valor por aula: {format_money(valor_aula)}   |   Total: {format_money(total)}"))
+            pdf.multi_cell(182, 4.2, _safe(f"{turma or '-'} ({tipo or '-'}) - {horario or '-'}"))
+            pdf.set_font("Helvetica", "", 8.5)
+            pdf.set_x(block_x + 2)
+            pdf.multi_cell(182, 4.2, _safe(f"Datas: {', '.join(datas) or '-'}"))
+            pdf.set_x(block_x + 2)
+            pdf.multi_cell(182, 4.2, _safe(f"Valor por aula: {format_money(valor_aula)}   |   Total: {format_money(total)}"))
             pdf.ln(1)
     else:
         pdf.multi_cell(0, 5, _safe("Sem detalhamento no periodo."))
 
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _safe("Campos para Controle"), ln=1)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 5, _safe(f"Data do pagamento: {data_pag_txt or '____/____/________'}"), ln=1)
-    pdf.cell(0, 5, _safe(f"Forma: {forma_txt or 'Pix / Dinheiro / Transferencia / Outro'}"), ln=1)
-    pdf.cell(0, 5, _safe(f"Responsavel: {responsavel_txt or '______________________________'}"), ln=1)
-    pdf.cell(0, 5, _safe("Assinatura: ______________________________"), ln=1)
+    # Control fields
     pdf.ln(1)
-    pdf.multi_cell(0, 5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo selecionado."))
+    _section_header("Campos para Controle")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(40, 6, _safe("Data do pagamento:"), ln=0)
+    if data_pag_txt:
+        pdf.cell(0, 6, _safe(data_pag_txt), ln=1)
+    else:
+        x, y = pdf.get_x(), pdf.get_y() + 5
+        pdf.line(x, y, x + 45, y)
+        pdf.ln(6)
+
+    forma_exib = forma_txt or "[ ] Pix   [ ] Dinheiro   [ ] Transferencia   [ ] Outro: ____________"
+    pdf.cell(18, 6, _safe("Forma:"), ln=0)
+    pdf.cell(0, 6, _safe(forma_exib), ln=1)
+
+    pdf.cell(32, 6, _safe("Responsavel:"), ln=0)
+    if responsavel_txt:
+        pdf.cell(0, 6, _safe(responsavel_txt), ln=1)
+    else:
+        x, y = pdf.get_x(), pdf.get_y() + 5
+        pdf.line(x, y, x + 70, y)
+        pdf.ln(6)
+
+    pdf.cell(28, 6, _safe("Assinatura:"), ln=0)
+    x, y = pdf.get_x(), pdf.get_y() + 5
+    pdf.line(x, y, x + 70, y)
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(71, 85, 105)
+    pdf.multi_cell(0, 4.5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo informado."))
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
