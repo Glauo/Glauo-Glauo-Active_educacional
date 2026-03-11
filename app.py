@@ -8072,13 +8072,18 @@ def _teacher_payment_info_for_session(session_obj):
     sess_date = _class_session_effective_date(sess)
     modulo_label = str(turma_obj.get("modulo", "")).strip() or str(sess.get("modulo", "")).strip()
     professor_label = str(sess.get("professor", "")).strip() or str(turma_obj.get("professor", "")).strip()
-    minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
-    valor = _teacher_payment_value_for_minutes(minutos)
+    minutos = int(sess.get("pagamento_minutos", 0) or 0)
+    if minutos <= 0:
+        minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
+    valor = float(sess.get("pagamento_valor_aula", 0) or 0)
+    if valor <= 0:
+        valor = _teacher_payment_value_for_minutes(minutos)
+    modulo_pag = str(sess.get("pagamento_tipo_aula", "")).strip() or modulo_label
     return {
         "ref": _teacher_payment_ref_for_session(sess),
         "professor": professor_label,
         "turma": turma_nome,
-        "modulo": modulo_label,
+        "modulo": modulo_pag,
         "data": sess_date.strftime("%d/%m/%Y") if sess_date else str(sess.get("data", "")).strip(),
         "hora": str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip(),
         "minutos": int(minutos),
@@ -8086,6 +8091,297 @@ def _teacher_payment_info_for_session(session_obj):
         "descricao": f"Pagamento aula {turma_nome} - {(sess_date.strftime('%d/%m/%Y') if sess_date else str(sess.get('data', '')).strip())}",
         "session_id": str(sess.get("id", "")).strip(),
     }
+
+def _apply_teacher_payment_snapshot_to_session(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    if not sess:
+        return sess
+    payment_info = _teacher_payment_info_for_session(sess)
+    sess["pagamento_tipo_aula"] = str(payment_info.get("modulo", "")).strip()
+    sess["pagamento_minutos"] = int(payment_info.get("minutos", 0) or 0)
+    sess["pagamento_valor_aula"] = float(payment_info.get("valor", 0) or 0)
+    sess["pagamento_ref"] = str(payment_info.get("ref", "")).strip()
+    return sess
+
+
+def _teacher_payment_sessions_for_receipt(period_start, period_end, professor_name="Todos"):
+    prof_target = str(professor_name or "Todos").strip() or "Todos"
+    prof_target_norm = normalize_text(prof_target)
+    out = []
+    for sess in st.session_state.get("class_sessions", []):
+        if not _class_session_is_finalized(sess):
+            continue
+        sess_date = _class_session_effective_date(sess)
+        if not sess_date:
+            continue
+        if period_start and sess_date < period_start:
+            continue
+        if period_end and sess_date > period_end:
+            continue
+        info = _teacher_payment_info_for_session(sess)
+        if prof_target != "Todos" and normalize_text(info.get("professor", "")) != prof_target_norm:
+            continue
+        info["data_obj"] = sess_date
+        info["hora_fim"] = str(sess.get("hora_fim_real", sess.get("hora_fim_prevista", ""))).strip()
+        info["dias_turma"] = ""
+        turma_obj = next(
+            (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == str(info.get("turma", "")).strip()),
+            {},
+        )
+        if turma_obj:
+            info["dias_turma"] = str(turma_obj.get("dias", "")).strip()
+        out.append(info)
+    out.sort(key=lambda x: (x.get("professor", ""), x.get("turma", ""), x.get("data_obj")))
+    return out
+
+
+def _teacher_payment_receipt_html(professor_name, period_start, period_end, sessions, contato_whatsapp="", data_pagamento=None, forma_pagamento="", responsavel=""):
+    prof_label = str(professor_name or "Professor").strip() or "Professor"
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    contato_txt = str(contato_whatsapp or "").strip()
+    data_pag_txt = data_pagamento.strftime("%d/%m/%Y") if isinstance(data_pagamento, datetime.date) else str(data_pagamento or "").strip()
+    forma_txt = str(forma_pagamento or "").strip()
+    responsavel_txt = str(responsavel or "").strip()
+
+    grouped = {}
+    for item in sessions or []:
+        key = (
+            str(item.get("turma", "")).strip(),
+            str(item.get("modulo", "")).strip(),
+            str(item.get("hora", "")).strip(),
+            str(item.get("hora_fim", "")).strip(),
+            float(item.get("valor", 0) or 0),
+            str(item.get("dias_turma", "")).strip(),
+        )
+        grouped.setdefault(key, []).append(item)
+
+    rows_html = []
+    details_html = []
+    total_geral = 0.0
+    for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
+        turma, tipo, hora_ini, hora_fim, valor_aula, dias_turma = key
+        itens = grouped.get(key, [])
+        qtd_aulas = len(itens)
+        total = float(valor_aula) * qtd_aulas
+        total_geral += total
+        horario = f"{hora_ini} - {hora_fim}".strip(" -")
+        datas = []
+        for it in itens:
+            d = it.get("data_obj")
+            if isinstance(d, datetime.date):
+                datas.append(d.strftime("%d/%m"))
+            else:
+                datas.append(str(it.get("data", "")).strip())
+        if datas:
+            if isinstance(itens[-1].get("data_obj"), datetime.date):
+                datas[-1] = f"{datas[-1]}/{itens[-1]['data_obj'].strftime('%Y')}"
+        rows_html.append(
+            "<tr>"
+            f"<td>{html.escape(turma or '-')}</td>"
+            f"<td>{html.escape(tipo or '-')}</td>"
+            f"<td>{html.escape(dias_turma or '-')}</td>"
+            f"<td>{html.escape(horario or '-')}</td>"
+            f"<td style='text-align:center'>{qtd_aulas}</td>"
+            f"<td style='text-align:right'>{format_money(valor_aula)}</td>"
+            f"<td style='text-align:right'>{format_money(total)}</td>"
+            "</tr>"
+        )
+        details_html.append(
+            "<div class='detail-block'>"
+            f"<div class='detail-title'>{html.escape(turma or '-')} ({html.escape(tipo or '-')}) - {html.escape(horario or '-')}</div>"
+            f"<div>Datas: {html.escape(', '.join(datas) or '-')}</div>"
+            f"<div>Valor por aula: {format_money(valor_aula)} &nbsp; | &nbsp; Total: {format_money(total)}</div>"
+            "</div>"
+        )
+
+    rows_html_str = "".join(rows_html) or "<tr><td colspan='7' style='text-align:center'>Sem aulas no período.</td></tr>"
+    details_html_str = "".join(details_html) or "<div class='detail-block'>Sem detalhamento no período.</div>"
+    return f"""<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Relatorio de Aulas e Pagamento - {html.escape(prof_label)}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }}
+    h1 {{ font-size: 24px; margin: 0 0 10px 0; }}
+    .meta {{ margin-bottom: 12px; line-height: 1.5; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
+    th, td {{ border: 1px solid #cbd5e1; padding: 8px; font-size: 13px; }}
+    th {{ background: #e2e8f0; text-align: left; }}
+    .section {{ margin-top: 18px; }}
+    .total {{ margin-top: 10px; font-size: 16px; font-weight: 700; }}
+    .detail-block {{ border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; margin: 8px 0; }}
+    .detail-title {{ font-weight: 700; margin-bottom: 4px; }}
+    .controls {{ border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; margin-top: 12px; }}
+    .line {{ display: inline-block; min-width: 260px; border-bottom: 1px solid #334155; height: 16px; vertical-align: bottom; }}
+    .obs {{ margin-top: 12px; color: #334155; font-size: 12px; }}
+  </style>
+</head>
+<body>
+  <h1>Relatório de Aulas e Pagamento</h1>
+  <div class="meta">
+    <div><strong>Professor:</strong> {html.escape(prof_label)}</div>
+    <div><strong>Período:</strong> {html.escape(period_start_txt)} a {html.escape(period_end_txt)}</div>
+    <div><strong>Contato (WhatsApp):</strong> {html.escape(contato_txt or '-')}</div>
+  </div>
+
+  <div class="section">
+    <h3>Resumo por Turma</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Turma</th><th>Tipo</th><th>Dias</th><th>Horário</th><th>Aulas</th><th>Valor/aula</th><th>Total</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html_str}</tbody>
+    </table>
+    <div class="total">Total Geral: {format_money(total_geral)}</div>
+  </div>
+
+  <div class="section">
+    <h3>Detalhamento de Datas</h3>
+    {details_html_str}
+  </div>
+
+  <div class="section controls">
+    <h3>Campos para Controle</h3>
+    <div><strong>Data do pagamento:</strong> {html.escape(data_pag_txt) if data_pag_txt else '<span class="line"></span>'}</div>
+    <div><strong>Forma:</strong> {html.escape(forma_txt) if forma_txt else '☐ Pix   ☐ Dinheiro   ☐ Transferência   ☐ Outro: ____________'}</div>
+    <div><strong>Responsável:</strong> {html.escape(responsavel_txt) if responsavel_txt else '<span class="line"></span>'}</div>
+    <div><strong>Assinatura:</strong> <span class="line"></span></div>
+    <div class="obs">Observação: valores calculados com base nas aulas finalizadas no período selecionado.</div>
+  </div>
+</body>
+</html>"""
+
+
+def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end, sessions, contato_whatsapp="", data_pagamento=None, forma_pagamento="", responsavel=""):
+    try:
+        from fpdf import FPDF
+    except Exception:
+        return None
+
+    def _safe(txt):
+        raw = str(txt or "")
+        raw = unicodedata.normalize("NFKD", raw)
+        raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
+        return raw.encode("latin-1", "ignore").decode("latin-1")
+
+    prof_label = str(professor_name or "Professor").strip() or "Professor"
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    contato_txt = str(contato_whatsapp or "").strip()
+    data_pag_txt = data_pagamento.strftime("%d/%m/%Y") if isinstance(data_pagamento, datetime.date) else str(data_pagamento or "").strip()
+    forma_txt = str(forma_pagamento or "").strip()
+    responsavel_txt = str(responsavel or "").strip()
+
+    grouped = {}
+    for item in sessions or []:
+        key = (
+            str(item.get("turma", "")).strip(),
+            str(item.get("modulo", "")).strip(),
+            str(item.get("hora", "")).strip(),
+            str(item.get("hora_fim", "")).strip(),
+            float(item.get("valor", 0) or 0),
+            str(item.get("dias_turma", "")).strip(),
+        )
+        grouped.setdefault(key, []).append(item)
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, _safe("Relatorio de Aulas e Pagamento"), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _safe(f"Professor: {prof_label}"), ln=1)
+    pdf.cell(0, 6, _safe(f"Periodo: {period_start_txt} a {period_end_txt}"), ln=1)
+    pdf.cell(0, 6, _safe(f"Contato (WhatsApp): {contato_txt or '-'}"), ln=1)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe("Resumo por Turma"), ln=1)
+    pdf.set_font("Helvetica", "B", 8)
+    headers = [
+        ("Turma", 30),
+        ("Tipo", 30),
+        ("Dias", 36),
+        ("Horario", 28),
+        ("Aulas", 14),
+        ("Valor/aula", 24),
+        ("Total", 24),
+    ]
+    for h, w in headers:
+        pdf.cell(w, 6, _safe(h), border=1)
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "", 8)
+    total_geral = 0.0
+    if grouped:
+        for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
+            turma, tipo, hora_ini, hora_fim, valor_aula, dias_turma = key
+            itens = grouped.get(key, [])
+            qtd_aulas = len(itens)
+            total = float(valor_aula) * qtd_aulas
+            total_geral += total
+            horario = f"{hora_ini} - {hora_fim}".strip(" -")
+            row = [
+                (turma or "-", 30),
+                (tipo or "-", 30),
+                (dias_turma or "-", 36),
+                (horario or "-", 28),
+                (str(qtd_aulas), 14),
+                (format_money(valor_aula), 24),
+                (format_money(total), 24),
+            ]
+            for value, width in row:
+                pdf.cell(width, 6, _safe(value), border=1)
+            pdf.ln(6)
+    else:
+        pdf.cell(sum(w for _, w in headers), 6, _safe("Sem aulas no periodo."), border=1, ln=1)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 7, _safe(f"Total Geral: {format_money(total_geral)}"), ln=1)
+    pdf.ln(1)
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe("Detalhamento de Datas"), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    if grouped:
+        for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
+            turma, tipo, hora_ini, hora_fim, valor_aula, _dias_turma = key
+            itens = grouped.get(key, [])
+            horario = f"{hora_ini} - {hora_fim}".strip(" -")
+            datas = []
+            for it in itens:
+                d = it.get("data_obj")
+                if isinstance(d, datetime.date):
+                    datas.append(d.strftime("%d/%m"))
+                else:
+                    datas.append(str(it.get("data", "")).strip())
+            if datas and isinstance(itens[-1].get("data_obj"), datetime.date):
+                datas[-1] = f"{datas[-1]}/{itens[-1]['data_obj'].strftime('%Y')}"
+            total = float(valor_aula) * len(itens)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.multi_cell(0, 5, _safe(f"{turma or '-'} ({tipo or '-'}) - {horario or '-'}"))
+            pdf.set_font("Helvetica", "", 9)
+            pdf.multi_cell(0, 5, _safe(f"Datas: {', '.join(datas) or '-'}"))
+            pdf.multi_cell(0, 5, _safe(f"Valor por aula: {format_money(valor_aula)}   |   Total: {format_money(total)}"))
+            pdf.ln(1)
+    else:
+        pdf.multi_cell(0, 5, _safe("Sem detalhamento no periodo."))
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe("Campos para Controle"), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, _safe(f"Data do pagamento: {data_pag_txt or '____/____/________'}"), ln=1)
+    pdf.cell(0, 5, _safe(f"Forma: {forma_txt or 'Pix / Dinheiro / Transferencia / Outro'}"), ln=1)
+    pdf.cell(0, 5, _safe(f"Responsavel: {responsavel_txt or '______________________________'}"), ln=1)
+    pdf.cell(0, 5, _safe("Assinatura: ______________________________"), ln=1)
+    pdf.ln(1)
+    pdf.multi_cell(0, 5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo selecionado."))
+
+    return pdf.output(dest="S").encode("latin-1", "ignore")
 
 def _teacher_payment_already_launched(session_obj):
     ref = _teacher_payment_ref_for_session(session_obj)
@@ -12516,6 +12812,7 @@ elif st.session_state["role"] == "Professor":
                                         "fim_em": "",
                                     }
                                 )
+                                _apply_teacher_payment_snapshot_to_session(st.session_state["class_sessions"][-1])
                                 save_list(CLASS_SESSIONS_FILE, st.session_state["class_sessions"])
                                 st.success("Aula iniciada com sucesso.")
                                 st.rerun()
@@ -12548,6 +12845,7 @@ elif st.session_state["role"] == "Professor":
                                     }
                                     for item in vip_consumidos
                                 ]
+                            _apply_teacher_payment_snapshot_to_session(sessao_ativa)
                             save_list(CLASS_SESSIONS_FILE, st.session_state["class_sessions"])
                             if vip_consumidos:
                                 resumo_vip = ", ".join(
@@ -16557,6 +16855,119 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.session_state["fin_teacher_pay_reset_pending"] = True
                         st.success(f"Pagamento de {launched} aula(s) lancado com sucesso.")
                         st.rerun()
+
+                st.divider()
+                st.markdown("### Gerar recibo de pagamento do professor")
+                st.caption("Gera um relatorio/recibo no formato do fechamento para assinatura.")
+                rp1, rp2, rp3 = st.columns(3)
+                with rp1:
+                    receipt_start = st.date_input(
+                        "Periodo inicial",
+                        value=_current_month_bounds(teacher_pay_month_ref)[0],
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_start",
+                    )
+                with rp2:
+                    receipt_end = st.date_input(
+                        "Periodo final",
+                        value=_current_month_bounds(teacher_pay_month_ref)[1],
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_end",
+                    )
+                with rp3:
+                    receipt_prof = st.selectbox(
+                        "Professor do recibo",
+                        teacher_options,
+                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
+                        key="fin_teacher_receipt_prof",
+                    )
+                receipt_teacher_obj = next(
+                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == str(receipt_prof).strip()),
+                    {},
+                )
+                rp4, rp5, rp6 = st.columns(3)
+                with rp4:
+                    receipt_whatsapp = st.text_input(
+                        "WhatsApp do professor",
+                        value=str(receipt_teacher_obj.get("celular", "")).strip(),
+                        key="fin_teacher_receipt_whatsapp",
+                    )
+                with rp5:
+                    receipt_pay_date = st.date_input(
+                        "Data do pagamento (campo controle)",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_date",
+                    )
+                with rp6:
+                    receipt_pay_method = st.selectbox(
+                        "Forma de pagamento (campo controle)",
+                        ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
+                        key="fin_teacher_receipt_method",
+                    )
+                receipt_responsavel = st.text_input(
+                    "Responsavel (campo controle)",
+                    value=str(st.session_state.get("user_name", "")).strip(),
+                    key="fin_teacher_receipt_responsavel",
+                )
+                if st.button("Gerar recibo (HTML)", key="fin_teacher_receipt_btn", type="secondary"):
+                    if str(receipt_prof).strip() in ("", "Todos"):
+                        st.error("Selecione um professor especifico para gerar o recibo.")
+                    elif receipt_end < receipt_start:
+                        st.error("Periodo final nao pode ser menor que o inicial.")
+                    else:
+                        receipt_sessions = _teacher_payment_sessions_for_receipt(
+                            receipt_start,
+                            receipt_end,
+                            professor_name=receipt_prof,
+                        )
+                        if not receipt_sessions:
+                            st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                        else:
+                            receipt_html = _teacher_payment_receipt_html(
+                                receipt_prof,
+                                receipt_start,
+                                receipt_end,
+                                receipt_sessions,
+                                contato_whatsapp=receipt_whatsapp,
+                                data_pagamento=receipt_pay_date,
+                                forma_pagamento=receipt_pay_method,
+                                responsavel=receipt_responsavel,
+                            )
+                            file_name = (
+                                f"Relatorio_Pagamento_Professor_{str(receipt_prof).strip().replace(' ', '_')}_"
+                                f"{receipt_start.strftime('%Y%m%d')}_{receipt_end.strftime('%Y%m%d')}.html"
+                            )
+                            st.success(
+                                f"Recibo gerado com {len(receipt_sessions)} aula(s) finalizada(s)."
+                            )
+                            st.download_button(
+                                "Baixar recibo (HTML)",
+                                data=receipt_html,
+                                file_name=file_name,
+                                mime="text/html",
+                                key=f"fin_teacher_receipt_download_{file_name}",
+                            )
+                            receipt_pdf = _teacher_payment_receipt_pdf_bytes(
+                                receipt_prof,
+                                receipt_start,
+                                receipt_end,
+                                receipt_sessions,
+                                contato_whatsapp=receipt_whatsapp,
+                                data_pagamento=receipt_pay_date,
+                                forma_pagamento=receipt_pay_method,
+                                responsavel=receipt_responsavel,
+                            )
+                            if receipt_pdf:
+                                st.download_button(
+                                    "Baixar recibo (PDF)",
+                                    data=receipt_pdf,
+                                    file_name=file_name.replace(".html", ".pdf"),
+                                    mime="application/pdf",
+                                    key=f"fin_teacher_receipt_download_pdf_{file_name}",
+                                )
+                            else:
+                                st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
 
                 st.divider()
                 st.markdown("### Lancamento manual de pagamento")
