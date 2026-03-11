@@ -15966,14 +15966,19 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             st.session_state["finance_main_menu"] = "Vencimentos"
         if st.session_state.get("finance_main_menu") not in finance_main_options:
             st.session_state["finance_main_menu"] = finance_main_options[0]
-        st.markdown('<div class="finance-radio-anchor"></div>', unsafe_allow_html=True)
-        finance_main = st.radio(
-            "Area do financeiro",
-            finance_main_options,
-            horizontal=True,
-            key="finance_main_menu",
-            label_visibility="collapsed",
-        )
+        st.markdown("### Areas do Financeiro")
+        fm_cols = st.columns(len(finance_main_options))
+        for i, option in enumerate(finance_main_options):
+            selected = str(st.session_state.get("finance_main_menu", "")) == option
+            if fm_cols[i].button(
+                option,
+                key=f"finance_main_box_{i}",
+                use_container_width=True,
+                type="primary" if selected else "secondary",
+            ):
+                st.session_state["finance_main_menu"] = option
+                st.rerun()
+        finance_main = st.session_state.get("finance_main_menu", finance_main_options[0])
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
@@ -16816,14 +16821,30 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ]
             if st.session_state.get("finance_pagar_menu") not in finance_pagar_options:
                 st.session_state["finance_pagar_menu"] = finance_pagar_options[0]
-            finance_pagar_menu = st.radio(
-                "Opcoes de Contas a Pagar",
-                finance_pagar_options,
-                key="finance_pagar_menu",
-            )
+            st.markdown("### Opcoes de Contas a Pagar")
+            fp_cols_top = st.columns(3)
+            fp_cols_bottom = st.columns(2)
+            fp_layout = [
+                (fp_cols_top[0], finance_pagar_options[0], 0),
+                (fp_cols_top[1], finance_pagar_options[1], 1),
+                (fp_cols_top[2], finance_pagar_options[2], 2),
+                (fp_cols_bottom[0], finance_pagar_options[3], 3),
+                (fp_cols_bottom[1], finance_pagar_options[4], 4),
+            ]
+            for col_ref, option, idx_option in fp_layout:
+                selected = str(st.session_state.get("finance_pagar_menu", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_pagar_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_pagar_menu"] = option
+                    st.rerun()
+            finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
-            with st.container(border=True):
+            if finance_pagar_menu == "Pagamento de Aulas do Professor":
                 st.markdown("### Lancar Pagamento de Aulas do Professor")
                 st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
                 tp1, tp2, tp3 = st.columns(3)
@@ -17268,467 +17289,472 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success("Pagamento manual do professor lancado com sucesso.")
                             st.rerun()
 
-            with st.form("add_pag"):
-                st.markdown("### Lancar Despesa")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    desc = st.text_input("Descricao")
-                with c2:
-                    val_parcela_pag_input = st.text_input("Valor Parcela *")
-                with c3:
-                    categoria_lancamento_pag = st.selectbox(
-                        "Categoria do lancamento",
-                        ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"],
-                    )
-                ref_pag = {
-                    "Fornecedor": "Fornecedor",
-                    "Professor": "Professor",
-                    "Interno": "Setor interno",
-                    "Aluno": "Aluno",
-                    "Outro": "Referencia",
-                }.get(categoria_lancamento_pag, "Referencia")
-                c4, c5, c6, c6b = st.columns(4)
-                with c4:
-                    forn = st.text_input(f"{ref_pag}")
-                with c5:
-                    data_pag = st.date_input("Data do lancamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c6:
-                    venc_pag = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                with c6b:
-                    pag_due_day = st.selectbox(
-                        "Dia do vencimento",
-                        list(range(1, 31)),
-                        index=max(0, min(29, datetime.date.today().day - 1)),
-                        format_func=lambda d: f"Dia {d}",
-                    )
-
-                c7, c8, c9 = st.columns(3)
-                with c7:
-                    qtd_pag = st.number_input("Parcelas *", min_value=1, max_value=24, value=1, step=1)
-                val_parcela_pag_num = parse_money(val_parcela_pag_input)
-                qtd_pag_int = max(1, int(qtd_pag))
-                valor_parcela_pag = f"{val_parcela_pag_num:.2f}".replace(".", ",") if val_parcela_pag_num > 0 else "0,00"
-                val_total_pag_num = val_parcela_pag_num * qtd_pag_int
-                valor_total_pag_txt = f"{val_total_pag_num:.2f}".replace(".", ",")
-                with c8:
-                    st.text_input("Valor Total * (automatico)", value=valor_total_pag_txt, disabled=True, key="pag_valor_total_auto")
-                with c9:
-                    numero_pedido_pag = st.text_input("Numero do pedido")
-
-                c10, c11 = st.columns(2)
-                with c10:
-                    cobranca_pag = st.selectbox("Forma de pagamento", ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"])
-                with c11:
-                    status_pag = st.selectbox("Status", ["Aberto", "Pago"])
-
-                if st.form_submit_button("Lancar"):
-                    if not desc.strip() or not forn.strip() or val_parcela_pag_num <= 0:
-                        st.error("Informe descricao, referencia e valor da parcela valido.")
-                    else:
-                        lote_id_pag = f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
-                        venc_pag_base = _month_due_date(venc_pag, pag_due_day)
-                        for i in range(qtd_pag_int):
-                            venc_item = add_months(venc_pag_base, i) if qtd_pag_int > 1 else venc_pag_base
-                            parcela_txt = f"{1 + i}/{qtd_pag_int}" if qtd_pag_int > 1 else "1"
-                            st.session_state["payables"].append(
-                                {
-                                    "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
-                                    "descricao": desc.strip(),
-                                    "valor": valor_total_pag_txt,
-                                    "valor_parcela": valor_parcela_pag,
-                                    "parcela": parcela_txt,
-                                    "fornecedor": forn.strip(),
-                                    "categoria_lancamento": categoria_lancamento_pag,
-                                    "numero_pedido": numero_pedido_pag.strip(),
-                                    "data": data_pag.strftime("%d/%m/%Y"),
-                                    "vencimento": venc_item.strftime("%d/%m/%Y"),
-                                    "cobranca": cobranca_pag,
-                                    "status": status_pag,
-                                    "lote_id": lote_id_pag,
-                                }
-                            )
-                        save_list(PAYABLES_FILE, st.session_state["payables"])
-                        st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
-
-            st.markdown("### Despesas")
             despesas = st.session_state["payables"]
-            if despesas:
-                df_pag = pd.DataFrame(despesas)
-                col_order_pag = [
-                    "codigo",
-                    "data",
-                    "fornecedor",
-                    "descricao",
-                    "categoria_lancamento",
-                    "turma",
-                    "modulo",
-                    "data_aula",
-                    "duracao_minutos",
-                    "numero_pedido",
-                    "valor_parcela",
-                    "parcela",
-                    "vencimento",
-                    "status",
-                    "cobranca",
-                ]
-                df_pag = df_pag[[c for c in col_order_pag if c in df_pag.columns]]
-                st.dataframe(df_pag, use_container_width=True)
-            else:
-                st.info("Nenhuma conta a pagar cadastrada.")
-
-            st.markdown("### Acoes em massa (Despesas)")
-            if st.session_state.pop("fin_pag_bulk_reset_pending", False):
-                st.session_state.pop("fin_pag_bulk_codes", None)
-                st.session_state.pop("fin_pag_bulk_confirm_delete", None)
-            pag_bulk_all_codes = list(
-                dict.fromkeys(
-                    [
-                        str(p.get("codigo", "")).strip()
-                        for p in despesas
-                        if str(p.get("codigo", "")).strip()
-                    ]
-                )
-            )
-            pag_labels_by_code = {}
-            for p in despesas:
-                codigo_pag = str(p.get("codigo", "")).strip()
-                if not codigo_pag:
-                    continue
-                pag_labels_by_code[codigo_pag] = (
-                    f"{codigo_pag} | {str(p.get('fornecedor', '')).strip()} | "
-                    f"{str(p.get('descricao', '')).strip()} | Parcela {str(p.get('parcela', '')).strip()} | "
-                    f"{str(p.get('valor_parcela', p.get('valor', ''))).strip()} | {str(p.get('status', '')).strip()}"
-                )
-
-            pbk1, pbk2, pbk3 = st.columns(3)
-            with pbk1:
-                if st.button("Selecionar TODAS", key="fin_pag_bulk_sel_all"):
-                    st.session_state["fin_pag_bulk_codes"] = list(pag_bulk_all_codes)
-                    st.rerun()
-            with pbk2:
-                if st.button("Limpar selecao", key="fin_pag_bulk_sel_clear"):
-                    st.session_state["fin_pag_bulk_codes"] = []
-                    st.rerun()
-            with pbk3:
-                st.caption(f"Base: {len(pag_bulk_all_codes)} despesa(s)")
-
-            selected_pag_codes = st.multiselect(
-                "Selecionar despesas",
-                pag_bulk_all_codes,
-                key="fin_pag_bulk_codes",
-                format_func=lambda code: pag_labels_by_code.get(code, code),
-            )
-            pbk4, pbk5 = st.columns([1.6, 2.4])
-            with pbk4:
-                pag_bulk_confirm = st.checkbox(
-                    "Confirmo exclusao em massa",
-                    value=False,
-                    key="fin_pag_bulk_confirm_delete",
-                )
-            with pbk5:
-                if st.button(
-                    "Excluir despesas selecionadas",
-                    type="primary",
-                    key="fin_pag_bulk_delete_btn",
-                    disabled=not bool(selected_pag_codes),
-                ):
-                    if not pag_bulk_confirm:
-                        st.error("Marque a confirmacao para excluir em massa.")
-                    else:
-                        before_pag = len(st.session_state.get("payables", []))
-                        st.session_state["payables"] = [
-                            p
-                            for p in st.session_state.get("payables", [])
-                            if str(p.get("codigo", "")).strip() not in selected_pag_codes
-                        ]
-                        removed_pag = before_pag - len(st.session_state.get("payables", []))
-                        save_list(PAYABLES_FILE, st.session_state["payables"])
-                        st.session_state["fin_pag_bulk_reset_pending"] = True
-                        st.success(f"{removed_pag} despesa(s) excluida(s).")
-                        st.rerun()
-
-            st.markdown("### Gerenciamento de Despesas")
-            if not despesas:
-                st.info("Nenhuma despesa para gerenciar.")
-            else:
-                opcoes_pag = [
-                    f"{p.get('codigo','')} | {p.get('fornecedor','')} | {p.get('descricao','')} | Venc: {p.get('vencimento','')}"
-                    for p in despesas
-                ]
-                idx_pag = st.selectbox(
-                    "Selecione a despesa",
-                    list(range(len(despesas))),
-                    format_func=lambda i: opcoes_pag[i],
-                    key="manage_pag_idx",
-                )
-                pag_obj = despesas[idx_pag]
-                cat_pag_obj = str(pag_obj.get("categoria_lancamento", "")).strip().lower()
-                professor_pag_obj = str(pag_obj.get("fornecedor", "")).strip()
-                if cat_pag_obj == "professor" and professor_pag_obj:
-                    st.markdown("#### Recibo rapido do professor selecionado")
-                    base_data_recibo = (
-                        parse_date(pag_obj.get("data_aula", ""))
-                        or parse_date(pag_obj.get("data", ""))
-                        or datetime.date.today()
-                    )
-                    mes_ini, mes_fim = _current_month_bounds(base_data_recibo)
-                    rr1, rr2 = st.columns(2)
-                    with rr1:
-                        recibo_ini = st.date_input(
-                            "Periodo inicial (recibo rapido)",
-                            value=mes_ini,
-                            format="DD/MM/YYYY",
-                            key=f"fin_fast_receipt_start_{idx_pag}",
-                        )
-                    with rr2:
-                        recibo_fim = st.date_input(
-                            "Periodo final (recibo rapido)",
-                            value=mes_fim,
-                            format="DD/MM/YYYY",
-                            key=f"fin_fast_receipt_end_{idx_pag}",
-                        )
-                    rb_html, rb_pdf = st.columns(2)
-                    fast_html = rb_html.button(
-                        f"Gerar recibo HTML - {professor_pag_obj}",
-                        key=f"fin_fast_receipt_btn_html_{idx_pag}",
-                    )
-                    fast_pdf = rb_pdf.button(
-                        f"Gerar recibo PDF - {professor_pag_obj}",
-                        key=f"fin_fast_receipt_btn_pdf_{idx_pag}",
-                    )
-                    if fast_html or fast_pdf:
-                        if recibo_fim < recibo_ini:
-                            st.error("Periodo final nao pode ser menor que o inicial.")
-                        else:
-                            receipt_sessions = _teacher_payment_sessions_for_receipt(
-                                recibo_ini,
-                                recibo_fim,
-                                professor_name=professor_pag_obj,
-                            )
-                            if not receipt_sessions:
-                                st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
-                            else:
-                                teacher_obj_fast = next(
-                                    (
-                                        t for t in st.session_state.get("teachers", [])
-                                        if str(t.get("nome", "")).strip() == professor_pag_obj
-                                    ),
-                                    {},
-                                )
-                                whatsapp_fast = str(teacher_obj_fast.get("celular", "")).strip()
-                                responsavel_fast = str(st.session_state.get("user_name", "")).strip()
-                                html_fast = _teacher_payment_receipt_html(
-                                    professor_pag_obj,
-                                    recibo_ini,
-                                    recibo_fim,
-                                    receipt_sessions,
-                                    contato_whatsapp=whatsapp_fast,
-                                    data_pagamento=datetime.date.today(),
-                                    forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
-                                    responsavel=responsavel_fast,
-                                )
-                                file_fast = (
-                                    f"Relatorio_Pagamento_Professor_{professor_pag_obj.replace(' ', '_')}_"
-                                    f"{recibo_ini.strftime('%Y%m%d')}_{recibo_fim.strftime('%Y%m%d')}"
-                                )
-                                st.success(f"Recibo gerado com {len(receipt_sessions)} aula(s).")
-                                if fast_html:
-                                    st.download_button(
-                                        "Baixar recibo rapido (HTML)",
-                                        data=html_fast,
-                                        file_name=f"{file_fast}.html",
-                                        mime="text/html",
-                                        key=f"fin_fast_receipt_html_{idx_pag}",
-                                    )
-                                pdf_fast = _teacher_payment_receipt_pdf_bytes(
-                                    professor_pag_obj,
-                                    recibo_ini,
-                                    recibo_fim,
-                                    receipt_sessions,
-                                    contato_whatsapp=whatsapp_fast,
-                                    data_pagamento=datetime.date.today(),
-                                    forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
-                                    responsavel=responsavel_fast,
-                                )
-                                if pdf_fast and fast_pdf:
-                                    st.download_button(
-                                        "Baixar recibo rapido (PDF)",
-                                        data=pdf_fast,
-                                        file_name=f"{file_fast}.pdf",
-                                        mime="application/pdf",
-                                        key=f"fin_fast_receipt_pdf_{idx_pag}",
-                                    )
-                                elif fast_pdf:
-                                    st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
-                parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
-                data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
-                venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
-                qtd_base_pag = max(1, int(qtd_atual_pag))
-                valor_parcela_base_pag_num = parse_money(pag_obj.get("valor_parcela", ""))
-                if valor_parcela_base_pag_num <= 0:
-                    valor_total_base_pag_num = parse_money(pag_obj.get("valor", ""))
-                    if valor_total_base_pag_num > 0:
-                        valor_parcela_base_pag_num = valor_total_base_pag_num / qtd_base_pag
-                valor_parcela_base_pag_txt = (
-                    f"{valor_parcela_base_pag_num:.2f}".replace(".", ",")
-                    if valor_parcela_base_pag_num > 0
-                    else ""
-                )
-
-                cat_lanc_opts_pag = ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"]
-                if pag_obj.get("categoria_lancamento", "") and pag_obj.get("categoria_lancamento", "") not in cat_lanc_opts_pag:
-                    cat_lanc_opts_pag.append(pag_obj.get("categoria_lancamento", ""))
-
-                cobranca_opts_pag = ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"]
-                if pag_obj.get("cobranca", "") and pag_obj.get("cobranca", "") not in cobranca_opts_pag:
-                    cobranca_opts_pag.append(pag_obj.get("cobranca", ""))
-
-                status_opts_pag = ["Aberto", "Pago", "Cancelado"]
-                if pag_obj.get("status", "") and pag_obj.get("status", "") not in status_opts_pag:
-                    status_opts_pag.append(pag_obj.get("status", ""))
-
-                with st.form("manage_pag_form"):
-                    mp1, mp2, mp3 = st.columns(3)
-                    with mp1:
-                        new_desc_pag = st.text_input("Descricao", value=str(pag_obj.get("descricao", "")))
-                    with mp2:
-                        new_val_parcela_pag_input = st.text_input(
-                            "Valor da parcela",
-                            value=valor_parcela_base_pag_txt,
-                        )
-                    with mp3:
-                        new_qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_pag)), step=1)
-
-                    mp4, mp5, mp6 = st.columns(3)
-                    with mp4:
-                        new_forn_pag = st.text_input("Fornecedor/Referencia", value=str(pag_obj.get("fornecedor", "")))
-                    with mp5:
-                        cat_pag = str(pag_obj.get("categoria_lancamento", "Fornecedor"))
-                        new_cat_pag = st.selectbox(
+            if finance_pagar_menu == "Lancar Despesa":
+                with st.form("add_pag"):
+                    st.markdown("### Lancar Despesa")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        desc = st.text_input("Descricao")
+                    with c2:
+                        val_parcela_pag_input = st.text_input("Valor Parcela *")
+                    with c3:
+                        categoria_lancamento_pag = st.selectbox(
                             "Categoria do lancamento",
-                            cat_lanc_opts_pag,
-                            index=cat_lanc_opts_pag.index(cat_pag) if cat_pag in cat_lanc_opts_pag else 0,
+                            ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"],
                         )
-                    with mp6:
-                        new_numero_pedido_pag = st.text_input("Numero do pedido", value=str(pag_obj.get("numero_pedido", "")))
-
-                    mp7, mp8, mp9 = st.columns(3)
-                    with mp7:
-                        new_data_pag = st.date_input("Data do lancamento", value=data_atual_pag, format="DD/MM/YYYY")
-                    with mp8:
-                        new_venc_pag = st.date_input("Vencimento", value=venc_atual_pag, format="DD/MM/YYYY")
-                    with mp9:
-                        cob_pag = str(pag_obj.get("cobranca", "Boleto"))
-                        new_cobranca_pag = st.selectbox(
-                            "Forma de pagamento",
-                            cobranca_opts_pag,
-                            index=cobranca_opts_pag.index(cob_pag) if cob_pag in cobranca_opts_pag else 0,
+                    ref_pag = {
+                        "Fornecedor": "Fornecedor",
+                        "Professor": "Professor",
+                        "Interno": "Setor interno",
+                        "Aluno": "Aluno",
+                        "Outro": "Referencia",
+                    }.get(categoria_lancamento_pag, "Referencia")
+                    c4, c5, c6, c6b = st.columns(4)
+                    with c4:
+                        forn = st.text_input(f"{ref_pag}")
+                    with c5:
+                        data_pag = st.date_input("Data do lancamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c6:
+                        venc_pag = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c6b:
+                        pag_due_day = st.selectbox(
+                            "Dia do vencimento",
+                            list(range(1, 31)),
+                            index=max(0, min(29, datetime.date.today().day - 1)),
+                            format_func=lambda d: f"Dia {d}",
                         )
-
-                    mp10, mp11 = st.columns(2)
-                    with mp10:
-                        status_pag_atual = str(pag_obj.get("status", "Aberto"))
-                        new_status_pag = st.selectbox(
-                            "Status",
-                            status_opts_pag,
-                            index=status_opts_pag.index(status_pag_atual) if status_pag_atual in status_opts_pag else 0,
-                        )
-
-                    new_val_parcela_pag_num = parse_money(new_val_parcela_pag_input)
-                    new_qtd_pag_int = max(1, int(new_qtd_pag))
-                    new_val_total_pag_num = new_val_parcela_pag_num * new_qtd_pag_int
-                    new_valor_parcela_pag = f"{new_val_parcela_pag_num:.2f}".replace(".", ",") if new_val_parcela_pag_num > 0 else "0,00"
-                    new_val_total_pag = f"{new_val_total_pag_num:.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
-                    with mp11:
-                        st.text_input("Valor total (automatico)", value=new_val_total_pag, disabled=True)
-
-                    apply_all_pag = st.checkbox(
-                        "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
-                        value=bool(qtd_atual_pag > 1),
-                        key=f"pag_apply_all_{idx_pag}",
-                    )
-
-                    mpc1, mpc2 = st.columns(2)
-                    with mpc1:
-                        salvar_pag = st.form_submit_button("Salvar alteracoes")
-                    with mpc2:
-                        excluir_pag = st.form_submit_button("Excluir despesa", type="primary")
-
-                    if salvar_pag:
-                        if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_parcela_pag_num <= 0:
+    
+                    c7, c8, c9 = st.columns(3)
+                    with c7:
+                        qtd_pag = st.number_input("Parcelas *", min_value=1, max_value=24, value=1, step=1)
+                    val_parcela_pag_num = parse_money(val_parcela_pag_input)
+                    qtd_pag_int = max(1, int(qtd_pag))
+                    valor_parcela_pag = f"{val_parcela_pag_num:.2f}".replace(".", ",") if val_parcela_pag_num > 0 else "0,00"
+                    val_total_pag_num = val_parcela_pag_num * qtd_pag_int
+                    valor_total_pag_txt = f"{val_total_pag_num:.2f}".replace(".", ",")
+                    with c8:
+                        st.text_input("Valor Total * (automatico)", value=valor_total_pag_txt, disabled=True, key="pag_valor_total_auto")
+                    with c9:
+                        numero_pedido_pag = st.text_input("Numero do pedido")
+    
+                    c10, c11 = st.columns(2)
+                    with c10:
+                        cobranca_pag = st.selectbox("Forma de pagamento", ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"])
+                    with c11:
+                        status_pag = st.selectbox("Status", ["Aberto", "Pago"])
+    
+                    if st.form_submit_button("Lancar"):
+                        if not desc.strip() or not forn.strip() or val_parcela_pag_num <= 0:
                             st.error("Informe descricao, referencia e valor da parcela valido.")
                         else:
-                            lote_id_pag = str(pag_obj.get("lote_id", "")).strip() or f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
-
-                            if apply_all_pag:
-                                related_idx = _related_payable_indices(despesas, idx_pag)
-                                related_idx = _sort_indices_by_parcela(despesas, related_idx)
-                                if not related_idx:
-                                    related_idx = [idx_pag]
-                                related_items = [despesas[i] for i in related_idx if 0 <= i < len(despesas)]
-                                existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
-                                if not existing_codes:
-                                    existing_codes = [str(pag_obj.get("codigo", "")).strip()] if str(pag_obj.get("codigo", "")).strip() else []
-
-                                parcela_base_pag = max(1, parcela_atual_pag)
-                                primeiro_venc_pag = add_months(new_venc_pag, -(parcela_base_pag - 1)) if parcela_base_pag > 1 else new_venc_pag
-                                if primeiro_venc_pag is None:
-                                    primeiro_venc_pag = new_venc_pag
-
-                                related_set_pag = set(related_idx)
-                                st.session_state["payables"] = [
-                                    p for pos, p in enumerate(despesas) if pos not in related_set_pag
-                                ]
-                                despesas = st.session_state["payables"]
-
-                                for i in range(new_qtd_pag_int):
-                                    codigo_pag_item = (
-                                        existing_codes[i]
-                                        if i < len(existing_codes) and existing_codes[i]
-                                        else f"PAG-{uuid.uuid4().hex[:8].upper()}"
-                                    )
-                                    venc_pag_item = add_months(primeiro_venc_pag, i) or new_venc_pag
-                                    parcela_txt_pag = f"{i + 1}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else "1"
-                                    st.session_state["payables"].append(
-                                        {
-                                            "codigo": codigo_pag_item,
-                                            "descricao": new_desc_pag.strip(),
-                                            "valor": new_val_total_pag,
-                                            "valor_parcela": new_valor_parcela_pag,
-                                            "parcela": parcela_txt_pag,
-                                            "fornecedor": new_forn_pag.strip(),
-                                            "categoria_lancamento": new_cat_pag,
-                                            "numero_pedido": new_numero_pedido_pag.strip(),
-                                            "data": new_data_pag.strftime("%d/%m/%Y"),
-                                            "vencimento": venc_pag_item.strftime("%d/%m/%Y"),
-                                            "cobranca": new_cobranca_pag,
-                                            "status": new_status_pag,
-                                            "lote_id": lote_id_pag,
-                                        }
-                                    )
-                            else:
-                                pag_obj["descricao"] = new_desc_pag.strip()
-                                pag_obj["valor"] = new_val_total_pag
-                                pag_obj["valor_parcela"] = new_valor_parcela_pag
-                                pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
-                                pag_obj["fornecedor"] = new_forn_pag.strip()
-                                pag_obj["categoria_lancamento"] = new_cat_pag
-                                pag_obj["numero_pedido"] = new_numero_pedido_pag.strip()
-                                pag_obj["data"] = new_data_pag.strftime("%d/%m/%Y")
-                                pag_obj["vencimento"] = new_venc_pag.strftime("%d/%m/%Y")
-                                pag_obj["cobranca"] = new_cobranca_pag
-                                pag_obj["status"] = new_status_pag
-                                pag_obj["lote_id"] = lote_id_pag
+                            lote_id_pag = f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+                            venc_pag_base = _month_due_date(venc_pag, pag_due_day)
+                            for i in range(qtd_pag_int):
+                                venc_item = add_months(venc_pag_base, i) if qtd_pag_int > 1 else venc_pag_base
+                                parcela_txt = f"{1 + i}/{qtd_pag_int}" if qtd_pag_int > 1 else "1"
+                                st.session_state["payables"].append(
+                                    {
+                                        "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
+                                        "descricao": desc.strip(),
+                                        "valor": valor_total_pag_txt,
+                                        "valor_parcela": valor_parcela_pag,
+                                        "parcela": parcela_txt,
+                                        "fornecedor": forn.strip(),
+                                        "categoria_lancamento": categoria_lancamento_pag,
+                                        "numero_pedido": numero_pedido_pag.strip(),
+                                        "data": data_pag.strftime("%d/%m/%Y"),
+                                        "vencimento": venc_item.strftime("%d/%m/%Y"),
+                                        "cobranca": cobranca_pag,
+                                        "status": status_pag,
+                                        "lote_id": lote_id_pag,
+                                    }
+                                )
                             save_list(PAYABLES_FILE, st.session_state["payables"])
-                            st.success("Despesa atualizada!")
-                            st.rerun()
+                            st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
 
-                    if excluir_pag:
-                        st.session_state["payables"].remove(pag_obj)
-                        save_list(PAYABLES_FILE, st.session_state["payables"])
-                        st.success("Despesa excluida.")
+            if finance_pagar_menu == "Despesas":
+                st.markdown("### Despesas")
+                despesas = st.session_state["payables"]
+                if despesas:
+                    df_pag = pd.DataFrame(despesas)
+                    col_order_pag = [
+                        "codigo",
+                        "data",
+                        "fornecedor",
+                        "descricao",
+                        "categoria_lancamento",
+                        "turma",
+                        "modulo",
+                        "data_aula",
+                        "duracao_minutos",
+                        "numero_pedido",
+                        "valor_parcela",
+                        "parcela",
+                        "vencimento",
+                        "status",
+                        "cobranca",
+                    ]
+                    df_pag = df_pag[[c for c in col_order_pag if c in df_pag.columns]]
+                    st.dataframe(df_pag, use_container_width=True)
+                else:
+                    st.info("Nenhuma conta a pagar cadastrada.")
+    
+            if finance_pagar_menu == "Acoes em massa (Despesas)":
+                st.markdown("### Acoes em massa (Despesas)")
+                if st.session_state.pop("fin_pag_bulk_reset_pending", False):
+                    st.session_state.pop("fin_pag_bulk_codes", None)
+                    st.session_state.pop("fin_pag_bulk_confirm_delete", None)
+                pag_bulk_all_codes = list(
+                    dict.fromkeys(
+                        [
+                            str(p.get("codigo", "")).strip()
+                            for p in despesas
+                            if str(p.get("codigo", "")).strip()
+                        ]
+                    )
+                )
+                pag_labels_by_code = {}
+                for p in despesas:
+                    codigo_pag = str(p.get("codigo", "")).strip()
+                    if not codigo_pag:
+                        continue
+                    pag_labels_by_code[codigo_pag] = (
+                        f"{codigo_pag} | {str(p.get('fornecedor', '')).strip()} | "
+                        f"{str(p.get('descricao', '')).strip()} | Parcela {str(p.get('parcela', '')).strip()} | "
+                        f"{str(p.get('valor_parcela', p.get('valor', ''))).strip()} | {str(p.get('status', '')).strip()}"
+                    )
+    
+                pbk1, pbk2, pbk3 = st.columns(3)
+                with pbk1:
+                    if st.button("Selecionar TODAS", key="fin_pag_bulk_sel_all"):
+                        st.session_state["fin_pag_bulk_codes"] = list(pag_bulk_all_codes)
                         st.rerun()
-
+                with pbk2:
+                    if st.button("Limpar selecao", key="fin_pag_bulk_sel_clear"):
+                        st.session_state["fin_pag_bulk_codes"] = []
+                        st.rerun()
+                with pbk3:
+                    st.caption(f"Base: {len(pag_bulk_all_codes)} despesa(s)")
+    
+                selected_pag_codes = st.multiselect(
+                    "Selecionar despesas",
+                    pag_bulk_all_codes,
+                    key="fin_pag_bulk_codes",
+                    format_func=lambda code: pag_labels_by_code.get(code, code),
+                )
+                pbk4, pbk5 = st.columns([1.6, 2.4])
+                with pbk4:
+                    pag_bulk_confirm = st.checkbox(
+                        "Confirmo exclusao em massa",
+                        value=False,
+                        key="fin_pag_bulk_confirm_delete",
+                    )
+                with pbk5:
+                    if st.button(
+                        "Excluir despesas selecionadas",
+                        type="primary",
+                        key="fin_pag_bulk_delete_btn",
+                        disabled=not bool(selected_pag_codes),
+                    ):
+                        if not pag_bulk_confirm:
+                            st.error("Marque a confirmacao para excluir em massa.")
+                        else:
+                            before_pag = len(st.session_state.get("payables", []))
+                            st.session_state["payables"] = [
+                                p
+                                for p in st.session_state.get("payables", [])
+                                if str(p.get("codigo", "")).strip() not in selected_pag_codes
+                            ]
+                            removed_pag = before_pag - len(st.session_state.get("payables", []))
+                            save_list(PAYABLES_FILE, st.session_state["payables"])
+                            st.session_state["fin_pag_bulk_reset_pending"] = True
+                            st.success(f"{removed_pag} despesa(s) excluida(s).")
+                            st.rerun()
+    
+            if finance_pagar_menu == "Gerenciamento de Despesas":
+                st.markdown("### Gerenciamento de Despesas")
+                if not despesas:
+                    st.info("Nenhuma despesa para gerenciar.")
+                else:
+                    opcoes_pag = [
+                        f"{p.get('codigo','')} | {p.get('fornecedor','')} | {p.get('descricao','')} | Venc: {p.get('vencimento','')}"
+                        for p in despesas
+                    ]
+                    idx_pag = st.selectbox(
+                        "Selecione a despesa",
+                        list(range(len(despesas))),
+                        format_func=lambda i: opcoes_pag[i],
+                        key="manage_pag_idx",
+                    )
+                    pag_obj = despesas[idx_pag]
+                    cat_pag_obj = str(pag_obj.get("categoria_lancamento", "")).strip().lower()
+                    professor_pag_obj = str(pag_obj.get("fornecedor", "")).strip()
+                    if cat_pag_obj == "professor" and professor_pag_obj:
+                        st.markdown("#### Recibo rapido do professor selecionado")
+                        base_data_recibo = (
+                            parse_date(pag_obj.get("data_aula", ""))
+                            or parse_date(pag_obj.get("data", ""))
+                            or datetime.date.today()
+                        )
+                        mes_ini, mes_fim = _current_month_bounds(base_data_recibo)
+                        rr1, rr2 = st.columns(2)
+                        with rr1:
+                            recibo_ini = st.date_input(
+                                "Periodo inicial (recibo rapido)",
+                                value=mes_ini,
+                                format="DD/MM/YYYY",
+                                key=f"fin_fast_receipt_start_{idx_pag}",
+                            )
+                        with rr2:
+                            recibo_fim = st.date_input(
+                                "Periodo final (recibo rapido)",
+                                value=mes_fim,
+                                format="DD/MM/YYYY",
+                                key=f"fin_fast_receipt_end_{idx_pag}",
+                            )
+                        rb_html, rb_pdf = st.columns(2)
+                        fast_html = rb_html.button(
+                            f"Gerar recibo HTML - {professor_pag_obj}",
+                            key=f"fin_fast_receipt_btn_html_{idx_pag}",
+                        )
+                        fast_pdf = rb_pdf.button(
+                            f"Gerar recibo PDF - {professor_pag_obj}",
+                            key=f"fin_fast_receipt_btn_pdf_{idx_pag}",
+                        )
+                        if fast_html or fast_pdf:
+                            if recibo_fim < recibo_ini:
+                                st.error("Periodo final nao pode ser menor que o inicial.")
+                            else:
+                                receipt_sessions = _teacher_payment_sessions_for_receipt(
+                                    recibo_ini,
+                                    recibo_fim,
+                                    professor_name=professor_pag_obj,
+                                )
+                                if not receipt_sessions:
+                                    st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                                else:
+                                    teacher_obj_fast = next(
+                                        (
+                                            t for t in st.session_state.get("teachers", [])
+                                            if str(t.get("nome", "")).strip() == professor_pag_obj
+                                        ),
+                                        {},
+                                    )
+                                    whatsapp_fast = str(teacher_obj_fast.get("celular", "")).strip()
+                                    responsavel_fast = str(st.session_state.get("user_name", "")).strip()
+                                    html_fast = _teacher_payment_receipt_html(
+                                        professor_pag_obj,
+                                        recibo_ini,
+                                        recibo_fim,
+                                        receipt_sessions,
+                                        contato_whatsapp=whatsapp_fast,
+                                        data_pagamento=datetime.date.today(),
+                                        forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
+                                        responsavel=responsavel_fast,
+                                    )
+                                    file_fast = (
+                                        f"Relatorio_Pagamento_Professor_{professor_pag_obj.replace(' ', '_')}_"
+                                        f"{recibo_ini.strftime('%Y%m%d')}_{recibo_fim.strftime('%Y%m%d')}"
+                                    )
+                                    st.success(f"Recibo gerado com {len(receipt_sessions)} aula(s).")
+                                    if fast_html:
+                                        st.download_button(
+                                            "Baixar recibo rapido (HTML)",
+                                            data=html_fast,
+                                            file_name=f"{file_fast}.html",
+                                            mime="text/html",
+                                            key=f"fin_fast_receipt_html_{idx_pag}",
+                                        )
+                                    pdf_fast = _teacher_payment_receipt_pdf_bytes(
+                                        professor_pag_obj,
+                                        recibo_ini,
+                                        recibo_fim,
+                                        receipt_sessions,
+                                        contato_whatsapp=whatsapp_fast,
+                                        data_pagamento=datetime.date.today(),
+                                        forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
+                                        responsavel=responsavel_fast,
+                                    )
+                                    if pdf_fast and fast_pdf:
+                                        st.download_button(
+                                            "Baixar recibo rapido (PDF)",
+                                            data=pdf_fast,
+                                            file_name=f"{file_fast}.pdf",
+                                            mime="application/pdf",
+                                            key=f"fin_fast_receipt_pdf_{idx_pag}",
+                                        )
+                                    elif fast_pdf:
+                                        st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
+                    parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
+                    data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
+                    venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
+                    qtd_base_pag = max(1, int(qtd_atual_pag))
+                    valor_parcela_base_pag_num = parse_money(pag_obj.get("valor_parcela", ""))
+                    if valor_parcela_base_pag_num <= 0:
+                        valor_total_base_pag_num = parse_money(pag_obj.get("valor", ""))
+                        if valor_total_base_pag_num > 0:
+                            valor_parcela_base_pag_num = valor_total_base_pag_num / qtd_base_pag
+                    valor_parcela_base_pag_txt = (
+                        f"{valor_parcela_base_pag_num:.2f}".replace(".", ",")
+                        if valor_parcela_base_pag_num > 0
+                        else ""
+                    )
+    
+                    cat_lanc_opts_pag = ["Fornecedor", "Professor", "Interno", "Aluno", "Outro"]
+                    if pag_obj.get("categoria_lancamento", "") and pag_obj.get("categoria_lancamento", "") not in cat_lanc_opts_pag:
+                        cat_lanc_opts_pag.append(pag_obj.get("categoria_lancamento", ""))
+    
+                    cobranca_opts_pag = ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"]
+                    if pag_obj.get("cobranca", "") and pag_obj.get("cobranca", "") not in cobranca_opts_pag:
+                        cobranca_opts_pag.append(pag_obj.get("cobranca", ""))
+    
+                    status_opts_pag = ["Aberto", "Pago", "Cancelado"]
+                    if pag_obj.get("status", "") and pag_obj.get("status", "") not in status_opts_pag:
+                        status_opts_pag.append(pag_obj.get("status", ""))
+    
+                    with st.form("manage_pag_form"):
+                        mp1, mp2, mp3 = st.columns(3)
+                        with mp1:
+                            new_desc_pag = st.text_input("Descricao", value=str(pag_obj.get("descricao", "")))
+                        with mp2:
+                            new_val_parcela_pag_input = st.text_input(
+                                "Valor da parcela",
+                                value=valor_parcela_base_pag_txt,
+                            )
+                        with mp3:
+                            new_qtd_pag = st.number_input("Quantidade de parcelas", min_value=1, max_value=24, value=int(max(1, qtd_atual_pag)), step=1)
+    
+                        mp4, mp5, mp6 = st.columns(3)
+                        with mp4:
+                            new_forn_pag = st.text_input("Fornecedor/Referencia", value=str(pag_obj.get("fornecedor", "")))
+                        with mp5:
+                            cat_pag = str(pag_obj.get("categoria_lancamento", "Fornecedor"))
+                            new_cat_pag = st.selectbox(
+                                "Categoria do lancamento",
+                                cat_lanc_opts_pag,
+                                index=cat_lanc_opts_pag.index(cat_pag) if cat_pag in cat_lanc_opts_pag else 0,
+                            )
+                        with mp6:
+                            new_numero_pedido_pag = st.text_input("Numero do pedido", value=str(pag_obj.get("numero_pedido", "")))
+    
+                        mp7, mp8, mp9 = st.columns(3)
+                        with mp7:
+                            new_data_pag = st.date_input("Data do lancamento", value=data_atual_pag, format="DD/MM/YYYY")
+                        with mp8:
+                            new_venc_pag = st.date_input("Vencimento", value=venc_atual_pag, format="DD/MM/YYYY")
+                        with mp9:
+                            cob_pag = str(pag_obj.get("cobranca", "Boleto"))
+                            new_cobranca_pag = st.selectbox(
+                                "Forma de pagamento",
+                                cobranca_opts_pag,
+                                index=cobranca_opts_pag.index(cob_pag) if cob_pag in cobranca_opts_pag else 0,
+                            )
+    
+                        mp10, mp11 = st.columns(2)
+                        with mp10:
+                            status_pag_atual = str(pag_obj.get("status", "Aberto"))
+                            new_status_pag = st.selectbox(
+                                "Status",
+                                status_opts_pag,
+                                index=status_opts_pag.index(status_pag_atual) if status_pag_atual in status_opts_pag else 0,
+                            )
+    
+                        new_val_parcela_pag_num = parse_money(new_val_parcela_pag_input)
+                        new_qtd_pag_int = max(1, int(new_qtd_pag))
+                        new_val_total_pag_num = new_val_parcela_pag_num * new_qtd_pag_int
+                        new_valor_parcela_pag = f"{new_val_parcela_pag_num:.2f}".replace(".", ",") if new_val_parcela_pag_num > 0 else "0,00"
+                        new_val_total_pag = f"{new_val_total_pag_num:.2f}".replace(".", ",") if new_val_total_pag_num > 0 else "0,00"
+                        with mp11:
+                            st.text_input("Valor total (automatico)", value=new_val_total_pag, disabled=True)
+    
+                        apply_all_pag = st.checkbox(
+                            "Aplicar alteracoes em todas as parcelas do mesmo lancamento",
+                            value=bool(qtd_atual_pag > 1),
+                            key=f"pag_apply_all_{idx_pag}",
+                        )
+    
+                        mpc1, mpc2 = st.columns(2)
+                        with mpc1:
+                            salvar_pag = st.form_submit_button("Salvar alteracoes")
+                        with mpc2:
+                            excluir_pag = st.form_submit_button("Excluir despesa", type="primary")
+    
+                        if salvar_pag:
+                            if not new_desc_pag.strip() or not new_forn_pag.strip() or new_val_parcela_pag_num <= 0:
+                                st.error("Informe descricao, referencia e valor da parcela valido.")
+                            else:
+                                lote_id_pag = str(pag_obj.get("lote_id", "")).strip() or f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}"
+    
+                                if apply_all_pag:
+                                    related_idx = _related_payable_indices(despesas, idx_pag)
+                                    related_idx = _sort_indices_by_parcela(despesas, related_idx)
+                                    if not related_idx:
+                                        related_idx = [idx_pag]
+                                    related_items = [despesas[i] for i in related_idx if 0 <= i < len(despesas)]
+                                    existing_codes = [str(item.get("codigo", "")).strip() for item in related_items if str(item.get("codigo", "")).strip()]
+                                    if not existing_codes:
+                                        existing_codes = [str(pag_obj.get("codigo", "")).strip()] if str(pag_obj.get("codigo", "")).strip() else []
+    
+                                    parcela_base_pag = max(1, parcela_atual_pag)
+                                    primeiro_venc_pag = add_months(new_venc_pag, -(parcela_base_pag - 1)) if parcela_base_pag > 1 else new_venc_pag
+                                    if primeiro_venc_pag is None:
+                                        primeiro_venc_pag = new_venc_pag
+    
+                                    related_set_pag = set(related_idx)
+                                    st.session_state["payables"] = [
+                                        p for pos, p in enumerate(despesas) if pos not in related_set_pag
+                                    ]
+                                    despesas = st.session_state["payables"]
+    
+                                    for i in range(new_qtd_pag_int):
+                                        codigo_pag_item = (
+                                            existing_codes[i]
+                                            if i < len(existing_codes) and existing_codes[i]
+                                            else f"PAG-{uuid.uuid4().hex[:8].upper()}"
+                                        )
+                                        venc_pag_item = add_months(primeiro_venc_pag, i) or new_venc_pag
+                                        parcela_txt_pag = f"{i + 1}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else "1"
+                                        st.session_state["payables"].append(
+                                            {
+                                                "codigo": codigo_pag_item,
+                                                "descricao": new_desc_pag.strip(),
+                                                "valor": new_val_total_pag,
+                                                "valor_parcela": new_valor_parcela_pag,
+                                                "parcela": parcela_txt_pag,
+                                                "fornecedor": new_forn_pag.strip(),
+                                                "categoria_lancamento": new_cat_pag,
+                                                "numero_pedido": new_numero_pedido_pag.strip(),
+                                                "data": new_data_pag.strftime("%d/%m/%Y"),
+                                                "vencimento": venc_pag_item.strftime("%d/%m/%Y"),
+                                                "cobranca": new_cobranca_pag,
+                                                "status": new_status_pag,
+                                                "lote_id": lote_id_pag,
+                                            }
+                                        )
+                                else:
+                                    pag_obj["descricao"] = new_desc_pag.strip()
+                                    pag_obj["valor"] = new_val_total_pag
+                                    pag_obj["valor_parcela"] = new_valor_parcela_pag
+                                    pag_obj["parcela"] = f"{parcela_atual_pag}/{new_qtd_pag_int}" if new_qtd_pag_int > 1 else str(parcela_atual_pag)
+                                    pag_obj["fornecedor"] = new_forn_pag.strip()
+                                    pag_obj["categoria_lancamento"] = new_cat_pag
+                                    pag_obj["numero_pedido"] = new_numero_pedido_pag.strip()
+                                    pag_obj["data"] = new_data_pag.strftime("%d/%m/%Y")
+                                    pag_obj["vencimento"] = new_venc_pag.strftime("%d/%m/%Y")
+                                    pag_obj["cobranca"] = new_cobranca_pag
+                                    pag_obj["status"] = new_status_pag
+                                    pag_obj["lote_id"] = lote_id_pag
+                                save_list(PAYABLES_FILE, st.session_state["payables"])
+                                st.success("Despesa atualizada!")
+                                st.rerun()
+    
+                        if excluir_pag:
+                            st.session_state["payables"].remove(pag_obj)
+                            save_list(PAYABLES_FILE, st.session_state["payables"])
+                            st.success("Despesa excluida.")
+                            st.rerun()
+    
         if finance_main == "Aprovacoes Comercial":
             finance_aprov_options = ["Pagamentos de matricula"]
             if st.session_state.get("finance_aprov_menu") not in finance_aprov_options:
