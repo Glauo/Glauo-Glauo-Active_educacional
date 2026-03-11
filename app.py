@@ -8201,56 +8201,158 @@ def _teacher_payment_receipt_html(professor_name, period_start, period_end, sess
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Relatorio de Aulas e Pagamento - {html.escape(prof_label)}</title>
   <style>
-    body {{ font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }}
-    h1 {{ font-size: 24px; margin: 0 0 10px 0; }}
-    .meta {{ margin-bottom: 12px; line-height: 1.5; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
-    th, td {{ border: 1px solid #cbd5e1; padding: 8px; font-size: 13px; }}
-    th {{ background: #e2e8f0; text-align: left; }}
-    .section {{ margin-top: 18px; }}
-    .total {{ margin-top: 10px; font-size: 16px; font-weight: 700; }}
-    .detail-block {{ border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; margin: 8px 0; }}
+    :root {{
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #d0d9e6;
+      --bg: #f3f6fb;
+      --card: #ffffff;
+      --brand: #1e3a8a;
+      --brand-soft: #e8efff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      padding: 20px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, var(--bg) 0%, #eef2f9 100%);
+    }}
+    .sheet {{
+      max-width: 1020px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }}
+    .header {{
+      padding: 18px 20px;
+      background: linear-gradient(90deg, var(--brand) 0%, #2753be 100%);
+      color: #fff;
+    }}
+    .title {{ margin: 0; font-size: 24px; line-height: 1.2; }}
+    .sub {{ margin-top: 4px; font-size: 13px; opacity: .95; }}
+    .content {{ padding: 18px 20px 20px 20px; }}
+    .meta-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }}
+    .meta-card {{
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #f9fbff;
+    }}
+    .meta-label {{
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }}
+    .meta-value {{ font-size: 14px; font-weight: 600; }}
+    .section {{ margin-top: 16px; }}
+    .section h3 {{ margin: 0 0 8px 0; font-size: 17px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 6px; }}
+    th, td {{ border: 1px solid var(--line); padding: 8px; font-size: 13px; }}
+    th {{ background: var(--brand-soft); text-align: left; color: #1f2a44; }}
+    .total {{
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      background: #f8fbff;
+    }}
+    .detail-block {{
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      background: #fcfdff;
+    }}
     .detail-title {{ font-weight: 700; margin-bottom: 4px; }}
-    .controls {{ border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; margin-top: 12px; }}
-    .line {{ display: inline-block; min-width: 260px; border-bottom: 1px solid #334155; height: 16px; vertical-align: bottom; }}
-    .obs {{ margin-top: 12px; color: #334155; font-size: 12px; }}
+    .controls {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 16px;
+      background: #f8fbff;
+    }}
+    .ctrl-row {{ margin: 8px 0; font-size: 14px; }}
+    .line {{
+      display: inline-block;
+      min-width: 280px;
+      border-bottom: 1px solid #334155;
+      height: 16px;
+      vertical-align: bottom;
+    }}
+    .obs {{ margin-top: 10px; color: var(--muted); font-size: 12px; }}
+    @media (max-width: 760px) {{
+      body {{ padding: 10px; }}
+      .content {{ padding: 12px; }}
+      .meta-grid {{ grid-template-columns: 1fr; }}
+      .line {{ min-width: 180px; }}
+      th, td {{ font-size: 12px; padding: 6px; }}
+    }}
   </style>
 </head>
 <body>
-  <h1>Relatório de Aulas e Pagamento</h1>
-  <div class="meta">
-    <div><strong>Professor:</strong> {html.escape(prof_label)}</div>
-    <div><strong>Período:</strong> {html.escape(period_start_txt)} a {html.escape(period_end_txt)}</div>
-    <div><strong>Contato (WhatsApp):</strong> {html.escape(contato_txt or '-')}</div>
-  </div>
+  <div class="sheet">
+    <div class="header">
+      <h1 class="title">Relatorio de Aulas e Pagamento</h1>
+      <div class="sub">Ativo Sistema Educacional</div>
+    </div>
+    <div class="content">
+      <div class="meta-grid">
+        <div class="meta-card">
+          <div class="meta-label">Professor</div>
+          <div class="meta-value">{html.escape(prof_label)}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-label">Periodo</div>
+          <div class="meta-value">{html.escape(period_start_txt)} a {html.escape(period_end_txt)}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-label">WhatsApp</div>
+          <div class="meta-value">{html.escape(contato_txt or '-')}</div>
+        </div>
+      </div>
 
-  <div class="section">
-    <h3>Resumo por Turma</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Turma</th><th>Tipo</th><th>Dias</th><th>Horário</th><th>Aulas</th><th>Valor/aula</th><th>Total</th>
-        </tr>
-      </thead>
-      <tbody>{rows_html_str}</tbody>
-    </table>
-    <div class="total">Total Geral: {format_money(total_geral)}</div>
-  </div>
+      <div class="section">
+        <h3>Resumo por Turma</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Turma</th><th>Tipo</th><th>Dias</th><th>Horario</th><th>Aulas</th><th>Valor/aula</th><th>Total</th>
+            </tr>
+          </thead>
+          <tbody>{rows_html_str}</tbody>
+        </table>
+        <div class="total">Total Geral: {format_money(total_geral)}</div>
+      </div>
 
-  <div class="section">
-    <h3>Detalhamento de Datas</h3>
-    {details_html_str}
-  </div>
+      <div class="section">
+        <h3>Detalhamento de Datas</h3>
+        {details_html_str}
+      </div>
 
-  <div class="section controls">
-    <h3>Campos para Controle</h3>
-    <div><strong>Data do pagamento:</strong> {html.escape(data_pag_txt) if data_pag_txt else '<span class="line"></span>'}</div>
-    <div><strong>Forma:</strong> {html.escape(forma_txt) if forma_txt else '☐ Pix   ☐ Dinheiro   ☐ Transferência   ☐ Outro: ____________'}</div>
-    <div><strong>Responsável:</strong> {html.escape(responsavel_txt) if responsavel_txt else '<span class="line"></span>'}</div>
-    <div><strong>Assinatura:</strong> <span class="line"></span></div>
-    <div class="obs">Observação: valores calculados com base nas aulas finalizadas no período selecionado.</div>
+      <div class="section controls">
+        <h3>Campos para Controle</h3>
+        <div class="ctrl-row"><strong>Data do pagamento:</strong> {html.escape(data_pag_txt) if data_pag_txt else '<span class="line"></span>'}</div>
+        <div class="ctrl-row"><strong>Forma:</strong> {html.escape(forma_txt) if forma_txt else '[] Pix   [] Dinheiro   [] Transferencia   [] Outro: ____________'}</div>
+        <div class="ctrl-row"><strong>Responsavel:</strong> {html.escape(responsavel_txt) if responsavel_txt else '<span class="line"></span>'}</div>
+        <div class="ctrl-row"><strong>Assinatura:</strong> <span class="line"></span></div>
+        <div class="obs">Observacao: valores calculados com base nas aulas finalizadas no periodo selecionado.</div>
+      </div>
+    </div>
   </div>
 </body>
 </html>"""
