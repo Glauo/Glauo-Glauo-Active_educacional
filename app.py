@@ -15702,6 +15702,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
+        st.caption("Versao Financeiro: FIN-URGENTE-2026-03-11-REV5")
         finance_focus = str(st.session_state.get("finance_overdue_focus", "")).strip().lower()
 
         def _parse_parcela_info(parcela_txt):
