@@ -1992,7 +1992,7 @@ def _wiz_can_operate_system():
     role = str(st.session_state.get("role", "")).strip()
     profile = str(st.session_state.get("account_profile", role)).strip()
     allowed_profiles = {"Admin", "Coordenador"}
-    if role != "Coordenador":
+    if role not in ("Coordenador", "Admin"):
         return False, f"perfil atual sem permissao para execucao automatica ({role or 'desconhecido'})"
     if profile not in allowed_profiles:
         return False, f"perfil da conta sem permissao ({profile or 'desconhecido'})"
@@ -8049,7 +8049,7 @@ def allowed_portals(profile):
     if profile == "Professor": return ["Professor"]
     if profile == "Comercial": return ["Comercial"]
     if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
-    if profile == "Admin": return ["Aluno", "Professor", "Comercial", "Coordenador"]
+    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
     return []
 
 def _send_email_smtp(to_email, subject, body):
@@ -11519,7 +11519,7 @@ if not st.session_state.get("logged_in", False):
                     """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
                     unsafe_allow_html=True,
                 )
-                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador"])
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"])
                 unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
                 unidade_sel = st.selectbox("Unidade", unidades)
                 if unidade_sel == "Outra":
@@ -12918,7 +12918,7 @@ elif st.session_state["role"] == "Comercial":
 # ==============================================================================
 # COORDENADOR
 # ==============================================================================
-elif st.session_state["role"] == "Coordenador":
+elif st.session_state["role"] in ("Coordenador", "Admin"):
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
@@ -17097,10 +17097,14 @@ elif st.session_state["role"] == "Coordenador":
         tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
             with st.form("new_user", clear_on_submit=True):
+                current_account_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
+                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador"]
+                if current_account_profile == "Admin":
+                    role_create_opts.append("Admin")
                 c1, c2, c3 = st.columns(3)
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
-                with c3: u_role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador"])
+                with c3: u_role = st.selectbox("Perfil", role_create_opts)
                 d1, d2, d3 = st.columns(3)
                 with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
                 with d2: u_email = st.text_input("E-mail (opcional)")
@@ -17148,9 +17152,12 @@ elif st.session_state["role"] == "Coordenador":
                 user_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_sel), None)
                 if user_obj:
                     with st.form("edit_user"):
+                        current_account_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
                         new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
                         new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
                         role_opts = ["Aluno", "Professor", "Comercial", "Coordenador"]
+                        if current_account_profile == "Admin":
+                            role_opts.append("Admin")
                         new_role = st.selectbox(
                             "Perfil",
                             role_opts,
@@ -17505,6 +17512,7 @@ elif st.session_state["role"] == "Coordenador":
             draft_patch_key = f"{key_prefix}_draft_patch"
             draft_action_key = f"{key_prefix}_draft_action"
             draft_error_key = f"{key_prefix}_draft_error"
+            creation_mode_key = f"{key_prefix}_creation_mode"
             editor_titulo_key = f"{key_prefix}_editor_titulo"
             editor_descricao_key = f"{key_prefix}_editor_descricao"
             editor_rubrica_key = f"{key_prefix}_editor_rubrica"
@@ -17564,6 +17572,8 @@ elif st.session_state["role"] == "Coordenador":
                 st.session_state[ref_note_key] = base_note
             if draft_error_key not in st.session_state:
                 st.session_state[draft_error_key] = ""
+            if creation_mode_key not in st.session_state:
+                st.session_state[creation_mode_key] = "Manual (sem IA)"
             pending_draft_action = str(st.session_state.pop(draft_action_key, "")).strip()
             if pending_draft_action == "gen_ai":
                 api_key = get_groq_api_key()
@@ -17574,13 +17584,27 @@ elif st.session_state["role"] == "Coordenador":
                 elif target_type == "aluno_vip" and not target_aluno:
                     st.session_state[draft_error_key] = "Selecione o aluno VIP de destino antes de gerar o desafio."
                 else:
+                    auto_ref_book = (
+                        str(turma_obj.get("livro", "")).strip()
+                        if target_type == "turma"
+                        else (str(aluno_vip_obj.get("livro", "")).strip() if target_type == "aluno_vip" else str(nivel).strip())
+                    )
+                    if not auto_ref_book:
+                        auto_ref_book = str(default_book_reference or nivel).strip()
+                    auto_ref_subject = str(materia_atual or "").strip()
+                    auto_ref_note = (
+                        "Linha do desafio: Livro / Conteudo atual\n"
+                        f"Livro/Nivel de referencia: {auto_ref_book or '-'}\n"
+                        f"Materia/Conteudo de referencia: {auto_ref_subject or 'Nao informado'}\n"
+                        "Use essa base para gerar um desafio coerente com a turma e com o livro."
+                    )
                     try:
                         gen = generate_weekly_challenge_ai(
                             nivel,
                             semana,
-                            reference_title=str(st.session_state.get(ref_book_key, default_book_reference)).strip() or default_book_reference,
-                            reference_text=str(st.session_state.get(ref_note_key, "")).strip(),
-                            challenge_theme=str(st.session_state.get(theme_key, "Livro / Conteudo atual")).strip() or "Livro / Conteudo atual",
+                            reference_title=auto_ref_book or default_book_reference,
+                            reference_text=auto_ref_note,
+                            challenge_theme="Livro / Conteudo atual",
                         )
                         st.session_state[draft_patch_key] = {
                             titulo_key: str(gen.get("titulo", "")).strip(),
@@ -17593,6 +17617,10 @@ elif st.session_state["role"] == "Coordenador":
                             editor_rubrica_key: str(gen.get("rubrica", "")).strip(),
                             editor_dica_key: str(gen.get("dica", "")).strip(),
                             editor_pontos_key: int(gen.get("pontos") or 10),
+                            theme_key: "Livro / Conteudo atual",
+                            ref_book_key: auto_ref_book,
+                            ref_subject_key: auto_ref_subject,
+                            ref_note_key: auto_ref_note,
                             draft_info_key: f"Rascunho gerado com IA para {nivel} - {semana}. Revise os campos abaixo e clique em Salvar desafio.",
                         }
                         st.session_state[draft_error_key] = ""
@@ -17603,37 +17631,46 @@ elif st.session_state["role"] == "Coordenador":
             st.markdown("#### Rascunho do desafio")
             st.caption("Voce pode criar manualmente ou gerar com IA, revisar os campos e salvar quando estiver bom.")
 
-            st.markdown("#### Referencia do desafio")
             if target_type == "nivel":
                 target_turmas_envio = st.multiselect(
-                    "Turmas para enviar o desafio",
+                    "Turmas para envio (opcional)",
                     class_names(),
                     key=send_turmas_key,
                     help="Se nao selecionar nenhuma turma, o desafio vai para todos os alunos do livro selecionado.",
                 )
-            reference_theme = st.selectbox(
-                "Linha do desafio",
-                ["Livro / Conteudo atual", "Empreendedorismo", "Inteligencia Emocional"],
-                key=theme_key,
+
+            # Referencias automaticas: turma -> livro e conteudo atual; nivel -> livro selecionado.
+            reference_theme = "Livro / Conteudo atual"
+            reference_book = (
+                str(turma_obj.get("livro", "")).strip()
+                if target_type == "turma"
+                else (str(aluno_vip_obj.get("livro", "")).strip() if target_type == "aluno_vip" else str(nivel).strip())
             )
-            ref_col1, ref_col2 = st.columns(2)
-            with ref_col1:
-                reference_book = st.text_input("Livro/Nivel de referencia", key=ref_book_key)
-            with ref_col2:
-                st.text_input(
-                    "Materia/Conteudo atual da turma",
-                    key=ref_subject_key,
-                    placeholder="Ex: Unit 3 - Simple Present",
-                )
-            reference_subject = str(st.session_state.get(ref_subject_key, "")).strip()
-            st.caption("Opcoes especiais disponiveis: Empreendedorismo e Inteligencia Emocional.")
-            st.text_area(
-                "Base de referencia para IA (visualize e edite antes de gerar)",
-                height=120,
-                key=ref_note_key,
+            if not reference_book:
+                reference_book = str(default_book_reference or nivel).strip()
+            reference_subject = str(materia_atual or "").strip()
+            reference_note = (
+                f"Linha do desafio: {reference_theme}\n"
+                f"Livro/Nivel de referencia: {reference_book or '-'}\n"
+                f"Materia/Conteudo de referencia: {reference_subject or 'Nao informado'}\n"
+                "Use essa base para gerar um desafio coerente com a turma e com o livro."
             )
+            st.session_state[theme_key] = reference_theme
+            st.session_state[ref_book_key] = reference_book
+            st.session_state[ref_subject_key] = reference_subject
+            st.session_state[ref_note_key] = reference_note
+
+            st.markdown("#### Referencia do desafio (automatica)")
+            st.caption(f"Livro/Nivel: {reference_book or '-'}")
+            st.caption(f"Conteudo atual: {reference_subject or 'Nao informado'}")
 
             autor = st.session_state.get("user_name", "Coordenacao")
+            creation_mode = st.radio(
+                "Modo de criacao do desafio",
+                ["Manual (sem IA)", "Gerar com IA"],
+                key=creation_mode_key,
+                horizontal=True,
+            )
 
             draft_info = str(st.session_state.get(draft_info_key, "")).strip()
             if draft_info:
@@ -17642,71 +17679,10 @@ elif st.session_state["role"] == "Coordenador":
             if draft_error:
                 st.error(draft_error)
 
-            ai_col1, ai_col2 = st.columns([1, 1])
-            if ai_col1.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
-                st.session_state[draft_action_key] = "gen_ai"
-                st.rerun()
-
-            if ai_col2.button("Gerar com IA para todos livros (semana atual)", key=f"{key_prefix}_gen_ai_all"):
-                api_key = get_groq_api_key()
-                if not api_key:
-                    st.error("Configure GROQ_API_KEY para gerar desafios com IA.")
-                else:
-                    week_now = current_week_key(datetime.date.today())
-                    levels = book_levels()
-                    created = 0
-                    failed = 0
-                    notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
-                    for lv in levels:
-                        if get_weekly_challenge(lv, week_now):
-                            continue
-                        try:
-                            gen = generate_weekly_challenge_ai(
-                                lv,
-                                week_now,
-                                reference_title=lv,
-                                reference_text=f"Linha do desafio: Livro / Conteudo atual\nLivro/Nivel de referencia: {lv}\nGere um desafio semanal alinhado ao livro selecionado.",
-                                challenge_theme="Livro / Conteudo atual",
-                            )
-                            upsert_weekly_challenge(
-                                level=lv,
-                                week_key=week_now,
-                                titulo=gen.get("titulo", ""),
-                                descricao=gen.get("descricao", ""),
-                                pontos=int(gen.get("pontos") or 10),
-                                autor=autor,
-                                due_date=None,
-                                rubrica=gen.get("rubrica", ""),
-                                dica=gen.get("dica", ""),
-                                reference_theme="Livro / Conteudo atual",
-                                reference_book=lv,
-                                reference_subject="",
-                                reference_note=f"Linha do desafio: Livro / Conteudo atual\nLivro/Nivel de referencia: {lv}",
-                            )
-                            if notify_new_challenge_enabled:
-                                partial_stats = notify_new_challenge_by_level(
-                                    lv,
-                                    week_now,
-                                    gen.get("titulo", "Desafio da semana"),
-                                    gen.get("descricao", ""),
-                                    target_turmas_envio=target_turmas_envio,
-                                )
-                                for key in notify_stats:
-                                    notify_stats[key] += int(partial_stats.get(key, 0))
-                            created += 1
-                        except Exception:
-                            failed += 1
-                    if created:
-                        if notify_new_challenge_enabled:
-                            st.info(
-                                "Comunicado de novo desafio enviado: "
-                                f"E-mail {notify_stats.get('email_ok', 0)}/{notify_stats.get('email_total', 0)} | "
-                                f"WhatsApp {notify_stats.get('whatsapp_ok', 0)}/{notify_stats.get('whatsapp_total', 0)}."
-                            )
-                        st.success(f"Gerados {created} desafio(s) para a semana {week_now}.")
-                        st.rerun()
-                    if not created and not failed:
-                        st.info(f"Ja existem desafios publicados para a semana {week_now}.")
+            if creation_mode == "Gerar com IA":
+                if st.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
+                    st.session_state[draft_action_key] = "gen_ai"
+                    st.rerun()
             manual_col1, manual_col2 = st.columns([1, 1])
             if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
                 st.session_state[draft_patch_key] = {
@@ -17809,14 +17785,12 @@ elif st.session_state["role"] == "Coordenador":
                 help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
             )
 
-            save_col1, save_col2 = st.columns([1, 1])
-            save_clicked = save_col1.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar")
-            save_manual_clicked = save_col2.button("Salvar manual (sem IA)", key=f"{key_prefix}_salvar_manual")
+            save_clicked = st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar")
 
-            if save_clicked or save_manual_clicked:
+            if save_clicked:
                 preview_source = str(st.session_state.get(preview_key, "")).strip()
                 use_preview_on_save = bool(st.session_state.get(use_preview_on_save_key, False))
-                if save_manual_clicked:
+                if creation_mode == "Manual (sem IA)":
                     use_preview_on_save = False
                     st.session_state[use_preview_on_save_key] = False
 
@@ -17862,9 +17836,18 @@ elif st.session_state["role"] == "Coordenador":
                         reference_theme=reference_theme,
                         reference_book=reference_book,
                         reference_subject=reference_subject,
-                        reference_note=str(st.session_state.get(ref_note_key, "")).strip(),
+                        reference_note=reference_note,
                         target_turmas_envio=target_turmas_envio,
                     )
+                    recipients_preview = _students_for_challenge_target(
+                        saved_challenge.get("nivel", ""),
+                        target_type=saved_challenge.get("target_type", "nivel"),
+                        target_turma=saved_challenge.get("target_turma", ""),
+                        target_aluno=saved_challenge.get("target_aluno", ""),
+                        target_turmas_envio=_challenge_send_turmas(saved_challenge),
+                    )
+                    if not recipients_preview:
+                        st.warning("Desafio salvo, mas nenhum aluno elegivel foi encontrado para esse destino.")
                     if notify_new_challenge_enabled:
                         stats = notify_new_challenge(saved_challenge, send_email=True, send_whatsapp=True)
                         st.info(
