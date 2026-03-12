@@ -192,6 +192,35 @@ WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
+AUTO_RESTORE_EMPTY_FILES = (
+    USERS_FILE,
+    MESSAGES_FILE,
+    VIDEOS_FILE,
+    MATERIALS_FILE,
+    GRADES_FILE,
+    STUDENTS_FILE,
+    TEACHERS_FILE,
+    CLASSES_FILE,
+    RECEIVABLES_FILE,
+    PAYABLES_FILE,
+    FEE_TEMPLATES_FILE,
+    EMAIL_LOG_FILE,
+    CHATBOT_LOG_FILE,
+    AGENDA_FILE,
+    CLASS_SESSIONS_FILE,
+    INVENTORY_FILE,
+    INVENTORY_MOVES_FILE,
+    CERTIFICATES_FILE,
+    BOOKS_FILE,
+    MATERIAL_ORDERS_FILE,
+    CHALLENGES_FILE,
+    CHALLENGE_COMPLETIONS_FILE,
+    ACTIVITIES_FILE,
+    ACTIVITY_SUBMISSIONS_FILE,
+    SALES_LEADS_FILE,
+    SALES_AGENDA_FILE,
+    SALES_PAYMENTS_FILE,
+)
 WHATSAPP_NUMBER = "5516996043314" 
 WAPI_DEFAULT_INSTANCE_ID = ""
 _PLACEHOLDER_CONFIG_TOKENS = {
@@ -869,7 +898,7 @@ def _load_json_list_file(path, create_if_missing=True):
             data = json.loads(path.read_text(encoding="utf-8"))
             data = data if isinstance(data, list) else []
             auto_restore = os.getenv("ACTIVE_AUTO_RESTORE_EMPTY", "1").strip().lower() not in ("0", "false", "no")
-            if auto_restore and path in (STUDENTS_FILE, CLASSES_FILE) and not data:
+            if auto_restore and path in AUTO_RESTORE_EMPTY_FILES and not data:
                 restored = _load_latest_backup_list(path)
                 if restored:
                     _atomic_write_json(path, restored)
