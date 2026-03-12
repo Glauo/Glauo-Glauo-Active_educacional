@@ -5,8 +5,8 @@ services:
     plan: free
     branch: principal
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true --server.enableCORS false --server.enableXsrfProtection false --browser.gatherUsageStats false
-    healthCheckPath: /_stcore/health
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true --browser.gatherUsageStats false
+    healthCheckPath: /
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
