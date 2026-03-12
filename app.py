@@ -685,7 +685,10 @@ def _db_url():
     raw_url = _normalize_db_url(
         _get_config_value("ACTIVE_DATABASE_URL", "")
         or _get_config_value("DATABASE_URL", "")
+        or _get_config_value("DATABASE_PUBLIC_URL", "")
         or _get_config_value("RAILWAY_DATABASE_URL", "")
+        or _get_config_value("URL_PUBLICA_DO_BANCO_DE_DADOS", "")
+        or _get_config_value("URL_PÚBLICA_DO_BANCO_DE_DADOS", "")
         or _get_config_value("URL_DO_BANCO_DE_DADOS_ATIVO", "")
         or _get_config_value("URL_BANCO_DADOS_ATIVO", "")
         or _get_config_value("URL_DO_BANCO_DE_DADOS", "")
