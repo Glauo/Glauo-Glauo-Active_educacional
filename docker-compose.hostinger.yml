@@ -4,5 +4,7 @@ services:
     restart: unless-stopped
     environment:
       ACTIVE_DATA_DIR: /app/data
+      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL}
     volumes:
       - ./data:/app/data
