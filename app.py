@@ -19383,52 +19383,42 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Para nao perder dados, configure um banco Postgres e defina `ACTIVE_DATABASE_URL` (ou `DATABASE_URL`)."
             )
 
-        datasets = [
-            ("users.json", "users", USERS_FILE),
-            ("students.json", "students", STUDENTS_FILE),
-            ("classes.json", "classes", CLASSES_FILE),
-            ("teachers.json", "teachers", TEACHERS_FILE),
-            ("agenda.json", "agenda", AGENDA_FILE),
-            ("class_sessions.json", "class_sessions", CLASS_SESSIONS_FILE),
-            ("messages.json", "messages", MESSAGES_FILE),
-            ("challenges.json", "challenges", CHALLENGES_FILE),
-            ("challenge_completions.json", "challenge_completions", CHALLENGE_COMPLETIONS_FILE),
-            ("activities.json", "activities", ACTIVITIES_FILE),
-            ("activity_submissions.json", "activity_submissions", ACTIVITY_SUBMISSIONS_FILE),
-            ("sales_leads.json", "sales_leads", SALES_LEADS_FILE),
-            ("sales_agenda.json", "sales_agenda", SALES_AGENDA_FILE),
-            ("sales_payments.json", "sales_payments", SALES_PAYMENTS_FILE),
-            ("receivables.json", "receivables", RECEIVABLES_FILE),
-            ("payables.json", "payables", PAYABLES_FILE),
-            ("inventory.json", "inventory", INVENTORY_FILE),
-            ("inventory_moves.json", "inventory_moves", INVENTORY_MOVES_FILE),
-            ("certificates.json", "certificates", CERTIFICATES_FILE),
-            ("books.json", "books", BOOKS_FILE),
-            ("materials.json", "materials", MATERIALS_FILE),
-            ("material_orders.json", "material_orders", MATERIAL_ORDERS_FILE),
-            ("grades.json", "grades", GRADES_FILE),
-            ("fee_templates.json", "fee_templates", FEE_TEMPLATES_FILE),
-            ("email_log.json", "email_log", EMAIL_LOG_FILE),
-        ]
+        datasets = _backup_datasets()
+
+        st.markdown("### Backup manual (salvar no sistema)")
+        st.caption("Gera um arquivo .zip dentro de `_data_backups` e mantém histórico dos últimos backups.")
+        if st.button("Gerar backup manual agora", type="primary", key="coord_manual_backup_now_btn"):
+            try:
+                payload, _ = _build_backup_zip_bytes()
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_file = BACKUP_DIR / f"active_manual_{stamp}.zip"
+                backup_file.write_bytes(payload)
+                st.success(f"Backup manual salvo: {backup_file.name}")
+            except Exception as exc:
+                st.error(f"Falha ao gerar backup manual: {exc}")
+
+        manual_files = sorted(BACKUP_DIR.glob("active_manual_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if manual_files:
+            st.caption("Últimos backups manuais:")
+            for idx, p in enumerate(manual_files[:10], start=1):
+                cols = st.columns([5, 2, 2])
+                cols[0].write(p.name)
+                cols[1].write(datetime.datetime.fromtimestamp(p.stat().st_mtime).strftime("%d/%m/%Y %H:%M"))
+                cols[2].download_button(
+                    "Baixar",
+                    data=p.read_bytes(),
+                    file_name=p.name,
+                    mime="application/zip",
+                    key=f"coord_manual_backup_download_{idx}_{p.name}",
+                )
+        else:
+            st.info("Nenhum backup manual salvo ainda.")
 
         st.markdown("### Exportar backup")
-        snapshot_meta = {
-            "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "counts": {name: len(st.session_state.get(key, []) or []) for name, key, _ in datasets if isinstance(st.session_state.get(key, []), list)},
-        }
-        bio = io.BytesIO()
-        with zipfile.ZipFile(bio, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("meta.json", json.dumps(snapshot_meta, ensure_ascii=False, indent=2).encode("utf-8"))
-            for file_name, session_key, _ in datasets:
-                data = st.session_state.get(session_key, [])
-                if session_key == "users":
-                    data = st.session_state.get("users", [])
-                if not isinstance(data, list):
-                    data = []
-                zf.writestr(file_name, json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
+        backup_payload, _ = _build_backup_zip_bytes()
         st.download_button(
             "Baixar backup (.zip)",
-            data=bio.getvalue(),
+            data=backup_payload,
             file_name=f"active_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
         )
