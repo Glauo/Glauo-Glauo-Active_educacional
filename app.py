@@ -5760,12 +5760,16 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
     lesson_context = [str(x).strip() for x in (lesson_context or []) if str(x).strip()]
     focus = str(foco_extra or "").strip()
     lessons_text = "; ".join(lesson_context[:4]) if lesson_context else "Sem licao registrada."
+    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000)
+    if not wiz_refs:
+        wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
 
     messages = [
         {
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria licoes de casa semanais de ingles para turmas escolares.\n"
+                "Use como base o conteudo da turma e os materiais da memoria Wiz IA quando fornecidos.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -5777,6 +5781,7 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
                 f"Semana: {week_key}\n"
                 f"Licoes recentes da turma: {lessons_text}\n"
                 f"Foco opcional informado pelo professor/coordenador: {focus or 'Nenhum'}\n\n"
+                f"{wiz_refs}\n\n"
                 f"Crie uma licao de casa semanal com {question_count} questoes.\n"
                 "A atividade deve poder ser respondida no portal do aluno.\n\n"
                 "Retorne JSON com campos:\n"
@@ -7369,13 +7374,16 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
     reference_title = str(reference_title or "").strip()
     reference_text = str(reference_text or "").strip()
     challenge_theme = str(challenge_theme or "Livro / Conteudo atual").strip()
+    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000)
+    if not wiz_refs:
+        wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
     messages = [
         {
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria desafios semanais educacionais da Mister Wiz.\n"
                 "Gere UM desafio adequado ao nivel do aluno e que possa ser respondido no portal.\n"
-                "Use a referencia pedagogica enviada como base obrigatoria do desafio.\n"
+                "Use a referencia pedagogica enviada e os materiais da memoria Wiz IA como base obrigatoria do desafio.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -7387,6 +7395,7 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
                 f"Linha do desafio: {challenge_theme}\n"
                 f"Livro/Nivel de referencia: {reference_title or level or '-'}\n\n"
                 f"Referencia pedagogica para gerar o desafio:\n{reference_text or 'Sem referencia adicional informada.'}\n\n"
+                f"{wiz_refs}\n\n"
                 "Crie um desafio de 10 a 20 minutos com foco na referencia acima.\n"
                 "Formato: resposta escrita curta (texto).\n\n"
                 "Campos obrigatorios no JSON:\n"
@@ -9970,6 +9979,7 @@ def get_tutor_wiz_prompt(contexto_aluno=None):
         "Voce e o Professor Wiz (IA) da escola de ingles Mister Wiz.",
         "Atenda somente conteudos de ingles.",
         "Ensine baseado no nivel do livro do aluno e no conteudo da turma.",
+        "Ao criar desafios, provas, tarefas e trabalhos de casa, use os materiais da memoria Wiz IA como referencia principal.",
         "Se o aluno pedir algo fora de ingles, recuse com educacao e redirecione para ingles.",
         "Responda em portugues do Brasil com exemplos em ingles quando necessario.",
         f"Livro atual do aluno: {livro}.",
