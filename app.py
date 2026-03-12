@@ -12534,6 +12534,147 @@ else:
         input, textarea, select { border-radius: 8px !important; border: 1px solid #cbd5e1 !important; }
         input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important; }
         button[kind="primary"] { background: #1e3a8a; border-radius: 8px; }
+        :root {
+            --active-bg: #edf3ff;
+            --active-surface: #ffffff;
+            --active-surface-soft: #f8fbff;
+            --active-border: #d7e4f7;
+            --active-text: #0f172a;
+            --active-muted: #5f728d;
+            --active-primary: #1e40af;
+            --active-primary-2: #0f766e;
+            --active-accent: #ea580c;
+        }
+        .stApp {
+            background:
+                radial-gradient(1400px 650px at 7% -10%, rgba(30,64,175,0.16), transparent 58%),
+                radial-gradient(1000px 560px at 104% 0%, rgba(15,118,110,0.16), transparent 60%),
+                var(--active-bg) !important;
+            color: var(--active-text);
+        }
+        .block-container {
+            max-width: 1500px;
+            padding-top: 1.2rem;
+            padding-bottom: 2rem;
+        }
+        section[data-testid="stSidebar"] > div {
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(244,249,255,0.96) 100%) !important;
+            backdrop-filter: blur(6px);
+        }
+        section[data-testid="stSidebar"] hr {
+            border-color: rgba(148,163,184,0.28) !important;
+        }
+        div[data-testid="stMetric"] {
+            background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+            border: 1px solid var(--active-border);
+            border-radius: 16px;
+            padding: 10px 12px;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+        }
+        div[data-testid="stMetricLabel"] p {
+            color: var(--active-muted) !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.02em;
+        }
+        div[data-testid="stMetricValue"] {
+            font-family: 'Sora', sans-serif !important;
+            color: #0b1836 !important;
+        }
+        div[data-testid="stForm"],
+        div[data-testid="stExpander"],
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--active-border) !important;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06) !important;
+            border-radius: 16px !important;
+            background: var(--active-surface) !important;
+        }
+        div[data-testid="stForm"] {
+            padding: 24px !important;
+        }
+        div[data-testid="stTabs"] button[role="tab"] {
+            border-radius: 12px !important;
+            border: 1px solid var(--active-border) !important;
+            background: var(--active-surface-soft) !important;
+            color: #324a67 !important;
+            font-weight: 700 !important;
+            margin-right: 6px !important;
+            transition: all .18s ease;
+        }
+        div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+            background: linear-gradient(90deg, var(--active-primary) 0%, var(--active-primary-2) 100%) !important;
+            color: #fff !important;
+            border-color: transparent !important;
+            box-shadow: 0 10px 20px rgba(30,64,175,0.25);
+        }
+        div[data-testid="stButton"] > button,
+        div[data-testid="stFormSubmitButton"] > button,
+        div[data-testid="stDownloadButton"] > button {
+            border-radius: 12px !important;
+            border: 1px solid #c9daf6 !important;
+            background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%) !important;
+            color: #1f3659 !important;
+            font-weight: 700 !important;
+            min-height: 42px !important;
+            transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+        }
+        div[data-testid="stButton"] > button:hover,
+        div[data-testid="stFormSubmitButton"] > button:hover,
+        div[data-testid="stDownloadButton"] > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(30,64,175,0.16);
+        }
+        div[data-testid="stButton"] > button[kind="primary"],
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+            background: linear-gradient(90deg, var(--active-primary) 0%, var(--active-primary-2) 62%, var(--active-accent) 100%) !important;
+            border: none !important;
+            color: #fff !important;
+            box-shadow: 0 12px 24px rgba(30,64,175,0.24);
+        }
+        div[data-testid="stAlert"] {
+            border-radius: 14px !important;
+            border: 1px solid var(--active-border) !important;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+        }
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stTextArea"] textarea,
+        div[data-testid="stNumberInput"] input,
+        div[data-baseweb="select"] > div {
+            border-radius: 12px !important;
+            border: 1px solid #d0ddf2 !important;
+            background: #fbfdff !important;
+        }
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stTextArea"] textarea:focus,
+        div[data-testid="stNumberInput"] input:focus {
+            border-color: #93b4ec !important;
+            box-shadow: 0 0 0 4px rgba(59,130,246,0.11) !important;
+        }
+        .dash-card {
+            background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+            border: 1px solid var(--active-border);
+            box-shadow: 0 14px 32px rgba(15,23,42,0.07);
+            border-radius: 18px;
+        }
+        .dash-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 18px 40px rgba(15,23,42,0.12);
+        }
+        .main-header {
+            letter-spacing: -0.02em;
+            font-size: clamp(1.35rem, 2.2vw, 2.05rem);
+            margin-bottom: 18px;
+            color: #17326b;
+        }
+        @media (max-width: 980px) {
+            :root { --sidebar-width: 100vw; --sidebar-menu-btn-width: min(88vw, 360px); }
+            .block-container { padding-top: 0.8rem; }
+            .main-header { font-size: 1.35rem; }
+            div[data-testid="stForm"] { padding: 16px !important; }
+            .dash-card { padding: 16px; border-radius: 14px; }
+            .card-value { font-size: 1.45rem; }
+        }
     </style>
     """, unsafe_allow_html=True)
 
