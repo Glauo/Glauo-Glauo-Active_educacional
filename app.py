@@ -12199,6 +12199,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
 _db_sources = st.session_state.get("_data_sources", {}) or {}
 _db_has_unavailable = any(str(src).strip() == "db_unavailable" for src in _db_sources.values())
 _db_last_error = str(st.session_state.get("_db_last_error", "") or "").strip()
+_db_url_now = str(_db_url() or "").strip()
 if _db_has_unavailable:
     st.session_state["_persistence_alert"] = (
         "Banco de dados indisponivel no carregamento inicial. O sistema entrou em modo de protecao para nao sobrescrever dados."
@@ -12206,9 +12207,18 @@ if _db_has_unavailable:
     if _db_last_error:
         st.session_state["_persistence_alert"] += f" Erro: {_db_last_error}"
 elif not _db_enabled():
+    reason_parts = []
+    if not _db_url_now:
+        reason_parts.append("URL do banco ausente nos Secrets/ENV")
+    if psycopg2 is None:
+        reason_parts.append("driver psycopg2 indisponivel")
+    if _db_circuit_is_open():
+        reason_parts.append("conexao em cooldown apos falha recente")
+    reason_text = " | ".join(reason_parts) if reason_parts else "motivo nao identificado"
     st.session_state["_persistence_alert"] = (
         "Persistencia local ativa. Em hospedagem temporaria os dados podem sumir apos reinicio/deploy. "
-        "Configure ACTIVE_DATABASE_URL ou variaveis PG* para persistencia real."
+        "Configure ACTIVE_DATABASE_URL ou variaveis PG* para persistencia real. "
+        f"Diagnostico: {reason_text}."
     )
 else:
     st.session_state["_persistence_alert"] = ""
