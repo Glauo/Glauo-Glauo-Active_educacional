@@ -5,7 +5,7 @@ services:
     plan: free
     branch: principal
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true --server.enableCORS false --server.enableXsrfProtection false --browser.gatherUsageStats false
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
