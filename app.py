@@ -139,6 +139,8 @@ if "evo_instances_cache_error" not in st.session_state:
     st.session_state["evo_instances_cache_error"] = ""
 if "wiz_settings" not in st.session_state:
     st.session_state["wiz_settings"] = {}
+if "wiz_reference_docs" not in st.session_state:
+    st.session_state["wiz_reference_docs"] = []
 if "finance_settings" not in st.session_state:
     st.session_state["finance_settings"] = {}
 if "wiz_action_plan" not in st.session_state:
@@ -189,6 +191,7 @@ SALES_LEADS_FILE = DATA_DIR / "sales_leads.json"
 SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
+WIZ_REFERENCE_DOCS_FILE = DATA_DIR / "wiz_reference_docs.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
@@ -1130,6 +1133,7 @@ def _backup_datasets():
         ("grades.json", "grades", GRADES_FILE),
         ("fee_templates.json", "fee_templates", FEE_TEMPLATES_FILE),
         ("email_log.json", "email_log", EMAIL_LOG_FILE),
+        ("wiz_reference_docs.json", "wiz_reference_docs", WIZ_REFERENCE_DOCS_FILE),
     ]
 
 def _build_backup_zip_bytes():
@@ -3666,7 +3670,47 @@ def _wiz_attachment_kind(uploaded_file):
         return "sheet"
     if ext == ".pdf":
         return "pdf"
+    if ext == ".docx":
+        return "docx"
     return "file"
+
+def _wiz_extract_docx_text(raw_bytes):
+    if not raw_bytes:
+        return ""
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
+            if "word/document.xml" not in zf.namelist():
+                return ""
+            xml_raw = zf.read("word/document.xml").decode("utf-8", errors="replace")
+        xml_raw = re.sub(r"</w:p>", "\n", xml_raw)
+        xml_raw = re.sub(r"<[^>]+>", " ", xml_raw)
+        xml_raw = re.sub(r"\s+", " ", xml_raw)
+        return xml_raw.strip()
+    except Exception:
+        return ""
+
+
+def _wiz_reference_context(max_docs=6, max_chars=6500):
+    docs = st.session_state.get("wiz_reference_docs", []) or []
+    if not isinstance(docs, list) or not docs:
+        return ""
+    blocks = []
+    for item in docs[:max_docs]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "arquivo")).strip() or "arquivo"
+        source = str(item.get("source", "Biblioteca Wiz")).strip() or "Biblioteca Wiz"
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        blocks.append(f"[{name} | {source}]\n{text}")
+    if not blocks:
+        return ""
+    merged = "\n\n".join(blocks)
+    if len(merged) > max_chars:
+        merged = merged[:max_chars] + "\n..."
+    return "Referencias oficiais da escola (usar como base):\n" + merged
+
 
 def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
     summaries = []
@@ -3712,6 +3756,8 @@ def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
                         text = ""
                 except Exception:
                     text = ""
+            elif kind == "docx" and raw:
+                text = _wiz_extract_docx_text(raw)
         except Exception:
             text = ""
         if text:
@@ -3951,6 +3997,82 @@ def run_wiz_assistant():
 
     _render_wiz_automation_panel()
 
+    st.markdown("### Memória de Referências do Wiz (PDF/DOCX)")
+    st.caption("Envie apostilas, contratos e materiais oficiais. O Wiz usará essa base como referência automática nas respostas.")
+    kb_uploads = st.file_uploader(
+        "Adicionar arquivos à memória do Wiz",
+        accept_multiple_files=True,
+        type=["pdf", "docx", "txt", "md"],
+        key="wiz_reference_uploads",
+    )
+    kb_col1, kb_col2 = st.columns([1.2, 1.0])
+    with kb_col1:
+        if st.button("Salvar arquivos na memória", key="wiz_reference_save_btn", type="primary"):
+            if not kb_uploads:
+                st.warning("Selecione ao menos um arquivo.")
+            else:
+                added = 0
+                docs = st.session_state.get("wiz_reference_docs", [])
+                if not isinstance(docs, list):
+                    docs = []
+                for up in kb_uploads:
+                    name = str(getattr(up, "name", "arquivo")).strip() or "arquivo"
+                    kind = _wiz_attachment_kind(up)
+                    try:
+                        raw = up.getvalue() if hasattr(up, "getvalue") else b""
+                    except Exception:
+                        raw = b""
+                    text = ""
+                    if kind == "pdf":
+                        _, blocks = _wiz_extract_attachment_context([up], max_chars=12000)
+                        if blocks:
+                            text = str(blocks[0]).split("\n", 1)[-1].strip()
+                    elif kind == "docx":
+                        text = _wiz_extract_docx_text(raw)
+                    elif kind == "text":
+                        text = raw.decode("utf-8", errors="replace") if raw else ""
+                    text = re.sub(r"\s+", " ", str(text or "")).strip()
+                    if not text:
+                        continue
+                    if len(text) > 16000:
+                        text = text[:16000] + "..."
+                    docs = [d for d in docs if str(d.get("name", "")).strip().lower() != name.lower()]
+                    docs.append(
+                        {
+                            "id": uuid.uuid4().hex,
+                            "name": name,
+                            "kind": kind,
+                            "source": "Upload no Assistente Wiz",
+                            "saved_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "text": text,
+                        }
+                    )
+                    added += 1
+                st.session_state["wiz_reference_docs"] = docs
+                save_list(WIZ_REFERENCE_DOCS_FILE, docs)
+                if added:
+                    st.success(f"{added} arquivo(s) salvo(s) na memória do Wiz.")
+                    st.rerun()
+                else:
+                    st.warning("Nenhum conteúdo legível foi extraído dos arquivos enviados.")
+    with kb_col2:
+        if st.button("Limpar memória do Wiz", key="wiz_reference_clear_btn"):
+            st.session_state["wiz_reference_docs"] = []
+            save_list(WIZ_REFERENCE_DOCS_FILE, [])
+            st.success("Memória de referências do Wiz apagada.")
+            st.rerun()
+
+    kb_docs = st.session_state.get("wiz_reference_docs", [])
+    if isinstance(kb_docs, list) and kb_docs:
+        with st.expander("Arquivos na memória", expanded=False):
+            for idx, doc in enumerate(kb_docs, start=1):
+                doc_name = str(doc.get("name", f"arquivo_{idx}")).strip() or f"arquivo_{idx}"
+                doc_kind = str(doc.get("kind", "")).strip()
+                doc_saved = str(doc.get("saved_at", "")).strip()
+                st.caption(f"{idx}. {doc_name} ({doc_kind}) - salvo em {doc_saved}")
+    else:
+        st.info("Nenhum arquivo de referência salvo na memória do Wiz ainda.")
+
     chat_key = f"wiz:{(st.session_state.get('user_name') or '').strip().lower()}"
     if chat_key not in st.session_state["active_chat_histories"]:
         st.session_state["active_chat_histories"][chat_key] = []
@@ -3960,7 +4082,7 @@ def run_wiz_assistant():
     uploaded_files = st.file_uploader(
         "Anexar arquivo(s) e imagem(ns)",
         accept_multiple_files=True,
-        type=["png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "txt", "md", "csv", "json", "xlsx", "xls"],
+        type=["png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "docx", "txt", "md", "csv", "json", "xlsx", "xls"],
         key="wiz_simple_uploads",
     )
 
@@ -4135,6 +4257,7 @@ def run_wiz_assistant():
                 "Se nao conseguir confirmar algo no sistema, diga explicitamente que nao foi possivel confirmar agora.",
                 "Nunca mencione DietHealth.",
                 get_active_context_text(),
+                _wiz_reference_context(max_docs=8, max_chars=8000),
             ]
         )
         request_messages = [{"role": "system", "content": system_prompt}]
@@ -9789,6 +9912,9 @@ def get_active_system_prompt(mode, include_context=True):
     base.append(f"Perfil atual do usuario no sistema: {role}.")
     if include_context:
         base.append(get_active_context_text())
+    refs = _wiz_reference_context()
+    if refs:
+        base.append(refs)
     return "\n".join(base)
 
 def student_wiz_context(student_name):
@@ -9853,6 +9979,9 @@ def get_tutor_wiz_prompt(contexto_aluno=None):
         base.append("Licoes recentes da turma: " + "; ".join(licoes))
     if materiais:
         base.append("Materiais recentes da turma: " + "; ".join(materiais))
+    refs = _wiz_reference_context(max_docs=4, max_chars=2800)
+    if refs:
+        base.append(refs)
     base.append("Sempre proponha explicacao curta + exercicio pratico + correcao guiada.")
     return "\n".join(base)
 
@@ -10124,21 +10253,276 @@ def _student_active_account_context(student_obj):
 
 
 def get_student_active_prompt(student_obj):
-    return "\n".join(
-        [
-            "Voce e o Bot Mister Wiz integrado ao sistema Active Educacional.",
-            "O CPF do aluno ja foi confirmado nesta sessao antes desta consulta.",
-            "Responda somente com dados do proprio aluno informado abaixo.",
-            "Nunca exponha dados de outros alunos, professores ou usuarios.",
-            "Nao invente informacoes. Se o dado nao estiver no contexto, diga claramente que nao foi encontrado no Active.",
-            _student_active_account_context(student_obj),
-        ]
+    lines = [
+        "Voce e o Bot Mister Wiz integrado ao sistema Active Educacional.",
+        "O CPF do aluno ja foi confirmado nesta sessao antes desta consulta.",
+        "Responda somente com dados do proprio aluno informado abaixo.",
+        "Nunca exponha dados de outros alunos, professores ou usuarios.",
+        "Nao invente informacoes. Se o dado nao estiver no contexto, diga claramente que nao foi encontrado no Active.",
+        _student_active_account_context(student_obj),
+    ]
+    refs = _wiz_reference_context(max_docs=4, max_chars=2800)
+    if refs:
+        lines.append(refs)
+    return "\n".join(lines)
+
+
+def _class_session_grade_metrics(session_obj):
+    sess = session_obj if isinstance(session_obj, dict) else {}
+    turma = str(sess.get("turma", "")).strip()
+    if not turma:
+        return {"nota_media": None, "notas_lancadas": 0, "faltas": 0, "presenca_media": None}
+    sess_date = _class_session_effective_date(sess)
+    if not sess_date:
+        return {"nota_media": None, "notas_lancadas": 0, "faltas": 0, "presenca_media": None}
+
+    prof_norm = normalize_text(sess.get("professor", ""))
+    notes = []
+    presences = []
+    abs_students = set()
+    for grade in st.session_state.get("grades", []):
+        if str(grade.get("turma", "")).strip() != turma:
+            continue
+        grade_date = parse_date(grade.get("data", ""))
+        if grade_date != sess_date:
+            continue
+        if prof_norm:
+            autor_norm = normalize_text(grade.get("autor", ""))
+            if autor_norm and autor_norm != prof_norm:
+                continue
+        avaliacao_norm = normalize_text(grade.get("avaliacao", ""))
+        nota_txt = str(grade.get("nota", "")).strip()
+        match = re.search(r"-?\d+(?:[.,]\d+)?", nota_txt)
+        if not match:
+            continue
+        value = _parse_float(match.group(0), default=None)
+        if value is None:
+            continue
+        if "presenca" in avaliacao_norm or "%" in nota_txt:
+            clipped = max(0.0, min(100.0, float(value)))
+            presences.append(clipped)
+            if clipped < 100.0:
+                aluno_nome = str(grade.get("aluno", "")).strip()
+                if aluno_nome:
+                    abs_students.add(aluno_nome)
+        else:
+            notes.append(float(value))
+
+    note_avg = (sum(notes) / len(notes)) if notes else None
+    presence_avg = (sum(presences) / len(presences)) if presences else None
+    return {
+        "nota_media": note_avg,
+        "notas_lancadas": len(notes),
+        "faltas": len(abs_students),
+        "presenca_media": presence_avg,
+    }
+
+
+def _build_class_sessions_report_rows(date_start=None, date_end=None, professor="Todos", turma="Todas", status_filter="Finalizadas"):
+    prof_target = str(professor or "Todos").strip() or "Todos"
+    turma_target = str(turma or "Todas").strip() or "Todas"
+    prof_norm = normalize_text(prof_target)
+    status_sel = str(status_filter or "Finalizadas").strip() or "Finalizadas"
+    rows = []
+    for sess in st.session_state.get("class_sessions", []):
+        is_final = _class_session_is_finalized(sess)
+        if status_sel == "Finalizadas" and not is_final:
+            continue
+        if status_sel == "Em andamento" and is_final:
+            continue
+        turma_nome = str(sess.get("turma", "")).strip()
+        prof_nome = str(sess.get("professor", "")).strip()
+        if turma_target != "Todas" and turma_nome != turma_target:
+            continue
+        if prof_target != "Todos" and normalize_text(prof_nome) != prof_norm:
+            continue
+        sess_date = _class_session_effective_date(sess)
+        if date_start and sess_date and sess_date < date_start:
+            continue
+        if date_end and sess_date and sess_date > date_end:
+            continue
+        if (date_start or date_end) and not sess_date:
+            continue
+
+        turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
+        payment = _teacher_payment_info_for_session(sess)
+        metrics = _class_session_grade_metrics(sess)
+
+        hora_abriu = str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip()
+        hora_fechou = str(sess.get("hora_fim_real", sess.get("hora_fim_prevista", ""))).strip()
+        duration_min = _session_duration_minutes_from_times(sess, turma_obj)
+        licao = str(sess.get("licao", "")).strip() or str(sess.get("resumo_final", "")).strip()
+        nota_media = metrics.get("nota_media")
+        notas_lancadas = int(metrics.get("notas_lancadas", 0) or 0)
+        faltas = int(metrics.get("faltas", 0) or 0)
+        valor_aula = float(payment.get("valor", 0) or 0)
+
+        rows.append(
+            {
+                "Data": sess_date.strftime("%d/%m/%Y") if isinstance(sess_date, datetime.date) else str(sess.get("data", "")).strip(),
+                "Professor": prof_nome or str(turma_obj.get("professor", "")).strip() or "-",
+                "Turma": turma_nome or "-",
+                "Livro/Nível": str(turma_obj.get("livro", "")).strip() or "-",
+                "Lição": licao or "-",
+                "Abriu": hora_abriu or "-",
+                "Fechou": hora_fechou or "-",
+                "Duração (min)": int(duration_min) if duration_min > 0 else 0,
+                "Valor/Aula": format_money(valor_aula),
+                "_valor_aula_num": valor_aula,
+                "Tipo da Aula": str(payment.get("modulo", "")).strip() or str(turma_obj.get("modulo", "")).strip() or "-",
+                "Notas Lançadas": notas_lancadas,
+                "Nota Média": f"{float(nota_media):.1f}" if nota_media is not None else "-",
+                "_nota_media_num": float(nota_media) if nota_media is not None else None,
+                "Faltas": faltas,
+                "Status": str(sess.get("status", "")).strip() or ("Finalizada" if is_final else "Em andamento"),
+            }
+        )
+
+    rows.sort(
+        key=lambda x: (
+            parse_date(x.get("Data", "")) or datetime.date(1900, 1, 1),
+            parse_time(x.get("Abriu", "00:00")) or datetime.time(0, 0),
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def render_class_sessions_premium_report():
+    st.markdown('<div class="main-header">Relatório Premium de Aulas</div>', unsafe_allow_html=True)
+    st.caption("Visão executiva das aulas dadas: professor, valor, lição, notas, faltas e horários de abertura/fechamento.")
+    st.markdown(
+        """
+        <style>
+        .class-report-card {
+            border-radius: 16px;
+            padding: 16px 18px;
+            color: #e2e8f0;
+            border: 1px solid rgba(148,163,184,0.25);
+            box-shadow: 0 14px 30px rgba(15,23,42,0.16);
+            min-height: 108px;
+        }
+        .class-report-card .k { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 8px; }
+        .class-report-card .v { font-family: 'Sora', sans-serif; font-size: 1.8rem; line-height: 1; font-weight: 700; color: #fff; }
+        .class-report-card .s { margin-top: 8px; font-size: .85rem; color: #dbeafe; }
+        .class-blue { background: linear-gradient(135deg,#1d4ed8 0%,#1e40af 100%); }
+        .class-green { background: linear-gradient(135deg,#059669 0%,#0f766e 100%); }
+        .class-orange { background: linear-gradient(135deg,#ea580c 0%,#c2410c 100%); }
+        .class-slate { background: linear-gradient(135deg,#334155 0%,#0f172a 100%); }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
+    all_sessions = st.session_state.get("class_sessions", [])
+    prof_options = sorted({str(s.get("professor", "")).strip() for s in all_sessions if str(s.get("professor", "")).strip()})
+    turma_options = sorted({str(s.get("turma", "")).strip() for s in all_sessions if str(s.get("turma", "")).strip()})
+    today = datetime.date.today()
+    month_start = today.replace(day=1)
 
-def run_active_chatbot():
-    st.markdown('<div class="main-header">Professor Wiz</div>', unsafe_allow_html=True)
-    st.caption("Assistente dedicado ao contexto da Active Educacional e Mister Wiz.")
+    f1, f2, f3, f4, f5 = st.columns([1.2, 1.2, 1.1, 1.1, 1.0])
+    with f1:
+        start_date = st.date_input("De", value=month_start, format="DD/MM/YYYY", key="class_report_start")
+    with f2:
+        end_date = st.date_input("Até", value=today, format="DD/MM/YYYY", key="class_report_end")
+    with f3:
+        prof_sel = st.selectbox("Professor", ["Todos"] + prof_options, key="class_report_prof")
+    with f4:
+        turma_sel = st.selectbox("Turma", ["Todas"] + turma_options, key="class_report_turma")
+    with f5:
+        status_sel = st.selectbox("Status", ["Finalizadas", "Em andamento", "Todas"], key="class_report_status")
+
+    rows = _build_class_sessions_report_rows(
+        date_start=start_date,
+        date_end=end_date,
+        professor=prof_sel,
+        turma=turma_sel,
+        status_filter=status_sel,
+    )
+
+    total_aulas = len(rows)
+    total_valor = sum(float(r.get("_valor_aula_num", 0) or 0) for r in rows)
+    notas_validas = [float(r.get("_nota_media_num")) for r in rows if r.get("_nota_media_num") is not None]
+    media_geral = (sum(notas_validas) / len(notas_validas)) if notas_validas else None
+    faltas_total = sum(int(r.get("Faltas", 0) or 0) for r in rows)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f"<div class='class-report-card class-blue'><div class='k'>Aulas no período</div><div class='v'>{total_aulas}</div><div class='s'>professores com aula: {len({r.get('Professor','') for r in rows if r.get('Professor') and r.get('Professor') != '-'})}</div></div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"<div class='class-report-card class-green'><div class='k'>Valor total</div><div class='v'>{format_money(total_valor)}</div><div class='s'>somatório por aula finalizada/filtrada</div></div>", unsafe_allow_html=True)
+    with c3:
+        media_txt = f"{media_geral:.1f}" if media_geral is not None else "-"
+        st.markdown(f"<div class='class-report-card class-orange'><div class='k'>Nota média</div><div class='v'>{media_txt}</div><div class='s'>base: notas lançadas por turma/data</div></div>", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"<div class='class-report-card class-slate'><div class='k'>Faltas registradas</div><div class='v'>{faltas_total}</div><div class='s'>alunos com presença &lt; 100% no dia</div></div>", unsafe_allow_html=True)
+
+    if not rows:
+        st.info("Nenhuma aula encontrada com os filtros informados.")
+        return
+
+    df = pd.DataFrame(rows)
+    view_cols = [
+        "Data",
+        "Professor",
+        "Turma",
+        "Livro/Nível",
+        "Lição",
+        "Abriu",
+        "Fechou",
+        "Duração (min)",
+        "Valor/Aula",
+        "Tipo da Aula",
+        "Notas Lançadas",
+        "Nota Média",
+        "Faltas",
+        "Status",
+    ]
+    df_view = df[[c for c in view_cols if c in df.columns]]
+    st.markdown("### Relatório detalhado")
+    st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+    resumo_prof = (
+        df.groupby("Professor", dropna=False)
+        .agg(
+            Aulas=("Professor", "count"),
+            Valor_Total=("_valor_aula_num", "sum"),
+            Faltas=("Faltas", "sum"),
+        )
+        .reset_index()
+        .sort_values(["Valor_Total", "Aulas"], ascending=[False, False])
+    )
+    resumo_prof["Valor_Total"] = resumo_prof["Valor_Total"].apply(format_money)
+    st.markdown("### Resumo por professor")
+    st.dataframe(resumo_prof, use_container_width=True, hide_index=True)
+
+    d1, d2 = st.columns(2)
+    with d1:
+        csv_bytes = df_view.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "Baixar CSV do relatório",
+            data=csv_bytes,
+            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key="class_report_csv",
+        )
+    with d2:
+        xlsx_buffer = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
+            df_view.to_excel(writer, index=False, sheet_name="Aulas")
+            resumo_prof.to_excel(writer, index=False, sheet_name="Resumo Professores")
+        st.download_button(
+            "Baixar Excel do relatório",
+            data=xlsx_buffer.getvalue(),
+            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="class_report_xlsx",
+        )
+
+
+def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao contexto da Active Educacional e Mister Wiz.", force_system_context=False):
+    st.markdown(f'<div class="main-header">{title}</div>', unsafe_allow_html=True)
+    st.caption(subtitle)
 
     api_key = get_groq_api_key()
     if not api_key:
@@ -10160,7 +10544,9 @@ def run_active_chatbot():
         st.caption("Modo automatico do professor: apoio pedagogico para aula e avaliacao.")
         c_prof_ctx, c_prof_temp = st.columns(2)
         with c_prof_ctx:
-            include_context = st.checkbox("Usar contexto do sistema", value=True, key="prof_wiz_context")
+            include_context = True if force_system_context else st.checkbox("Usar contexto do sistema", value=True, key="prof_wiz_context")
+            if force_system_context:
+                st.info("Contexto do sistema habilitado obrigatoriamente neste suporte.")
         with c_prof_temp:
             st.session_state["active_chat_temp"] = st.slider(
                 "Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05, key="prof_wiz_temp"
@@ -10173,7 +10559,9 @@ def run_active_chatbot():
         with c1:
             mode = st.selectbox("Modo", mode_options, key="active_chat_mode")
         with c2:
-            include_context = st.checkbox("Usar contexto do sistema", value=True, key="coord_wiz_context")
+            include_context = True if force_system_context else st.checkbox("Usar contexto do sistema", value=True, key="coord_wiz_context")
+            if force_system_context:
+                st.info("Contexto do sistema habilitado obrigatoriamente neste suporte.")
         with c3:
             st.session_state["active_chat_temp"] = st.slider(
                 "Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05, key="coord_wiz_temp"
@@ -11311,6 +11699,7 @@ def run_commercial_panel():
                 "Alunos Matriculados",
                 "WhatsApp Leads",
                 "Professor Wiz",
+                "Suporte",
             ],
             "menu_sales",
         )
@@ -11327,6 +11716,7 @@ def run_commercial_panel():
         "Alunos Matriculados": "Alunos Matriculados",
         "WhatsApp Leads": "WhatsApp Leads",
         "Professor Wiz": "Professor Wiz",
+        "Suporte": "Suporte",
     }
     menu_sales = menu_sales_map.get(menu_sales_label, "Leads")
 
@@ -11979,6 +12369,12 @@ def run_commercial_panel():
 
     elif menu_sales == "Professor Wiz":
         run_active_chatbot()
+    elif menu_sales == "Suporte":
+        run_active_chatbot(
+            title="Suporte Wiz",
+            subtitle="Suporte IA para usuários do sistema, com referência ao contexto do Active.",
+            force_system_context=True,
+        )
 
 restore_login_from_query()
 
@@ -12178,6 +12574,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     st.session_state["sales_leads"] = load_list(SALES_LEADS_FILE)
     st.session_state["sales_agenda"] = load_list(SALES_AGENDA_FILE)
     st.session_state["sales_payments"] = load_list(SALES_PAYMENTS_FILE)
+    st.session_state["wiz_reference_docs"] = load_list(WIZ_REFERENCE_DOCS_FILE)
 
     _ensure_challenge_store_ids()
     _ensure_activity_store_ids()
@@ -12364,6 +12761,7 @@ elif st.session_state["role"] == "Aluno":
                 "Financeiro",
                 "Materiais de Estudo",
                 "Professor Wiz",
+                "Suporte",
             ],
             "menu_aluno",
         )
@@ -12385,6 +12783,7 @@ elif st.session_state["role"] == "Aluno":
         "Financeiro": "Financeiro",
         "Materiais de Estudo": "Materiais de Estudo",
         "Professor Wiz": "Professor Wiz",
+        "Suporte": "Suporte",
     }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
@@ -13008,6 +13407,12 @@ elif st.session_state["role"] == "Aluno":
         run_student_finance_assistant()
     elif menu_aluno == "Professor Wiz":
         run_active_chatbot()
+    elif menu_aluno == "Suporte":
+        run_active_chatbot(
+            title="Suporte Wiz",
+            subtitle="Suporte IA para alunos com contexto real do sistema.",
+            force_system_context=True,
+        )
 
 # =============================================================================
 # PROFESSOR
@@ -13031,7 +13436,7 @@ elif st.session_state["role"] == "Professor":
         st.markdown("---")
         menu_prof_label = sidebar_menu(
             "Gestão",
-            ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz"],
+            ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz", "Suporte"],
             "menu_prof",
         )
         st.markdown("---")
@@ -13050,6 +13455,7 @@ elif st.session_state["role"] == "Professor":
         "Biblioteca": "Livros",
         "Livros": "Livros",
         "Professor Wiz": "Assistente IA",
+        "Suporte": "Suporte",
     }
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
@@ -13696,6 +14102,12 @@ elif st.session_state["role"] == "Professor":
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
+    elif menu_prof == "Suporte":
+        run_active_chatbot(
+            title="Suporte Wiz",
+            subtitle="Suporte IA para professores com referência ao sistema.",
+            force_system_context=True,
+        )
 
 elif st.session_state["role"] == "Comercial":
     run_commercial_panel()
@@ -13729,6 +14141,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Usuários",
             "Turmas",
             "Financeiro",
+            "Relatório de Aulas",
             "Estoque",
             "Certificados",
             "Biblioteca",
@@ -13737,6 +14150,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Caixa de Entrada",
             "Desafios",
             "WhatsApp (Evolution)",
+            "Suporte",
             "Backup",
             "Professor Wiz",
         ]
@@ -13759,6 +14173,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Usuários": "Usuarios",
         "Turmas": "Turmas",
         "Financeiro": "Financeiro",
+        "Relatório de Aulas": "Aulas Relatorio",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
         "Biblioteca": "Livros",
@@ -13769,6 +14184,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Conteúdos": "Conteudos",
         "Desafios": "Desafios",
         "WhatsApp (Evolution)": "WhatsApp",
+        "Suporte": "Suporte",
         "ASSISTENTE WIZ": "Assistente Wiz",
         "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
@@ -14018,6 +14434,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                             st.success("Aula(s) agendada(s)!")
                             st.rerun()
+
+    elif menu_coord == "Aulas Relatorio":
+        render_class_sessions_premium_report()
 
     elif menu_coord == "Links":
         st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
@@ -19469,6 +19888,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.rerun()
             else:
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
+    elif menu_coord == "Suporte":
+        run_active_chatbot(
+            title="Suporte Wiz",
+            subtitle="Suporte IA para todos os perfis, com referência do sistema e da biblioteca de documentos.",
+            force_system_context=True,
+        )
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
 
