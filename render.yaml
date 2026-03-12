@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: active-educacional
+    runtime: python
+    plan: free
+    branch: principal
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ACTIVE_DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ACTIVE_WHATSAPP_PROVIDER
+        value: wapi
+      - key: WAPI_BASE_URL
+        sync: false
+      - key: WAPI_TOKEN
+        sync: false
+      - key: WAPI_INSTANCE
+        sync: false
+      - key: ADMIN_WHATSAPP_NUMERO
+        sync: false

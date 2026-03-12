@@ -5,3 +5,5 @@ __pycache__/
 venv/
 .streamlit/secrets.toml
 *.log
+manual_backups/
+active_backup_*.zip
