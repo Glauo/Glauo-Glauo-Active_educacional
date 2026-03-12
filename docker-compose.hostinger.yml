@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    container_name: active_educacional_app
+    restart: unless-stopped
+    env_file:
+      - deploy/hostinger/.env
+    environment:
+      ACTIVE_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+  caddy:
+    image: caddy:2-alpine
+    container_name: active_educacional_proxy
+    restart: unless-stopped
+    env_file:
+      - deploy/hostinger/.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/hostinger/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

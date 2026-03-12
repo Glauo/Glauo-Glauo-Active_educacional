@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+.devcontainer
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+manual_backups
+_data_backups
+active_backup_*.zip
