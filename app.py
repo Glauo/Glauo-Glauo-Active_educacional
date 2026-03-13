@@ -2307,7 +2307,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
     )
     try:
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+        model_name = get_active_chatbot_model()
         result = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -4215,7 +4215,7 @@ def run_wiz_assistant():
 
     fallback_actions = _wiz_actions_from_book_uploads(user_text, uploaded_files) if wiz_auto_exec else []
     if not api_key and not fallback_actions:
-        st.error("Configure GROQ_API_KEY para usar o Assistente Wiz.")
+        st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para usar o Assistente Wiz.")
         return
 
     if api_key:
@@ -4264,7 +4264,7 @@ def run_wiz_assistant():
         request_messages += chat_history[-12:]
         request_messages.append({"role": "user", "content": full_user_text})
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+        model_name = get_active_chatbot_model()
         with st.spinner("Wiz esta pensando..."):
             try:
                 result = client.chat.completions.create(
@@ -5921,7 +5921,7 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if st.button("Gerar licao semanal com IA", type="primary", key=f"{panel_key}_hw_ia_generate"):
             api_key = get_groq_api_key()
             if not api_key:
-                st.error("Configure GROQ_API_KEY para gerar licao com IA.")
+                st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar licao com IA.")
             else:
                 try:
                     draft = generate_weekly_homework_ai(
@@ -7357,9 +7357,9 @@ def _extract_json_object(text):
 def _groq_chat_text(messages, temperature=0.2, max_tokens=900):
     api_key = get_groq_api_key()
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY nao configurado.")
+        raise RuntimeError("GROQ_API_KEY/ACTIVE_GROQ_API_KEY nao configurado.")
     client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-    model_name = os.getenv("ACTIVE_CHALLENGE_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
+    model_name = _clean_config_value(_get_config_value("ACTIVE_CHALLENGE_MODEL", "")) or get_active_chatbot_model()
     result = client.chat.completions.create(
         model=model_name,
         messages=messages,
@@ -9853,14 +9853,31 @@ def render_library(title="Biblioteca", turma=None, turma_options=None):
                         st.video(v.get("url"))
 
 def get_groq_api_key():
-    key = ""
-    try:
-        key = str(st.secrets.get("GROQ_API_KEY", "")).strip()
-    except Exception:
-        key = ""
-    if not key:
-        key = str(os.getenv("GROQ_API_KEY", "")).strip()
-    return key
+    candidates = [
+        _get_config_value("GROQ_API_KEY", ""),
+        _get_config_value("ACTIVE_GROQ_API_KEY", ""),
+        _get_config_value("ACTIVE_WIZ_API_KEY", ""),
+        _get_config_value("GROQ_KEY", ""),
+        _get_config_value("GROQ_TOKEN", ""),
+    ]
+    for raw_value in candidates:
+        key = _clean_config_value(raw_value)
+        if key:
+            return key
+    return ""
+
+def get_active_chatbot_model():
+    candidates = [
+        _get_config_value("ACTIVE_WIZ_MODEL", ""),
+        _get_config_value("ACTIVE_CHATBOT_MODEL", ""),
+        _get_config_value("GROQ_MODEL", ""),
+        _get_config_value("ACTIVE_GROQ_MODEL", ""),
+    ]
+    for raw_value in candidates:
+        model_name = _clean_config_value(raw_value)
+        if model_name:
+            return model_name
+    return "llama-3.3-70b-versatile"
 
 def get_active_chat_history_key():
     role = (st.session_state.get("role") or "").strip().lower()
@@ -10536,7 +10553,7 @@ def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao c
 
     api_key = get_groq_api_key()
     if not api_key:
-        st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o chatbot.")
+        st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY em secrets/variavel de ambiente para usar o chatbot.")
         return
 
     role = st.session_state.get("role", "")
@@ -10735,7 +10752,7 @@ def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao c
 
         if not answer:
             client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-            model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+            model_name = get_active_chatbot_model()
             with st.spinner("Gerando resposta..."):
                 try:
                     result = client.chat.completions.create(
@@ -10853,7 +10870,7 @@ def run_student_finance_assistant():
 
     api_key = get_groq_api_key()
     if not api_key:
-        st.warning("Assistente IA indisponivel: configure GROQ_API_KEY para liberar o Wiz nesta tela.")
+        st.warning("Assistente IA indisponivel: configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para liberar o Wiz nesta tela.")
         return
 
     chat_key = f"finance:{get_active_chat_history_key()}"
@@ -10883,7 +10900,7 @@ def run_student_finance_assistant():
         request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-12:]
 
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
+        model_name = get_active_chatbot_model()
         with st.spinner("Gerando resposta..."):
             try:
                 result = client.chat.completions.create(
@@ -13467,7 +13484,7 @@ elif st.session_state["role"] == "Aluno":
                 else:
                     api_key = get_groq_api_key()
                     if not api_key:
-                        st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY em secrets/variavel de ambiente.")
+                        st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY em secrets/variavel de ambiente.")
                     else:
                         default_answer = str(sub.get("resposta", "") or "")
                         resp_key = f"challenge_answer_{cid}_{aluno_nome}".replace(" ", "_")
@@ -14924,7 +14941,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
                     api_key = get_groq_api_key()
                     if not api_key:
-                        st.warning("Configure GROQ_API_KEY para gerar resumo automático do pedido.")
+                        st.warning("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar resumo automatico do pedido.")
                     else:
                         resumo_itens = [
                             f"{i.get('codigo','')}: {i.get('descricao','')} (saldo {i.get('saldo','')}, mínimo {i.get('minimo','')})"
@@ -14937,7 +14954,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
                         try:
                             result = client.chat.completions.create(
-                                model=os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"),
+                                model=get_active_chatbot_model(),
                                 messages=[
                                     {"role": "system", "content": system_prompt},
                                     {"role": "user", "content": user_prompt},
@@ -19259,7 +19276,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if pending_draft_action == "gen_ai":
                 api_key = get_groq_api_key()
                 if not api_key:
-                    st.session_state[draft_error_key] = "Configure GROQ_API_KEY para gerar desafios com IA."
+                    st.session_state[draft_error_key] = "Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar desafios com IA."
                 elif target_type == "turma" and not target_turma:
                     st.session_state[draft_error_key] = "Selecione a turma de destino antes de gerar o desafio."
                 elif target_type == "aluno_vip" and not target_aluno:
