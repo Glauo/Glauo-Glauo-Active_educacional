@@ -624,6 +624,17 @@ def _qr_content_to_png_bytes(content):
     except Exception:
         return None
 
+
+def _fpdf_output_bytes(pdf):
+    if pdf is None:
+        return None
+    raw = pdf.output(dest="S")
+    if isinstance(raw, bytes):
+        return raw
+    if isinstance(raw, bytearray):
+        return bytes(raw)
+    return str(raw).encode("latin-1", "ignore")
+
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
     candidates = [
@@ -8166,7 +8177,7 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
         pdf.cell(0, 6, obs, align="C")
         pdf.set_text_color(0, 0, 0)
 
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    return _fpdf_output_bytes(pdf)
 
 def add_receivable(
     aluno,
@@ -8866,7 +8877,7 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     pdf.set_text_color(71, 85, 105)
     pdf.multi_cell(0, 4.5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo informado."))
 
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    return _fpdf_output_bytes(pdf)
 
 def _teacher_payment_already_launched(session_obj):
     ref = _teacher_payment_ref_for_session(session_obj)
@@ -10775,7 +10786,7 @@ def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
                 pdf.set_x(pdf.l_margin)
                 pdf.multi_cell(0, 4.5, line)
         pdf.ln(1.5)
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    return _fpdf_output_bytes(pdf)
 
 
 def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos"):
@@ -20765,5 +20776,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         )
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
+
 
 
