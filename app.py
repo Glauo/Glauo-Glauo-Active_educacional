@@ -10521,6 +10521,132 @@ def _student_receivables_summary(student_name):
     }
 
 
+def _coerce_report_date(value):
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = parse_date(text)
+    if parsed:
+        return parsed
+    try:
+        return datetime.date.fromisoformat(text[:10])
+    except Exception:
+        return None
+
+
+def _record_matches_period(record, start_date=None, end_date=None, date_fields=None):
+    if not start_date and not end_date:
+        return True
+    record = record or {}
+    for field in date_fields or []:
+        date_value = _coerce_report_date(record.get(field))
+        if not date_value:
+            continue
+        if start_date and date_value < start_date:
+            return False
+        if end_date and date_value > end_date:
+            return False
+        return True
+    return False
+
+
+def _student_receivables_summary_period(student_name, start_date=None, end_date=None):
+    items = _student_receivables(student_name)
+    filtered_items = [
+        item for item in items
+        if _record_matches_period(
+            item,
+            start_date=start_date,
+            end_date=end_date,
+            date_fields=["data_pagamento", "vencimento", "data", "created_at", "updated_at"],
+        )
+    ] if (start_date or end_date) else items
+    open_items = [r for r in filtered_items if str(r.get("status", "")).strip().lower() != "pago"]
+    paid_items = [r for r in filtered_items if str(r.get("status", "")).strip().lower() == "pago"]
+    total_open = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in open_items)
+    total_paid = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in paid_items)
+    return {
+        "all": filtered_items,
+        "open": open_items,
+        "paid": paid_items,
+        "total_open": total_open,
+        "total_paid": total_paid,
+    }
+
+
+def _report_card_html(title, value, subtitle="", tone="blue"):
+    return (
+        f"<div class='report-kpi-card report-{html.escape(str(tone or 'blue'))}'>"
+        f"<div class='k'>{html.escape(str(title or ''))}</div>"
+        f"<div class='v'>{html.escape(str(value or '-'))}</div>"
+        f"<div class='s'>{html.escape(str(subtitle or ''))}</div>"
+        "</div>"
+    )
+
+
+def _render_report_kpis(cards):
+    if not cards:
+        return
+    st.markdown(
+        "<div class='report-kpi-grid'>"
+        + "".join(_report_card_html(card.get("title"), card.get("value"), card.get("subtitle"), card.get("tone")) for card in cards)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _report_print_html_bytes(title, subtitle, rows, preferred_columns):
+    columns = [col for col in preferred_columns if any(col in row for row in rows)] if rows else list(preferred_columns)
+    if not columns and rows:
+        columns = list(rows[0].keys())
+    head_html = "".join(f"<th>{html.escape(str(col))}</th>" for col in columns)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{html.escape(str(row.get(col, '') or ''))}</td>" for col in columns) + "</tr>"
+        for row in (rows or [])
+    ) or "<tr><td colspan='99'>Nenhum dado encontrado.</td></tr>"
+    document = f"""
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>{html.escape(str(title or 'Relatorio'))}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }}
+    h1 {{ margin: 0 0 6px; font-size: 24px; }}
+    p {{ margin: 0 0 18px; color: #475569; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+    th, td {{ border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; vertical-align: top; }}
+    th {{ background: #eff6ff; }}
+    tr:nth-child(even) td {{ background: #f8fafc; }}
+  </style>
+</head>
+<body>
+  <h1>{html.escape(str(title or 'Relatorio'))}</h1>
+  <p>{html.escape(str(subtitle or ''))}</p>
+  <table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>
+  <script>window.addEventListener("load", function() {{ setTimeout(function() {{ window.print(); }}, 250); }});</script>
+</body>
+</html>
+"""
+    return document.encode("utf-8")
+
+
+def _render_print_button(title, subtitle, rows, preferred_columns):
+    html_bytes = _report_print_html_bytes(title, subtitle, rows, preferred_columns)
+    html_b64 = base64.b64encode(html_bytes).decode("ascii")
+    st.markdown(
+        f'<a class="report-print-button" href="data:text/html;base64,{html_b64}" target="_blank" rel="noopener noreferrer">Imprimir relatório</a>',
+        unsafe_allow_html=True,
+    )
+
+
+def _report_period_subtitle(start_date, end_date):
+    return f"Período analisado: {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
+
 def render_class_sessions_premium_report():
     st.markdown('<div class="main-header">Relatório Premium de Aulas</div>', unsafe_allow_html=True)
     st.caption("Visão executiva das aulas dadas: professor, valor, lição, notas, faltas e horários de abertura/fechamento.")
@@ -10542,6 +10668,13 @@ def render_class_sessions_premium_report():
         .class-green { background: linear-gradient(135deg,#059669 0%,#0f766e 100%); }
         .class-orange { background: linear-gradient(135deg,#ea580c 0%,#c2410c 100%); }
         .class-slate { background: linear-gradient(135deg,#334155 0%,#0f172a 100%); }
+        .report-print-button {
+            display: inline-flex; align-items: center; justify-content: center; width: 100%;
+            min-height: 44px; border-radius: 14px; background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+            color: #ffffff !important; text-decoration: none; font-weight: 700; border: 1px solid rgba(148,163,184,0.22);
+            box-shadow: 0 10px 22px rgba(15,23,42,0.16);
+        }
+        .report-print-button:hover { transform: translateY(-1px); opacity: .96; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -10640,7 +10773,7 @@ def render_class_sessions_premium_report():
     st.markdown("### Resumo por professor")
     st.dataframe(resumo_prof, use_container_width=True, hide_index=True)
 
-    d1, d2 = st.columns(2)
+    d1, d2, d3, d4 = st.columns(4)
     with d1:
         csv_bytes = df_view.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
@@ -10662,20 +10795,24 @@ def render_class_sessions_premium_report():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="class_report_xlsx",
         )
+    report_subtitle = _report_period_subtitle(start_date, end_date)
     pdf_bytes = _generic_report_pdf_bytes(
         title="Relatorio Detalhado de Aulas",
-        subtitle=f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+        subtitle=report_subtitle,
         rows=df_view.to_dict("records"),
         preferred_columns=view_cols,
     )
-    if pdf_bytes:
-        st.download_button(
-            "Baixar PDF do relatorio",
-            data=pdf_bytes,
-            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
-            key="class_report_pdf",
-        )
+    with d3:
+        if pdf_bytes:
+            st.download_button(
+                "Baixar PDF do relatorio",
+                data=pdf_bytes,
+                file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                key="class_report_pdf",
+            )
+    with d4:
+        _render_print_button("Relatorio Detalhado de Aulas", report_subtitle, df_view.to_dict("records"), view_cols)
 
 
 def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
@@ -10789,7 +10926,7 @@ def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
     return _fpdf_output_bytes(pdf)
 
 
-def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos"):
+def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos", start_date=None, end_date=None):
     turma_target = str(turma_filter or "Todas").strip() or "Todas"
     status_target = str(status_filter or "Todos").strip() or "Todos"
     rows = []
@@ -10801,7 +10938,12 @@ def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos"):
         if status_target != "Todos" and status_nome != status_target:
             continue
         turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
-        summary = _student_receivables_summary(str(aluno.get("nome", "")).strip())
+        summary = _student_receivables_summary_period(str(aluno.get("nome", "")).strip(), start_date=start_date, end_date=end_date)
+        sessoes = [
+            sess for sess in st.session_state.get("class_sessions", [])
+            if str(sess.get("turma", "")).strip() == turma_nome
+            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
+        ]
         rows.append(
             {
                 "Aluno": str(aluno.get("nome", "")).strip() or "-",
@@ -10812,24 +10954,36 @@ def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos"):
                 "Celular": str(aluno.get("celular", "")).strip() or "-",
                 "E-mail": str(aluno.get("email", "")).strip() or "-",
                 "Responsável": str((aluno.get("responsavel", {}) or {}).get("nome", "")).strip() or "-",
+                "Sessões no período": len(sessoes),
                 "A Receber": format_money(summary.get("total_open", 0.0)),
                 "Pago": format_money(summary.get("total_paid", 0.0)),
                 "Lançamentos em aberto": len(summary.get("open", [])),
+                "_a_receber_num": float(summary.get("total_open", 0.0) or 0),
+                "_pago_num": float(summary.get("total_paid", 0.0) or 0),
+                "_sessoes_num": len(sessoes),
             }
         )
     return rows
 
 
-def _admin_teacher_report_rows():
+def _admin_teacher_report_rows(start_date=None, end_date=None):
     rows = []
     for teacher in sorted(st.session_state.get("teachers", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
         nome = str(teacher.get("nome", "")).strip()
         turmas = [c for c in st.session_state.get("classes", []) if str(c.get("professor", "")).strip() == nome]
         alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas}]
-        sessoes = [sess for sess in st.session_state.get("class_sessions", []) if str(sess.get("professor", "")).strip() == nome or str(sess.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas}]
+        sessoes = [
+            sess for sess in st.session_state.get("class_sessions", [])
+            if (str(sess.get("professor", "")).strip() == nome or str(sess.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas})
+            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
+        ]
         finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
         extras = [sess for sess in finalizadas if _class_session_extra_flag(sess)]
-        payables = [p for p in st.session_state.get("payables", []) if str(p.get("professor", "")).strip() == nome]
+        payables = [
+            p for p in st.session_state.get("payables", [])
+            if str(p.get("professor", "")).strip() == nome
+            and _record_matches_period(p, start_date, end_date, ["data_pagamento", "vencimento", "data", "created_at", "updated_at"])
+        ] if (start_date or end_date) else [p for p in st.session_state.get("payables", []) if str(p.get("professor", "")).strip() == nome]
         total_aberto = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() != "pago")
         total_pago = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() == "pago")
         rows.append(
@@ -10843,22 +10997,32 @@ def _admin_teacher_report_rows():
                 "Aulas Extras": len(extras),
                 "A Receber": format_money(total_aberto),
                 "Pago": format_money(total_pago),
+                "_turmas_num": len(turmas),
+                "_alunos_num": len(alunos),
+                "_aulas_finalizadas_num": len(finalizadas),
+                "_aulas_extras_num": len(extras),
+                "_a_receber_num": float(total_aberto or 0),
+                "_pago_num": float(total_pago or 0),
             }
         )
     return rows
 
 
-def _admin_class_report_rows():
+def _admin_class_report_rows(start_date=None, end_date=None):
     rows = []
     for turma in sorted(st.session_state.get("classes", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
         nome = str(turma.get("nome", "")).strip()
         alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() == nome]
-        sessoes = [sess for sess in st.session_state.get("class_sessions", []) if str(sess.get("turma", "")).strip() == nome]
+        sessoes = [
+            sess for sess in st.session_state.get("class_sessions", [])
+            if str(sess.get("turma", "")).strip() == nome
+            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
+        ]
         finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
         extras = [sess for sess in finalizadas if _class_session_extra_flag(sess, turma)]
         valor_receber = 0.0
         for aluno in alunos:
-            valor_receber += _student_receivables_summary(str(aluno.get("nome", "")).strip()).get("total_open", 0.0)
+            valor_receber += _student_receivables_summary_period(str(aluno.get("nome", "")).strip(), start_date=start_date, end_date=end_date).get("total_open", 0.0)
         rows.append(
             {
                 "Turma": nome or "-",
@@ -10871,20 +11035,27 @@ def _admin_class_report_rows():
                 "Aulas Finalizadas": len(finalizadas),
                 "Aulas Extras": len(extras),
                 "A Receber da Turma": format_money(valor_receber),
+                "_alunos_num": len(alunos),
+                "_aulas_finalizadas_num": len(finalizadas),
+                "_aulas_extras_num": len(extras),
+                "_a_receber_num": float(valor_receber or 0),
             }
         )
     return rows
 
 
-def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix):
+def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix, subtitle="", cards=None):
     st.markdown(f"### {title}")
+    if subtitle:
+        st.caption(subtitle)
+    _render_report_kpis(cards or [])
     if not rows:
         st.info("Nenhum dado encontrado para este relatório.")
         return
     df = pd.DataFrame(rows)
     df_view = df[[c for c in preferred_columns if c in df.columns]]
     st.dataframe(df_view, use_container_width=True, hide_index=True)
-    c1, c2 = st.columns(2)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         xlsx_buffer = io.BytesIO()
         with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
@@ -10897,9 +11068,17 @@ def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix
             key=f"{filename_prefix}_xlsx",
         )
     with c2:
+        st.download_button(
+            "Baixar CSV",
+            data=df_view.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key=f"{filename_prefix}_csv",
+        )
+    with c3:
         pdf_bytes = _generic_report_pdf_bytes(
             title=title,
-            subtitle=f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            subtitle=subtitle or f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
             rows=df_view.to_dict("records"),
             preferred_columns=preferred_columns,
         )
@@ -10911,29 +11090,132 @@ def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix
                 mime="application/pdf",
                 key=f"{filename_prefix}_pdf",
             )
+    with c4:
+        _render_print_button(
+            title,
+            subtitle or f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            df_view.to_dict("records"),
+            preferred_columns,
+        )
+
+
+def _admin_class_report_cards(rows):
+    total_turmas = len(rows)
+    total_alunos = sum(int(row.get("_alunos_num", 0) or 0) for row in rows)
+    total_aulas = sum(int(row.get("_aulas_finalizadas_num", 0) or 0) for row in rows)
+    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
+    return [
+        {"title": "Turmas listadas", "value": total_turmas, "subtitle": "visão consolidada por turma", "tone": "blue"},
+        {"title": "Alunos vinculados", "value": total_alunos, "subtitle": "somatório nas turmas filtradas", "tone": "green"},
+        {"title": "Aulas finalizadas", "value": total_aulas, "subtitle": "sessões dentro do período", "tone": "slate"},
+        {"title": "A receber", "value": format_money(total_receber), "subtitle": "saldo aberto das turmas", "tone": "orange"},
+    ]
+
+
+def _admin_teacher_report_cards(rows):
+    total_professores = len(rows)
+    total_turmas = sum(int(row.get("_turmas_num", 0) or 0) for row in rows)
+    total_pago = sum(float(row.get("_pago_num", 0) or 0) for row in rows)
+    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
+    return [
+        {"title": "Professores", "value": total_professores, "subtitle": "cadastros exibidos", "tone": "blue"},
+        {"title": "Turmas atendidas", "value": total_turmas, "subtitle": "carga consolidada", "tone": "slate"},
+        {"title": "Pago", "value": format_money(total_pago), "subtitle": "pagamentos no período", "tone": "green"},
+        {"title": "A receber", "value": format_money(total_receber), "subtitle": "pendências no período", "tone": "orange"},
+    ]
+
+
+def _admin_student_report_cards(rows):
+    total_alunos = len(rows)
+    ativos = len([row for row in rows if normalize_text(row.get("Status", "")) == "ativo"])
+    total_pago = sum(float(row.get("_pago_num", 0) or 0) for row in rows)
+    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
+    return [
+        {"title": "Alunos", "value": total_alunos, "subtitle": "registros exibidos", "tone": "blue"},
+        {"title": "Ativos", "value": ativos, "subtitle": "status ativo no filtro atual", "tone": "green"},
+        {"title": "Pago", "value": format_money(total_pago), "subtitle": "financeiro do período", "tone": "slate"},
+        {"title": "A receber", "value": format_money(total_receber), "subtitle": "saldo aberto do período", "tone": "orange"},
+    ]
 
 
 def render_admin_reports_center():
+    st.markdown(
+        """
+        <style>
+        .report-shell {
+            background: linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(241,245,249,0.88) 100%);
+            border: 1px solid rgba(191,219,254,0.58);
+            border-radius: 28px;
+            padding: 22px 24px 18px;
+            box-shadow: 0 20px 52px rgba(15,23,42,0.10);
+            margin-bottom: 18px;
+        }
+        .report-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin: 10px 0 18px;
+        }
+        .report-kpi-card {
+            border-radius: 18px;
+            padding: 16px 18px;
+            color: #eff6ff;
+            box-shadow: 0 14px 28px rgba(15,23,42,0.14);
+            border: 1px solid rgba(255,255,255,0.10);
+            min-height: 102px;
+        }
+        .report-kpi-card .k { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: rgba(226,232,240,0.92); margin-bottom: 9px; }
+        .report-kpi-card .v { font-family: 'Sora', sans-serif; font-size: 1.65rem; font-weight: 700; line-height: 1.08; color: #ffffff; }
+        .report-kpi-card .s { font-size: .84rem; margin-top: 10px; color: rgba(226,232,240,0.88); }
+        .report-blue { background: linear-gradient(135deg,#1d4ed8 0%,#1e3a8a 100%); }
+        .report-green { background: linear-gradient(135deg,#0f9f6e 0%,#0f766e 100%); }
+        .report-orange { background: linear-gradient(135deg,#f97316 0%,#c2410c 100%); }
+        .report-slate { background: linear-gradient(135deg,#334155 0%,#0f172a 100%); }
+        .report-print-button {
+            display: inline-flex; align-items: center; justify-content: center; width: 100%;
+            min-height: 44px; border-radius: 14px; background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+            color: #ffffff !important; text-decoration: none; font-weight: 700; border: 1px solid rgba(148,163,184,0.22);
+            box-shadow: 0 10px 22px rgba(15,23,42,0.16);
+        }
+        .report-print-button:hover { transform: translateY(-1px); opacity: .96; }
+        .report-filter-caption { margin-top: 4px; color: #64748b; font-size: .9rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.markdown('<div class="main-header">Central de Relatórios</div>', unsafe_allow_html=True)
     st.caption("Relatórios detalhados de aulas, turmas, professores e alunos com exportação em Excel e PDF.")
+    today = datetime.date.today()
+    default_start = today.replace(day=1)
+    st.markdown("<div class='report-shell'>", unsafe_allow_html=True)
+    pf1, pf2 = st.columns(2)
+    with pf1:
+        period_start = st.date_input("Período inicial", value=default_start, format="DD/MM/YYYY", key="admin_reports_period_start")
+    with pf2:
+        period_end = st.date_input("Período final", value=today, format="DD/MM/YYYY", key="admin_reports_period_end")
+    st.markdown(f"<div class='report-filter-caption'>{_report_period_subtitle(period_start, period_end)}</div>", unsafe_allow_html=True)
     tabs = st.tabs(["Aulas", "Turmas", "Professores", "Alunos"])
     with tabs[0]:
         render_class_sessions_premium_report()
     with tabs[1]:
-        rows = _admin_class_report_rows()
+        rows = _admin_class_report_rows(start_date=period_start, end_date=period_end)
         _render_admin_report_dataset(
             "Relatório detalhado de turmas",
             rows,
             ["Turma", "Professor", "Livro/Nível", "Módulo", "Dias", "Horário", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber da Turma"],
             "relatorio_turmas",
+            subtitle=_report_period_subtitle(period_start, period_end),
+            cards=_admin_class_report_cards(rows),
         )
     with tabs[2]:
-        rows = _admin_teacher_report_rows()
+        rows = _admin_teacher_report_rows(start_date=period_start, end_date=period_end)
         _render_admin_report_dataset(
             "Relatório detalhado de professores",
             rows,
             ["Professor", "Celular", "E-mail", "Turmas", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber", "Pago"],
             "relatorio_professores",
+            subtitle=_report_period_subtitle(period_start, period_end),
+            cards=_admin_teacher_report_cards(rows),
         )
     with tabs[3]:
         turma_opts = ["Todas"] + sorted({str(s.get("turma", "Sem Turma")).strip() or "Sem Turma" for s in st.session_state.get("students", [])})
@@ -10943,13 +11225,16 @@ def render_admin_reports_center():
             turma_filter = st.selectbox("Turma", turma_opts, key="admin_report_students_turma")
         with f2:
             status_filter = st.selectbox("Status do aluno", status_opts, key="admin_report_students_status")
-        rows = _admin_student_report_rows(turma_filter=turma_filter, status_filter=status_filter)
+        rows = _admin_student_report_rows(turma_filter=turma_filter, status_filter=status_filter, start_date=period_start, end_date=period_end)
         _render_admin_report_dataset(
             "Relatório detalhado de alunos",
             rows,
-            ["Aluno", "Turma", "Professor", "Livro/Nível", "Status", "Celular", "E-mail", "Responsável", "A Receber", "Pago", "Lançamentos em aberto"],
+            ["Aluno", "Turma", "Professor", "Livro/Nível", "Status", "Celular", "E-mail", "Responsável", "Sessões no período", "A Receber", "Pago", "Lançamentos em aberto"],
             "relatorio_alunos",
+            subtitle=_report_period_subtitle(period_start, period_end),
+            cards=_admin_student_report_cards(rows),
         )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao contexto da Active Educacional e Mister Wiz.", force_system_context=False):
@@ -12829,23 +13114,19 @@ if not st.session_state.get("logged_in", False):
         .hero-subtitle { font-size: 1rem; color: #64748b; }
         .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
         .hero-meta { font-size: 0.92rem; color: #1e3a8a; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
-        .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
+        .feature-block { margin-top: 22px; background: linear-gradient(145deg, rgba(8,15,48,0.92) 0%, rgba(28,58,149,0.82) 58%, rgba(37,99,235,0.74) 100%); border-radius: 28px; padding: 22px 24px; border: 1px solid rgba(148,163,184,0.18); box-shadow: 0 26px 60px rgba(15,23,42,0.18); position: relative; overflow: hidden; color: #e2e8f0; }
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.3) !important; }
-        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.34), rgba(30,58,138,0.28)) !important; border-color: rgba(37,99,235,0.55); }
-        .feature-card.feature-green { background: linear-gradient(135deg, rgba(34,197,94,0.3), rgba(22,163,74,0.24)) !important; border-color: rgba(22,163,74,0.55); }
-        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(251,146,60,0.34), rgba(234,88,12,0.25)) !important; border-color: rgba(234,88,12,0.55); }
-        .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
-        .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
-        .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
-        .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
-        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.98rem; }
-        .feature-sub { font-size: 0.84rem; color: #cbd5e1; margin-top: 4px; }
-        .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
-        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.18rem; font-weight: 700; color: #f8fafc; margin-bottom: 12px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; position: relative; z-index: 1; }
+        .feature-card { border-radius: 18px; padding: 14px 16px; min-height: 92px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 24px rgba(15, 23, 42, 0.22) !important; backdrop-filter: blur(10px); transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.28) !important; }
+        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.22), rgba(30,58,138,0.22)) !important; border-color: rgba(96,165,250,0.32); }
+        .feature-card.feature-green { background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(13,148,136,0.22)) !important; border-color: rgba(45,212,191,0.28); }
+        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(249,115,22,0.22), rgba(217,70,239,0.14)) !important; border-color: rgba(251,146,60,0.30); }
+        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.95rem; line-height: 1.25; }
+        .feature-sub { font-size: 0.82rem; color: rgba(226,232,240,0.82); margin-top: 6px; line-height: 1.5; }
+        .feature-cta { margin-top: 14px; display: flex; justify-content: flex-end; }
+        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg,#22c55e 0%,#16a34a 100%); color: white !important; font-weight: 700; padding: 10px 14px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 8px 18px rgba(34, 197, 94, 0.26); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; min-height: 520px; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
@@ -13388,21 +13669,18 @@ if not st.session_state.get("logged_in", False):
         ("Financeiro", "Controle de matriculas, parcelas e recebimentos."),
     ]
     feature_palette = ["feature-blue", "feature-green", "feature-orange"]
-    for i in range(0, len(feature_cards), 3):
-        cols = st.columns(3, gap="large")
-        for offset, (col, card) in enumerate(zip(cols, feature_cards[i:i+3])):
-            title, sub = card
-            feature_class = feature_palette[(i + offset) % len(feature_palette)]
-            with col:
-                st.markdown(
-                    f"""
+    cards_html = []
+    for idx, (title, sub) in enumerate(feature_cards):
+        feature_class = feature_palette[idx % len(feature_palette)]
+        cards_html.append(
+            f"""
 <div class="feature-card {feature_class}">
-  <div class="feature-text">{title}</div>
-  <div class="feature-sub">{sub}</div>
+  <div class="feature-text">{html.escape(title)}</div>
+  <div class="feature-sub">{html.escape(sub)}</div>
 </div>
-""",
-                    unsafe_allow_html=True,
-                )
+"""
+        )
+    st.markdown(f'<div class="feature-grid">{"".join(cards_html)}</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
 <div class="feature-cta">
