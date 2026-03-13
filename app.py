@@ -12694,6 +12694,15 @@ else:
             padding-top: 1.2rem;
             padding-bottom: 2rem;
         }
+        section[data-testid="stMain"] > div {
+            background: transparent !important;
+        }
+        div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stAlert"]),
+        div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stForm"]),
+        div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stDataFrame"]),
+        div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stDataEditor"]) {
+            isolation: isolate;
+        }
         section[data-testid="stSidebar"] > div {
             background:
                 linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(244,249,255,0.96) 100%) !important;
@@ -12718,9 +12727,14 @@ else:
             font-family: 'Sora', sans-serif !important;
             color: #0b1836 !important;
         }
+        div[data-testid="stMetricDelta"] {
+            font-weight: 700 !important;
+        }
         div[data-testid="stForm"],
         div[data-testid="stExpander"],
-        div[data-testid="stDataFrame"] {
+        div[data-testid="stDataFrame"],
+        div[data-testid="stDataEditor"],
+        div[data-testid="stFileUploader"] section {
             border: 1px solid var(--active-border) !important;
             box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06) !important;
             border-radius: 16px !important;
@@ -12728,6 +12742,19 @@ else:
         }
         div[data-testid="stForm"] {
             padding: 24px !important;
+        }
+        div[data-testid="stExpander"] {
+            overflow: hidden;
+        }
+        div[data-testid="stExpander"] details summary {
+            background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+            border-radius: 14px;
+            padding: 0.25rem 0.4rem;
+        }
+        div[data-testid="stExpander"] details summary p {
+            color: #17326b !important;
+            font-weight: 800 !important;
+            letter-spacing: -0.01em;
         }
         div[data-testid="stTabs"] button[role="tab"] {
             border-radius: 12px !important;
@@ -12792,19 +12819,62 @@ else:
             border: 1px solid var(--active-border) !important;
             box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
         }
+        div[data-testid="stFileUploader"] small,
+        div[data-testid="stFileUploader"] label p,
+        div[data-testid="stSelectbox"] label p,
+        div[data-testid="stTextInput"] label p,
+        div[data-testid="stTextArea"] label p,
+        div[data-testid="stNumberInput"] label p,
+        div[data-testid="stDateInput"] label p,
+        div[data-testid="stMultiSelect"] label p {
+            color: #314766 !important;
+            font-weight: 800 !important;
+            letter-spacing: -0.01em;
+        }
         div[data-testid="stTextInput"] input,
         div[data-testid="stTextArea"] textarea,
         div[data-testid="stNumberInput"] input,
+        div[data-testid="stDateInput"] input,
+        div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
         div[data-baseweb="select"] > div {
             border-radius: 12px !important;
             border: 1px solid #d0ddf2 !important;
             background: #fbfdff !important;
+            min-height: 46px !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
         }
         div[data-testid="stTextInput"] input:focus,
         div[data-testid="stTextArea"] textarea:focus,
-        div[data-testid="stNumberInput"] input:focus {
+        div[data-testid="stNumberInput"] input:focus,
+        div[data-testid="stDateInput"] input:focus {
             border-color: #93b4ec !important;
             box-shadow: 0 0 0 4px rgba(59,130,246,0.11) !important;
+        }
+        div[data-testid="stTextArea"] textarea {
+            min-height: 110px !important;
+        }
+        div[data-testid="stRadio"] [role="radiogroup"],
+        div[data-testid="stCheckbox"] {
+            gap: 0.55rem !important;
+        }
+        div[data-testid="stRadio"] label,
+        div[data-testid="stCheckbox"] label {
+            border-radius: 12px;
+        }
+        div[data-testid="stDataFrame"] [data-testid="stTable"] thead tr th,
+        div[data-testid="stDataEditor"] [data-testid="stTable"] thead tr th {
+            background: #f4f8ff !important;
+            color: #17326b !important;
+            font-weight: 800 !important;
+            border-bottom: 1px solid #d9e6fa !important;
+        }
+        div[data-testid="stDataFrame"] [data-testid="stTable"] tbody tr:nth-child(even),
+        div[data-testid="stDataEditor"] [data-testid="stTable"] tbody tr:nth-child(even) {
+            background: rgba(245, 249, 255, 0.55) !important;
+        }
+        div[data-testid="stDataFrame"] [data-testid="stTable"] tbody tr:hover,
+        div[data-testid="stDataEditor"] [data-testid="stTable"] tbody tr:hover {
+            background: rgba(219, 234, 254, 0.48) !important;
         }
         .dash-card {
             background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
@@ -12821,6 +12891,24 @@ else:
             font-size: clamp(1.35rem, 2.2vw, 2.05rem);
             margin-bottom: 18px;
             color: #17326b;
+        }
+        .main-header + div[data-testid="stMarkdownContainer"] p,
+        .main-header + p {
+            color: #5f728d !important;
+            font-weight: 600;
+        }
+        div[data-testid="stMarkdownContainer"] h2,
+        div[data-testid="stMarkdownContainer"] h3,
+        div[data-testid="stMarkdownContainer"] h4 {
+            color: #17326b !important;
+            letter-spacing: -0.02em;
+            font-family: 'Sora', sans-serif !important;
+        }
+        div[data-testid="stCaptionContainer"] {
+            color: #6a7e98 !important;
+        }
+        div[data-testid="stHorizontalBlock"] {
+            gap: 1rem !important;
         }
         @media (max-width: 980px) {
             :root { --sidebar-width: 100vw; --sidebar-menu-btn-width: min(88vw, 360px); }
