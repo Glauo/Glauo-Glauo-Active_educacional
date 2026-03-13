@@ -9864,6 +9864,28 @@ def get_groq_api_key():
         key = _clean_config_value(raw_value)
         if key:
             return key
+    # Last-resort fallback for providers/panels that rename env keys.
+    for env_name, env_value in os.environ.items():
+        name_norm = str(env_name or "").strip().upper()
+        if "GROQ" not in name_norm and "WIZ" not in name_norm:
+            continue
+        if "KEY" not in name_norm and "TOKEN" not in name_norm:
+            continue
+        key = _clean_config_value(env_value)
+        if key:
+            return key
+    try:
+        for secret_name, secret_value in dict(st.secrets).items():
+            name_norm = str(secret_name or "").strip().upper()
+            if "GROQ" not in name_norm and "WIZ" not in name_norm:
+                continue
+            if "KEY" not in name_norm and "TOKEN" not in name_norm:
+                continue
+            key = _clean_config_value(secret_value)
+            if key:
+                return key
+    except Exception:
+        pass
     return ""
 
 def get_active_chatbot_model():
@@ -12568,6 +12590,20 @@ else:
                 radial-gradient(1000px 560px at 104% 0%, rgba(15,118,110,0.16), transparent 60%),
                 var(--active-bg) !important;
             color: var(--active-text);
+        }
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            height: 0 !important;
+            min-height: 0 !important;
+        }
+        header[data-testid="stHeader"] > div {
+            height: 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+        }
+        div[data-testid="stToolbar"] {
+            top: 10px !important;
+            right: 14px !important;
         }
         .block-container {
             max-width: 1500px;
