@@ -10651,6 +10651,259 @@ def render_class_sessions_premium_report():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="class_report_xlsx",
         )
+    pdf_bytes = _generic_report_pdf_bytes(
+        title="Relatorio Detalhado de Aulas",
+        subtitle=f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+        rows=df_view.to_dict("records"),
+        preferred_columns=view_cols,
+    )
+    if pdf_bytes:
+        st.download_button(
+            "Baixar PDF do relatorio",
+            data=pdf_bytes,
+            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="class_report_pdf",
+        )
+
+
+def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
+    rows = rows if isinstance(rows, list) else []
+    columns = [str(c).strip() for c in (preferred_columns or []) if str(c).strip()]
+    if not columns and rows:
+        sample = rows[0] if isinstance(rows[0], dict) else {}
+        columns = [str(c).strip() for c in sample.keys() if str(c).strip()]
+    if not columns:
+        return None
+
+    def _safe(txt):
+        raw = str(txt or "")
+        raw = unicodedata.normalize("NFKD", raw)
+        raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
+        return raw.encode("latin-1", "ignore").decode("latin-1")
+
+    try:
+        from fpdf import FPDF
+    except Exception:
+        FPDF = None
+
+    if FPDF is None:
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas
+        except Exception:
+            return None
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        y = height - 36
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(36, y, _safe(title))
+        y -= 16
+        c.setFont("Helvetica", 9)
+        c.drawString(36, y, _safe(subtitle))
+        y -= 18
+        for idx, row in enumerate(rows, start=1):
+            line = f"{idx}. " + " | ".join(f"{col}: {row.get(col, '-')}" for col in columns)
+            parts = re.findall(r".{1,115}(?:\\s|$)", line)
+            for part in parts:
+                if y < 50:
+                    c.showPage()
+                    y = height - 36
+                    c.setFont("Helvetica", 9)
+                c.drawString(36, y, _safe(part.strip()))
+                y -= 12
+            y -= 4
+        c.save()
+        return buffer.getvalue()
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_margins(12, 12, 12)
+    pdf.set_draw_color(148, 163, 184)
+    pdf.rect(8, 8, 194, 281)
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 8, _safe(title), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(71, 85, 105)
+    pdf.multi_cell(0, 5, _safe(subtitle))
+    pdf.set_text_color(15, 23, 42)
+    pdf.ln(1)
+    for idx, row in enumerate(rows, start=1):
+        row = row if isinstance(row, dict) else {}
+        pdf.set_fill_color(241, 245, 249)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 6.5, _safe(f"Registro {idx}"), ln=1, fill=True)
+        pdf.set_font("Helvetica", "", 8.5)
+        for col in columns:
+            value = str(row.get(col, "-")).strip() or "-"
+            pdf.multi_cell(0, 4.5, _safe(f"{col}: {value}"))
+        pdf.ln(1.5)
+    return pdf.output(dest="S").encode("latin-1", "ignore")
+
+
+def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos"):
+    turma_target = str(turma_filter or "Todas").strip() or "Todas"
+    status_target = str(status_filter or "Todos").strip() or "Todos"
+    rows = []
+    for aluno in sorted(st.session_state.get("students", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
+        turma_nome = str(aluno.get("turma", "")).strip() or "Sem Turma"
+        status_nome = str(aluno.get("status", "")).strip() or "-"
+        if turma_target != "Todas" and turma_nome != turma_target:
+            continue
+        if status_target != "Todos" and status_nome != status_target:
+            continue
+        turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
+        summary = _student_receivables_summary(str(aluno.get("nome", "")).strip())
+        rows.append(
+            {
+                "Aluno": str(aluno.get("nome", "")).strip() or "-",
+                "Turma": turma_nome,
+                "Professor": str(turma_obj.get("professor", "")).strip() or "-",
+                "Livro/Nível": student_book_level(aluno) or "-",
+                "Status": status_nome,
+                "Celular": str(aluno.get("celular", "")).strip() or "-",
+                "E-mail": str(aluno.get("email", "")).strip() or "-",
+                "Responsável": str((aluno.get("responsavel", {}) or {}).get("nome", "")).strip() or "-",
+                "A Receber": format_money(summary.get("total_open", 0.0)),
+                "Pago": format_money(summary.get("total_paid", 0.0)),
+                "Lançamentos em aberto": len(summary.get("open", [])),
+            }
+        )
+    return rows
+
+
+def _admin_teacher_report_rows():
+    rows = []
+    for teacher in sorted(st.session_state.get("teachers", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
+        nome = str(teacher.get("nome", "")).strip()
+        turmas = [c for c in st.session_state.get("classes", []) if str(c.get("professor", "")).strip() == nome]
+        alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas}]
+        sessoes = [sess for sess in st.session_state.get("class_sessions", []) if str(sess.get("professor", "")).strip() == nome or str(sess.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas}]
+        finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
+        extras = [sess for sess in finalizadas if _class_session_extra_flag(sess)]
+        payables = [p for p in st.session_state.get("payables", []) if str(p.get("professor", "")).strip() == nome]
+        total_aberto = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() != "pago")
+        total_pago = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() == "pago")
+        rows.append(
+            {
+                "Professor": nome or "-",
+                "Celular": str(teacher.get("celular", "")).strip() or "-",
+                "E-mail": str(teacher.get("email", "")).strip() or "-",
+                "Turmas": len(turmas),
+                "Alunos": len(alunos),
+                "Aulas Finalizadas": len(finalizadas),
+                "Aulas Extras": len(extras),
+                "A Receber": format_money(total_aberto),
+                "Pago": format_money(total_pago),
+            }
+        )
+    return rows
+
+
+def _admin_class_report_rows():
+    rows = []
+    for turma in sorted(st.session_state.get("classes", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
+        nome = str(turma.get("nome", "")).strip()
+        alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() == nome]
+        sessoes = [sess for sess in st.session_state.get("class_sessions", []) if str(sess.get("turma", "")).strip() == nome]
+        finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
+        extras = [sess for sess in finalizadas if _class_session_extra_flag(sess, turma)]
+        valor_receber = 0.0
+        for aluno in alunos:
+            valor_receber += _student_receivables_summary(str(aluno.get("nome", "")).strip()).get("total_open", 0.0)
+        rows.append(
+            {
+                "Turma": nome or "-",
+                "Professor": str(turma.get("professor", "")).strip() or "-",
+                "Livro/Nível": str(turma.get("livro", "")).strip() or str(turma.get("nivel", "")).strip() or "-",
+                "Módulo": str(turma.get("modulo", "")).strip() or "-",
+                "Dias": str(turma.get("dias", "")).strip() or ", ".join(turma.get("dias_semana", []) or []) or "-",
+                "Horário": str(turma.get("hora_inicio", "")).strip() or "-",
+                "Alunos": len(alunos),
+                "Aulas Finalizadas": len(finalizadas),
+                "Aulas Extras": len(extras),
+                "A Receber da Turma": format_money(valor_receber),
+            }
+        )
+    return rows
+
+
+def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix):
+    st.markdown(f"### {title}")
+    if not rows:
+        st.info("Nenhum dado encontrado para este relatório.")
+        return
+    df = pd.DataFrame(rows)
+    df_view = df[[c for c in preferred_columns if c in df.columns]]
+    st.dataframe(df_view, use_container_width=True, hide_index=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        xlsx_buffer = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
+            df_view.to_excel(writer, index=False, sheet_name="Relatorio")
+        st.download_button(
+            "Baixar Excel",
+            data=xlsx_buffer.getvalue(),
+            file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{filename_prefix}_xlsx",
+        )
+    with c2:
+        pdf_bytes = _generic_report_pdf_bytes(
+            title=title,
+            subtitle=f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            rows=df_view.to_dict("records"),
+            preferred_columns=preferred_columns,
+        )
+        if pdf_bytes:
+            st.download_button(
+                "Baixar PDF",
+                data=pdf_bytes,
+                file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                key=f"{filename_prefix}_pdf",
+            )
+
+
+def render_admin_reports_center():
+    st.markdown('<div class="main-header">Central de Relatórios</div>', unsafe_allow_html=True)
+    st.caption("Relatórios detalhados de aulas, turmas, professores e alunos com exportação em Excel e PDF.")
+    tabs = st.tabs(["Aulas", "Turmas", "Professores", "Alunos"])
+    with tabs[0]:
+        render_class_sessions_premium_report()
+    with tabs[1]:
+        rows = _admin_class_report_rows()
+        _render_admin_report_dataset(
+            "Relatório detalhado de turmas",
+            rows,
+            ["Turma", "Professor", "Livro/Nível", "Módulo", "Dias", "Horário", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber da Turma"],
+            "relatorio_turmas",
+        )
+    with tabs[2]:
+        rows = _admin_teacher_report_rows()
+        _render_admin_report_dataset(
+            "Relatório detalhado de professores",
+            rows,
+            ["Professor", "Celular", "E-mail", "Turmas", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber", "Pago"],
+            "relatorio_professores",
+        )
+    with tabs[3]:
+        turma_opts = ["Todas"] + sorted({str(s.get("turma", "Sem Turma")).strip() or "Sem Turma" for s in st.session_state.get("students", [])})
+        status_opts = ["Todos"] + sorted({str(s.get("status", "")).strip() or "-" for s in st.session_state.get("students", [])})
+        f1, f2 = st.columns(2)
+        with f1:
+            turma_filter = st.selectbox("Turma", turma_opts, key="admin_report_students_turma")
+        with f2:
+            status_filter = st.selectbox("Status do aluno", status_opts, key="admin_report_students_status")
+        rows = _admin_student_report_rows(turma_filter=turma_filter, status_filter=status_filter)
+        _render_admin_report_dataset(
+            "Relatório detalhado de alunos",
+            rows,
+            ["Aluno", "Turma", "Professor", "Livro/Nível", "Status", "Celular", "E-mail", "Responsável", "A Receber", "Pago", "Lançamentos em aberto"],
+            "relatorio_alunos",
+        )
 
 
 def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao contexto da Active Educacional e Mister Wiz.", force_system_context=False):
@@ -14549,6 +14802,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Professor Wiz",
         ]
         coord_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+        if coord_profile == "Admin":
+            report_idx = coord_menu_options.index("Relatório de Aulas")
+            coord_menu_options[report_idx] = "Relatórios"
         if coord_profile in ("Admin", "Coordenador"):
             insert_at = coord_menu_options.index("Backup")
             coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
@@ -14568,6 +14824,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Turmas": "Turmas",
         "Financeiro": "Financeiro",
         "Relatório de Aulas": "Aulas Relatorio",
+        "Relatórios": "Relatorios",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
         "Biblioteca": "Livros",
@@ -14828,6 +15085,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                             st.success("Aula(s) agendada(s)!")
                             st.rerun()
+
+    elif menu_coord == "Relatorios":
+        if str(st.session_state.get("account_profile") or st.session_state.get("role") or "") != "Admin":
+            st.error("Os relatórios detalhados são exclusivos do usuário Admin.")
+        else:
+            render_admin_reports_center()
 
     elif menu_coord == "Aulas Relatorio":
         render_class_sessions_premium_report()
