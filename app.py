@@ -9509,7 +9509,15 @@ def sidebar_menu(title, options, key):
         "ASSISTENTE WIZ": "🤖",
         "Professor Wiz": "✨",
     }
-    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="sidebar-section-title">
+            <span class="sidebar-section-kicker">Painel</span>
+            <span class="sidebar-section-name">{title}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     if key not in st.session_state or st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
     for option in options:
@@ -9520,6 +9528,53 @@ def sidebar_menu(title, options, key):
             st.session_state[key] = option
             st.rerun()
     return st.session_state[key]
+
+
+def render_section_hero(title, description="", chips=None):
+    chips = [str(c).strip() for c in (chips or []) if str(c).strip()]
+    chips_html = "".join(
+        f"<span class='section-hero-chip'>{html.escape(chip)}</span>" for chip in chips
+    )
+    desc_html = f"<p>{html.escape(description)}</p>" if str(description).strip() else ""
+    st.markdown(
+        f"""
+        <div class="section-hero">
+            <div class="section-hero-copy">
+                <div class="section-hero-kicker">Visao executiva</div>
+                <h2>{html.escape(title)}</h2>
+                {desc_html}
+            </div>
+            <div class="section-hero-chips">{chips_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_panel_intro(title, description="", stats=None):
+    stats = stats or []
+    stats_html = "".join(
+        f"""
+        <div class="panel-intro-stat">
+            <span>{html.escape(str(label))}</span>
+            <strong>{html.escape(str(value))}</strong>
+        </div>
+        """
+        for label, value in stats
+    )
+    desc_html = f"<p>{html.escape(description)}</p>" if str(description).strip() else ""
+    st.markdown(
+        f"""
+        <div class="panel-intro">
+            <div class="panel-intro-header">
+                <h3>{html.escape(title)}</h3>
+                {desc_html}
+            </div>
+            <div class="panel-intro-stats">{stats_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 STUDENT_IMPORT_COLUMNS = [
     "nome",
@@ -13147,16 +13202,19 @@ else:
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
         .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
-        :root { --sidebar-width: 336px; --sidebar-menu-btn-width: 300px; }
+        :root { --sidebar-width: 324px; --sidebar-menu-btn-width: 286px; }
         section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
         section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(16,185,129,0.08) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 13px; transition: all 0.2s ease; margin-bottom: 7px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        .sidebar-section-title { display:flex; flex-direction:column; gap:2px; margin: 4px 0 12px; padding: 0 4px; }
+        .sidebar-section-kicker { font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.14em; color:#7a8ca8; }
+        .sidebar-section-name { font-family:'Sora', sans-serif; font-size:1.05rem; font-weight:700; color:#1e3a8a; }
+        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(241,247,255,0.98) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 15px; transition: all 0.18s ease; margin-bottom: 8px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05); height: 44px !important; min-height: 44px !important; max-height: 44px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 44px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 44px !important; }
         .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
         .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
         .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
@@ -13168,13 +13226,28 @@ else:
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
-        .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
-        .dash-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.06); border-color: #cbd5e1; }
+        .dash-card { background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,251,255,0.98) 100%); padding: 22px; border-radius: 18px; border: 1px solid #dbe7f6; box-shadow: 0 12px 28px rgba(15,23,42,0.06); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow:hidden; }
+        .dash-card:before { content:""; position:absolute; inset:0 auto auto 0; width:100%; height:4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 55%, #ea580c 100%); opacity:.88; }
+        .dash-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15,23,42,0.1); border-color: #c7d7ee; }
         .card-title { font-size: 0.9rem; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
         .card-value { font-family: 'Sora', sans-serif; font-size: 2rem; font-weight: 700; color: #0f172a; }
         .card-sub { font-size: 0.85rem; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
         .trend-up { color: #10b981; background: #ecfdf5; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
         .trend-neutral { color: #64748b; }
+        .section-hero { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; background: linear-gradient(135deg, rgba(30,64,175,0.98) 0%, rgba(15,118,110,0.94) 58%, rgba(234,88,12,0.9) 100%); color:#fff; border-radius:24px; padding:20px 22px; box-shadow: 0 18px 38px rgba(30,64,175,0.22); margin: 0 0 18px; }
+        .section-hero-copy { max-width: 760px; }
+        .section-hero-kicker { font-size:.72rem; text-transform:uppercase; letter-spacing:.16em; font-weight:800; opacity:.82; margin-bottom:8px; }
+        .section-hero h2 { font-family:'Sora', sans-serif; font-size:1.5rem; margin:0 0 8px; color:#fff; }
+        .section-hero p { margin:0; color:rgba(255,255,255,0.88); line-height:1.55; }
+        .section-hero-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+        .section-hero-chip { display:inline-flex; align-items:center; padding:8px 11px; border-radius:999px; background:rgba(255,255,255,0.16); border:1px solid rgba(255,255,255,0.18); font-size:.82rem; font-weight:700; white-space:nowrap; }
+        .panel-intro { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%); border:1px solid var(--active-border); border-radius:20px; padding:18px 20px; box-shadow:0 12px 28px rgba(15,23,42,0.05); margin: 0 0 16px; }
+        .panel-intro-header h3 { margin:0 0 6px; font-family:'Sora', sans-serif; font-size:1.12rem; color:#17326b; }
+        .panel-intro-header p { margin:0; color:#60738f; line-height:1.55; }
+        .panel-intro-stats { display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; }
+        .panel-intro-stat { min-width:130px; padding:10px 12px; border-radius:16px; background:#f3f8ff; border:1px solid #dce7f8; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
+        .panel-intro-stat span { display:block; font-size:.75rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#7388a5; margin-bottom:4px; }
+        .panel-intro-stat strong { font-family:'Sora', sans-serif; font-size:1rem; color:#17326b; }
         .finance-radio-anchor { display:none; }
         div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] {
             display: flex;
@@ -13432,6 +13505,20 @@ else:
         }
         div[data-testid="stTextArea"] textarea {
             min-height: 110px !important;
+        }
+        div[data-testid="stForm"] h3,
+        div[data-testid="stForm"] h4 {
+            font-family:'Sora', sans-serif !important;
+            color:#16326a !important;
+            margin-top:0.2rem !important;
+        }
+        div[data-testid="stForm"] p,
+        div[data-testid="stExpander"] p {
+            color:#5f728d;
+        }
+        @media (max-width: 900px) {
+            .section-hero, .panel-intro { flex-direction:column; }
+            .section-hero-chips, .panel-intro-stats { justify-content:flex-start; }
         }
         div[data-testid="stRadio"] [role="radiogroup"],
         div[data-testid="stCheckbox"] {
@@ -15168,6 +15255,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     if menu_coord == "Dashboard":
         st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
+        render_section_hero(
+            "Operacao central do Active",
+            "Acompanhe alunos, professores, turmas e financeiro em um painel mais executivo, com leitura direta do que exige acao.",
+            [
+                f"{len(st.session_state['students'])} alunos",
+                f"{len(st.session_state['teachers'])} professores",
+                f"{len(st.session_state['classes'])} turmas",
+            ],
+        )
         c1, c2, c3 = st.columns(3)
         with c1: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Total de Alunos</div><div class=\"card-value\">{len(st.session_state['students'])}</div></div><div class=\"card-sub\"><span class=\"trend-up\">Ativos</span></div></div>""", unsafe_allow_html=True)
         with c2: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Professores</div><div class=\"card-value\">{len(st.session_state['teachers'])}</div></div></div>""", unsafe_allow_html=True)
@@ -16090,9 +16186,25 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
+        render_section_hero(
+            "Cadastro, consulta e gestao financeira do aluno",
+            "Centralize analise por turma, ficha completa, cadastro e acoes financeiras no mesmo fluxo.",
+            [
+                f"{len(st.session_state.get('students', []))} cadastros",
+                f"{len({str(s.get('turma', '')).strip() for s in st.session_state.get('students', []) if str(s.get('turma', '')).strip()})} turmas com alunos",
+            ],
+        )
         tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
+            render_panel_intro(
+                "Mapa operacional dos alunos",
+                "Filtre por turma, exporte a base e consulte a ficha financeira do aluno sem sair da tela.",
+                [
+                    ("Ativos", len([s for s in st.session_state.get("students", []) if str(s.get("status", "Ativo")).strip().lower() != "inativo"])),
+                    ("Usuarios", len([s for s in st.session_state.get("students", []) if str(s.get("usuario", "")).strip()])),
+                ],
+            )
             st.markdown("### Importar / Exportar Excel")
             with st.expander("Importar / Exportar Excel", expanded=False):
                 col_exp, col_imp = st.columns(2)
@@ -16491,6 +16603,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.dataframe(df_alunos, use_container_width=True)
 
         with tab2:
+            render_panel_intro(
+                "Cadastro completo do aluno",
+                "Use este bloco para manter dados academicos, pessoais e financeiros com mais contexto e menos friccao visual.",
+                [("Campos", "completos"), ("Fluxo", "cadastro")],
+            )
             modulos = [
                 "Presencial em Turma",
                 "Turma online",
@@ -16946,6 +17063,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
         with tab3:
+            render_panel_intro(
+                "Gerenciar e excluir registros",
+                "Edite dados, credenciais e informacoes do aluno com um fluxo unico de manutencao.",
+                [("Controle", "individual"), ("Acao", "segura")],
+            )
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -17379,9 +17501,22 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Turmas":
         st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
+        render_section_hero(
+            "Estrutura academica das turmas",
+            "Organize modulo, livro, horario, professor e alunos da turma em um painel mais enxuto e mais premium.",
+            [
+                f"{len(st.session_state.get('classes', []))} turmas",
+                f"{len(st.session_state.get('teachers', []))} professores",
+            ],
+        )
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
+            render_panel_intro(
+                "Nova turma",
+                "Cadastre turmas com horarios, dias, professor e livro base em um formulario mais compacto.",
+                [("Agenda", "integrada"), ("Livro", "vinculado")],
+            )
             with st.form("add_class"):
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome da Turma")
@@ -17428,6 +17563,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.success("Turma salva!")
 
         with tab2:
+            render_panel_intro(
+                "Manutencao de turmas",
+                "Atualize professor, horario, dias e lista de alunos vinculados sem perder a visao geral da turma.",
+                [("Edicao", "completa"), ("Alunos", "vinculados")],
+            )
             if not st.session_state["classes"]:
                 st.info("Nenhuma turma cadastrada.")
             else:
@@ -17562,6 +17702,32 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         st.caption("Versao Financeiro: FIN-URGENTE-2026-03-11-REV5")
+        total_rec_exec = sum(
+            parse_money(i.get("valor_parcela", i.get("valor", 0)))
+            for i in st.session_state.get("receivables", [])
+            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
+        )
+        total_pag_exec = sum(
+            parse_money(i.get("valor_parcela", i.get("valor", 0)))
+            for i in st.session_state.get("payables", [])
+            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
+        )
+        render_section_hero(
+            "Controle financeiro e operacional",
+            "Acompanhe recebimentos, pagamentos, vencimentos e acoes rapidas em um painel financeiro mais claro e mais executivo.",
+            [
+                f"A receber {format_money(total_rec_exec)}",
+                f"A pagar {format_money(total_pag_exec)}",
+            ],
+        )
+        render_panel_intro(
+            "Areas financeiras",
+            "Use os blocos abaixo para lancamentos, aprovacoes, recibos e acompanhamento de saldos sem perder o contexto do mes.",
+            [
+                ("Receber", format_money(total_rec_exec)),
+                ("Pagar", format_money(total_pag_exec)),
+            ],
+        )
         finance_focus = str(st.session_state.get("finance_overdue_focus", "")).strip().lower()
 
         def _parse_parcela_info(parcela_txt):
