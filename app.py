@@ -10682,6 +10682,36 @@ def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
         raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
         return raw.encode("latin-1", "ignore").decode("latin-1")
 
+    def _wrap_value_for_pdf(label, value, chunk_size=88):
+        base = _safe(f"{label}: {value}")
+        if len(base) <= chunk_size:
+            return [base]
+        words = re.split(r"(\s+)", base)
+        lines = []
+        current = ""
+        for token in words:
+            token = token or ""
+            if not token.strip():
+                candidate = f"{current}{token}"
+                current = candidate if len(candidate) <= chunk_size else current
+                continue
+            if len(token) > chunk_size:
+                if current.strip():
+                    lines.append(current.strip())
+                    current = ""
+                for idx in range(0, len(token), chunk_size):
+                    lines.append(token[idx:idx + chunk_size])
+                continue
+            candidate = f"{current}{token}" if current else token
+            if len(candidate) > chunk_size and current.strip():
+                lines.append(current.strip())
+                current = token.strip()
+            else:
+                current = candidate
+        if current.strip():
+            lines.append(current.strip())
+        return lines or [base[:chunk_size]]
+
     try:
         from fpdf import FPDF
     except Exception:
@@ -10724,9 +10754,11 @@ def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
     pdf.set_draw_color(148, 163, 184)
     pdf.rect(8, 8, 194, 281)
     pdf.set_font("Helvetica", "B", 15)
+    pdf.set_x(pdf.l_margin)
     pdf.cell(0, 8, _safe(title), ln=1)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(71, 85, 105)
+    pdf.set_x(pdf.l_margin)
     pdf.multi_cell(0, 5, _safe(subtitle))
     pdf.set_text_color(15, 23, 42)
     pdf.ln(1)
@@ -10734,11 +10766,14 @@ def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
         row = row if isinstance(row, dict) else {}
         pdf.set_fill_color(241, 245, 249)
         pdf.set_font("Helvetica", "B", 9)
+        pdf.set_x(pdf.l_margin)
         pdf.cell(0, 6.5, _safe(f"Registro {idx}"), ln=1, fill=True)
         pdf.set_font("Helvetica", "", 8.5)
         for col in columns:
             value = str(row.get(col, "-")).strip() or "-"
-            pdf.multi_cell(0, 4.5, _safe(f"{col}: {value}"))
+            for line in _wrap_value_for_pdf(col, value):
+                pdf.set_x(pdf.l_margin)
+                pdf.multi_cell(0, 4.5, line)
         pdf.ln(1.5)
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
