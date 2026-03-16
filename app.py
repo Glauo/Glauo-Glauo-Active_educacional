@@ -14663,8 +14663,67 @@ elif st.session_state["role"] == "Professor":
     }
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
+    def _teacher_panel_shell(step, title, description, tone="blue"):
+        tone_map = {
+            "blue": ("#1d4ed8", "#2563eb"),
+            "green": ("#059669", "#10b981"),
+            "orange": ("#ea580c", "#f97316"),
+            "slate": ("#334155", "#0f172a"),
+        }
+        left, right = tone_map.get(tone, tone_map["blue"])
+        st.markdown(
+            (
+                f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
+                f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
+                f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
+                f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
+                f'background:linear-gradient(90deg,{left},{right});"></div>'
+                f'<div style="display:flex;gap:14px;align-items:flex-start;">'
+                f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
+                f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
+                f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
+                f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
+                f'</div></div>'
+            ),
+            unsafe_allow_html=True,
+        )
+
+    def _teacher_panel_card(title, rows, tone="blue", badge="Resumo"):
+        tone_map = {
+            "blue": ("#2563eb", "rgba(37,99,235,.12)"),
+            "green": ("#10b981", "rgba(16,185,129,.12)"),
+            "orange": ("#f97316", "rgba(249,115,22,.12)"),
+            "slate": ("#334155", "rgba(51,65,85,.12)"),
+        }
+        accent, chip_bg = tone_map.get(tone, tone_map["blue"])
+        blocks = []
+        for label, value in rows:
+            blocks.append(
+                (
+                    '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
+                    'border-radius:16px;padding:14px 16px;">'
+                    f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
+                    f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
+                    '</div>'
+                )
+            )
+        st.markdown(
+            (
+                '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
+                'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
+                f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
+                f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
+                + "".join(blocks) +
+                '</div></div>'
+            ),
+            unsafe_allow_html=True,
+        )
+
     if menu_prof == "Minhas Turmas":
-        st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
         minhas_turmas = [
             c for c in st.session_state["classes"]
@@ -14673,13 +14732,30 @@ elif st.session_state["role"] == "Professor":
         if not minhas_turmas:
             st.info("Nenhuma turma atribuída a você.")
         else:
+            total_alunos_prof = sum(
+                1 for s in st.session_state["students"]
+                if str(s.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in minhas_turmas}
+            )
+            render_section_hero(
+                "Operação das suas turmas",
+                "Revise dados da turma, mantenha o link ao vivo atualizado, publique materiais e acompanhe os alunos da sua operação.",
+                [
+                    f"{len(minhas_turmas)} turmas ativas",
+                    f"{total_alunos_prof} alunos vinculados",
+                ],
+            )
+            render_panel_intro(
+                "Painel operacional do professor",
+                "Selecione a turma para acessar contexto pedagógico, ações de aula ao vivo, materiais e a base de alunos sem sair da mesma tela.",
+                [
+                    ("Turmas", len(minhas_turmas)),
+                    ("Alunos", total_alunos_prof),
+                ],
+            )
             turma_options = [t["nome"] for t in minhas_turmas]
             turma_selecionada = st.selectbox("Selecione a Turma", turma_options)
             turma_obj = next(t for t in minhas_turmas if t["nome"] == turma_selecionada)
 
-            st.markdown("### Detalhes da Turma")
-            st.write(f"**Turma:** {turma_obj.get('nome', '')}")
-            st.write(f"**Professor:** {turma_obj.get('professor', '')}")
             dias_turma_exibicao = str(turma_obj.get("dias", "")).strip()
             if not dias_turma_exibicao:
                 dias_turma_exibicao = format_class_schedule(
@@ -14687,10 +14763,36 @@ elif st.session_state["role"] == "Professor":
                     str(turma_obj.get("hora_inicio", "")).strip(),
                     str(turma_obj.get("hora_fim", "")).strip(),
                 )
-            st.write(f"**Dias e Horários:** {dias_turma_exibicao or 'Horário a definir'}")
-            st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
+            alunos_turma = [
+                s for s in st.session_state["students"]
+                if s.get("turma") == turma_selecionada
+            ]
 
-            st.markdown("### Aula ao Vivo")
+            _teacher_panel_shell(
+                "1",
+                "Revisar o contexto da turma",
+                "Confirme o quadro atual da turma para garantir coerência entre professor, horário, link e base de alunos antes de qualquer ação.",
+                tone="blue",
+            )
+            _teacher_panel_card(
+                "Resumo da turma selecionada",
+                [
+                    ("Turma", turma_obj.get("nome", "")),
+                    ("Professor", turma_obj.get("professor", "")),
+                    ("Dias e horários", dias_turma_exibicao or "Horario a definir"),
+                    ("Link ao vivo", turma_obj.get("link_zoom", "Nao informado")),
+                    ("Alunos", len(alunos_turma)),
+                ],
+                tone="blue",
+                badge="Turma",
+            )
+
+            _teacher_panel_shell(
+                "2",
+                "Atualizar o link da aula ao vivo",
+                "Mantenha o canal oficial da turma atualizado para evitar ruído operacional no início das aulas.",
+                tone="green",
+            )
             with st.form("prof_update_link"):
                 link_live = st.text_input("Link da aula ao vivo", value=turma_obj.get("link_zoom", ""))
                 if st.form_submit_button("Salvar link"):
@@ -14699,7 +14801,12 @@ elif st.session_state["role"] == "Professor":
                     st.success("Link atualizado!")
                     st.rerun()
 
-            st.markdown("### Material de Estudo")
+            _teacher_panel_shell(
+                "3",
+                "Publicar material para a turma",
+                "Cadastre conteúdo de apoio diretamente na turma selecionada e mantenha a trilha de estudo atualizada.",
+                tone="orange",
+            )
             with st.form("prof_add_material"):
                 titulo = st.text_input("Título do material")
                 descricao = st.text_area("Descrição")
@@ -14727,10 +14834,12 @@ elif st.session_state["role"] == "Professor":
                         st.success("Material publicado!")
                         st.rerun()
 
-            alunos_turma = [
-                s for s in st.session_state["students"]
-                if s.get("turma") == turma_selecionada
-            ]
+            _teacher_panel_shell(
+                "4",
+                "Consultar os alunos da turma",
+                "Use esta base para revisar rapidamente quem está matriculado e validar dados de contato da operação.",
+                tone="slate",
+            )
             st.markdown("### Alunos da Turma")
             if not alunos_turma:
                 st.info("Nenhum aluno matriculado nesta turma.")
