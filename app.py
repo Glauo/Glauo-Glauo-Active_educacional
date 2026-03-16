@@ -5270,6 +5270,7 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
     else:
         st.session_state["challenge_completions"].append(rec)
     save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state["challenge_completions"])
+    _sync_challenge_grade_record(rec)
     return True, "Registrado."
 
 def student_points(aluno_nome):
@@ -5311,6 +5312,8 @@ def _student_all_assessment_rows(aluno_nome):
 
     for grade in st.session_state.get("grades", []):
         if str(grade.get("aluno", "")).strip() != aluno:
+            continue
+        if str(grade.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}:
             continue
         avaliacao = str(grade.get("avaliacao", "")).strip() or "Avaliacao"
         nota_txt = str(grade.get("nota", "")).strip()
@@ -5393,6 +5396,134 @@ def _student_all_assessment_rows(aluno_nome):
     for row in rows:
         row.pop("_date_obj", None)
     return rows
+
+def _find_grade_by_origin(origem_tipo, origem_id, aluno_nome):
+    origem_tipo = str(origem_tipo or "").strip().lower()
+    origem_id = str(origem_id or "").strip()
+    aluno_nome = str(aluno_nome or "").strip()
+    if not (origem_tipo and origem_id and aluno_nome):
+        return None
+    for grade in st.session_state.get("grades", []):
+        if str(grade.get("aluno", "")).strip() != aluno_nome:
+            continue
+        if str(grade.get("origem_tipo", "")).strip().lower() != origem_tipo:
+            continue
+        if str(grade.get("origem_id", "")).strip() != origem_id:
+            continue
+        return grade
+    return None
+
+def _upsert_assessment_grade_record(record):
+    if not isinstance(record, dict):
+        return None
+    origem_tipo = str(record.get("origem_tipo", "")).strip().lower()
+    origem_id = str(record.get("origem_id", "")).strip()
+    aluno_nome = str(record.get("aluno", "")).strip()
+    if not (origem_tipo and origem_id and aluno_nome):
+        return None
+    existing = _find_grade_by_origin(origem_tipo, origem_id, aluno_nome)
+    if existing:
+        existing.update(record)
+        grade_obj = existing
+    else:
+        grade_obj = dict(record)
+        st.session_state["grades"].append(grade_obj)
+    save_list(GRADES_FILE, st.session_state.get("grades", []))
+    return grade_obj
+
+def _remove_assessment_grade_record(origem_tipo, origem_id, aluno_nome):
+    origem_tipo = str(origem_tipo or "").strip().lower()
+    origem_id = str(origem_id or "").strip()
+    aluno_nome = str(aluno_nome or "").strip()
+    before = len(st.session_state.get("grades", []))
+    st.session_state["grades"] = [
+        grade for grade in st.session_state.get("grades", [])
+        if not (
+            str(grade.get("aluno", "")).strip() == aluno_nome
+            and str(grade.get("origem_tipo", "")).strip().lower() == origem_tipo
+            and str(grade.get("origem_id", "")).strip() == origem_id
+        )
+    ]
+    if len(st.session_state.get("grades", [])) != before:
+        save_list(GRADES_FILE, st.session_state.get("grades", []))
+
+def _sync_activity_grade_record(submission_obj, activity_obj=None):
+    sub = submission_obj if isinstance(submission_obj, dict) else {}
+    activity_obj = activity_obj if isinstance(activity_obj, dict) else {}
+    submission_id = str(sub.get("id", "")).strip()
+    aluno_nome = str(sub.get("aluno", "")).strip()
+    if not (submission_id and aluno_nome):
+        return None
+    if not activity_obj:
+        activity_id = str(sub.get("activity_id", "")).strip()
+        activity_obj = next(
+            (a for a in st.session_state.get("activities", []) if str(a.get("id", "")).strip() == activity_id),
+            {},
+        )
+    status_txt = str(sub.get("status", "")).strip()
+    status_norm = normalize_text(status_txt)
+    if status_norm not in {"avaliada", "corrigida automaticamente", "aprovado", "aprovada"}:
+        _remove_assessment_grade_record("atividade", submission_id, aluno_nome)
+        return None
+    titulo = str(activity_obj.get("titulo", "")).strip() or str(sub.get("atividade_titulo", "")).strip() or "Atividade"
+    nota_final = activity_submission_final_score(sub)
+    nota_total = _parse_float(sub.get("score_total", 0), default=0.0)
+    if nota_total <= 0:
+        nota_total = _activity_points_total(activity_obj)
+    nota_label = f"{nota_final:.1f}/{max(0.0, nota_total):.1f}" if nota_total > 0 else f"{nota_final:.1f}"
+    grade_payload = {
+        "aluno": aluno_nome,
+        "turma": str(sub.get("turma", "")).strip(),
+        "disciplina": str(activity_obj.get("disciplina", "")).strip() or "Ingles",
+        "avaliacao": titulo,
+        "nota": nota_label,
+        "status": "Aprovado",
+        "data": str(sub.get("avaliado_em", "")).strip() or str(sub.get("submitted_at", "")).strip(),
+        "autor": str(activity_obj.get("autor", "")).strip() or "Professor",
+        "observacao": str(sub.get("feedback_professor", "")).strip(),
+        "origem": "Licao de casa" if _is_homework_activity(activity_obj) else "Atividade",
+        "origem_tipo": "atividade",
+        "origem_id": submission_id,
+        "pontuacao": f"{nota_final:.1f}",
+    }
+    return _upsert_assessment_grade_record(grade_payload)
+
+def _sync_challenge_grade_record(completion_obj):
+    comp = completion_obj if isinstance(completion_obj, dict) else {}
+    challenge_id = str(comp.get("challenge_id", "")).strip()
+    aluno_nome = str(comp.get("aluno", "")).strip()
+    if not (challenge_id and aluno_nome):
+        return None
+    score_val = comp.get("score", None)
+    nota_label = f"{_parse_float(score_val, 0.0):.1f}/100" if score_val not in (None, "") else "-"
+    grade_payload = {
+        "aluno": aluno_nome,
+        "turma": _student_class_name(aluno_nome),
+        "disciplina": "Ingles",
+        "avaliacao": str(comp.get("challenge_title", "")).strip() or "Desafio",
+        "nota": nota_label,
+        "status": str(comp.get("status", "")).strip() or "Aprovado",
+        "data": str(comp.get("done_at", "")).strip(),
+        "autor": "Professor Wiz",
+        "observacao": str(comp.get("feedback", "")).strip(),
+        "origem": "Desafio semanal",
+        "origem_tipo": "desafio",
+        "origem_id": challenge_id,
+        "pontuacao": str(int(comp.get("pontos") or 0)),
+    }
+    return _upsert_assessment_grade_record(grade_payload)
+
+def _sync_all_assessment_grade_records():
+    activity_map = {
+        str(a.get("id", "")).strip(): a
+        for a in st.session_state.get("activities", [])
+        if str(a.get("id", "")).strip()
+    }
+    for sub in st.session_state.get("activity_submissions", []):
+        activity_obj = activity_map.get(str(sub.get("activity_id", "")).strip(), {})
+        _sync_activity_grade_record(sub, activity_obj)
+    for comp in st.session_state.get("challenge_completions", []):
+        _sync_challenge_grade_record(comp)
 
 def _parse_float(value, default=0.0):
     try:
@@ -5621,9 +5752,12 @@ def upsert_activity_submission(activity_obj, aluno_nome, turma_nome, answers_by_
         record["score_professor"] = None
         record["feedback_professor"] = ""
         record["avaliado_em"] = ""
+        _remove_assessment_grade_record("atividade", str(record.get("id", "")).strip(), aluno_nome)
     else:
         st.session_state["activity_submissions"].append(record)
     save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+    if not scoring.get("needs_manual_review"):
+        _sync_activity_grade_record(record, activity_obj)
     return True, "Resposta enviada."
 
 def activity_submission_final_score(submission_obj):
@@ -6431,6 +6565,7 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                             sub["status"] = "Avaliada"
                             sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+                            _sync_activity_grade_record(sub, activity_obj)
                             st.success("Avaliacao salva.")
                             st.rerun()
 
@@ -13947,6 +14082,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     _ensure_challenge_store_ids()
     _ensure_activity_store_ids()
     _ensure_sales_store_defaults()
+    _sync_all_assessment_grade_records()
 
     books_before = st.session_state.get("books", [])
     books_normalized = ensure_library_catalog(books_before)
@@ -15662,6 +15798,7 @@ elif st.session_state["role"] == "Professor":
                                     sub["status"] = "Avaliada"
                                     sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                                     save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
+                                    _sync_activity_grade_record(sub, activity_obj)
                                     st.success("Avaliacao salva.")
                                     st.rerun()
 
@@ -15683,25 +15820,75 @@ elif st.session_state["role"] == "Professor":
         if not turmas_prof:
             st.info("Nenhuma turma atribuida a voce.")
         else:
+            render_section_hero(
+                "Central de Notas do Professor",
+                "Lancamento rapido, revisao de avaliacoes enviadas e acompanhamento de tarefas e desafios corrigidos.",
+                chips=[
+                    f"{len(turmas_prof)} turma(s)",
+                    f"{len([g for g in st.session_state.get('grades', []) if str(g.get('autor', '')).strip().lower() == prof_nome])} notas registradas",
+                ],
+            )
+            render_panel_intro(
+                "Fluxo de avaliacao",
+                "Escolha a turma, revise indicadores e lance as notas em um formulario mais seguro e organizado.",
+                stats=[
+                    ("Turmas", len(turmas_prof)),
+                    ("Pendentes", len([g for g in st.session_state.get("grades", []) if str(g.get("autor", "")).strip().lower() == prof_nome and str(g.get("status", "")).strip().lower() == "pendente"])),
+                    ("Licoes corrigidas", len([s for s in st.session_state.get("activity_submissions", []) if str(s.get("status", "")).strip().lower() in {"avaliada", "corrigida automaticamente"} and str(s.get("turma", "")).strip() in set(turmas_prof)])),
+                ],
+            )
             turma_nota = st.selectbox("Turma", turmas_prof, key="prof_turma_nota")
             alunos_turma = [s.get("nome") for s in st.session_state["students"] if s.get("turma") == turma_nota]
             if not alunos_turma:
                 st.info("Nao ha alunos nessa turma para lancar nota.")
             else:
+                _teacher_panel_card(
+                    "Contexto da turma selecionada",
+                    [
+                        ("Turma", turma_nota),
+                        ("Alunos", len(alunos_turma)),
+                        ("Professor", st.session_state.get("user_name", "Professor")),
+                    ],
+                    tone="blue",
+                    badge="Turma",
+                )
+                _teacher_panel_shell(
+                    1,
+                    "Lancar novas notas",
+                    "Defina o aluno, o tipo de avaliacao e envie o conjunto para analise do coordenador.",
+                    tone="blue",
+                )
                 with st.form("prof_launch_grades"):
-                    aluno_nota = st.selectbox("Aluno", alunos_turma)
-                    avaliacao_base = st.text_input("Avaliacao", value="Avaliacao mensal")
-                    data_avaliacao = st.date_input("Data da avaliacao", value=datetime.date.today(), format="DD/MM/YYYY")
+                    base1, base2 = st.columns([1.1, 1.4])
+                    with base1:
+                        aluno_nota = st.selectbox("Aluno", alunos_turma)
+                        data_avaliacao = st.date_input("Data da avaliacao", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with base2:
+                        avaliacao_base = st.text_input("Nome da avaliacao", value="Avaliacao mensal")
+                        observacao = st.text_area("Observacao interna", placeholder="Opcional: contexto da avaliacao ou orientacoes para o coordenador.")
+                    st.markdown("##### Componentes da nota")
                     c_n1, c_n2, c_n3 = st.columns(3)
                     with c_n1:
-                        nota_prova = st.number_input("Nota da prova", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                        nota_prova = st.number_input("Prova", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
                     with c_n2:
-                        nota_conteudo = st.number_input("Nota de conteudo", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                        nota_conteudo = st.number_input("Conteudo", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
                     with c_n3:
                         nota_presenca = st.number_input("Presenca (%)", min_value=0, max_value=100, value=100, step=1)
-                    observacao = st.text_area("Observacao (opcional)")
+                    media_base = (float(nota_prova) + float(nota_conteudo)) / 2 if (nota_prova is not None and nota_conteudo is not None) else 0.0
+                    _teacher_panel_card(
+                        "Resumo do envio",
+                        [
+                            ("Aluno", aluno_nota),
+                            ("Avaliacao", avaliacao_base),
+                            ("Media base", f"{media_base:.1f}"),
+                            ("Presenca", f"{int(nota_presenca)}%"),
+                            ("Status de saida", "Pendente para coordenacao"),
+                        ],
+                        tone="green",
+                        badge="Revisao",
+                    )
 
-                    if st.form_submit_button("Enviar para analise do coordenador"):
+                    if st.form_submit_button("Enviar para analise do coordenador", type="primary"):
                         data_txt = data_avaliacao.strftime("%d/%m/%Y") if data_avaliacao else datetime.date.today().strftime("%d/%m/%Y")
                         lancamentos = [
                             ("Nota da prova", f"{nota_prova:.1f}"),
@@ -15720,6 +15907,7 @@ elif st.session_state["role"] == "Professor":
                                     "data": data_txt,
                                     "autor": st.session_state.get("user_name", "Professor"),
                                     "observacao": observacao.strip(),
+                                    "origem": "Lancamento de notas",
                                 }
                             )
                         save_list(GRADES_FILE, st.session_state["grades"])
@@ -15731,12 +15919,48 @@ elif st.session_state["role"] == "Professor":
                     if g.get("turma") == turma_nota and g.get("status") == "Pendente"
                 ]
                 if pendentes_prof:
-                    st.markdown("### Pendentes de aprovacao")
+                    _teacher_panel_shell(
+                        2,
+                        "Pendentes de aprovacao",
+                        "Estas notas ainda aguardam validacao do coordenador.",
+                        tone="orange",
+                    )
+                    _teacher_panel_card(
+                        "Fila de validacao",
+                        [
+                            ("Pendentes", len(pendentes_prof)),
+                            ("Alunos na fila", len({str(g.get("aluno", "")).strip() for g in pendentes_prof if str(g.get("aluno", "")).strip()})),
+                            ("Ultimo envio", str(pendentes_prof[-1].get("data", "")).strip() if pendentes_prof else "-"),
+                        ],
+                        tone="orange",
+                        badge="Status",
+                    )
                     df_pend = pd.DataFrame(pendentes_prof)
                     col_order = [c for c in ["data", "aluno", "avaliacao", "nota", "status", "autor"] if c in df_pend.columns]
                     if col_order:
                         df_pend = df_pend[col_order]
                     st.dataframe(df_pend, use_container_width=True)
+
+                integradas = [
+                    g for g in st.session_state.get("grades", [])
+                    if str(g.get("turma", "")).strip() == turma_nota
+                    and str(g.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}
+                ]
+                if integradas:
+                    _teacher_panel_shell(
+                        3,
+                        "Avaliacoes integradas",
+                        "Licoes de casa e desafios corrigidos aparecem aqui de forma consolidada para conferencia rapida.",
+                        tone="green",
+                    )
+                    df_integradas = pd.DataFrame(integradas)
+                    cols_integradas = [
+                        c for c in ["data", "aluno", "avaliacao", "nota", "status", "origem", "pontuacao"]
+                        if c in df_integradas.columns
+                    ]
+                    if cols_integradas:
+                        df_integradas = df_integradas[cols_integradas]
+                    st.dataframe(df_integradas, use_container_width=True)
     elif menu_prof == "Livros":
         st.markdown('<div class="main-header">Biblioteca</div>', unsafe_allow_html=True)
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
@@ -21676,44 +21900,85 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
-        if pendentes:
-            st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
-            if st.button("Aprovar Todas as Pendentes", type="primary"):
-                aprovados_por_aluno = {}
-                for g in st.session_state["grades"]:
-                    if g.get("status") == "Pendente":
-                        g["status"] = "Aprovado"
-                        aluno_nome = str(g.get("aluno", "")).strip()
-                        if aluno_nome:
-                            aprovados_por_aluno.setdefault(aluno_nome, []).append(g)
-                save_list(GRADES_FILE, st.session_state["grades"])
-                if wiz_event_enabled("on_grade_approved"):
-                    sent_students = 0
-                    for aluno_nome, notas in aprovados_por_aluno.items():
-                        student = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
-                        if not student:
-                            continue
-                        linhas = []
-                        for n in notas[:12]:
-                            linhas.append(
-                                f"- {n.get('avaliacao','Avaliação')}: nota {n.get('nota','')} "
-                                f"({n.get('disciplina','Inglês')})"
+        integradas = [
+            g for g in st.session_state.get("grades", [])
+            if str(g.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}
+        ]
+        render_panel_intro(
+            "Central de avaliacao",
+            "Acompanhe notas pendentes do professor e as avaliacoes integradas de licoes de casa e desafios.",
+            stats=[
+                ("Pendentes", len(pendentes)),
+                ("Integradas", len(integradas)),
+                ("Alunos com nota", len({str(g.get("aluno", "")).strip() for g in st.session_state.get("grades", []) if str(g.get("aluno", "")).strip()})),
+            ],
+        )
+        tab_pend, tab_hw, tab_des = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios"])
+        with tab_pend:
+            if pendentes:
+                st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
+                if st.button("Aprovar Todas as Pendentes", type="primary"):
+                    aprovados_por_aluno = {}
+                    for g in st.session_state["grades"]:
+                        if g.get("status") == "Pendente":
+                            g["status"] = "Aprovado"
+                            aluno_nome = str(g.get("aluno", "")).strip()
+                            if aluno_nome:
+                                aprovados_por_aluno.setdefault(aluno_nome, []).append(g)
+                    save_list(GRADES_FILE, st.session_state["grades"])
+                    if wiz_event_enabled("on_grade_approved"):
+                        sent_students = 0
+                        for aluno_nome, notas in aprovados_por_aluno.items():
+                            student = next((s for s in st.session_state.get("students", []) if s.get("nome") == aluno_nome), {})
+                            if not student:
+                                continue
+                            linhas = []
+                            for n in notas[:12]:
+                                linhas.append(
+                                    f"- {n.get('avaliacao','Avaliação')}: nota {n.get('nota','')} "
+                                    f"({n.get('disciplina','Inglês')})"
+                                )
+                            _notify_direct_contacts(
+                                student.get("nome", "Aluno"),
+                                _message_recipients_for_student(student),
+                                _student_whatsapp_recipients(student),
+                                "[Active] Notas aprovadas",
+                                "Suas notas foram aprovadas:\n\n" + "\n".join(linhas),
+                                "Notas",
                             )
-                        _notify_direct_contacts(
-                            student.get("nome", "Aluno"),
-                            _message_recipients_for_student(student),
-                            _student_whatsapp_recipients(student),
-                            "[Active] Notas aprovadas",
-                            "Suas notas foram aprovadas:\n\n" + "\n".join(linhas),
-                            "Notas",
-                        )
-                        sent_students += 1
-                    if sent_students:
-                        st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
-                st.success("Notas aprovadas!")
-                st.rerun()
-        else:
-            st.info("Nenhuma nota pendente.")
+                            sent_students += 1
+                        if sent_students:
+                            st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
+                    st.success("Notas aprovadas!")
+                    st.rerun()
+            else:
+                st.info("Nenhuma nota pendente.")
+        with tab_hw:
+            hw_rows = [
+                g for g in integradas
+                if str(g.get("origem_tipo", "")).strip().lower() == "atividade"
+            ]
+            if hw_rows:
+                df_hw = pd.DataFrame(hw_rows)
+                cols_hw = [c for c in ["data", "aluno", "turma", "avaliacao", "nota", "status", "origem", "autor"] if c in df_hw.columns]
+                if cols_hw:
+                    df_hw = df_hw[cols_hw]
+                st.dataframe(df_hw, use_container_width=True)
+            else:
+                st.info("Nenhuma licao de casa ou atividade corrigida ainda.")
+        with tab_des:
+            des_rows = [
+                g for g in integradas
+                if str(g.get("origem_tipo", "")).strip().lower() == "desafio"
+            ]
+            if des_rows:
+                df_des = pd.DataFrame(des_rows)
+                cols_des = [c for c in ["data", "aluno", "turma", "avaliacao", "nota", "pontuacao", "status", "origem"] if c in df_des.columns]
+                if cols_des:
+                    df_des = df_des[cols_des]
+                st.dataframe(df_des, use_container_width=True)
+            else:
+                st.info("Nenhum desafio concluido ainda.")
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
