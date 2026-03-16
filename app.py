@@ -14741,7 +14741,6 @@ elif st.session_state["role"] == "Professor":
                     df_alunos = df_alunos[col_order]
                 st.dataframe(df_alunos, use_container_width=True)
     elif menu_prof == "Agenda":
-        st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
         turmas_prof = [
             c.get("nome") for c in st.session_state["classes"]
@@ -14750,13 +14749,127 @@ elif st.session_state["role"] == "Professor":
         if not turmas_prof:
             st.info("Nenhuma turma atribuída a você.")
         else:
+            agenda_prof = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
+            sessoes_prof = [
+                s for s in st.session_state.get("class_sessions", [])
+                if str(s.get("professor", "")).strip() == str(st.session_state.get("user_name", "")).strip()
+            ]
+
+            def _teacher_class_shell(step, title, description, tone="blue"):
+                tone_map = {
+                    "blue": ("#1d4ed8", "#2563eb"),
+                    "green": ("#059669", "#10b981"),
+                    "orange": ("#ea580c", "#f97316"),
+                    "slate": ("#334155", "#0f172a"),
+                }
+                left, right = tone_map.get(tone, tone_map["blue"])
+                st.markdown(
+                    (
+                        f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
+                        f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
+                        f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
+                        f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
+                        f'background:linear-gradient(90deg,{left},{right});"></div>'
+                        f'<div style="display:flex;gap:14px;align-items:flex-start;">'
+                        f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
+                        f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
+                        f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
+                        f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                        f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
+                        f'</div></div>'
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            def _teacher_class_card(title, rows, tone="blue", badge="Resumo"):
+                tone_map = {
+                    "blue": ("#2563eb", "rgba(37,99,235,.12)"),
+                    "green": ("#10b981", "rgba(16,185,129,.12)"),
+                    "orange": ("#f97316", "rgba(249,115,22,.12)"),
+                    "slate": ("#334155", "rgba(51,65,85,.12)"),
+                }
+                accent, chip_bg = tone_map.get(tone, tone_map["blue"])
+                blocks = []
+                for label, value in rows:
+                    blocks.append(
+                        (
+                            '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
+                            'border-radius:16px;padding:14px 16px;">'
+                            f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
+                            f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
+                            '</div>'
+                        )
+                    )
+                st.markdown(
+                    (
+                        '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
+                        'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
+                        f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                        f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
+                        f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
+                        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
+                        + "".join(blocks) +
+                        '</div></div>'
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            render_section_hero(
+                "Agenda operacional do professor",
+                "Acompanhe o calendário das suas turmas, inicie e encerre aulas com contexto claro e mantenha o histórico sempre visível.",
+                [
+                    f"{len(turmas_prof)} turmas",
+                    f"{len(agenda_prof)} aulas na agenda",
+                    f"{len([s for s in sessoes_prof if str(s.get('status', '')).strip().lower() == 'finalizada'])} aulas finalizadas",
+                ],
+            )
+            render_panel_intro(
+                "Central de execução das aulas",
+                "Revise sua agenda, selecione a turma certa e conduza o ciclo de início, encerramento e histórico da aula sem perder contexto operacional.",
+                [
+                    ("Futuras", len([a for a in agenda_prof if (parse_date(a.get("data", "")) or datetime.date(1900, 1, 1)) >= datetime.date.today()])),
+                    ("Em andamento", len([s for s in sessoes_prof if str(s.get("status", "")).strip().lower() == "em andamento"])),
+                ],
+            )
             tab_agenda, tab_controle = st.tabs(["Agenda da Turma", "Iniciar / Fechar Aula"])
 
             with tab_agenda:
-                agenda = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
+                _teacher_class_shell(
+                    "1",
+                    "Conferir o calendário das turmas",
+                    "Use esta visão para revisar as próximas aulas e validar o que já está publicado para os alunos antes de iniciar uma sessão.",
+                    tone="blue",
+                )
+                agenda = agenda_prof
+                if agenda:
+                    proximas_datas = [
+                        parse_date(a.get("data", ""))
+                        for a in agenda
+                        if parse_date(a.get("data", ""))
+                    ]
+                    hoje = datetime.date.today()
+                    proxima_data = min([d for d in proximas_datas if d >= hoje], default=min(proximas_datas) if proximas_datas else None)
+                    _teacher_class_card(
+                        "Resumo da agenda do professor",
+                        [
+                            ("Turmas ativas", len(turmas_prof)),
+                            ("Aulas agendadas", len(agenda)),
+                            ("Próxima data", format_date_br(proxima_data) if proxima_data else "-"),
+                            ("Aulas futuras", len([a for a in agenda if (parse_date(a.get("data", "")) or datetime.date(1900, 1, 1)) >= hoje])),
+                        ],
+                        tone="blue",
+                        badge="Agenda",
+                    )
                 render_agenda(sort_agenda(agenda), "Nenhuma aula agendada para suas turmas.")
 
             with tab_controle:
+                _teacher_class_shell(
+                    "2",
+                    "Operar início e fechamento da aula",
+                    "Selecione a turma, confira o contexto VIP e então registre a abertura ou o encerramento da aula com segurança.",
+                    tone="green",
+                )
                 turma_ctrl = st.selectbox("Turma", turmas_prof, key="prof_ctrl_turma")
                 turma_obj = next((c for c in st.session_state.get("classes", []) if c.get("nome") == turma_ctrl), {})
                 vip_alunos_turma = _vip_students_for_class(turma_ctrl)
@@ -14765,6 +14878,23 @@ elif st.session_state["role"] == "Professor":
                     if str(a.get("turma", "")).strip() == str(turma_ctrl).strip()
                 ]
                 aulas_turma = sort_agenda(aulas_turma)
+
+                _teacher_class_card(
+                    "Contexto da turma selecionada",
+                    [
+                        ("Turma", turma_ctrl),
+                        ("Professor", st.session_state.get("user_name", "")),
+                        ("Livro/Nível", str(turma_obj.get("livro", "") or turma_obj.get("nivel", "") or "-")),
+                        ("Horario base", format_class_schedule(
+                            turma_obj.get("dias_semana", []),
+                            str(turma_obj.get("hora_inicio", "")).strip(),
+                            str(turma_obj.get("hora_fim", "")).strip(),
+                        ) or "Horario a definir"),
+                        ("Link da aula", str(turma_obj.get("link_zoom", "")).strip() or "Nao informado"),
+                    ],
+                    tone="green",
+                    badge="Turma",
+                )
 
                 st.markdown("### Saldo VIP da turma")
                 if vip_alunos_turma:
@@ -14782,7 +14912,12 @@ elif st.session_state["role"] == "Professor":
                 ]
 
                 if not sessoes_ativas:
-                    st.markdown("### Iniciar aula")
+                    _teacher_class_shell(
+                        "3",
+                        "Iniciar uma nova sessão",
+                        "Escolha uma aula da agenda quando existir ou preencha manualmente a lição para iniciar a aula imediatamente.",
+                        tone="orange",
+                    )
                     with st.form("prof_start_class_session"):
                         aula_idx = -1
                         if aulas_turma:
@@ -14801,6 +14936,19 @@ elif st.session_state["role"] == "Professor":
 
                         licao = st.text_area("Licao/Conteudo da aula", placeholder="Ex: Unit 3 - Simple Present + exercicios de conversacao")
                         resumo_inicio = st.text_area("Objetivo da aula (opcional)")
+                        aula_preview = aulas_turma[aula_idx] if aula_idx >= 0 and aula_idx < len(aulas_turma) else {}
+                        _teacher_class_card(
+                            "Previa da aula que sera iniciada",
+                            [
+                                ("Titulo", str(aula_preview.get("titulo", "")).strip() or "Aula manual"),
+                                ("Data", str(aula_preview.get("data", "")).strip() or format_date_br(datetime.date.today())),
+                                ("Horario", str(aula_preview.get("hora", "")).strip() or str(turma_obj.get("hora_inicio", "")).strip() or "-"),
+                                ("Licao", licao.strip() or "Preencher antes de iniciar"),
+                                ("Objetivo", resumo_inicio.strip() or "-"),
+                            ],
+                            tone="orange",
+                            badge="Prévia",
+                        )
 
                         if st.form_submit_button("Iniciar aula", type="primary"):
                             if not licao.strip():
@@ -14834,10 +14982,22 @@ elif st.session_state["role"] == "Professor":
                                 st.rerun()
                 else:
                     sessao_ativa = sessoes_ativas[0]
-                    st.markdown("### Aula em andamento")
-                    st.info(
-                        f"Turma: {sessao_ativa.get('turma','')} | Inicio: {sessao_ativa.get('inicio_em','')} | "
-                        f"Licao: {sessao_ativa.get('licao','')}"
+                    _teacher_class_shell(
+                        "3",
+                        "Encerrar a aula em andamento",
+                        "Revise os dados da sessão atual, registre o resumo final e finalize a aula para alimentar o histórico automaticamente.",
+                        tone="slate",
+                    )
+                    _teacher_class_card(
+                        "Sessao atualmente em andamento",
+                        [
+                            ("Turma", sessao_ativa.get("turma", "")),
+                            ("Inicio", sessao_ativa.get("inicio_em", "")),
+                            ("Licao", sessao_ativa.get("licao", "")),
+                            ("Link", sessao_ativa.get("link", "") or "Nao informado"),
+                        ],
+                        tone="slate",
+                        badge="Em andamento",
                     )
                     with st.form("prof_close_class_session"):
                         resumo_final = st.text_area(
@@ -14873,6 +15033,12 @@ elif st.session_state["role"] == "Professor":
                                 st.success("Aula fechada e salva no historico dos alunos.")
                             st.rerun()
 
+                _teacher_class_shell(
+                    "4",
+                    "Consultar histórico recente da turma",
+                    "Revise as últimas aulas concluídas para manter continuidade pedagógica e contexto antes da próxima sessão.",
+                    tone="blue",
+                )
                 st.markdown("### Ultimas aulas finalizadas da turma")
                 historico_turma = [
                     s for s in st.session_state.get("class_sessions", [])
