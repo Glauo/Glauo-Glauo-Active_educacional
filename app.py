@@ -10702,9 +10702,87 @@ def _render_print_button(title, subtitle, rows, preferred_columns):
 def _report_period_subtitle(start_date, end_date):
     return f"Período analisado: {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
 
+
+def _class_ops_shell(step, title, description, tone="blue"):
+    tone_map = {
+        "blue": ("#1d4ed8", "#2563eb"),
+        "green": ("#059669", "#10b981"),
+        "orange": ("#ea580c", "#f97316"),
+        "slate": ("#334155", "#0f172a"),
+    }
+    left, right = tone_map.get(tone, tone_map["blue"])
+    st.markdown(
+        (
+            f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
+            f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
+            f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
+            f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
+            f'background:linear-gradient(90deg,{left},{right});"></div>'
+            f'<div style="display:flex;gap:14px;align-items:flex-start;">'
+            f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
+            f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
+            f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
+            f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+            f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
+            f'</div></div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def _class_summary_card(title, rows, tone="blue", badge="Resumo"):
+    tone_map = {
+        "blue": ("#2563eb", "rgba(37,99,235,.12)"),
+        "green": ("#10b981", "rgba(16,185,129,.12)"),
+        "orange": ("#f97316", "rgba(249,115,22,.12)"),
+        "slate": ("#334155", "rgba(51,65,85,.12)"),
+    }
+    accent, chip_bg = tone_map.get(tone, tone_map["blue"])
+    blocks = []
+    for label, value in rows:
+        blocks.append(
+            (
+                '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
+                'border-radius:16px;padding:14px 16px;">'
+                f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
+                f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
+                '</div>'
+            )
+        )
+    st.markdown(
+        (
+            '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
+            'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
+            f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+            f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
+            f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
+            + "".join(blocks) +
+            '</div></div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def render_class_sessions_premium_report():
-    st.markdown('<div class="main-header">Relatório Premium de Aulas</div>', unsafe_allow_html=True)
-    st.caption("Visão executiva das aulas dadas: professor, valor, lição, notas, faltas e horários de abertura/fechamento.")
+    all_sessions = st.session_state.get("class_sessions", [])
+    render_section_hero(
+        "Relatório executivo das aulas realizadas",
+        "Analise produção por professor, turma e período com visão consolidada, detalhamento operacional e exportações em um único fluxo.",
+        [
+            f"{len(all_sessions)} sessoes registradas",
+            f"{len({str(s.get('professor', '')).strip() for s in all_sessions if str(s.get('professor', '')).strip()})} professores envolvidos",
+        ],
+    )
+    render_panel_intro(
+        "Painel de performance das aulas",
+        "Filtre o período, revise os indicadores centrais e avance para o detalhamento e exportação do relatório.",
+        [
+            ("Finalizadas", len([s for s in all_sessions if str(s.get("status", "")).strip().lower() == "finalizada"])),
+            ("Em andamento", len([s for s in all_sessions if str(s.get("status", "")).strip().lower() == "em andamento"])),
+        ],
+    )
     st.markdown(
         """
         <style>
@@ -10735,12 +10813,17 @@ def render_class_sessions_premium_report():
         unsafe_allow_html=True,
     )
 
-    all_sessions = st.session_state.get("class_sessions", [])
     prof_options = sorted({str(s.get("professor", "")).strip() for s in all_sessions if str(s.get("professor", "")).strip()})
     turma_options = sorted({str(s.get("turma", "")).strip() for s in all_sessions if str(s.get("turma", "")).strip()})
     today = datetime.date.today()
     month_start = today.replace(day=1)
 
+    _class_ops_shell(
+        "1",
+        "Configurar o período do relatório",
+        "Defina intervalo, professor, turma e status para trabalhar com uma base já limpa antes de abrir o detalhamento.",
+        tone="blue",
+    )
     f1, f2, f3, f4, f5 = st.columns([1.2, 1.2, 1.1, 1.1, 1.0])
     with f1:
         start_date = st.date_input("De", value=month_start, format="DD/MM/YYYY", key="class_report_start")
@@ -10789,6 +10872,20 @@ def render_class_sessions_premium_report():
         st.info("Nenhuma aula encontrada com os filtros informados.")
         return
 
+    _class_summary_card(
+        "Resumo gerencial do período filtrado",
+        [
+            ("Período", f"{start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"),
+            ("Professor", prof_sel),
+            ("Turma", turma_sel),
+            ("Status", status_sel),
+            ("Valor total", format_money(total_valor)),
+            ("Nota média", f"{media_geral:.1f}" if media_geral is not None else "-"),
+        ],
+        tone="green",
+        badge="Conferência",
+    )
+
     df = pd.DataFrame(rows)
     view_cols = [
         "Data",
@@ -10811,6 +10908,12 @@ def render_class_sessions_premium_report():
         "Status",
     ]
     df_view = df[[c for c in view_cols if c in df.columns]]
+    _class_ops_shell(
+        "2",
+        "Revisar a produção registrada",
+        "Consulte a visão detalhada das sessões e depois valide o consolidado por professor antes de exportar.",
+        tone="green",
+    )
     st.markdown("### Relatório detalhado")
     st.dataframe(df_view, use_container_width=True, hide_index=True)
 
@@ -10828,6 +10931,12 @@ def render_class_sessions_premium_report():
     st.markdown("### Resumo por professor")
     st.dataframe(resumo_prof, use_container_width=True, hide_index=True)
 
+    _class_ops_shell(
+        "3",
+        "Exportar ou imprimir o relatório",
+        "Gere o arquivo no formato desejado ou envie diretamente para impressão quando a conferência estiver concluída.",
+        tone="orange",
+    )
     d1, d2, d3, d4 = st.columns(4)
     with d1:
         csv_bytes = df_view.to_csv(index=False).encode("utf-8-sig")
@@ -15382,12 +15491,66 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.rerun()
 
     elif menu_coord == "Agenda":
-        st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
+        agenda_all = sort_agenda(st.session_state["agenda"])
+        turmas_agendadas = len({str(a.get("turma", "")).strip() for a in agenda_all if str(a.get("turma", "")).strip()})
+        futuras = []
+        hoje = datetime.date.today()
+        for item in agenda_all:
+            data_item = parse_date(item.get("data", ""))
+            if data_item and data_item >= hoje:
+                futuras.append(item)
+        render_section_hero(
+            "Agenda e lançamento operacional das aulas",
+            "Organize o calendário das turmas, revise a base agendada e registre novas aulas com contexto da turma e comunicação integrada.",
+            [
+                f"{len(agenda_all)} aulas na agenda",
+                f"{len(futuras)} futuras",
+                f"{turmas_agendadas} turmas com agenda",
+            ],
+        )
+        render_panel_intro(
+            "Central de agenda acadêmica",
+            "Use a aba de agenda para revisar o calendário vigente e a aba de nova aula para lançar eventos com contexto, recorrência e disparo aos alunos.",
+            [
+                ("Hoje ou próximas", len(futuras)),
+                ("Total geral", len(agenda_all)),
+            ],
+        )
         tab1, tab2 = st.tabs(["Aulas Agendadas", "Nova Aula"])
         with tab1:
-            agenda = sort_agenda(st.session_state["agenda"])
+            _class_ops_shell(
+                "1",
+                "Conferir a agenda consolidada",
+                "Acompanhe o calendário ativo das turmas antes de incluir novos lançamentos ou ajustar a comunicação da semana.",
+                tone="blue",
+            )
+            agenda = agenda_all
+            if agenda:
+                proximas_datas = [
+                    parse_date(a.get("data", ""))
+                    for a in agenda
+                    if parse_date(a.get("data", ""))
+                ]
+                proxima_data = min([d for d in proximas_datas if d >= hoje], default=min(proximas_datas) if proximas_datas else None)
+                _class_summary_card(
+                    "Resumo da agenda atual",
+                    [
+                        ("Aulas cadastradas", len(agenda)),
+                        ("Turmas cobertas", turmas_agendadas),
+                        ("Próxima data", format_date_br(proxima_data) if proxima_data else "-"),
+                        ("Futuras", len(futuras)),
+                    ],
+                    tone="blue",
+                    badge="Agenda",
+                )
             render_agenda(agenda, "Nenhuma aula agendada.")
         with tab2:
+            _class_ops_shell(
+                "2",
+                "Lançar uma nova aula",
+                "Escolha a turma, revise o contexto da operação e então preencha datas, recorrência e canais de comunicação antes de confirmar.",
+                tone="green",
+            )
             turmas = class_names()
             if not turmas:
                 st.info("Cadastre turmas antes de agendar aulas.")
@@ -15403,6 +15566,18 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     dias_turma_default = [dia for dia in dias_turma_default if dia in WEEKDAY_OPTIONS_PT]
                     if not dias_turma_default:
                         dias_turma_default = infer_class_days_from_text(turma_obj.get("dias", ""))
+                    _class_summary_card(
+                        "Contexto da turma selecionada",
+                        [
+                            ("Turma", turma_sel),
+                            ("Professor", prof_default or "-"),
+                            ("Livro/Nível", str(turma_obj.get("livro", "") or turma_obj.get("nivel", "") or "-")),
+                            ("Dias-base", ", ".join(dias_turma_default) if dias_turma_default else "-"),
+                            ("Link atual", link_default or "Nao informado"),
+                        ],
+                        tone="green",
+                        badge="Turma",
+                    )
                     titulo = st.text_input("Título", value="Aula ao vivo")
                     descricao = st.text_area("Descrição")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -15453,6 +15628,20 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             value=True,
                             key="coord_agenda_notify_whatsapp",
                         )
+                    total_previsto = int(semanas) if repetir else 1
+                    _class_summary_card(
+                        "Resumo do lançamento",
+                        [
+                            ("Titulo", titulo.strip() or "Aula ao vivo"),
+                            ("Data inicial", format_date_br(data_aula) if data_aula else "-"),
+                            ("Horario", hora_aula.strftime("%H:%M") if hora_aula else "-"),
+                            ("Recorrencia", "Semanal" if repetir else "Aula unica"),
+                            ("Qtd. prevista", total_previsto),
+                            ("Comunicacao", f"E-mail {'Sim' if enviar_email_convite else 'Nao'} | WhatsApp {'Sim' if enviar_whatsapp_convite else 'Nao'}"),
+                        ],
+                        tone="orange",
+                        badge="Prévia",
+                    )
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
                             st.error("Selecione pelo menos um dia para repetição por data.")
@@ -16231,6 +16420,86 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 f"{len({str(s.get('turma', '')).strip() for s in st.session_state.get('students', []) if str(s.get('turma', '')).strip()})} turmas com alunos",
             ],
         )
+        students_all = st.session_state.get("students", [])
+        students_active = [
+            s for s in students_all
+            if str(s.get("status", "Ativo")).strip().lower() != "inativo"
+        ]
+        students_with_login = [
+            s for s in students_all if str(s.get("usuario", "")).strip()
+        ]
+        students_without_turma = [
+            s for s in students_all
+            if not str(s.get("turma", "")).strip() or str(s.get("turma", "")).strip().lower() == "sem turma"
+        ]
+
+        def _student_ops_shell(step, title, description, tone="blue"):
+            tone_map = {
+                "blue": ("#1d4ed8", "#2563eb"),
+                "green": ("#059669", "#10b981"),
+                "orange": ("#ea580c", "#f97316"),
+            }
+            left, right = tone_map.get(tone, tone_map["blue"])
+            st.markdown(
+                (
+                    f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
+                    f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
+                    f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
+                    f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
+                    f'background:linear-gradient(90deg,{left},{right});"></div>'
+                    f'<div style="display:flex;gap:14px;align-items:flex-start;">'
+                    f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
+                    f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
+                    f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
+                    f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                    f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
+                    f'</div></div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        def _student_summary_card(title, rows, tone="blue"):
+            tone_map = {
+                "blue": ("#2563eb", "rgba(37,99,235,.12)"),
+                "green": ("#10b981", "rgba(16,185,129,.12)"),
+                "orange": ("#f97316", "rgba(249,115,22,.12)"),
+            }
+            accent, chip_bg = tone_map.get(tone, tone_map["blue"])
+            blocks = []
+            for label, value in rows:
+                blocks.append(
+                    (
+                        '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
+                        'border-radius:16px;padding:14px 16px;">'
+                        f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
+                        f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
+                        '</div>'
+                    )
+                )
+            st.markdown(
+                (
+                    '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
+                    'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
+                    f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                    f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
+                    f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">Resumo</span></div>'
+                    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
+                    + "".join(blocks) +
+                    '</div></div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        top_k1, top_k2, top_k3, top_k4 = st.columns(4)
+        with top_k1:
+            st.metric("Alunos ativos", len(students_active))
+        with top_k2:
+            st.metric("Acessos criados", len(students_with_login))
+        with top_k3:
+            st.metric("Sem turma", len(students_without_turma))
+        with top_k4:
+            st.metric("Total geral", len(students_all))
         tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
@@ -16242,7 +16511,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     ("Usuarios", len([s for s in st.session_state.get("students", []) if str(s.get("usuario", "")).strip()])),
                 ],
             )
-            st.markdown("### Importar / Exportar Excel")
+            _student_ops_shell(
+                "1",
+                "Importação e governança da base",
+                "Centralize exportação, modelo de planilha e importação assistida antes de revisar o painel por turma.",
+                tone="blue",
+            )
             with st.expander("Importar / Exportar Excel", expanded=False):
                 col_exp, col_imp = st.columns(2)
                 with col_exp:
@@ -16385,7 +16659,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.info("Envie um arquivo Excel para importar alunos.")
 
             if st.session_state["students"]:
-                st.markdown("### Painel por turma")
+                _student_ops_shell(
+                    "2",
+                    "Painel por turma",
+                    "Selecione a turma, escolha o aluno e opere a ficha acadêmica e financeira sem sair da listagem.",
+                    tone="green",
+                )
                 turma_admin_opts = ["Todas"] + sorted({str(s.get("turma", "Sem Turma")).strip() or "Sem Turma" for s in st.session_state["students"]})
                 pa1, pa2 = st.columns([1.2, 2.2])
                 with pa1:
@@ -16423,25 +16702,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     with pd4:
                         st.metric("Turma", str(aluno_admin_obj.get("turma", "")).strip() or "Sem Turma")
 
-                    st.markdown(
-                        f"""
-                        <div class="dash-card" style="margin-top:8px;">
-                          <div class="card-title">Ficha do aluno</div>
-                          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px;">
-                            <div><strong>Nome:</strong> {str(aluno_admin_obj.get("nome", "")).strip() or "-"}</div>
-                            <div><strong>Matrícula:</strong> {str(aluno_admin_obj.get("matricula", "")).strip() or "-"}</div>
-                            <div><strong>Livro/Nível:</strong> {student_book_level(aluno_admin_obj) or "-"}</div>
-                            <div><strong>Professor:</strong> {str(turma_obj_admin.get("professor", "")).strip() or "-"}</div>
-                            <div><strong>Módulo:</strong> {str(aluno_admin_obj.get("modulo", "")).strip() or "-"}</div>
-                            <div><strong>Status:</strong> {str(aluno_admin_obj.get("status", "")).strip() or "-"}</div>
-                            <div><strong>Celular:</strong> {str(aluno_admin_obj.get("celular", "")).strip() or "-"}</div>
-                            <div><strong>E-mail:</strong> {str(aluno_admin_obj.get("email", "")).strip() or "-"}</div>
-                            <div><strong>CPF:</strong> {str(aluno_admin_obj.get("cpf", "")).strip() or "-"}</div>
-                            <div><strong>Responsável:</strong> {str((aluno_admin_obj.get("responsavel", {}) or {}).get("nome", "")).strip() or "-"}</div>
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
+                    _student_summary_card(
+                        "Ficha consolidada do aluno",
+                        [
+                            ("Aluno", str(aluno_admin_obj.get("nome", "")).strip() or "-"),
+                            ("Matrícula", str(aluno_admin_obj.get("matricula", "")).strip() or "-"),
+                            ("Livro / Nível", student_book_level(aluno_admin_obj) or "-"),
+                            ("Professor", str(turma_obj_admin.get("professor", "")).strip() or "-"),
+                            ("Módulo", str(aluno_admin_obj.get("modulo", "")).strip() or "-"),
+                            ("Status", str(aluno_admin_obj.get("status", "")).strip() or "-"),
+                            ("Celular", str(aluno_admin_obj.get("celular", "")).strip() or "-"),
+                            ("E-mail", str(aluno_admin_obj.get("email", "")).strip() or "-"),
+                            ("CPF", str(aluno_admin_obj.get("cpf", "")).strip() or "-"),
+                            ("Responsável", str((aluno_admin_obj.get("responsavel", {}) or {}).get("nome", "")).strip() or "-"),
+                        ],
+                        tone="green",
                     )
 
                     af1, af2 = st.tabs(["Financeiro do aluno", "Ficha completa"])
@@ -16538,6 +16813,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         ]
                         st.dataframe(pd.DataFrame(ficha_rows), use_container_width=True, hide_index=True)
 
+            _student_ops_shell(
+                "3",
+                "Base filtrada e exportável",
+                "Use filtros por turma e professor para reduzir a base operacional e exportar apenas o que faz sentido para a ação atual.",
+                tone="orange",
+            )
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -16645,6 +16926,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Use este bloco para manter dados academicos, pessoais e financeiros com mais contexto e menos friccao visual.",
                 [("Campos", "completos"), ("Fluxo", "cadastro")],
             )
+            _student_ops_shell(
+                "1",
+                "Preparar cadastro ou correção",
+                "Escolha entre iniciar um novo aluno ou puxar um cadastro existente para revisão completa no mesmo formulário.",
+                tone="blue",
+            )
             modulos = [
                 "Presencial em Turma",
                 "Turma online",
@@ -16725,7 +17012,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.info(info_msg)
 
             if st.session_state.get("students"):
-                st.markdown("### Puxar Aluno Cadastrado")
+                _student_ops_shell(
+                    "2",
+                    "Recuperar cadastro existente",
+                    "Carregue um aluno já cadastrado para corrigir dados sem duplicar matrícula nem perder histórico.",
+                    tone="green",
+                )
                 alunos_pull = st.session_state.get("students", [])
                 pull_options = list(range(len(alunos_pull)))
                 selected_pull_idx = st.selectbox(
@@ -16796,12 +17088,23 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             edit_student_active = None
             if 0 <= edit_idx_active < len(st.session_state.get("students", [])):
                 edit_student_active = st.session_state["students"][edit_idx_active]
-                st.info(
-                    "Modo correcao ativo para: "
-                    f"{str(edit_student_active.get('nome', '')).strip()} "
-                    f"(Matricula {str(edit_student_active.get('matricula', '')).strip() or '-'})"
+                _student_summary_card(
+                    "Modo correção ativo",
+                    [
+                        ("Aluno", str(edit_student_active.get("nome", "")).strip() or "-"),
+                        ("Matrícula", str(edit_student_active.get("matricula", "")).strip() or "-"),
+                        ("Turma", str(edit_student_active.get("turma", "")).strip() or "Sem Turma"),
+                        ("Status", str(edit_student_active.get("status", "")).strip() or "-"),
+                    ],
+                    tone="orange",
                 )
 
+            _student_ops_shell(
+                "3",
+                "Preencher ficha completa",
+                "Siga o formulário por blocos: dados pessoais, endereço, turma, acesso e responsável financeiro.",
+                tone="orange",
+            )
             with st.form("add_student_full", clear_on_submit=False):
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
@@ -17105,6 +17408,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Edite dados, credenciais e informacoes do aluno com um fluxo unico de manutencao.",
                 [("Controle", "individual"), ("Acao", "segura")],
             )
+            _student_ops_shell(
+                "1",
+                "Selecionar aluno para manutenção",
+                "Abra uma ficha individual, revise os dados e execute edição ou exclusão com contexto completo do cadastro.",
+                tone="blue",
+            )
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -17113,6 +17422,18 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 aluno_obj = next((s for s in st.session_state["students"] if s["nome"] == aluno_sel), None)
 
                 if aluno_obj:
+                    _student_summary_card(
+                        "Aluno selecionado para manutenção",
+                        [
+                            ("Aluno", str(aluno_obj.get("nome", "")).strip() or "-"),
+                            ("Matrícula", str(aluno_obj.get("matricula", "")).strip() or "-"),
+                            ("Turma", str(aluno_obj.get("turma", "")).strip() or "Sem Turma"),
+                            ("Status", str(aluno_obj.get("status", "")).strip() or "-"),
+                            ("E-mail", str(aluno_obj.get("email", "")).strip() or "-"),
+                            ("Celular", str(aluno_obj.get("celular", "")).strip() or "-"),
+                        ],
+                        tone="green",
+                    )
                     turmas = ["Sem Turma"] + class_names()
                     current_turma = aluno_obj.get("turma", "Sem Turma")
                     if current_turma not in turmas:
