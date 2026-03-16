@@ -18034,22 +18034,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             rendered_rows = []
             for label, value in rows:
                 rendered_rows.append(
-                    f"""
-                    <div>
-                        <div class="finance-summary-item-label">{html.escape(str(label))}</div>
-                        <div class="finance-summary-item-value">{html.escape(str(value))}</div>
-                    </div>
-                    """
+                    f'<div><div class="finance-summary-item-label">{html.escape(str(label))}</div>'
+                    f'<div class="finance-summary-item-value">{html.escape(str(value))}</div></div>'
                 )
             st.markdown(
-                f"""
-                <div class="finance-summary-card" data-tone="{html.escape(str(tone))}">
-                    <div class="finance-summary-title">{html.escape(str(title))}</div>
-                    <div class="finance-summary-grid">
-                        {''.join(rendered_rows)}
-                    </div>
-                </div>
-                """,
+                f'<div class="finance-summary-card" data-tone="{html.escape(str(tone))}">'
+                f'<div class="finance-summary-title">{html.escape(str(title))}</div>'
+                f'<div class="finance-summary-grid">{"".join(rendered_rows)}</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
