@@ -5872,11 +5872,90 @@ def _publish_homework_activity(
 
 def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     turmas = sorted({str(t).strip() for t in (turmas_disponiveis or []) if str(t).strip()})
-    st.markdown('<div class="main-header">Licoes de Casa Semanais</div>', unsafe_allow_html=True)
-    st.caption("Publique licoes de casa semanais por turma. O aluno responde direto no portal.")
     if not turmas:
         st.info("Nenhuma turma disponivel para publicar licao de casa.")
         return
+
+    homework_items_all = [
+        a for a in st.session_state.get("activities", [])
+        if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
+    ]
+    render_section_hero(
+        "Central de lições de casa",
+        "Gere, publique e acompanhe tarefas por turma com apoio da IA, revisão manual e leitura clara das respostas dos alunos.",
+        [
+            f"{len(turmas)} turmas",
+            f"{len(homework_items_all)} lições registradas",
+        ],
+    )
+    render_panel_intro(
+        "Fluxo operacional das lições",
+        "Escolha entre gerar com IA ou publicar manualmente, revise o resumo antes de publicar e acompanhe execução e respostas no mesmo painel.",
+        [
+            ("Ativas", len([a for a in homework_items_all if _is_activity_open(a)])),
+            ("Encerradas", len([a for a in homework_items_all if not _is_activity_open(a)])),
+        ],
+    )
+
+    def _homework_shell(step, title, description, tone="blue"):
+        tone_map = {
+            "blue": ("#1d4ed8", "#2563eb"),
+            "green": ("#059669", "#10b981"),
+            "orange": ("#ea580c", "#f97316"),
+            "slate": ("#334155", "#0f172a"),
+        }
+        left, right = tone_map.get(tone, tone_map["blue"])
+        st.markdown(
+            (
+                f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
+                f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
+                f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
+                f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
+                f'background:linear-gradient(90deg,{left},{right});"></div>'
+                f'<div style="display:flex;gap:14px;align-items:flex-start;">'
+                f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
+                f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
+                f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
+                f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
+                f'</div></div>'
+            ),
+            unsafe_allow_html=True,
+        )
+
+    def _homework_card(title, rows, tone="blue", badge="Resumo"):
+        tone_map = {
+            "blue": ("#2563eb", "rgba(37,99,235,.12)"),
+            "green": ("#10b981", "rgba(16,185,129,.12)"),
+            "orange": ("#f97316", "rgba(249,115,22,.12)"),
+            "slate": ("#334155", "rgba(51,65,85,.12)"),
+        }
+        accent, chip_bg = tone_map.get(tone, tone_map["blue"])
+        blocks = []
+        for label, value in rows:
+            blocks.append(
+                (
+                    '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
+                    'border-radius:16px;padding:14px 16px;">'
+                    f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
+                    f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
+                    '</div>'
+                )
+            )
+        st.markdown(
+            (
+                '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
+                'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
+                f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
+                f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
+                f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
+                + "".join(blocks) +
+                '</div></div>'
+            ),
+            unsafe_allow_html=True,
+        )
 
     draft_key = f"{panel_key}_homework_ai_draft"
     tab_ia, tab_manual, tab_publicadas, tab_respostas = st.tabs(
@@ -5884,11 +5963,28 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     )
 
     with tab_ia:
+        _homework_shell(
+            "1",
+            "Gerar uma lição com apoio da IA",
+            "Selecione a turma, revise o livro e as últimas lições registradas e só então peça a geração semanal para o Wiz.",
+            tone="blue",
+        )
         turma_sel = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_ia_turma")
         turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_sel), {})
         livro_turma = _norm_book_level(turma_obj.get("livro", ""))
         semana = current_week_key(datetime.date.today())
         licoes_recentes = _recent_class_lessons_for_homework(turma_sel, limit=4)
+        _homework_card(
+            "Contexto da turma para a geração",
+            [
+                ("Turma", turma_sel),
+                ("Livro/Nível", livro_turma or "Nao definido"),
+                ("Semana", semana),
+                ("Lições recentes", " | ".join(licoes_recentes[:2]) if licoes_recentes else "Sem histórico recente"),
+            ],
+            tone="blue",
+            badge="IA",
+        )
         st.caption(f"Livro/Nivel da turma: {livro_turma or 'Nao definido'}")
         if licoes_recentes:
             st.caption("Ultimas licoes da turma: " + " | ".join(licoes_recentes[:3]))
@@ -5954,12 +6050,30 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
 
         draft = st.session_state.get(draft_key)
         if isinstance(draft, dict):
-            st.markdown("---")
+            due_obj = draft.get("due_date")
+            due_txt = due_obj.strftime("%d/%m/%Y") if isinstance(due_obj, (datetime.date, datetime.datetime)) else str(due_obj or "")
+            _homework_shell(
+                "2",
+                "Revisar o rascunho antes da publicação",
+                "Confira título, descrição, prazo e estrutura das questões antes de liberar a tarefa para os alunos.",
+                tone="green",
+            )
+            _homework_card(
+                "Resumo do rascunho gerado",
+                [
+                    ("Título", draft.get("titulo", "")),
+                    ("Turma", draft.get("turma", "")),
+                    ("Prazo", due_txt or "Sem prazo"),
+                    ("Questões", len(draft.get("questions", []) or [])),
+                    ("Reenvio", "Sim" if draft.get("allow_resubmission") else "Nao"),
+                    ("Comunicado", "Sim" if draft.get("notify_students", True) else "Nao"),
+                ],
+                tone="green",
+                badge="Rascunho",
+            )
             st.markdown("### Rascunho gerado")
             st.markdown(f"**Titulo:** {draft.get('titulo', '')}")
             st.write(str(draft.get("descricao", "")).strip())
-            due_obj = draft.get("due_date")
-            due_txt = due_obj.strftime("%d/%m/%Y") if isinstance(due_obj, (datetime.date, datetime.datetime)) else str(due_obj or "")
             st.caption(f"Turma: {draft.get('turma', '')} | Prazo: {due_txt or 'Sem prazo'}")
 
             for idx, q in enumerate(draft.get("questions", []), start=1):
@@ -5997,6 +6111,12 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.rerun()
 
     with tab_manual:
+        _homework_shell(
+            "1",
+            "Publicar lição manualmente",
+            "Monte a tarefa em blocos claros: turma, conteúdo, prazo, política de reenvio e questões antes da publicação final.",
+            tone="orange",
+        )
         with st.form(f"{panel_key}_hw_manual_form"):
             turma_atividade = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_manual_turma")
             titulo_atividade = st.text_input("Titulo", key=f"{panel_key}_hw_manual_titulo")
@@ -6024,6 +6144,19 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                 value=3,
                 step=1,
                 key=f"{panel_key}_hw_manual_qtd",
+            )
+            _homework_card(
+                "Resumo da publicação manual",
+                [
+                    ("Turma", turma_atividade),
+                    ("Titulo", titulo_atividade.strip() or "Definir título"),
+                    ("Prazo", format_date_br(due_date) if due_date else "-"),
+                    ("Questões", int(qtd_questoes)),
+                    ("Reenvio", "Sim" if allow_resubmission else "Nao"),
+                    ("Comunicado", "Sim" if enviar_comunicado else "Nao"),
+                ],
+                tone="orange",
+                badge="Prévia",
             )
             st.caption("Monte as questoes abaixo. Em multipla escolha, informe uma opcao por linha.")
 
@@ -6111,10 +6244,13 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.rerun()
 
     with tab_publicadas:
-        homework_items = [
-            a for a in st.session_state.get("activities", [])
-            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
-        ]
+        _homework_shell(
+            "1",
+            "Gerenciar lições já publicadas",
+            "Acompanhe quais tarefas seguem ativas, quantas respostas já chegaram e encerre ou reabra a publicação sem sair da lista.",
+            tone="slate",
+        )
+        homework_items = homework_items_all
         homework_items = sorted(
             homework_items,
             key=lambda a: (
@@ -6126,6 +6262,17 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if not homework_items:
             st.info("Nenhuma licao de casa publicada ainda.")
         else:
+            _homework_card(
+                "Panorama das publicações",
+                [
+                    ("Total", len(homework_items)),
+                    ("Ativas", len([a for a in homework_items if _is_activity_open(a)])),
+                    ("Encerradas", len([a for a in homework_items if not _is_activity_open(a)])),
+                    ("Turmas cobertas", len({str(a.get("turma", "")).strip() for a in homework_items if str(a.get("turma", "")).strip()})),
+                ],
+                tone="slate",
+                badge="Gestão",
+            )
             for atividade in homework_items:
                 activity_id = str(atividade.get("id", "")).strip()
                 titulo = str(atividade.get("titulo", "Licao de Casa")).strip() or "Licao de Casa"
@@ -6164,10 +6311,13 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                             st.rerun()
 
     with tab_respostas:
-        homework_items = [
-            a for a in st.session_state.get("activities", [])
-            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
-        ]
+        _homework_shell(
+            "1",
+            "Acompanhar respostas dos alunos",
+            "Selecione a lição publicada para verificar entregas, pendências e progresso da turma com leitura mais direta.",
+            tone="blue",
+        )
+        homework_items = homework_items_all
         homework_items = sorted(
             homework_items,
             key=lambda a: (
@@ -6179,6 +6329,17 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if not homework_items:
             st.info("Nenhuma licao de casa publicada para acompanhar respostas.")
         else:
+            _homework_card(
+                "Panorama das respostas",
+                [
+                    ("Lições disponíveis", len(homework_items)),
+                    ("Turmas", len({str(a.get("turma", "")).strip() for a in homework_items if str(a.get("turma", "")).strip()})),
+                    ("Ativas", len([a for a in homework_items if _is_activity_open(a)])),
+                    ("Encerradas", len([a for a in homework_items if not _is_activity_open(a)])),
+                ],
+                tone="blue",
+                badge="Monitoramento",
+            )
             atividade_labels = []
             atividade_map = {}
             for atividade in homework_items:
