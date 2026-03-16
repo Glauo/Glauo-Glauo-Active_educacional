@@ -13584,6 +13584,29 @@ else:
             div[data-testid="stForm"] { padding: 16px !important; }
             .dash-card { padding: 16px; border-radius: 14px; }
             .card-value { font-size: 1.45rem; }
+            section[data-testid="stSidebar"] {
+                min-width: 100vw !important;
+                max-width: 100vw !important;
+                width: 100vw !important;
+                transition: transform .22s ease, min-width .22s ease, max-width .22s ease, width .22s ease !important;
+            }
+            section[data-testid="stSidebar"][aria-expanded="false"] {
+                min-width: 0 !important;
+                max-width: 0 !important;
+                width: 0 !important;
+                transform: translateX(-100%) !important;
+                border-right: none !important;
+                box-shadow: none !important;
+                overflow: hidden !important;
+            }
+            section[data-testid="stSidebar"][aria-expanded="false"] > div {
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            button[kind="header"][aria-label*="sidebar"],
+            button[kind="header"][aria-label*="Sidebar"] {
+                z-index: 1001 !important;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
