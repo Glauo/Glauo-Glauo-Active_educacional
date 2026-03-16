@@ -18053,6 +18053,121 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 unsafe_allow_html=True,
             )
 
+        def _finance_overdue_reference(item):
+            categoria = str(item.get("categoria", "")).strip() or "Cobranca"
+            descricao = str(item.get("descricao", "")).strip() or categoria
+            parcela = str(item.get("parcela", "")).strip()
+            vencimento = str(item.get("vencimento", "")).strip()
+            data_venc = parse_date(vencimento)
+            if categoria == "Mensalidade":
+                if data_venc:
+                    return f"Mensalidade {data_venc.strftime('%m/%Y')}"
+                return descricao
+            if categoria == "Material":
+                ano = data_venc.year if data_venc else datetime.date.today().year
+                return f"Material Didatico {ano}"
+            if parcela and "/" in parcela:
+                parte_atual, total = parcela.split("/", 1)
+                return f"Parcela {parte_atual.strip()} de {total.strip()}"
+            if data_venc:
+                return f"Boleto vencido em {data_venc.strftime('%d/%m/%Y')}"
+            return descricao
+
+        def _finance_overdue_charge_status(item):
+            canais = str(item.get("cobranca_canais", "")).strip()
+            ultima = str(item.get("cobranca_enviada_em", "")).strip()
+            if canais and ultima:
+                return f"Enviado via {canais} em {ultima}"
+            if canais:
+                return f"Tentativa via {canais}"
+            return "Sem cobranca registrada"
+
+        def _finance_overdue_message_payload(item):
+            aluno_nome = str(item.get("aluno", "")).strip() or "Responsavel"
+            referencia = _finance_overdue_reference(item)
+            valor = format_money(parse_money(item.get("valor_parcela", item.get("valor", 0))))
+            vencimento = str(item.get("vencimento", "")).strip() or "-"
+            descricao = str(item.get("descricao", "")).strip() or "-"
+            parcela = str(item.get("parcela", "")).strip()
+            assunto = f"[Active] Pendencia financeira - {referencia}"
+            corpo = (
+                f"Olá, {aluno_nome}.\n\n"
+                f"Identificamos uma pendencia financeira referente a {referencia}.\n"
+                f"Descricao: {descricao}\n"
+                f"Valor: {valor}\n"
+                f"Vencimento original: {vencimento}\n"
+            )
+            if parcela:
+                corpo += f"Parcela/serie: {parcela}\n"
+            corpo += (
+                "Pedimos, por gentileza, a regularizacao deste titulo.\n"
+                "Em caso de duvida, entre em contato com a equipe da escola.\n\n"
+                "Active Sistema Educacional"
+            )
+            whatsapp = (
+                f"Olá, {aluno_nome}. Identificamos uma pendencia financeira referente a {referencia}. "
+                f"Valor: {valor}. Vencimento original: {vencimento}. "
+            )
+            if parcela:
+                whatsapp += f"Parcela/serie: {parcela}. "
+            whatsapp += (
+                "Pedimos, por gentileza, a regularizacao. Em caso de duvida, entre em contato com a equipe da escola. "
+                "Active Sistema Educacional."
+            )
+            return {
+                "referencia": referencia,
+                "assunto": assunto,
+                "email_body": corpo,
+                "whatsapp_body": whatsapp,
+            }
+
+        def _finance_send_receivable_charge(item, send_email=False, send_whatsapp=False):
+            aluno_nome = str(item.get("aluno", "")).strip()
+            student = next(
+                (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno_nome),
+                None,
+            )
+            if not student:
+                return False, "Aluno nao localizado para envio de cobranca."
+            payload = _finance_overdue_message_payload(item)
+            mensagem = payload["email_body"] if bool(send_email) else payload["whatsapp_body"]
+            stats = _notify_direct_contacts(
+                student.get("nome", aluno_nome),
+                _message_recipients_for_student(student) if bool(send_email) else [],
+                _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
+                payload["assunto"],
+                mensagem,
+                "Cobranca Financeira",
+            )
+            canais = []
+            if bool(send_email):
+                canais.append("e-mail")
+            if bool(send_whatsapp):
+                canais.append("WhatsApp")
+            item["cobranca_referencia"] = payload["referencia"]
+            item["cobranca_canais"] = " / ".join(canais)
+            item["cobranca_enviada_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+            item["cobranca_status"] = (
+                f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
+                f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}"
+            )
+            save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+            return True, item["cobranca_status"]
+
+        def _finance_mark_receivable_paid(item, payment_type="Automática"):
+            item["status"] = "Pago"
+            item["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+            item["baixa_tipo"] = payment_type
+            item["baixa_forma"] = payment_type
+            save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+
+        def _finance_mark_payable_paid(item, payment_type="Automática"):
+            item["status"] = "Pago"
+            item["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+            item["baixa_tipo"] = payment_type
+            item["baixa_forma"] = payment_type
+            save_list(PAYABLES_FILE, st.session_state.get("payables", []))
+
         def _render_finance_nav(title, description, options, session_key, key_prefix, descriptions=None, columns_per_row=4):
             if st.session_state.get(session_key) not in options:
                 st.session_state[session_key] = options[0]
@@ -18093,12 +18208,73 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if not overdue_receivables:
                 st.info("Nenhum recebimento vencido para alunos.")
                 return
-            summary_map = {}
+            st.markdown(
+                """
+                <div class="finance-shell">
+                    <h4>Central de cobranca de vencidos</h4>
+                    <p>Revise alunos com pendencias, gere cobrancas automaticas e execute baixa sem sair da carteira de vencimentos.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            today = datetime.date.today()
+            filter_a, filter_b, filter_c = st.columns([1.2, 1, 1])
+            with filter_a:
+                student_filter = st.selectbox(
+                    "Filtrar aluno",
+                    ["Todos"] + sorted({str(r.get("aluno", "")).strip() for r in overdue_receivables if str(r.get("aluno", "")).strip()}),
+                    key="finance_overdue_receivable_student_filter",
+                )
+            with filter_b:
+                age_filter = st.selectbox(
+                    "Antiguidade minima",
+                    ["Todos", "7 dias", "15 dias", "30 dias"],
+                    key="finance_overdue_receivable_age_filter",
+                )
+            with filter_c:
+                charge_filter = st.selectbox(
+                    "Status da cobranca",
+                    ["Todos", "Sem cobranca registrada", "Cobranca enviada"],
+                    key="finance_overdue_receivable_charge_filter",
+                )
+            age_threshold = {"7 dias": 7, "15 dias": 15, "30 dias": 30}.get(age_filter)
+            filtered_receivables = []
             for item in overdue_receivables:
+                if student_filter != "Todos" and str(item.get("aluno", "")).strip() != student_filter:
+                    continue
+                venc_dt = parse_date(item.get("vencimento", ""))
+                days_overdue = (today - venc_dt).days if venc_dt else 0
+                if age_threshold and days_overdue < age_threshold:
+                    continue
+                has_charge = bool(str(item.get("cobranca_enviada_em", "")).strip() or str(item.get("cobranca_canais", "")).strip())
+                if charge_filter == "Sem cobranca registrada" and has_charge:
+                    continue
+                if charge_filter == "Cobranca enviada" and not has_charge:
+                    continue
+                filtered_receivables.append(item)
+            total_aberto = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in filtered_receivables)
+            oldest_dt = min((parse_date(r.get("vencimento", "")) for r in filtered_receivables if parse_date(r.get("vencimento", ""))), default=None)
+            _render_finance_kpis(
+                [
+                    {"label": "Titulos vencidos", "value": str(len(filtered_receivables)), "subtitle": "carteira vencida filtrada", "tone": "red"},
+                    {"label": "Total em aberto", "value": format_money(total_aberto), "subtitle": "valor pendente a receber", "tone": "orange"},
+                    {"label": "Mais antigo", "value": oldest_dt.strftime("%d/%m/%Y") if oldest_dt else "-", "subtitle": "prioridade de cobranca", "tone": "blue"},
+                ],
+                "finance_overdue_receive_exec",
+            )
+            summary_map = {}
+            for item in filtered_receivables:
                 aluno_nome = str(item.get("aluno", "")).strip()
                 row = summary_map.setdefault(
                     aluno_nome,
-                    {"aluno": aluno_nome, "qtd_vencidos": 0, "total_vencido": 0.0, "ultimo_vencimento": ""},
+                    {
+                        "aluno": aluno_nome,
+                        "qtd_vencidos": 0,
+                        "total_vencido": 0.0,
+                        "ultimo_vencimento": "",
+                        "referencia_principal": "",
+                        "status_cobranca": "",
+                    },
                 )
                 row["qtd_vencidos"] += 1
                 row["total_vencido"] += parse_money(item.get("valor_parcela", item.get("valor", 0)))
@@ -18107,62 +18283,225 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 last_dt = parse_date(row.get("ultimo_vencimento", ""))
                 if venc_dt and (not last_dt or venc_dt > last_dt):
                     row["ultimo_vencimento"] = venc_txt
+                if not row["referencia_principal"]:
+                    row["referencia_principal"] = _finance_overdue_reference(item)
+                row["status_cobranca"] = _finance_overdue_charge_status(item)
             summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["aluno"].lower()))
-            st.markdown("#### Alunos com recebimentos vencidos")
+            st.markdown("#### Visao consolidada por aluno")
             summary_df = pd.DataFrame(
                 [
                     {
-                        "aluno": row["aluno"],
-                        "qtd_vencidos": row["qtd_vencidos"],
-                        "total_vencido": format_money(row["total_vencido"]),
-                        "ultimo_vencimento": row["ultimo_vencimento"],
+                        "Aluno": row["aluno"],
+                        "Qtd. vencidos": row["qtd_vencidos"],
+                        "Total vencido": format_money(row["total_vencido"]),
+                        "Ultimo vencimento": row["ultimo_vencimento"],
+                        "Referencia principal": row["referencia_principal"] or "-",
+                        "Status da cobranca": row["status_cobranca"] or "-",
                     }
                     for row in summary_rows
                 ]
             )
-            st.dataframe(summary_df, use_container_width=True)
-            st.markdown("#### Selecionar aluno")
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            st.markdown("#### Acoes em massa")
+            overdue_codes = [str(item.get("codigo", "")).strip() for item in filtered_receivables if str(item.get("codigo", "")).strip()]
+            selected_codes = st.multiselect(
+                "Selecionar titulos vencidos",
+                overdue_codes,
+                key="finance_overdue_receivable_codes",
+                format_func=lambda code: next(
+                    (
+                        f"{str(r.get('aluno', '')).strip()} | {str(r.get('descricao', '')).strip()} | "
+                        f"{format_money(parse_money(r.get('valor_parcela', r.get('valor', 0))))} | {str(r.get('vencimento', '')).strip()}"
+                        for r in filtered_receivables
+                        if str(r.get('codigo', '')).strip() == code
+                    ),
+                    code,
+                ),
+            )
+            bulk1, bulk2, bulk3, bulk4 = st.columns([1, 1, 1, 1.3])
+            with bulk1:
+                bulk_email = st.button("Cobrar por e-mail", key="finance_overdue_bulk_email", use_container_width=True, disabled=not bool(selected_codes))
+            with bulk2:
+                bulk_whats = st.button("Cobrar por WhatsApp", key="finance_overdue_bulk_whats", use_container_width=True, disabled=not bool(selected_codes))
+            with bulk3:
+                bulk_mark = st.button("Dar baixa em massa", key="finance_overdue_bulk_mark", type="primary", use_container_width=True, disabled=not bool(selected_codes))
+            with bulk4:
+                bulk_confirm = st.checkbox("Confirmo a acao em massa", key="finance_overdue_bulk_confirm")
+            if bulk_email:
+                if not bulk_confirm:
+                    st.error("Marque a confirmacao antes de enviar cobrancas em massa.")
+                else:
+                    ok_count = 0
+                    for item in filtered_receivables:
+                        if str(item.get("codigo", "")).strip() in selected_codes:
+                            ok, _ = _finance_send_receivable_charge(item, send_email=True, send_whatsapp=False)
+                            ok_count += 1 if ok else 0
+                    st.success(f"Cobranca por e-mail executada para {ok_count} titulo(s).")
+                    st.rerun()
+            if bulk_whats:
+                if not bulk_confirm:
+                    st.error("Marque a confirmacao antes de enviar cobrancas em massa.")
+                else:
+                    ok_count = 0
+                    for item in filtered_receivables:
+                        if str(item.get("codigo", "")).strip() in selected_codes:
+                            ok, _ = _finance_send_receivable_charge(item, send_email=False, send_whatsapp=True)
+                            ok_count += 1 if ok else 0
+                    st.success(f"Cobranca por WhatsApp executada para {ok_count} titulo(s).")
+                    st.rerun()
+            if bulk_mark:
+                if not bulk_confirm:
+                    st.error("Marque a confirmacao antes de executar baixa em massa.")
+                else:
+                    changed = 0
+                    for item in filtered_receivables:
+                        if str(item.get("codigo", "")).strip() in selected_codes:
+                            _finance_mark_receivable_paid(item)
+                            changed += 1
+                    st.success(f"Baixa automatica aplicada em {changed} titulo(s).")
+                    st.rerun()
             selected_student = str(st.session_state.get("finance_overdue_selected_student", "")).strip()
-            for row in summary_rows:
-                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
-                with c1:
-                    st.markdown(f"**{row['aluno']}**")
-                with c2:
-                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
-                with c3:
-                    st.caption(format_money(row["total_vencido"]))
-                with c4:
-                    if st.button("Ver", key=f"finance_overdue_student_btn_{row['aluno']}"):
-                        st.session_state["finance_overdue_selected_student"] = row["aluno"]
-                        selected_student = row["aluno"]
-                        st.rerun()
             if not selected_student and summary_rows:
                 selected_student = summary_rows[0]["aluno"]
+            selected_student = st.selectbox(
+                "Aluno para detalhar",
+                [row["aluno"] for row in summary_rows],
+                index=max(0, [row["aluno"] for row in summary_rows].index(selected_student)) if selected_student in [row["aluno"] for row in summary_rows] else 0,
+                key="finance_overdue_selected_student_box",
+            )
+            st.session_state["finance_overdue_selected_student"] = selected_student
             if selected_student:
-                st.markdown(f"#### Pagamentos vencidos de {selected_student}")
-                student_items = [
-                    {
-                        "codigo": str(item.get("codigo", "")).strip(),
-                        "descricao": str(item.get("descricao", "")).strip(),
-                        "categoria": str(item.get("categoria", "")).strip(),
-                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
-                        "parcela": str(item.get("parcela", "")).strip(),
-                        "vencimento": str(item.get("vencimento", "")).strip(),
-                        "cobranca": str(item.get("cobranca", "")).strip(),
-                        "status": str(item.get("status", "")).strip(),
-                    }
-                    for item in overdue_receivables
-                    if str(item.get("aluno", "")).strip() == selected_student
-                ]
-                st.dataframe(pd.DataFrame(student_items), use_container_width=True)
+                st.markdown(f"#### Titulos vencidos de {selected_student}")
+                student_items = [item for item in filtered_receivables if str(item.get("aluno", "")).strip() == selected_student]
+                for idx, item in enumerate(sorted(student_items, key=lambda x: parse_date(x.get("vencimento", "")) or today)):
+                    code = str(item.get("codigo", "")).strip() or f"{selected_student}_{idx}"
+                    referencia = _finance_overdue_reference(item)
+                    venc_dt = parse_date(item.get("vencimento", ""))
+                    dias_venc = (today - venc_dt).days if venc_dt else 0
+                    tone = "red" if dias_venc >= 30 else "orange" if dias_venc >= 15 else "blue"
+                    with st.container(border=True):
+                        hdr1, hdr2, hdr3, hdr4 = st.columns([1.8, 1, 1, 1.3])
+                        with hdr1:
+                            st.markdown(f"**{str(item.get('descricao', '')).strip() or 'Titulo financeiro'}**")
+                            st.caption(referencia)
+                        with hdr2:
+                            st.metric("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))))
+                        with hdr3:
+                            st.metric("Vencido ha", f"{max(0, dias_venc)} dia(s)")
+                        with hdr4:
+                            st.caption(_finance_overdue_charge_status(item))
+                        _render_finance_summary_card(
+                            "Resumo do titulo",
+                            [
+                                ("Aluno", selected_student),
+                                ("Referencia", referencia),
+                                ("Codigo", code or "-"),
+                                ("Parcela", str(item.get("parcela", "")).strip() or "-"),
+                                ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
+                                ("Forma de cobranca", str(item.get("cobranca", "")).strip() or "-"),
+                                ("Status", str(item.get("status", "")).strip() or "-"),
+                            ],
+                            tone=tone,
+                        )
+                        payload = _finance_overdue_message_payload(item)
+                        st.caption(payload["whatsapp_body"])
+                        act1, act2, act3, act4 = st.columns([1.05, 1.05, 1.05, 1])
+                        with act1:
+                            if st.button("Dar baixa automatica", key=f"finance_due_mark_{code}", type="primary", use_container_width=True):
+                                st.session_state["finance_due_confirm_code"] = code
+                                st.rerun()
+                        with act2:
+                            if st.button("Cobrar por e-mail", key=f"finance_due_email_{code}", use_container_width=True):
+                                ok, msg = _finance_send_receivable_charge(item, send_email=True, send_whatsapp=False)
+                                if ok:
+                                    st.success("Cobranca enviada por e-mail.")
+                                    st.rerun()
+                                st.error(msg)
+                        with act3:
+                            if st.button("Cobrar por WhatsApp", key=f"finance_due_whats_{code}", use_container_width=True):
+                                ok, msg = _finance_send_receivable_charge(item, send_email=False, send_whatsapp=True)
+                                if ok:
+                                    st.success("Cobranca enviada por WhatsApp.")
+                                    st.rerun()
+                                st.error(msg)
+                        with act4:
+                            with st.expander("Ver detalhes"):
+                                st.write(payload["email_body"])
+                        if st.session_state.get("finance_due_confirm_code") == code:
+                            _render_finance_summary_card(
+                                "Confirmacao de baixa automatica",
+                                [
+                                    ("Aluno", selected_student),
+                                    ("Descricao", str(item.get("descricao", "")).strip() or "-"),
+                                    ("Referencia", referencia),
+                                    ("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0))))),
+                                    ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
+                                    ("Forma de cobranca", str(item.get("cobranca", "")).strip() or "-"),
+                                ],
+                                tone="green",
+                            )
+                            conf1, conf2 = st.columns(2)
+                            with conf1:
+                                if st.button("Confirmar baixa", key=f"finance_due_confirm_yes_{code}", type="primary", use_container_width=True):
+                                    _finance_mark_receivable_paid(item)
+                                    st.session_state.pop("finance_due_confirm_code", None)
+                                    st.success("Titulo baixado com sucesso.")
+                                    st.rerun()
+                            with conf2:
+                                if st.button("Cancelar", key=f"finance_due_confirm_no_{code}", use_container_width=True):
+                                    st.session_state.pop("finance_due_confirm_code", None)
+                                    st.rerun()
 
         def _render_overdue_payables_panel():
             overdue_payables = _financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento")
             if not overdue_payables:
                 st.info("Nenhuma conta a pagar vencida.")
                 return
-            summary_map = {}
+            st.markdown(
+                """
+                <div class="finance-shell">
+                    <h4>Central de vencimentos a pagar</h4>
+                    <p>Priorize contas vencidas, visualize fornecedores com saldo pendente e execute baixa direta com confirmacao.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            today = datetime.date.today()
+            pf1, pf2 = st.columns([1.3, 1])
+            with pf1:
+                supplier_filter = st.selectbox(
+                    "Filtrar fornecedor",
+                    ["Todos"] + sorted({(str(r.get("fornecedor", "")).strip() or "Sem fornecedor") for r in overdue_payables}),
+                    key="finance_overdue_payable_supplier_filter",
+                )
+            with pf2:
+                age_filter = st.selectbox(
+                    "Antiguidade minima",
+                    ["Todos", "7 dias", "15 dias", "30 dias"],
+                    key="finance_overdue_payable_age_filter",
+                )
+            age_threshold = {"7 dias": 7, "15 dias": 15, "30 dias": 30}.get(age_filter)
+            filtered_payables = []
             for item in overdue_payables:
+                fornecedor = str(item.get("fornecedor", "")).strip() or "Sem fornecedor"
+                if supplier_filter != "Todos" and fornecedor != supplier_filter:
+                    continue
+                venc_dt = parse_date(item.get("vencimento", ""))
+                days_overdue = (today - venc_dt).days if venc_dt else 0
+                if age_threshold and days_overdue < age_threshold:
+                    continue
+                filtered_payables.append(item)
+            total_vencido = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in filtered_payables)
+            _render_finance_kpis(
+                [
+                    {"label": "Contas vencidas", "value": str(len(filtered_payables)), "subtitle": "carteira vencida filtrada", "tone": "red"},
+                    {"label": "Total vencido", "value": format_money(total_vencido), "subtitle": "saldo a pagar em atraso", "tone": "orange"},
+                    {"label": "Fornecedores", "value": str(len({str(r.get('fornecedor', '')).strip() or 'Sem fornecedor' for r in filtered_payables})), "subtitle": "frentes com pendencia", "tone": "blue"},
+                ],
+                "finance_overdue_pay_exec",
+            )
+            summary_map = {}
+            for item in filtered_payables:
                 fornecedor = str(item.get("fornecedor", "")).strip() or "Sem fornecedor"
                 row = summary_map.setdefault(
                     fornecedor,
@@ -18176,52 +18515,111 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if venc_dt and (not last_dt or venc_dt > last_dt):
                     row["ultimo_vencimento"] = venc_txt
             summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["fornecedor"].lower()))
-            st.markdown("#### Contas a pagar vencidas")
+            st.markdown("#### Visao consolidada por fornecedor")
             summary_df = pd.DataFrame(
                 [
                     {
-                        "fornecedor": row["fornecedor"],
-                        "qtd_vencidos": row["qtd_vencidos"],
-                        "total_vencido": format_money(row["total_vencido"]),
-                        "ultimo_vencimento": row["ultimo_vencimento"],
+                        "Fornecedor": row["fornecedor"],
+                        "Qtd. vencidos": row["qtd_vencidos"],
+                        "Total vencido": format_money(row["total_vencido"]),
+                        "Ultimo vencimento": row["ultimo_vencimento"],
                     }
                     for row in summary_rows
                 ]
             )
-            st.dataframe(summary_df, use_container_width=True)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
             selected_supplier = str(st.session_state.get("finance_overdue_selected_supplier", "")).strip()
-            for row in summary_rows:
-                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
-                with c1:
-                    st.markdown(f"**{row['fornecedor']}**")
-                with c2:
-                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
-                with c3:
-                    st.caption(format_money(row["total_vencido"]))
-                with c4:
-                    if st.button("Ver", key=f"finance_overdue_supplier_btn_{row['fornecedor']}"):
-                        st.session_state["finance_overdue_selected_supplier"] = row["fornecedor"]
-                        selected_supplier = row["fornecedor"]
-                        st.rerun()
             if not selected_supplier and summary_rows:
                 selected_supplier = summary_rows[0]["fornecedor"]
+            selected_supplier = st.selectbox(
+                "Fornecedor para detalhar",
+                [row["fornecedor"] for row in summary_rows],
+                index=max(0, [row["fornecedor"] for row in summary_rows].index(selected_supplier)) if selected_supplier in [row["fornecedor"] for row in summary_rows] else 0,
+                key="finance_overdue_selected_supplier_box",
+            )
+            st.session_state["finance_overdue_selected_supplier"] = selected_supplier
             if selected_supplier:
                 st.markdown(f"#### Contas vencidas de {selected_supplier}")
                 supplier_items = [
-                    {
-                        "codigo": str(item.get("codigo", "")).strip(),
-                        "descricao": str(item.get("descricao", "")).strip(),
-                        "categoria_lancamento": str(item.get("categoria_lancamento", "")).strip(),
-                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
-                        "parcela": str(item.get("parcela", "")).strip(),
-                        "vencimento": str(item.get("vencimento", "")).strip(),
-                        "cobranca": str(item.get("cobranca", "")).strip(),
-                        "status": str(item.get("status", "")).strip(),
-                    }
-                    for item in overdue_payables
+                    item
+                    for item in filtered_payables
                     if (str(item.get("fornecedor", "")).strip() or "Sem fornecedor") == selected_supplier
                 ]
-                st.dataframe(pd.DataFrame(supplier_items), use_container_width=True)
+                selected_pay_codes = st.multiselect(
+                    "Selecionar contas vencidas",
+                    [str(item.get("codigo", "")).strip() for item in supplier_items if str(item.get("codigo", "")).strip()],
+                    key="finance_overdue_payable_codes",
+                    format_func=lambda code: next(
+                        (
+                            f"{str(p.get('descricao', '')).strip()} | {format_money(parse_money(p.get('valor_parcela', p.get('valor', 0))))} | {str(p.get('vencimento', '')).strip()}"
+                            for p in supplier_items
+                            if str(p.get("codigo", "")).strip() == code
+                        ),
+                        code,
+                    ),
+                )
+                pb1, pb2 = st.columns([1, 1.4])
+                with pb1:
+                    bulk_pay = st.button("Dar baixa em massa", key="finance_overdue_pay_bulk_mark", type="primary", use_container_width=True, disabled=not bool(selected_pay_codes))
+                with pb2:
+                    bulk_pay_confirm = st.checkbox("Confirmo a baixa em massa", key="finance_overdue_pay_bulk_confirm")
+                if bulk_pay:
+                    if not bulk_pay_confirm:
+                        st.error("Marque a confirmacao antes de executar baixa em massa.")
+                    else:
+                        changed = 0
+                        for item in supplier_items:
+                            if str(item.get("codigo", "")).strip() in selected_pay_codes:
+                                _finance_mark_payable_paid(item)
+                                changed += 1
+                        st.success(f"Baixa aplicada em {changed} conta(s) a pagar.")
+                        st.rerun()
+                for idx, item in enumerate(sorted(supplier_items, key=lambda x: parse_date(x.get("vencimento", "")) or today)):
+                    code = str(item.get("codigo", "")).strip() or f"{selected_supplier}_{idx}"
+                    venc_dt = parse_date(item.get("vencimento", ""))
+                    dias_venc = (today - venc_dt).days if venc_dt else 0
+                    tone = "red" if dias_venc >= 30 else "orange" if dias_venc >= 15 else "blue"
+                    with st.container(border=True):
+                        ph1, ph2, ph3 = st.columns([1.8, 1, 1])
+                        with ph1:
+                            st.markdown(f"**{str(item.get('descricao', '')).strip() or 'Conta a pagar'}**")
+                            st.caption(str(item.get("categoria_lancamento", "")).strip() or "Sem categoria")
+                        with ph2:
+                            st.metric("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))))
+                        with ph3:
+                            st.metric("Vencido ha", f"{max(0, dias_venc)} dia(s)")
+                        _render_finance_summary_card(
+                            "Resumo da conta vencida",
+                            [
+                                ("Fornecedor", selected_supplier),
+                                ("Codigo", code or "-"),
+                                ("Parcela", str(item.get("parcela", "")).strip() or "-"),
+                                ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
+                                ("Forma de pagamento", str(item.get("cobranca", "")).strip() or "-"),
+                                ("Status", str(item.get("status", "")).strip() or "-"),
+                            ],
+                            tone=tone,
+                        )
+                        pa1, pa2 = st.columns([1.1, 1])
+                        with pa1:
+                            if st.button("Dar baixa automatica", key=f"finance_due_pay_mark_{code}", type="primary", use_container_width=True):
+                                st.session_state["finance_due_pay_confirm_code"] = code
+                                st.rerun()
+                        with pa2:
+                            with st.expander("Ver detalhes"):
+                                st.write(item)
+                        if st.session_state.get("finance_due_pay_confirm_code") == code:
+                            conf1, conf2 = st.columns(2)
+                            with conf1:
+                                if st.button("Confirmar baixa", key=f"finance_due_pay_yes_{code}", type="primary", use_container_width=True):
+                                    _finance_mark_payable_paid(item)
+                                    st.session_state.pop("finance_due_pay_confirm_code", None)
+                                    st.success("Conta baixada com sucesso.")
+                                    st.rerun()
+                            with conf2:
+                                if st.button("Cancelar", key=f"finance_due_pay_no_{code}", use_container_width=True):
+                                    st.session_state.pop("finance_due_pay_confirm_code", None)
+                                    st.rerun()
 
         if finance_focus in ("receber", "pagar"):
             with st.container(border=True):
@@ -18379,77 +18777,165 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.markdown(
                     """
                     <div class="finance-shell">
-                        <h4>Lancar recebimento</h4>
-                        <p>Cadastre o titulo em uma sequencia mais clara: referencia, categoria, vencimento, parcelamento e canais de envio.</p>
+                        <h4>Novo lancamento financeiro</h4>
+                        <p>Registre recebimentos com um fluxo mais seguro: identifique o destinatario, configure o titulo, revise o resumo e confirme a operacao.</p>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+                _render_finance_kpis(
+                    [
+                        {"label": "Categorias ativas", "value": "5", "subtitle": "alunos, fornecedores, professores, internos e outros", "tone": "blue"},
+                        {"label": "Parcelamento maximo", "value": "24x", "subtitle": "ou 6x para material", "tone": "green"},
+                        {"label": "Canais de envio", "value": "2", "subtitle": "e-mail e WhatsApp para lancamentos de alunos", "tone": "orange"},
+                    ],
+                    "finance_lancar_recebimento_exec",
+                )
                 with st.form("add_rec"):
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">1</span>Dados principais do titulo</h4><p>Comece definindo descricao, valor, categoria e a referencia financeira do lancamento.</p></div>', unsafe_allow_html=True)
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
-                    with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
-                    with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
-                    with c4:
+                    st.markdown(
+                        '<div class="finance-shell"><h4><span class="finance-step">1</span>Identificacao do lancamento</h4><p>Defina primeiro o tipo do destinatario, a categoria principal e a descricao do que sera cobrado.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    c_id1, c_id2 = st.columns([1.1, 1.4])
+                    with c_id1:
                         categoria_lancamento = st.selectbox(
-                            "Categoria do lancamento",
+                            "Tipo de destinatario *",
                             ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
+                            help="Esse campo define para quem o titulo sera lancado.",
                         )
+                    with c_id2:
+                        categoria = st.selectbox(
+                            "Categoria principal *",
+                            ["Mensalidade", "Material", "Taxa de Matricula"],
+                            help="Use a categoria que melhor representa a natureza do recebimento.",
+                        )
+
                     alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
-                    if categoria_lancamento == "Aluno":
-                        if alunos_opts:
-                            aluno = st.selectbox("Aluno", alunos_opts)
+                    c_id3, c_id4 = st.columns([1.4, 1.6])
+                    with c_id3:
+                        desc = st.text_input(
+                            "Descricao do lancamento *",
+                            placeholder="Ex.: Mensalidade de abril, material didatico, taxa complementar",
+                        )
+                    with c_id4:
+                        if categoria_lancamento == "Aluno":
+                            if alunos_opts:
+                                aluno = st.selectbox(
+                                    "Aluno *",
+                                    alunos_opts,
+                                    help="Somente alunos cadastrados aparecem aqui.",
+                                )
+                            else:
+                                aluno = ""
+                                st.info("Nenhum aluno cadastrado para lancar recebimento.")
                         else:
-                            aluno = ""
-                            st.info("Nenhum aluno cadastrado para lancar recebimento.")
+                            ref_label = {
+                                "Fornecedor": "Fornecedor *",
+                                "Professor": "Professor *",
+                                "Interno": "Setor interno *",
+                                "Outro": "Referencia *",
+                            }.get(categoria_lancamento, "Referencia *")
+                            aluno = st.text_input(
+                                ref_label,
+                                placeholder="Informe a referencia principal do lancamento",
+                            )
+
+                    st.markdown(
+                        '<div class="finance-shell"><h4><span class="finance-step">2</span>Dados financeiros</h4><p>Configure valor, parcelamento e cobranca. O total sera recalculado automaticamente para conferncia antes do lancamento.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    fin1, fin2, fin3 = st.columns([1.05, 0.9, 1.05])
+                    with fin1:
+                        val_parcela_input = st.text_input(
+                            "Valor da parcela *",
+                            placeholder="Ex.: 150,00",
+                            help="Use o valor unitario da parcela. O total sera calculado abaixo.",
+                        )
+                    is_material = categoria == "Material"
+                    material_payment = "A vista"
+                    material_parcelado = False
+                    with fin2:
+                        parcela_inicial = st.number_input(
+                            "Parcela inicial",
+                            min_value=1,
+                            step=1,
+                            value=1,
+                            disabled=is_material,
+                            help="Para mensalidades e taxas, defina o numero inicial da serie.",
+                        )
+                    with fin3:
+                        if categoria == "Mensalidade":
+                            qtd_meses = st.number_input("Quantidade de parcelas *", min_value=1, max_value=24, value=12)
+                        elif categoria == "Material":
+                            qtd_meses = 1
+                        else:
+                            qtd_meses = st.number_input("Quantidade de parcelas *", min_value=1, max_value=24, value=1)
+
+                    fin4, fin5, fin6 = st.columns([1.1, 1, 1])
+                    if categoria == "Material":
+                        with fin4:
+                            material_payment = st.selectbox(
+                                "Forma de cobranca do material *",
+                                material_payment_options(),
+                                help="Escolha se o material sera a vista ou parcelado.",
+                            )
+                        material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                        with fin5:
+                            qtd_meses = st.number_input(
+                                "Quantidade de parcelas *",
+                                min_value=1,
+                                max_value=6,
+                                value=2 if material_parcelado else 1,
+                                disabled=not material_parcelado,
+                            )
+                        with fin6:
+                            cobranca = material_payment
+                            st.text_input("Cobranca aplicada", value=cobranca, disabled=True)
                     else:
-                        ref_label = {
-                            "Fornecedor": "Fornecedor",
-                            "Professor": "Professor",
-                            "Interno": "Setor interno",
-                            "Outro": "Referencia",
-                        }.get(categoria_lancamento, "Referencia")
-                        aluno = st.text_input(f"{ref_label} *")
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">2</span>Vencimento e forma de cobranca</h4><p>Defina data de lancamento, primeiro vencimento, dia de vencimento e a forma de cobranca do titulo.</p></div>', unsafe_allow_html=True)
-                    c4, c5, c6, c6b = st.columns(4)
-                    with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                    with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                    with c6b:
+                        with fin4:
+                            cobranca = st.selectbox(
+                                "Forma de cobranca *",
+                                ["Boleto", "Pix", "Cartao", "Dinheiro"],
+                                help="Use a forma de cobranca que orienta a operacao administrativa.",
+                            )
+                        with fin5:
+                            st.text_input(
+                                "Tipo de destinatario",
+                                value=categoria_lancamento,
+                                disabled=True,
+                            )
+                        with fin6:
+                            st.text_input(
+                                "Categoria aplicada",
+                                value=categoria,
+                                disabled=True,
+                            )
+
+                    st.markdown(
+                        '<div class="finance-shell"><h4><span class="finance-step">3</span>Datas e vencimento</h4><p>Defina quando o lancamento entra na carteira e qual sera a referencia do primeiro vencimento.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    data1, data2, data3 = st.columns([1, 1, 0.9])
+                    with data1:
+                        data_lanc = st.date_input(
+                            "Data do lancamento *",
+                            value=datetime.date.today(),
+                            format="DD/MM/YYYY",
+                        )
+                    with data2:
+                        venc = st.date_input(
+                            "Primeiro vencimento *",
+                            value=datetime.date.today(),
+                            format="DD/MM/YYYY",
+                        )
+                    with data3:
                         rec_due_day = st.selectbox(
                             "Dia do vencimento",
                             list(range(1, 31)),
                             index=max(0, min(29, datetime.date.today().day - 1)),
                             format_func=lambda d: f"Dia {d}",
+                            help="O sistema usa esse dia para gerar os demais vencimentos.",
                         )
-                    material_payment = "A vista"
-                    if categoria == "Material":
-                        with c6:
-                            material_payment = st.selectbox(
-                                "Pagamento do Material",
-                                material_payment_options(),
-                            )
-                        cobranca = material_payment
-                    else:
-                        with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">3</span>Parcelamento e resumo</h4><p>Ajuste a quantidade de parcelas e confirme o valor total gerado automaticamente antes de concluir.</p></div>', unsafe_allow_html=True)
-                    c7, c8, c9 = st.columns(3)
-                    is_material = categoria == "Material"
-                    with c7:
-                        parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
-                    material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
-                    if categoria == "Mensalidade":
-                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
-                    elif categoria == "Material":
-                        qtd_meses = st.number_input(
-                            "Parcelas *",
-                            min_value=1,
-                            max_value=6,
-                            value=2 if material_parcelado else 1,
-                            disabled=not material_parcelado,
-                        )
-                    else:
-                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
 
                     if categoria == "Material" and not material_parcelado:
                         qtd_parcelas_calc = 1
@@ -18460,32 +18946,43 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
                     valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
                     valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
-                    with c9:
-                        st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
-                    _render_finance_summary_card(
-                        "Conferencia do novo recebimento",
-                        [
-                            ("Referencia", str(aluno).strip() or "-"),
-                            ("Categoria", categoria),
-                            ("Tipo de lancamento", categoria_lancamento),
-                            ("Forma de cobranca", cobranca),
-                            ("Parcelas", str(qtd_parcelas_calc)),
-                            ("Valor por parcela", valor_parcela_txt),
-                            ("Valor total", valor_total_auto),
-                            ("Primeiro vencimento", venc.strftime("%d/%m/%Y") if isinstance(venc, datetime.date) else "-"),
-                        ],
-                        tone="blue",
+
+                    val1, val2, val3 = st.columns([1, 1, 1.1])
+                    with val1:
+                        st.text_input(
+                            "Valor total estimado",
+                            value=valor_total_auto,
+                            disabled=True,
+                            key="rec_valor_total_auto",
+                        )
+                    with val2:
+                        st.text_input(
+                            "Parcelas previstas",
+                            value=str(qtd_parcelas_calc),
+                            disabled=True,
+                            key="rec_qtd_parcelas_auto",
+                        )
+                    with val3:
+                        st.text_input(
+                            "Serie inicial",
+                            value=str(parcela_inicial),
+                            disabled=True,
+                            key="rec_parcela_inicial_preview",
+                        )
+
+                    st.markdown(
+                        '<div class="finance-shell"><h4><span class="finance-step">4</span>Comunicacao e acoes</h4><p>Defina os disparos automaticos quando o lancamento for de aluno e confirme somente apos revisar o resumo da operacao.</p></div>',
+                        unsafe_allow_html=True,
                     )
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">4</span>Disparos e confirmacao</h4><p>Ative os canais de envio quando o lancamento for de aluno e conclua o cadastro somente apos revisar os dados.</p></div>', unsafe_allow_html=True)
-                    d1, d2 = st.columns(2)
-                    with d1:
+                    notify_a, notify_b = st.columns([1, 1])
+                    with notify_a:
                         enviar_fin_email = st.checkbox(
                             "Enviar comunicado por e-mail",
                             value=True,
                             key="rec_notify_email",
                             disabled=(categoria_lancamento != "Aluno"),
                         )
-                    with d2:
+                    with notify_b:
                         enviar_fin_whatsapp = st.checkbox(
                             "Enviar comunicado por WhatsApp",
                             value=True,
@@ -18493,9 +18990,43 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             disabled=(categoria_lancamento != "Aluno"),
                         )
                     if categoria_lancamento != "Aluno":
-                        st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
+                        st.caption("Os canais automaticos ficam disponiveis apenas para lancamentos vinculados a alunos.")
 
-                    if st.form_submit_button("Lancar"):
+                    st.markdown(
+                        '<div class="finance-shell"><h4><span class="finance-step">5</span>Resumo da operacao</h4><p>Confira os dados abaixo antes de gerar o titulo financeiro. Essa etapa reduz erros de categoria, valor e destinatario.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    _render_finance_summary_card(
+                        "Conferencia do novo lancamento",
+                        [
+                            ("Destinatario", str(aluno).strip() or "-"),
+                            ("Tipo", categoria_lancamento),
+                            ("Categoria", categoria),
+                            ("Descricao", str(desc).strip() or "-"),
+                            ("Forma de cobranca", cobranca),
+                            ("Quantidade de parcelas", str(qtd_parcelas_calc)),
+                            ("Valor unitario", valor_parcela_txt),
+                            ("Valor total", valor_total_auto),
+                            ("Data do lancamento", data_lanc.strftime("%d/%m/%Y") if isinstance(data_lanc, datetime.date) else "-"),
+                            ("Primeiro vencimento", venc.strftime("%d/%m/%Y") if isinstance(venc, datetime.date) else "-"),
+                        ],
+                        tone="blue",
+                    )
+                    st.markdown(
+                        '<div class="finance-action-note">Revise destinatario, categoria, parcelamento, vencimento inicial e forma de cobranca. A acao principal so deve ser usada quando o resumo estiver coerente.</div>',
+                        unsafe_allow_html=True,
+                    )
+                    submit_cols = st.columns([1.3, 1.1])
+                    with submit_cols[0]:
+                        submit_lancar = st.form_submit_button(
+                            "Lancar recebimento",
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    with submit_cols[1]:
+                        st.caption("Os dados acima serao aplicados conforme a regra de parcelamento selecionada.")
+
+                    if submit_lancar:
                         if not str(aluno).strip() or valor_parcela_num <= 0:
                             st.error("Informe referencia e valor da parcela valido.")
                         elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
@@ -20366,7 +20897,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
             if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
                 st.session_state["finance_overdue_mode"] = finance_venc_options[0]
-            st.markdown("### Opcoes de Vencimentos")
+            st.markdown(
+                """
+                <div class="finance-shell">
+                    <h4>Central de vencimentos</h4>
+                    <p>Organize cobrancas e pagamentos vencidos em um painel operacional unico, com filtros, resumos e acoes executivas por registro.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             fv1, fv2 = st.columns(2)
             venc_layout = [(fv1, finance_venc_options[0], 0), (fv2, finance_venc_options[1], 1)]
             for col_ref, option, idx_option in venc_layout:
