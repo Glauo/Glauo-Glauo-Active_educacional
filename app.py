@@ -4333,7 +4333,16 @@ def run_wiz_assistant():
     st.rerun()
 
 def ensure_admin_user(users):
-    if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
+    admin_user = next(
+        (u for u in users if str(u.get("usuario", "")).strip().lower() == ADMIN_USERNAME.lower()),
+        None,
+    )
+    if admin_user:
+        admin_user["usuario"] = ADMIN_USERNAME
+        admin_user["perfil"] = "Admin"
+        admin_user["pessoa"] = str(admin_user.get("pessoa", "")).strip() or "Administrador"
+        admin_user["senha"] = str(admin_user.get("senha", "")).strip() or ADMIN_PASSWORD
+    else:
         users.append({
             "usuario": ADMIN_USERNAME,
             "senha": ADMIN_PASSWORD,
@@ -14383,6 +14392,8 @@ if not st.session_state.get("logged_in", False):
                 st.error("Usuario ou senha invalidos.")
             else:
                 perfil_conta = user.get("perfil", "")
+                if _is_admin_account(perfil_conta):
+                    role = "Admin"
                 if role not in allowed_portals(perfil_conta):
                     st.error(f"Este usuario nao tem permissao de {role}.")
                 else:
