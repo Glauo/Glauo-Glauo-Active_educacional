@@ -9280,6 +9280,7 @@ def _permissions_registry():
             ("access.agenda", "Agenda"),
             ("access.links", "Links ao vivo"),
             ("reports.view", "Relatórios"),
+            ("support.view", "Suporte"),
         ]),
         ("Alunos", [
             ("students.view", "Visualizar alunos"),
@@ -9310,6 +9311,23 @@ def _permissions_registry():
             ("finance.launch", "Lançar pagamento"),
             ("finance.discount", "Aplicar desconto"),
             ("finance.reports", "Relatórios financeiros"),
+        ]),
+        ("Conteúdos e comunicação", [
+            ("content.view", "Caixa de entrada"),
+            ("homework.view", "Lições de casa"),
+            ("challenges.view", "Desafios"),
+            ("whatsapp.view", "WhatsApp"),
+            ("wiz.view", "Assistente Wiz"),
+        ]),
+        ("Biblioteca e certificados", [
+            ("books.view", "Biblioteca"),
+            ("certificates.view", "Certificados"),
+        ]),
+        ("Estoque", [
+            ("inventory.view", "Estoque"),
+        ]),
+        ("Backup", [
+            ("backup.view", "Backup"),
         ]),
         ("Usuários e controle", [
             ("users.view", "Visualizar usuários"),
@@ -9350,6 +9368,8 @@ def _default_permissions_for_role(role):
             "classes.view",
             "classes.sessions",
             "finance.view_basic",
+            "content.view",
+            "support.view",
         }
     return set()
 
@@ -14336,7 +14356,7 @@ if not st.session_state.get("logged_in", False):
                     """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
                     unsafe_allow_html=True,
                 )
-                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"])
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Atendimento", "Coordenador", "Admin"])
                 unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
                 unidade_sel = st.selectbox("Unidade", unidades)
                 if unidade_sel == "Outra":
@@ -22905,6 +22925,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     if not _has_permission("users.create"):
                         st.error("Sem permissão para criar usuários.")
                         st.stop()
+                    default_perms = []
+                    if str(u_role).strip() == "Atendimento":
+                        default_perms = sorted(_default_permissions_for_role("Atendimento"))
                     st.session_state["users"].append(
                         {
                             "usuario": u_user,
@@ -22917,6 +22940,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "status": u_status,
                             "unidade": u_unidade.strip(),
                             "observacoes": u_obs.strip(),
+                            "permissoes": default_perms,
                         }
                     )
                     save_users(st.session_state["users"])
