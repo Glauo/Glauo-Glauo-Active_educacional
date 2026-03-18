@@ -9270,8 +9270,13 @@ def allowed_portals(profile):
     if profile == "Comercial": return ["Comercial"]
     if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
     if profile == "Atendimento": return ["Coordenador"]
-    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
+    # Admin keeps universal access to every portal exposed by the system.
+    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial", "Atendimento"]
     return []
+
+def _is_admin_account(profile=None):
+    profile = str(profile or st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
+    return profile == "Admin"
 
 def _permissions_registry():
     return [
@@ -9381,7 +9386,7 @@ def _current_user_obj():
 
 def _user_permissions(profile=None, user_obj=None):
     profile = str(profile or st.session_state.get("account_profile") or st.session_state.get("role") or "")
-    if profile == "Admin":
+    if _is_admin_account(profile):
         return set(_all_permission_keys())
     user_obj = user_obj or _current_user_obj()
     stored = []
@@ -9393,7 +9398,7 @@ def _user_permissions(profile=None, user_obj=None):
 
 def _has_permission(key):
     profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-    if profile == "Admin":
+    if _is_admin_account(profile):
         return True
     return str(key).strip() in _user_permissions(profile=profile)
 
@@ -16215,12 +16220,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Professor Wiz",
         ]
         coord_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-        if coord_profile == "Admin":
+        if _is_admin_account(coord_profile):
             report_idx = coord_menu_options.index("Relatório de Aulas")
             coord_menu_options[report_idx] = "Relatórios"
             insert_perm = coord_menu_options.index("Usuários") + 1
             coord_menu_options.insert(insert_perm, "Permissões")
-        if coord_profile in ("Admin", "Coordenador"):
+        if _is_admin_account(coord_profile) or coord_profile == "Coordenador":
             insert_at = coord_menu_options.index("Backup")
             coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
         menu_permission_map = {
@@ -16248,7 +16253,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Professor Wiz": "wiz.view",
             "ASSISTENTE WIZ": "wiz.view",
         }
-        if coord_profile != "Admin":
+        if not _is_admin_account(coord_profile):
             filtered_options = []
             for item in coord_menu_options:
                 perm = menu_permission_map.get(item, "access.dashboard")
@@ -16628,7 +16633,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
     elif menu_coord == "Relatorios":
-        if str(st.session_state.get("account_profile") or st.session_state.get("role") or "") != "Admin":
+        if not _is_admin_account():
             st.error("Os relatórios detalhados são exclusivos do usuário Admin.")
         else:
             render_admin_reports_center()
@@ -23024,7 +23029,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Permissoes":
         st.markdown('<div class="main-header">Gerenciamento de Acessos</div>', unsafe_allow_html=True)
-        if str(st.session_state.get("account_profile") or st.session_state.get("role") or "") != "Admin":
+        if not _is_admin_account():
             st.error("Acesso exclusivo do Admin.")
             st.stop()
         render_section_hero(
