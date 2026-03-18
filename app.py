@@ -194,6 +194,7 @@ WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 WIZ_REFERENCE_DOCS_FILE = DATA_DIR / "wiz_reference_docs.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
+PERMISSIONS_AUDIT_FILE = DATA_DIR / "permissions_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 AUTO_RESTORE_EMPTY_FILES = (
     USERS_FILE,
@@ -2903,7 +2904,7 @@ def _wiz_execute_actions(actions):
                     {
                         "usuario": usuario,
                         "senha": senha,
-                        "perfil": perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin") else "Coordenador",
+                    "perfil": perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Atendimento") else "Coordenador",
                         "pessoa": str(data.get("pessoa", "")),
                         "email": str(data.get("email", "")).strip().lower(),
                         "celular": str(data.get("celular", "")),
@@ -2944,7 +2945,7 @@ def _wiz_execute_actions(actions):
                         obj["senha"] = str(data.get("senha", "")).strip()
                     if str(data.get("perfil", "")).strip():
                         perfil = str(data.get("perfil", "")).strip()
-                        obj["perfil"] = perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Comercial") else obj.get("perfil", "Coordenador")
+                        obj["perfil"] = perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Comercial", "Atendimento") else obj.get("perfil", "Coordenador")
                     if str(data.get("pessoa", data.get("nome", ""))).strip():
                         obj["pessoa"] = str(data.get("pessoa", data.get("nome", ""))).strip()
                     if str(data.get("email", "")).strip():
@@ -9268,8 +9269,133 @@ def allowed_portals(profile):
     if profile == "Professor": return ["Professor"]
     if profile == "Comercial": return ["Comercial"]
     if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
+    if profile == "Atendimento": return ["Coordenador"]
     if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
     return []
+
+def _permissions_registry():
+    return [
+        ("Acessos gerais", [
+            ("access.dashboard", "Dashboard"),
+            ("access.agenda", "Agenda"),
+            ("access.links", "Links ao vivo"),
+            ("reports.view", "Relatórios"),
+        ]),
+        ("Alunos", [
+            ("students.view", "Visualizar alunos"),
+            ("students.create", "Cadastrar alunos"),
+            ("students.edit", "Editar alunos"),
+            ("students.delete", "Excluir alunos"),
+            ("students.details", "Ver detalhes completos"),
+        ]),
+        ("Professores", [
+            ("teachers.view", "Visualizar professores"),
+            ("teachers.create", "Cadastrar professores"),
+            ("teachers.edit", "Editar professores"),
+            ("teachers.delete", "Excluir professores"),
+        ]),
+        ("Turmas e aulas", [
+            ("classes.view", "Visualizar turmas"),
+            ("classes.create", "Criar turmas"),
+            ("classes.edit", "Editar turmas"),
+            ("classes.delete", "Excluir turmas"),
+            ("classes.sessions", "Visualizar aulas"),
+            ("classes.edit_sessions", "Editar aulas"),
+            ("classes.reschedule", "Reagendar aulas"),
+        ]),
+        ("Financeiro", [
+            ("finance.view", "Visualizar financeiro"),
+            ("finance.view_basic", "Consulta básica financeira"),
+            ("finance.edit", "Editar financeiro"),
+            ("finance.launch", "Lançar pagamento"),
+            ("finance.discount", "Aplicar desconto"),
+            ("finance.reports", "Relatórios financeiros"),
+        ]),
+        ("Usuários e controle", [
+            ("users.view", "Visualizar usuários"),
+            ("users.create", "Criar usuários"),
+            ("users.edit", "Editar usuários"),
+            ("users.inactivate", "Inativar usuários"),
+            ("permissions.manage", "Configurar permissões"),
+        ]),
+        ("Configurações", [
+            ("settings.view", "Acessar configurações"),
+            ("settings.edit", "Editar parâmetros gerais"),
+        ]),
+    ]
+
+def _all_permission_keys():
+    keys = []
+    for _, items in _permissions_registry():
+        keys.extend([key for key, _ in items])
+    return keys
+
+def _default_permissions_for_role(role):
+    role = str(role or "").strip()
+    all_keys = set(_all_permission_keys())
+    if role == "Admin":
+        return all_keys
+    if role == "Coordenador":
+        return all_keys - {"permissions.manage"}
+    if role == "Atendimento":
+        return {
+            "access.dashboard",
+            "access.agenda",
+            "access.links",
+            "students.view",
+            "students.create",
+            "students.edit",
+            "students.details",
+            "teachers.view",
+            "classes.view",
+            "classes.sessions",
+            "finance.view_basic",
+        }
+    return set()
+
+def _current_user_obj():
+    username = str(st.session_state.get("user_name", "")).strip()
+    if not username:
+        return None
+    return next((u for u in st.session_state.get("users", []) if str(u.get("usuario", "")).strip() == username), None)
+
+def _user_permissions(profile=None, user_obj=None):
+    profile = str(profile or st.session_state.get("account_profile") or st.session_state.get("role") or "")
+    if profile == "Admin":
+        return set(_all_permission_keys())
+    user_obj = user_obj or _current_user_obj()
+    stored = []
+    if user_obj:
+        stored = user_obj.get("permissoes", []) or []
+    if stored:
+        return set([str(p).strip() for p in stored if str(p).strip()])
+    return _default_permissions_for_role(profile)
+
+def _has_permission(key):
+    profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+    if profile == "Admin":
+        return True
+    return str(key).strip() in _user_permissions(profile=profile)
+
+def _require_permission(key, message="Acesso negado para esta área."):
+    if not _has_permission(key):
+        st.error(message)
+        st.stop()
+
+def _append_permissions_audit(target_user, changes):
+    logs = load_list(PERMISSIONS_AUDIT_FILE)
+    if not isinstance(logs, list):
+        logs = []
+    actor = str(st.session_state.get("user_name", "")).strip() or "admin"
+    logs.append(
+        {
+            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "admin": actor,
+            "usuario": target_user,
+            "mudancas": changes,
+        }
+    )
+    save_list(PERMISSIONS_AUDIT_FILE, logs)
 
 def _send_email_smtp(to_email, subject, body):
     host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "").strip()
@@ -16072,9 +16198,47 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         if coord_profile == "Admin":
             report_idx = coord_menu_options.index("Relatório de Aulas")
             coord_menu_options[report_idx] = "Relatórios"
+            insert_perm = coord_menu_options.index("Usuários") + 1
+            coord_menu_options.insert(insert_perm, "Permissões")
         if coord_profile in ("Admin", "Coordenador"):
             insert_at = coord_menu_options.index("Backup")
             coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
+        menu_permission_map = {
+            "Dashboard": "access.dashboard",
+            "Agenda": "access.agenda",
+            "Links Ao Vivo": "access.links",
+            "Alunos": "students.view",
+            "Professores": "teachers.view",
+            "Usuários": "users.view",
+            "Permissões": "permissions.manage",
+            "Turmas": "classes.view",
+            "Financeiro": ["finance.view", "finance.view_basic"],
+            "Relatório de Aulas": "reports.view",
+            "Relatórios": "reports.view",
+            "Estoque": "inventory.view",
+            "Certificados": "certificates.view",
+            "Biblioteca": "books.view",
+            "Aprovação Notas": "grades.view",
+            "Lições de Casa": "homework.view",
+            "Caixa de Entrada": "content.view",
+            "Desafios": "challenges.view",
+            "WhatsApp (Evolution)": "whatsapp.view",
+            "Suporte": "support.view",
+            "Backup": "backup.view",
+            "Professor Wiz": "wiz.view",
+            "ASSISTENTE WIZ": "wiz.view",
+        }
+        if coord_profile != "Admin":
+            filtered_options = []
+            for item in coord_menu_options:
+                perm = menu_permission_map.get(item, "access.dashboard")
+                if isinstance(perm, (list, tuple, set)):
+                    if any(_has_permission(p) for p in perm):
+                        filtered_options.append(item)
+                else:
+                    if _has_permission(perm):
+                        filtered_options.append(item)
+            coord_menu_options = filtered_options
         menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
@@ -16088,6 +16252,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Alunos": "Alunos",
         "Professores": "Professores",
         "Usuários": "Usuarios",
+        "Permissões": "Permissoes",
         "Turmas": "Turmas",
         "Financeiro": "Financeiro",
         "Relatório de Aulas": "Aulas Relatorio",
@@ -17122,6 +17287,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
+        _require_permission("students.view")
         render_section_hero(
             "Cadastro, consulta e gestao financeira do aluno",
             "Centralize analise por turma, ficha completa, cadastro e acoes financeiras no mesmo fluxo.",
@@ -17283,6 +17449,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             df_import = _normalize_import_df(df_raw)
                             st.dataframe(df_import.head(50), use_container_width=True)
                             if st.button("Importar alunos", key="students_import_btn"):
+                                if not _has_permission("students.create"):
+                                    st.error("Sem permissão para importar alunos.")
+                                    st.stop()
                                 alunos = st.session_state["students"]
                                 index_by_email = {
                                     str(s.get("email", "")).strip().lower(): i
@@ -17485,9 +17654,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 """,
                 unsafe_allow_html=True,
             )
-            access_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-            if access_profile not in ("Admin", "Coordenador"):
-                st.warning("Acesso restrito: somente coordenação e administração podem gerir alunos.")
+            if not _has_permission("students.view"):
+                st.warning("Acesso restrito: você não possui permissão para gerir alunos.")
                 st.stop()
 
             students_all = st.session_state.get("students", [])
@@ -17817,6 +17985,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     resp_cel = st.text_input("Celular responsável", value=str((student_obj.get("responsavel", {}) or {}).get("celular", "")).strip())
                                     resp_email = st.text_input("Email responsável", value=str((student_obj.get("responsavel", {}) or {}).get("email", "")).strip())
                                     if st.form_submit_button("Salvar dados gerais", type="primary"):
+                                        if not _has_permission("students.edit"):
+                                            st.error("Sem permissão para editar alunos.")
+                                            st.stop()
                                         student_obj["nome"] = edit_nome.strip()
                                         student_obj["matricula"] = edit_matricula.strip()
                                         student_obj["cpf"] = edit_cpf.strip()
@@ -17849,6 +18020,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     edit_modalidade = st.text_input("Modalidade", value=str(student_obj.get("modalidade", "")).strip())
                                     edit_restantes = st.number_input("Aulas restantes", min_value=0, value=parse_int(student_obj.get("vip_aulas_restantes", 0)) or 0)
                                     if st.form_submit_button("Salvar dados acadêmicos", type="primary"):
+                                        if not _has_permission("students.edit"):
+                                            st.error("Sem permissão para editar alunos.")
+                                            st.stop()
                                         student_obj["turma"] = edit_turma.strip()
                                         student_obj["modulo"] = edit_modulo.strip()
                                         student_obj["modalidade"] = edit_modalidade.strip()
@@ -17895,6 +18069,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 with st.form("student_edit_fin_obs"):
                                     obs_new = st.text_area("Observações financeiras", value=obs_fin)
                                     if st.form_submit_button("Salvar observações", type="primary"):
+                                        if not _has_permission("finance.edit"):
+                                            st.error("Sem permissão para editar financeiro.")
+                                            st.stop()
                                         student_obj["financeiro_obs"] = obs_new.strip()
                                         _append_student_history(student_obj, "Atualização financeira", "Observações financeiras atualizadas")
                                         save_list(STUDENTS_FILE, st.session_state.get("students", []))
@@ -18002,6 +18179,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 charge_quick = st.selectbox("Cobrança", ["Pix", "Dinheiro", "Boleto", "Cartão", "Transferência"], key="student_quick_charge")
                                 cat_quick = st.selectbox("Categoria", ["Mensalidade", "Material", "Matrícula", "Outro"], key="student_quick_cat")
                                 if st.form_submit_button("Lançar no financeiro", type="primary"):
+                                    if not _has_permission("finance.launch"):
+                                        st.error("Sem permissão para lançar cobrança.")
+                                        st.stop()
                                     if not str(val_quick).strip():
                                         st.error("Informe o valor.")
                                     else:
@@ -18031,6 +18211,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 if not str(baixa_sel).strip():
                                     st.error("Selecione um lançamento.")
                                 else:
+                                    if not _has_permission("finance.edit"):
+                                        st.error("Sem permissão para dar baixa.")
+                                        st.stop()
                                     item_baixa = finance_summary["open"][open_labels.index(baixa_sel)]
                                     item_baixa["status"] = "Pago"
                                     item_baixa["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
@@ -18967,6 +19150,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR ALUNO", type="primary"):
+                                if not _has_permission("students.delete"):
+                                    st.error("Sem permissão para excluir alunos.")
+                                    st.stop()
                                 login = aluno_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
@@ -18980,6 +19166,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
+        _require_permission("teachers.view")
         render_section_hero(
             "Equipe pedagógica organizada em um painel premium",
             "Cadastre docentes, acompanhe turmas vinculadas e mantenha o contato centralizado.",
@@ -19038,6 +19225,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
 
                 if st.form_submit_button("Cadastrar"):
+                    if not _has_permission("teachers.create"):
+                        st.error("Sem permissão para cadastrar professores.")
+                        st.stop()
                     if (login_prof and not senha_prof) or (senha_prof and not login_prof):
                         st.error("ERRO: Para criar o login, informe usuário e senha.")
                     elif login_prof and find_user(login_prof):
@@ -19140,6 +19330,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR PROFESSOR", type="primary"):
+                                if not _has_permission("teachers.delete"):
+                                    st.error("Sem permissão para excluir professores.")
+                                    st.stop()
                                 login = prof_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
@@ -19159,6 +19352,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Turmas":
         st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
+        _require_permission("classes.view")
         render_section_hero(
             "Estrutura academica das turmas",
             "Organize modulo, livro, horario, professor e alunos da turma em um painel mais enxuto e mais premium.",
@@ -19208,6 +19402,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
                 livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
+                    if not _has_permission("classes.create"):
+                        st.error("Sem permissão para cadastrar turmas.")
+                        st.stop()
                     nome = nome.strip()
                     dias_semana = [dia for dia in dias_semana if dia in WEEKDAY_OPTIONS_PT]
                     hora_inicio_str = hora_inicio.strftime("%H:%M") if hora_inicio else ""
@@ -19340,6 +19537,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
                             with c_del:
                                 if st.form_submit_button("EXCLUIR TURMA", type="primary"):
+                                    if not _has_permission("classes.delete"):
+                                        st.error("Sem permissão para excluir turmas.")
+                                        st.stop()
                                     nome_turma = turma_obj.get("nome", "")
                                     if nome_turma:
                                         for aluno in st.session_state["students"]:
@@ -19376,6 +19576,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         st.caption("Versao Financeiro: FIN-URGENTE-2026-03-11-REV5")
+        if not (_has_permission("finance.view") or _has_permission("finance.view_basic")):
+            st.error("Acesso negado ao financeiro.")
+            st.stop()
         total_rec_exec = sum(
             parse_money(i.get("valor_parcela", i.get("valor", 0)))
             for i in st.session_state.get("receivables", [])
@@ -22638,6 +22841,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
+        _require_permission("users.view")
         render_section_hero(
             "Controle de acessos com visão executiva",
             "Gerencie logins por perfil e mantenha histórico de acessos com clareza.",
@@ -22670,15 +22874,20 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 [("Segurança", "centralizada"), ("WhatsApp", "integrado")],
             )
             with st.form("new_user", clear_on_submit=True):
-                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
+                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin", "Atendimento"]
                 c1, c2, c3 = st.columns(3)
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
                 with c3: u_role = st.selectbox("Perfil", role_create_opts)
                 d1, d2, d3 = st.columns(3)
-                with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
-                with d2: u_email = st.text_input("E-mail (opcional)")
-                with d3: u_cel = st.text_input("Celular/WhatsApp (opcional)")
+                with d1: u_pessoa = st.text_input("Nome completo")
+                with d2: u_email = st.text_input("E-mail")
+                with d3: u_cel = st.text_input("Celular/WhatsApp")
+                e1, e2, e3 = st.columns(3)
+                with e1: u_cpf = st.text_input("CPF (opcional)")
+                with e2: u_status = st.selectbox("Status", ["Ativo", "Inativo"])
+                with e3: u_unidade = st.text_input("Unidade (opcional)")
+                u_obs = st.text_area("Observações internas", height=80)
                 n1, n2 = st.columns(2)
                 with n1:
                     send_user_email = st.checkbox(
@@ -22693,6 +22902,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         key="new_user_notify_whatsapp",
                     )
                 if st.form_submit_button("Criar Acesso"):
+                    if not _has_permission("users.create"):
+                        st.error("Sem permissão para criar usuários.")
+                        st.stop()
                     st.session_state["users"].append(
                         {
                             "usuario": u_user,
@@ -22701,6 +22913,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "pessoa": u_pessoa.strip(),
                             "email": u_email.strip().lower(),
                             "celular": u_cel.strip(),
+                            "cpf": u_cpf.strip(),
+                            "status": u_status,
+                            "unidade": u_unidade.strip(),
+                            "observacoes": u_obs.strip(),
                         }
                     )
                     save_users(st.session_state["users"])
@@ -22717,11 +22933,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         with tab2:
             if not st.session_state["users"]: st.info("Nenhum usuário cadastrado.")
             else:
-                role_tabs = st.tabs(["Alunos", "Professores", "Coordenadores", "Comercial", "Admins"])
+                role_tabs = st.tabs(["Alunos", "Professores", "Coordenadores", "Atendimento", "Comercial", "Admins"])
                 role_map = {
                     "Alunos": ["Aluno"],
                     "Professores": ["Professor"],
                     "Coordenadores": ["Coordenador"],
+                    "Atendimento": ["Atendimento"],
                     "Comercial": ["Comercial"],
                     "Admins": ["Admin"],
                 }
@@ -22770,6 +22987,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
                                 with c_del:
                                     if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
+                                        if not _has_permission("users.inactivate"):
+                                            st.error("Sem permissão para excluir usuários.")
+                                            st.stop()
                                         if user_obj["usuario"] == "admin":
                                             st.error("Não é possível excluir o Admin principal.")
                                         else:
@@ -22777,6 +22997,108 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                             save_users(st.session_state["users"])
                                             st.success("Usuário excluído.")
                                             st.rerun()
+
+    elif menu_coord == "Permissoes":
+        st.markdown('<div class="main-header">Gerenciamento de Acessos</div>', unsafe_allow_html=True)
+        if str(st.session_state.get("account_profile") or st.session_state.get("role") or "") != "Admin":
+            st.error("Acesso exclusivo do Admin.")
+            st.stop()
+        render_section_hero(
+            "Controle de permissões por usuário",
+            "Gerencie acessos de forma visual, segura e com rastreabilidade.",
+            [
+                f"{len(st.session_state.get('users', []))} usuários",
+                f"{len(_all_permission_keys())} permissões disponíveis",
+            ],
+        )
+        users_list = st.session_state.get("users", [])
+        if not users_list:
+            st.info("Nenhum usuário cadastrado.")
+        else:
+            df_users = pd.DataFrame(
+                [
+                    {
+                        "Usuário": str(u.get("usuario", "")).strip(),
+                        "Nome": str(u.get("pessoa", "")).strip(),
+                        "Perfil": str(u.get("perfil", "")).strip(),
+                        "Email": str(u.get("email", "")).strip(),
+                        "Status": str(u.get("status", "Ativo")).strip() or "Ativo",
+                    }
+                    for u in users_list
+                ]
+            )
+            st.dataframe(df_users, use_container_width=True, hide_index=True)
+            selected_user = st.selectbox(
+                "Selecionar usuário para configurar",
+                [""] + [str(u.get("usuario", "")).strip() for u in users_list],
+                key="perm_user_select",
+                format_func=lambda v: "Selecione um usuário" if not str(v).strip() else str(v),
+            )
+            if selected_user:
+                user_obj = next(
+                    (u for u in users_list if str(u.get("usuario", "")).strip() == str(selected_user).strip()),
+                    None,
+                )
+                if user_obj:
+                    profile = str(user_obj.get("perfil", "")).strip() or "-"
+                    status = str(user_obj.get("status", "Ativo")).strip() or "Ativo"
+                    current_perms = _user_permissions(profile=profile, user_obj=user_obj)
+                    total_perms = len(_all_permission_keys())
+                    st.markdown(
+                        f"""
+                        <div class="students-detail-card">
+                            <h4>Usuário: {html.escape(str(selected_user))}</h4>
+                            <p>Perfil: <strong>{html.escape(profile)}</strong> | Status: <strong>{html.escape(status)}</strong></p>
+                            <p>Permissões liberadas: <strong>{len(current_perms)}</strong> de {total_perms}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    if profile == "Admin":
+                        st.info("Admin possui acesso total fixo. Permissões não podem ser removidas.")
+                    else:
+                        group_keys = {}
+                        for group, items in _permissions_registry():
+                            group_keys[group] = [key for key, _ in items]
+                        selected_permissions = set(current_perms)
+                        search = st.text_input("Buscar permissão", key="perm_search")
+                        for group, items in _permissions_registry():
+                            filtered_items = items
+                            if search:
+                                filtered_items = [
+                                    (k, n) for k, n in items
+                                    if search.lower() in k.lower() or search.lower() in n.lower()
+                                ]
+                                if not filtered_items:
+                                    continue
+                            st.markdown(f"#### {group}")
+                            g1, g2 = st.columns([1, 1])
+                            if g1.button(f"Marcar tudo ({group})", key=f"perm_all_{group}"):
+                                selected_permissions.update(group_keys[group])
+                                st.session_state["perm_temp_selected"] = list(selected_permissions)
+                                st.rerun()
+                            if g2.button(f"Desmarcar tudo ({group})", key=f"perm_none_{group}"):
+                                selected_permissions.difference_update(group_keys[group])
+                                st.session_state["perm_temp_selected"] = list(selected_permissions)
+                                st.rerun()
+                            for key, label in filtered_items:
+                                checked = key in selected_permissions
+                                new_val = st.checkbox(label, value=checked, key=f"perm_{selected_user}_{key}")
+                                if new_val and not checked:
+                                    selected_permissions.add(key)
+                                if not new_val and checked:
+                                    selected_permissions.discard(key)
+                        if st.button("Salvar permissões", type="primary"):
+                            before = set(user_obj.get("permissoes", []) or [])
+                            user_obj["permissoes"] = sorted(selected_permissions)
+                            save_users(st.session_state.get("users", []))
+                            changes = {
+                                "adicionadas": sorted(selected_permissions - before),
+                                "removidas": sorted(before - selected_permissions),
+                            }
+                            _append_permissions_audit(selected_user, changes)
+                            st.success("Permissões atualizadas.")
+                            st.rerun()
 
     elif menu_coord == "Licoes de Casa":
         run_weekly_homework_panel(
