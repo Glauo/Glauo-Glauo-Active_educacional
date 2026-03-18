@@ -3701,13 +3701,40 @@ def _wiz_extract_docx_text(raw_bytes):
         return ""
 
 
-def _wiz_reference_context(max_docs=6, max_chars=6500):
+def _wiz_reference_context(max_docs=6, max_chars=6500, query=""):
     docs = st.session_state.get("wiz_reference_docs", []) or []
     if not isinstance(docs, list) or not docs:
         return ""
-    blocks = []
-    for item in docs[:max_docs]:
+    def _score_doc(doc_obj, tokens):
+        name = str(doc_obj.get("name", "")).strip()
+        source = str(doc_obj.get("source", "")).strip()
+        text = str(doc_obj.get("text", "")).strip()
+        if not text:
+            return 0
+        blob = normalize_text(f"{name} {source} {text[:2000]}")
+        score = 0
+        for tok in tokens:
+            if tok and tok in blob:
+                score += 1
+        return score
+
+    tokens = []
+    if query:
+        raw_tokens = re.split(r"[^a-zA-Z0-9áéíóúãõç]+", str(query or ""))
+        tokens = [normalize_text(t) for t in raw_tokens if len(t.strip()) >= 3]
+        tokens = [t for t in tokens if t]
+
+    ranked = []
+    for item in docs:
         if not isinstance(item, dict):
+            continue
+        score = _score_doc(item, tokens) if tokens else 1
+        ranked.append((score, item))
+    ranked = sorted(ranked, key=lambda x: x[0], reverse=True)
+
+    blocks = []
+    for score, item in ranked:
+        if tokens and score <= 0:
             continue
         name = str(item.get("name", "arquivo")).strip() or "arquivo"
         source = str(item.get("source", "Biblioteca Wiz")).strip() or "Biblioteca Wiz"
@@ -3715,12 +3742,22 @@ def _wiz_reference_context(max_docs=6, max_chars=6500):
         if not text:
             continue
         blocks.append(f"[{name} | {source}]\n{text}")
+        if len(blocks) >= max_docs:
+            break
+    if not blocks and ranked:
+        for _, item in ranked[:max_docs]:
+            name = str(item.get("name", "arquivo")).strip() or "arquivo"
+            source = str(item.get("source", "Biblioteca Wiz")).strip() or "Biblioteca Wiz"
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            blocks.append(f"[{name} | {source}]\n{text}")
     if not blocks:
         return ""
     merged = "\n\n".join(blocks)
     if len(merged) > max_chars:
         merged = merged[:max_chars] + "\n..."
-    return "Referencias oficiais da escola (usar como base):\n" + merged
+    return "Referencias oficiais da escola (use apenas as relacionadas ao tema/livro solicitado; ignore temas diferentes):\n" + merged
 
 
 def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
@@ -5905,7 +5942,8 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
     lesson_context = [str(x).strip() for x in (lesson_context or []) if str(x).strip()]
     focus = str(foco_extra or "").strip()
     lessons_text = "; ".join(lesson_context[:4]) if lesson_context else "Sem licao registrada."
-    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000)
+    wiz_query = f"{livro_nome} {focus} {lessons_text} ingles english licao livro"
+    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000, query=wiz_query)
     if not wiz_refs:
         wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
 
@@ -5914,7 +5952,8 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria licoes de casa semanais de ingles para turmas escolares.\n"
-                "Use como base o conteudo da turma e os materiais da memoria Wiz IA quando fornecidos.\n"
+                "Use como base o conteudo da turma, o foco informado e os materiais da memoria Wiz IA quando relacionados ao livro/tema solicitado.\n"
+                "Se o foco mencionar livro/licao/ingles, siga exatamente e ignore temas nao relacionados (ex: inteligencia emocional).\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -7681,7 +7720,16 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
     reference_title = str(reference_title or "").strip()
     reference_text = str(reference_text or "").strip()
     challenge_theme = str(challenge_theme or "Livro / Conteudo atual").strip()
-    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000)
+    wiz_query = " ".join(
+        [
+            reference_title,
+            challenge_theme,
+            reference_text[:220],
+            level,
+            "livro licao lesson ingles english",
+        ]
+    ).strip()
+    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000, query=wiz_query)
     if not wiz_refs:
         wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
     messages = [
@@ -7691,6 +7739,8 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
                 "Voce e o Professor Wiz (IA) e cria desafios semanais educacionais da Mister Wiz.\n"
                 "Gere UM desafio adequado ao nivel do aluno e que possa ser respondido no portal.\n"
                 "Use a referencia pedagogica enviada e os materiais da memoria Wiz IA como base obrigatoria do desafio.\n"
+                "Se o pedido for de Ingles ou outro livro, use exclusivamente o livro/licao solicitados.\n"
+                "Ignore temas fora da referencia (ex.: inteligencia emocional) se nao foram solicitados.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -17318,7 +17368,568 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     else:
                         st.info("Envie um arquivo Excel para importar alunos.")
 
-            if st.session_state["students"]:
+            st.markdown(
+                """
+                <style>
+                .students-shell {
+                    background: #ffffff;
+                    border: 1px solid rgba(148, 163, 184, 0.22);
+                    border-radius: 26px;
+                    padding: 22px 24px;
+                    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+                    margin: 10px 0 22px;
+                }
+                .students-shell h4 {
+                    margin: 0 0 6px;
+                    font-size: 1.2rem;
+                    font-weight: 800;
+                    color: #0f274f;
+                }
+                .students-shell p {
+                    margin: 0;
+                    color: #5b6b83;
+                    font-size: 0.95rem;
+                }
+                .students-kpi {
+                    background: #ffffff;
+                    border: 1px solid rgba(148, 163, 184, 0.22);
+                    border-radius: 20px;
+                    padding: 16px 18px;
+                    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+                }
+                .students-kpi .k {
+                    font-size: 0.75rem;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #6b7a90;
+                    font-weight: 700;
+                }
+                .students-kpi .v {
+                    font-size: 1.25rem;
+                    font-weight: 800;
+                    color: #102a54;
+                    margin-top: 4px;
+                }
+                .students-kpi .s {
+                    font-size: 0.85rem;
+                    color: #637289;
+                    margin-top: 2px;
+                }
+                .students-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.92rem;
+                }
+                .students-table th {
+                    position: sticky;
+                    top: 0;
+                    background: #f1f5fb;
+                    text-align: left;
+                    font-size: 0.78rem;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5d6f88;
+                    padding: 12px 10px;
+                    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+                }
+                .students-table td {
+                    padding: 12px 10px;
+                    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+                    color: #1f2d4d;
+                }
+                .students-table tr:nth-child(even) {
+                    background: #f9fbff;
+                }
+                .students-table tr:hover {
+                    background: #eef4ff;
+                }
+                .students-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 4px 10px;
+                    border-radius: 999px;
+                    font-size: 0.76rem;
+                    font-weight: 700;
+                    border: 1px solid transparent;
+                    white-space: nowrap;
+                }
+                .students-badge[data-tone="green"] {
+                    background: rgba(16, 185, 129, 0.16);
+                    color: #0f766e;
+                    border-color: rgba(16, 185, 129, 0.26);
+                }
+                .students-badge[data-tone="orange"] {
+                    background: rgba(249, 115, 22, 0.16);
+                    color: #c2410c;
+                    border-color: rgba(249, 115, 22, 0.3);
+                }
+                .students-badge[data-tone="red"] {
+                    background: rgba(239, 68, 68, 0.16);
+                    color: #b91c1c;
+                    border-color: rgba(239, 68, 68, 0.3);
+                }
+                .students-badge[data-tone="blue"] {
+                    background: rgba(59, 130, 246, 0.16);
+                    color: #1d4ed8;
+                    border-color: rgba(59, 130, 246, 0.3);
+                }
+                .students-detail-card {
+                    background: #ffffff;
+                    border: 1px solid rgba(148, 163, 184, 0.22);
+                    border-radius: 24px;
+                    padding: 20px 22px;
+                    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+                    margin: 10px 0 18px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            access_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+            if access_profile not in ("Admin", "Coordenador"):
+                st.warning("Acesso restrito: somente coordenação e administração podem gerir alunos.")
+                st.stop()
+
+            students_all = st.session_state.get("students", [])
+            if students_all:
+                def _append_student_history(student_obj, action, details=""):
+                    history = student_obj.get("historico", [])
+                    if not isinstance(history, list):
+                        history = []
+                    author = str(st.session_state.get("user_name", "")).strip() or "sistema"
+                    profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
+                    history.append(
+                        {
+                            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "acao": str(action),
+                            "detalhes": str(details),
+                            "autor": author,
+                            "perfil": profile,
+                        }
+                    )
+                    student_obj["historico"] = history
+
+                st.markdown(
+                    """
+                    <div class="students-shell">
+                        <h4>Painel de Gestão de Alunos</h4>
+                        <p>Filtros inteligentes, visão operacional e ficha completa em um único fluxo.</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                receivables_all = st.session_state.get("receivables", [])
+                classes_all = st.session_state.get("classes", [])
+
+                def _student_status_tone(status_value):
+                    status_txt = str(status_value or "").strip().lower()
+                    if status_txt in ("ativo", "regular"):
+                        return "green"
+                    if status_txt in ("inadimplente", "pendente", "trancado", "inativo"):
+                        return "red"
+                    if status_txt in ("vip", "experimental"):
+                        return "blue"
+                    if status_txt in ("pausado", "alerta"):
+                        return "orange"
+                    return "blue"
+
+                def _student_receivables(student_name):
+                    return [
+                        r for r in receivables_all
+                        if str(r.get("aluno", "")).strip() == student_name
+                    ]
+
+                def _student_last_payment(student_name):
+                    items = [
+                        parse_date(r.get("baixa_data", ""))
+                        for r in _student_receivables(student_name)
+                        if str(r.get("status", "")).strip().lower() == "pago"
+                    ]
+                    items = [d for d in items if d]
+                    if not items:
+                        return "-"
+                    return max(items).strftime("%d/%m/%Y")
+
+                def _student_next_due(student_name):
+                    items = [
+                        parse_date(r.get("vencimento", ""))
+                        for r in _student_receivables(student_name)
+                        if str(r.get("status", "")).strip().lower() not in ("pago", "quitado")
+                    ]
+                    items = [d for d in items if d]
+                    if not items:
+                        return "-"
+                    return min(items).strftime("%d/%m/%Y")
+
+                def _student_finance_status(student_name):
+                    open_total = sum(
+                        parse_money(r.get("valor_parcela", r.get("valor", 0)))
+                        for r in _student_receivables(student_name)
+                        if str(r.get("status", "")).strip().lower() not in ("pago", "quitado")
+                    )
+                    return "Inadimplente" if open_total > 0 else "Adimplente"
+
+                turma_opts = ["Todas"] + sorted({str(s.get("turma", "")).strip() or "Sem Turma" for s in students_all})
+                prof_opts = ["Todos"] + sorted({
+                    str(c.get("professor", "")).strip()
+                    for c in classes_all if str(c.get("professor", "")).strip()
+                })
+                modulo_opts = ["Todos"] + sorted({str(s.get("modulo", "")).strip() for s in students_all if str(s.get("modulo", "")).strip()})
+                status_opts = ["Todos"] + sorted({str(s.get("status", "")).strip() or "Ativo" for s in students_all})
+                tipo_opts = ["Todos"] + sorted({str(s.get("vip_tipo_plano", "")).strip() for s in students_all if str(s.get("vip_tipo_plano", "")).strip()})
+                finance_opts = ["Todos", "Adimplente", "Inadimplente"]
+
+                f1, f2, f3, f4 = st.columns(4)
+                with f1:
+                    filter_name = st.text_input("Buscar aluno", key="students_filter_name")
+                with f2:
+                    filter_matricula = st.text_input("Matrícula", key="students_filter_matricula")
+                with f3:
+                    filter_turma = st.selectbox("Turma", turma_opts, key="students_filter_turma")
+                with f4:
+                    filter_prof = st.selectbox("Professor", prof_opts, key="students_filter_prof")
+                f5, f6, f7, f8 = st.columns(4)
+                with f5:
+                    filter_modulo = st.selectbox("Módulo/Plano", modulo_opts, key="students_filter_modulo")
+                with f6:
+                    filter_status = st.selectbox("Status", status_opts, key="students_filter_status")
+                with f7:
+                    filter_tipo = st.selectbox("Tipo de aluno", tipo_opts, key="students_filter_tipo")
+                with f8:
+                    filter_finance = st.selectbox("Situação financeira", finance_opts, key="students_filter_finance")
+                f9, f10, f11 = st.columns([1, 1, 1])
+                with f9:
+                    min_aulas = st.number_input("Aulas restantes (mín.)", min_value=0, value=0, step=1, key="students_filter_min_aulas")
+                with f10:
+                    venc_start = st.date_input("Vencimento a partir", value=None, key="students_filter_venc_start", format="DD/MM/YYYY")
+                with f11:
+                    venc_end = st.date_input("Vencimento até", value=None, key="students_filter_venc_end", format="DD/MM/YYYY")
+                cbtn1, cbtn2 = st.columns([1, 1])
+                with cbtn1:
+                    if st.button("Limpar filtros", key="students_filter_clear"):
+                        for k in [
+                            "students_filter_name",
+                            "students_filter_matricula",
+                            "students_filter_turma",
+                            "students_filter_prof",
+                            "students_filter_modulo",
+                            "students_filter_status",
+                            "students_filter_tipo",
+                            "students_filter_finance",
+                            "students_filter_min_aulas",
+                            "students_filter_venc_start",
+                            "students_filter_venc_end",
+                        ]:
+                            st.session_state.pop(k, None)
+                        st.rerun()
+                with cbtn2:
+                    st.caption("Use os filtros para reduzir a base e operar mais rápido.")
+
+                filtered_students = []
+                for student in students_all:
+                    name = str(student.get("nome", "")).strip()
+                    if filter_name and filter_name.lower() not in name.lower():
+                        continue
+                    matricula = str(student.get("matricula", "")).strip()
+                    if filter_matricula and filter_matricula.lower() not in matricula.lower():
+                        continue
+                    turma = str(student.get("turma", "")).strip() or "Sem Turma"
+                    if filter_turma != "Todas" and turma != filter_turma:
+                        continue
+                    professor = ""
+                    turma_obj = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma), {})
+                    professor = str(turma_obj.get("professor", "")).strip()
+                    if filter_prof != "Todos" and professor != filter_prof:
+                        continue
+                    modulo = str(student.get("modulo", "")).strip()
+                    if filter_modulo != "Todos" and modulo != filter_modulo:
+                        continue
+                    status = str(student.get("status", "")).strip() or "Ativo"
+                    if filter_status != "Todos" and status != filter_status:
+                        continue
+                    tipo = str(student.get("vip_tipo_plano", "")).strip()
+                    if filter_tipo != "Todos" and tipo != filter_tipo:
+                        continue
+                    finance_status = _student_finance_status(name)
+                    if filter_finance != "Todos" and finance_status != filter_finance:
+                        continue
+                    aulas_restantes = parse_int(student.get("vip_aulas_restantes", 0)) or 0
+                    if aulas_restantes < int(min_aulas or 0):
+                        continue
+                    if venc_start or venc_end:
+                        next_due = _student_next_due(name)
+                        next_due_dt = parse_date(next_due)
+                        if venc_start and (not next_due_dt or next_due_dt < venc_start):
+                            continue
+                        if venc_end and (not next_due_dt or next_due_dt > venc_end):
+                            continue
+                    filtered_students.append(student)
+
+                st.session_state["students_filtered"] = filtered_students
+                k1, k2, k3, k4 = st.columns(4)
+                with k1:
+                    st.markdown(
+                        f"<div class='students-kpi'><div class='k'>Resultados</div><div class='v'>{len(filtered_students)}</div><div class='s'>alunos filtrados</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                with k2:
+                    st.markdown(
+                        f"<div class='students-kpi'><div class='k'>Turmas</div><div class='v'>{len({str(s.get('turma','')).strip() for s in filtered_students if str(s.get('turma','')).strip()})}</div><div class='s'>com alunos</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                with k3:
+                    inadimplentes = len([s for s in filtered_students if _student_finance_status(str(s.get("nome", "")).strip()) == "Inadimplente"])
+                    st.markdown(
+                        f"<div class='students-kpi'><div class='k'>Inadimplentes</div><div class='v'>{inadimplentes}</div><div class='s'>pendências abertas</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                with k4:
+                    ativos = len([s for s in filtered_students if str(s.get("status", "Ativo")).strip().lower() == "ativo"])
+                    st.markdown(
+                        f"<div class='students-kpi'><div class='k'>Ativos</div><div class='v'>{ativos}</div><div class='s'>em acompanhamento</div></div>",
+                        unsafe_allow_html=True,
+                    )
+
+                sort_key = st.selectbox(
+                    "Ordenar por",
+                    ["Nome", "Matrícula", "Turma", "Aulas restantes", "Próximo vencimento"],
+                    key="students_sort_key",
+                )
+                per_page = st.selectbox("Itens por página", [10, 20, 30, 50], index=1, key="students_per_page")
+                total_pages = max(1, int((len(filtered_students) + int(per_page) - 1) / int(per_page)))
+                current_page = st.number_input(
+                    "Página",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=1,
+                    step=1,
+                    key="students_page_number",
+                )
+                sort_map = {
+                    "Nome": lambda s: str(s.get("nome", "")).strip().lower(),
+                    "Matrícula": lambda s: str(s.get("matricula", "")).strip(),
+                    "Turma": lambda s: str(s.get("turma", "")).strip(),
+                    "Aulas restantes": lambda s: parse_int(s.get("vip_aulas_restantes", 0)) or 0,
+                    "Próximo vencimento": lambda s: parse_date(_student_next_due(str(s.get("nome", "")).strip())) or datetime.date.max,
+                }
+                filtered_students = sorted(filtered_students, key=sort_map.get(sort_key, sort_map["Nome"]))
+                start_idx = (current_page - 1) * per_page
+                page_students = filtered_students[start_idx:start_idx + per_page]
+
+                rows_html = []
+                for student in page_students:
+                    name = str(student.get("nome", "")).strip()
+                    turma = str(student.get("turma", "")).strip() or "Sem Turma"
+                    turma_obj = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma), {})
+                    professor = str(turma_obj.get("professor", "")).strip() or "-"
+                    status = str(student.get("status", "")).strip() or "Ativo"
+                    tone = _student_status_tone(status)
+                    aulas_restantes = parse_int(student.get("vip_aulas_restantes", 0)) or 0
+                    last_payment = _student_last_payment(name)
+                    next_due = _student_next_due(name)
+                    telefone = str(student.get("celular", "")).strip() or "-"
+                    matricula = str(student.get("matricula", "")).strip() or "-"
+                    modulo = str(student.get("modulo", "")).strip() or "-"
+                    rows_html.append(
+                        "<tr>"
+                        f"<td>{html.escape(name)}</td>"
+                        f"<td>{html.escape(matricula)}</td>"
+                        f"<td>{html.escape(turma)}</td>"
+                        f"<td>{html.escape(modulo)}</td>"
+                        f"<td>{html.escape(professor)}</td>"
+                        f"<td><span class='students-badge' data-tone='{tone}'>{html.escape(status)}</span></td>"
+                        f"<td style='text-align:center'>{html.escape(str(aulas_restantes))}</td>"
+                        f"<td>{html.escape(last_payment)}</td>"
+                        f"<td>{html.escape(next_due)}</td>"
+                        f"<td>{html.escape(telefone)}</td>"
+                        "</tr>"
+                    )
+                rows_html_str = "".join(rows_html) or "<tr><td colspan='10' style='text-align:center'>Nenhum aluno encontrado com os filtros.</td></tr>"
+                st.markdown(
+                    f"""
+                    <div class="students-detail-card">
+                        <table class="students-table">
+                            <thead>
+                                <tr>
+                                    <th>Aluno</th>
+                                    <th>Matrícula</th>
+                                    <th>Turma</th>
+                                    <th>Módulo</th>
+                                    <th>Professor</th>
+                                    <th>Status</th>
+                                    <th>Aulas Rest.</th>
+                                    <th>Último pag.</th>
+                                    <th>Próx. venc.</th>
+                                    <th>Telefone</th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows_html_str}</tbody>
+                        </table>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                select_student = st.selectbox(
+                    "Abrir gestão completa do aluno",
+                    [""] + [str(s.get("nome", "")).strip() for s in filtered_students],
+                    key="students_selected_detail",
+                    format_func=lambda n: "Selecione um aluno" if not str(n).strip() else str(n),
+                )
+                if select_student:
+                    student_obj = next((s for s in students_all if str(s.get("nome", "")).strip() == str(select_student).strip()), None)
+                    if student_obj:
+                        turma_obj = next(
+                            (c for c in classes_all if str(c.get("nome", "")).strip() == str(student_obj.get("turma", "")).strip()),
+                            {},
+                        )
+                        finance_summary = _student_receivables_summary(select_student)
+                        st.markdown("<div class='students-detail-card'><h4>Ficha completa</h4></div>", unsafe_allow_html=True)
+                        detail_tabs = st.tabs(["Dados gerais", "Acadêmico", "Aulas", "Financeiro", "Histórico"])
+                        with detail_tabs[0]:
+                            st.markdown("#### Dados gerais")
+                            dg1, dg2, dg3 = st.columns(3)
+                            with dg1:
+                                st.markdown(f"**Aluno:** {student_obj.get('nome','-')}")
+                                st.markdown(f"**Matrícula:** {student_obj.get('matricula','-')}")
+                                st.markdown(f"**CPF:** {student_obj.get('cpf','-')}")
+                                st.markdown(f"**Nascimento:** {student_obj.get('data_nascimento') or student_obj.get('nascimento','-')}")
+                            with dg2:
+                                st.markdown(f"**Telefone:** {student_obj.get('celular','-')}")
+                                st.markdown(f"**WhatsApp:** {student_obj.get('whatsapp','-')}")
+                                st.markdown(f"**Email:** {student_obj.get('email','-')}")
+                                st.markdown(f"**Status:** {student_obj.get('status','-')}")
+                            with dg3:
+                                resp = student_obj.get("responsavel", {}) or {}
+                                st.markdown(f"**Responsável:** {resp.get('nome','-')}")
+                                st.markdown(f"**Contato responsável:** {resp.get('celular','-')}")
+                                st.markdown(f"**Email responsável:** {resp.get('email','-')}")
+                            with st.expander("Editar dados gerais", expanded=False):
+                                with st.form("student_edit_general_form"):
+                                    edit_nome = st.text_input("Nome", value=str(student_obj.get("nome", "")).strip())
+                                    edit_matricula = st.text_input("Matrícula", value=str(student_obj.get("matricula", "")).strip())
+                                    edit_cpf = st.text_input("CPF", value=str(student_obj.get("cpf", "")).strip())
+                                    edit_nasc = st.text_input("Data de nascimento", value=str(student_obj.get("data_nascimento") or student_obj.get("nascimento", "")).strip())
+                                    edit_email = st.text_input("Email", value=str(student_obj.get("email", "")).strip())
+                                    edit_cel = st.text_input("Celular/WhatsApp", value=str(student_obj.get("celular", "")).strip())
+                                    edit_status = st.selectbox("Status", ["Ativo", "Inativo", "Pausado", "Trancado", "Inadimplente", "VIP", "Experimental"], index=0)
+                                    resp_nome = st.text_input("Responsável", value=str((student_obj.get("responsavel", {}) or {}).get("nome", "")).strip())
+                                    resp_cel = st.text_input("Celular responsável", value=str((student_obj.get("responsavel", {}) or {}).get("celular", "")).strip())
+                                    resp_email = st.text_input("Email responsável", value=str((student_obj.get("responsavel", {}) or {}).get("email", "")).strip())
+                                    if st.form_submit_button("Salvar dados gerais", type="primary"):
+                                        student_obj["nome"] = edit_nome.strip()
+                                        student_obj["matricula"] = edit_matricula.strip()
+                                        student_obj["cpf"] = edit_cpf.strip()
+                                        student_obj["data_nascimento"] = edit_nasc.strip()
+                                        student_obj["email"] = edit_email.strip()
+                                        student_obj["celular"] = edit_cel.strip()
+                                        student_obj["status"] = edit_status
+                                        resp_obj = student_obj.get("responsavel", {}) or {}
+                                        resp_obj["nome"] = resp_nome.strip()
+                                        resp_obj["celular"] = resp_cel.strip()
+                                        resp_obj["email"] = resp_email.strip()
+                                        student_obj["responsavel"] = resp_obj
+                                        _append_student_history(student_obj, "Atualização dados gerais", f"Status: {edit_status}")
+                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
+                                        st.success("Dados gerais atualizados.")
+                                        st.rerun()
+
+                        with detail_tabs[1]:
+                            st.markdown("#### Dados acadêmicos")
+                            st.markdown(f"**Turma atual:** {student_obj.get('turma','-')}")
+                            st.markdown(f"**Professor responsável:** {turma_obj.get('professor','-')}")
+                            st.markdown(f"**Módulo/Plano:** {student_obj.get('modulo','-')}")
+                            st.markdown(f"**Livro/Nível:** {student_book_level(student_obj) or '-'}")
+                            st.markdown(f"**Modalidade:** {student_obj.get('modalidade','-')}")
+                            st.markdown(f"**Aulas restantes:** {student_obj.get('vip_aulas_restantes','-')}")
+                            with st.expander("Editar dados acadêmicos", expanded=False):
+                                with st.form("student_edit_academic_form"):
+                                    edit_turma = st.text_input("Turma", value=str(student_obj.get("turma", "")).strip())
+                                    edit_modulo = st.text_input("Módulo/Plano", value=str(student_obj.get("modulo", "")).strip())
+                                    edit_modalidade = st.text_input("Modalidade", value=str(student_obj.get("modalidade", "")).strip())
+                                    edit_restantes = st.number_input("Aulas restantes", min_value=0, value=parse_int(student_obj.get("vip_aulas_restantes", 0)) or 0)
+                                    if st.form_submit_button("Salvar dados acadêmicos", type="primary"):
+                                        student_obj["turma"] = edit_turma.strip()
+                                        student_obj["modulo"] = edit_modulo.strip()
+                                        student_obj["modalidade"] = edit_modalidade.strip()
+                                        student_obj["vip_aulas_restantes"] = int(edit_restantes)
+                                        _append_student_history(student_obj, "Atualização acadêmica", f"Turma: {edit_turma.strip()} | Módulo: {edit_modulo.strip()}")
+                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
+                                        st.success("Dados acadêmicos atualizados.")
+                                        st.rerun()
+
+                        with detail_tabs[2]:
+                            st.markdown("#### Histórico de aulas")
+                            sessions = [
+                                s for s in st.session_state.get("class_sessions", [])
+                                if str(s.get("aluno", "")).strip() == str(select_student).strip()
+                            ]
+                            if sessions:
+                                sessions = sorted(sessions, key=lambda s: parse_date(s.get("data", "")) or datetime.date.min, reverse=True)
+                                df_sessions = pd.DataFrame(
+                                    [
+                                        {
+                                            "Data": str(sess.get("data", "")).strip(),
+                                            "Horário": str(sess.get("horario", "")).strip(),
+                                            "Professor": str(sess.get("professor", "")).strip(),
+                                            "Turma": str(sess.get("turma", "")).strip(),
+                                            "Status": str(sess.get("status", "")).strip(),
+                                            "Lição": str(sess.get("licao", "")).strip(),
+                                        }
+                                        for sess in sessions
+                                    ]
+                                )
+                                st.dataframe(df_sessions, use_container_width=True, hide_index=True)
+                            else:
+                                st.info("Nenhuma aula registrada para este aluno.")
+
+                        with detail_tabs[3]:
+                            st.markdown("#### Financeiro completo")
+                            st.markdown(f"**Situação financeira:** {_student_finance_status(select_student)}")
+                            st.markdown(f"**Total em aberto:** {format_money(finance_summary.get('total_open', 0.0))}")
+                            st.markdown(f"**Total pago:** {format_money(finance_summary.get('total_paid', 0.0))}")
+                            obs_fin = str(student_obj.get("financeiro_obs", "")).strip()
+                            if obs_fin:
+                                st.info(f"Observações financeiras: {obs_fin}")
+                            with st.expander("Editar observações financeiras", expanded=False):
+                                with st.form("student_edit_fin_obs"):
+                                    obs_new = st.text_area("Observações financeiras", value=obs_fin)
+                                    if st.form_submit_button("Salvar observações", type="primary"):
+                                        student_obj["financeiro_obs"] = obs_new.strip()
+                                        _append_student_history(student_obj, "Atualização financeira", "Observações financeiras atualizadas")
+                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
+                                        st.success("Observações financeiras atualizadas.")
+                                        st.rerun()
+                            finance_rows = []
+                            for item in finance_summary.get("all", []):
+                                finance_rows.append(
+                                    {
+                                        "Descrição": str(item.get("descricao", "")).strip(),
+                                        "Categoria": str(item.get("categoria", "")).strip(),
+                                        "Valor": format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))),
+                                        "Vencimento": str(item.get("vencimento", "")).strip(),
+                                        "Status": str(item.get("status", "")).strip(),
+                                        "Pago em": str(item.get("baixa_data", "")).strip(),
+                                    }
+                                )
+                            if finance_rows:
+                                st.dataframe(pd.DataFrame(finance_rows), use_container_width=True, hide_index=True)
+                            else:
+                                st.info("Nenhum lançamento financeiro encontrado para este aluno.")
+
+                        with detail_tabs[4]:
+                            st.markdown("#### Histórico geral")
+                            history = student_obj.get("historico", []) or []
+                            if history:
+                                st.dataframe(pd.DataFrame(history), use_container_width=True, hide_index=True)
+                            else:
+                                st.info("Sem histórico registrado para este aluno.")
+
+            else:
+                st.info("Nenhum aluno cadastrado.")
+
+            show_legacy = st.checkbox("Mostrar blocos legados (antigos)", value=False, key="students_legacy_toggle")
+            if show_legacy and st.session_state["students"]:
                 _student_ops_shell(
                     "2",
                     "Painel por turma",
@@ -18369,8 +18980,37 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
+        render_section_hero(
+            "Equipe pedagógica organizada em um painel premium",
+            "Cadastre docentes, acompanhe turmas vinculadas e mantenha o contato centralizado.",
+            [
+                f"{len(st.session_state.get('teachers', []))} professores",
+                f"{len({str(c.get('professor','')).strip() for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip()})} com turmas",
+            ],
+        )
+        prof_cards = st.columns(3)
+        with prof_cards[0]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Professores</div><div class='v'>{len(st.session_state.get('teachers', []))}</div><div class='s'>cadastros ativos</div></div>",
+                unsafe_allow_html=True,
+            )
+        with prof_cards[1]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Turmas sem professor</div><div class='v'>{len([c for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip() in ('', 'Sem Professor')])}</div><div class='s'>requer alocação</div></div>",
+                unsafe_allow_html=True,
+            )
+        with prof_cards[2]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Alunos ativos</div><div class='v'>{len([s for s in st.session_state.get('students', []) if str(s.get('status','Ativo')).strip().lower() != 'inativo'])}</div><div class='s'>base ativa</div></div>",
+                unsafe_allow_html=True,
+            )
         tab1, tab2 = st.tabs(["Novo Professor", "Gerenciar / Excluir"])
         with tab1:
+            render_panel_intro(
+                "Cadastro de professor",
+                "Registre dados essenciais e já vincule o docente à comunicação do sistema.",
+                [("Avisos", "automáticos"), ("Turmas", "integradas")],
+            )
             with st.form("add_prof", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome")
@@ -18527,6 +19167,22 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 f"{len(st.session_state.get('teachers', []))} professores",
             ],
         )
+        turma_cards = st.columns(3)
+        with turma_cards[0]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Turmas</div><div class='v'>{len(st.session_state.get('classes', []))}</div><div class='s'>ativas</div></div>",
+                unsafe_allow_html=True,
+            )
+        with turma_cards[1]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Alunos vinculados</div><div class='v'>{len([s for s in st.session_state.get('students', []) if str(s.get('turma','')).strip()])}</div><div class='s'>com turma definida</div></div>",
+                unsafe_allow_html=True,
+            )
+        with turma_cards[2]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Sem professor</div><div class='v'>{len([c for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip() in ('', 'Sem Professor')])}</div><div class='s'>precisam de alocação</div></div>",
+                unsafe_allow_html=True,
+            )
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
@@ -21982,8 +22638,37 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
+        render_section_hero(
+            "Controle de acessos com visão executiva",
+            "Gerencie logins por perfil e mantenha histórico de acessos com clareza.",
+            [
+                f"{len(st.session_state.get('users', []))} logins",
+                f"{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Admin'])} admins",
+            ],
+        )
+        user_cards = st.columns(3)
+        with user_cards[0]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Total de acessos</div><div class='v'>{len(st.session_state.get('users', []))}</div><div class='s'>usuarios cadastrados</div></div>",
+                unsafe_allow_html=True,
+            )
+        with user_cards[1]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Coordenadores</div><div class='v'>{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Coordenador'])}</div><div class='s'>gestão ativa</div></div>",
+                unsafe_allow_html=True,
+            )
+        with user_cards[2]:
+            st.markdown(
+                f"<div class='students-kpi'><div class='k'>Professores</div><div class='v'>{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Professor'])}</div><div class='s'>com login</div></div>",
+                unsafe_allow_html=True,
+            )
         tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
+            render_panel_intro(
+                "Criar novo acesso",
+                "Cadastre logins por perfil e envie comunicado automaticamente.",
+                [("Segurança", "centralizada"), ("WhatsApp", "integrado")],
+            )
             with st.form("new_user", clear_on_submit=True):
                 role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
                 c1, c2, c3 = st.columns(3)
