@@ -5631,6 +5631,13 @@ def _remove_assessment_grade_record(origem_tipo, origem_id, aluno_nome):
     if len(st.session_state.get("grades", [])) != before:
         save_list(GRADES_FILE, st.session_state.get("grades", []))
 
+def _activity_assessment_status(nota_final):
+    try:
+        nota = float(nota_final)
+    except Exception:
+        nota = 0.0
+    return "Aprovado" if nota >= 5.0 else "Reprovado"
+
 def _sync_activity_grade_record(submission_obj, activity_obj=None):
     sub = submission_obj if isinstance(submission_obj, dict) else {}
     activity_obj = activity_obj if isinstance(activity_obj, dict) else {}
@@ -5661,7 +5668,7 @@ def _sync_activity_grade_record(submission_obj, activity_obj=None):
         "disciplina": str(activity_obj.get("disciplina", "")).strip() or "Ingles",
         "avaliacao": titulo,
         "nota": nota_label,
-        "status": "Aprovado",
+        "status": _activity_assessment_status(nota_final),
         "data": str(sub.get("avaliado_em", "")).strip() or str(sub.get("submitted_at", "")).strip(),
         "autor": str(activity_obj.get("autor", "")).strip() or "Professor",
         "observacao": str(sub.get("feedback_professor", "")).strip(),
