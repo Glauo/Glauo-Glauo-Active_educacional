@@ -5320,6 +5320,64 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
     _sync_challenge_grade_record(rec)
     return True, "Registrado."
 
+def _sync_overdue_challenges_status():
+    today_ref = datetime.date.today()
+    now_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    completions_changed = False
+    expired_ids = set()
+
+    for challenge_obj in st.session_state.get("challenges", []):
+        if not isinstance(challenge_obj, dict):
+            continue
+        challenge_id = str(challenge_obj.get("id", "")).strip()
+        due_obj = parse_date(challenge_obj.get("due_date", ""))
+        if not challenge_id or not due_obj or due_obj >= today_ref:
+            continue
+        expired_ids.add(challenge_id)
+        target_students = _students_for_challenge_target(
+            challenge_obj.get("nivel", ""),
+            target_type=challenge_obj.get("target_type", "nivel"),
+            target_turma=challenge_obj.get("target_turma", ""),
+            target_aluno=challenge_obj.get("target_aluno", ""),
+            target_turmas_envio=_challenge_send_turmas(challenge_obj),
+        )
+        for student in target_students:
+            if normalize_text(student.get("status", "ativo")) == "inativo":
+                continue
+            aluno_nome = str(student.get("nome", "")).strip()
+            if not aluno_nome or get_challenge_submission(challenge_id, aluno_nome):
+                continue
+            rec = {
+                "id": uuid.uuid4().hex,
+                "challenge_id": challenge_id,
+                "aluno": aluno_nome,
+                "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
+                "semana": str(challenge_obj.get("semana", "")).strip(),
+                "challenge_title": str(challenge_obj.get("titulo", "")).strip() or "Desafio",
+                "challenge_target": _challenge_target_label(challenge_obj),
+                "resposta": "",
+                "score": 0,
+                "feedback": "Sem resposta o desafio.",
+                "status": "Reprovado sem resposta",
+                "pontos": 0,
+                "done_at": now_txt,
+                "auto_created_absence": True,
+            }
+            st.session_state["challenge_completions"].append(rec)
+            completions_changed = True
+
+    if completions_changed:
+        save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state.get("challenge_completions", []))
+
+    if expired_ids:
+        kept = [
+            ch for ch in st.session_state.get("challenges", [])
+            if str(ch.get("id", "")).strip() not in expired_ids
+        ]
+        if len(kept) != len(st.session_state.get("challenges", [])):
+            st.session_state["challenges"] = kept
+            save_list(CHALLENGES_FILE, st.session_state.get("challenges", []))
+
 def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
     return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
@@ -14449,6 +14507,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     st.session_state["wiz_reference_docs"] = load_list(WIZ_REFERENCE_DOCS_FILE)
 
     _ensure_challenge_store_ids()
+    _sync_overdue_challenges_status()
     _ensure_activity_store_ids()
     _sync_overdue_homework_status()
     _ensure_sales_store_defaults()
@@ -23444,6 +23503,36 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if cols_des:
                     df_des = df_des[cols_des]
                 st.dataframe(df_des, use_container_width=True)
+                comps_map = {
+                    (
+                        str(comp.get("challenge_id", "")).strip(),
+                        str(comp.get("aluno", "")).strip(),
+                    ): comp
+                    for comp in st.session_state.get("challenge_completions", [])
+                }
+                st.markdown("#### Respostas dos desafios")
+                for row in des_rows:
+                    comp = comps_map.get(
+                        (
+                            str(row.get("origem_id", "")).strip(),
+                            str(row.get("aluno", "")).strip(),
+                        ),
+                        {},
+                    )
+                    resposta_txt = str(comp.get("resposta", "")).strip()
+                    feedback_txt = str(comp.get("feedback", "")).strip()
+                    label = (
+                        f"{str(row.get('aluno', '')).strip() or 'Aluno'} | "
+                        f"{str(row.get('avaliacao', '')).strip() or 'Desafio'} | "
+                        f"Nota: {str(row.get('nota', '')).strip() or '-'}"
+                    )
+                    with st.expander(label):
+                        st.caption(f"Status: {str(comp.get('status', row.get('status', ''))).strip() or '-'}")
+                        st.markdown("**Resposta do aluno**")
+                        st.write(resposta_txt or "Sem resposta registrada.")
+                        if feedback_txt:
+                            st.markdown("**Feedback / avaliacao**")
+                            st.write(feedback_txt)
             else:
                 st.info("Nenhum desafio concluido ainda.")
 
@@ -24451,6 +24540,23 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.markdown("#### Concluidos (recentes)")
                     recent = dfc.sort_values("done_at", ascending=False).head(50)
                     st.dataframe(recent, use_container_width=True)
+                    st.markdown("#### Respostas para avaliacao")
+                    for comp in recent.to_dict("records"):
+                        label = (
+                            f"{str(comp.get('aluno', '')).strip() or 'Aluno'} | "
+                            f"{str(comp.get('challenge_title', '')).strip() or 'Desafio'} | "
+                            f"Nota: {str(comp.get('score', '')).strip() or '0'}"
+                        )
+                        with st.expander(label):
+                            st.caption(
+                                f"Status: {str(comp.get('status', '')).strip() or '-'} | "
+                                f"Data: {str(comp.get('done_at', '')).strip() or '-'}"
+                            )
+                            st.markdown("**Resposta do aluno**")
+                            st.write(str(comp.get("resposta", "")).strip() or "Sem resposta registrada.")
+                            if str(comp.get("feedback", "")).strip():
+                                st.markdown("**Feedback / avaliacao**")
+                                st.write(str(comp.get("feedback", "")).strip())
 
         st.markdown("### Desafios publicados")
         chs = list(st.session_state.get("challenges", []) or [])
