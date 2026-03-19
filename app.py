@@ -10226,7 +10226,8 @@ def sidebar_menu(title, options, key):
         "Certificados": "📜",
         "Biblioteca": "📚",
         "Livros": "📚",
-        "Aprovação Notas": "✅",
+        "Aprovação Notas": "📋",
+        "Notas": "📋",
         "Caixa de Entrada": "📨",
         "Conteúdos": "🗂️",
         "Desafios": "🧩",
@@ -16593,7 +16594,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Estoque",
             "Certificados",
             "Biblioteca",
-            "Aprovação Notas",
+            "Notas",
             "Lições de Casa",
             "Caixa de Entrada",
             "Desafios",
@@ -16627,6 +16628,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Certificados": "certificates.view",
             "Biblioteca": "books.view",
             "Aprovação Notas": "grades.view",
+            "Notas": "grades.view",
             "Lições de Casa": "homework.view",
             "Caixa de Entrada": "content.view",
             "Desafios": "challenges.view",
@@ -16670,6 +16672,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Biblioteca": "Livros",
         "Livros": "Livros",
         "Aprovação Notas": "Notas",
+        "Notas": "Notas",
         "Lições de Casa": "Licoes de Casa",
         "Caixa de Entrada": "Conteudos",
         "Conteúdos": "Conteudos",
@@ -23431,14 +23434,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 _render_overdue_payables_panel()
 
     elif menu_coord == "Notas":
-        st.markdown('<div class="main-header">Aprovação de Notas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Notas</div>', unsafe_allow_html=True)
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
         integradas = [
             g for g in st.session_state.get("grades", [])
             if str(g.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}
         ]
         render_panel_intro(
-            "Central de avaliacao",
+            "Central de notas e avaliacao",
             "Acompanhe notas pendentes do professor e as avaliacoes integradas de licoes de casa e desafios.",
             stats=[
                 ("Pendentes", len(pendentes)),
