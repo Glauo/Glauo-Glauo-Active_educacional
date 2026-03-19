@@ -5320,6 +5320,25 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
     _sync_challenge_grade_record(rec)
     return True, "Registrado."
 
+def _challenge_completion_has_real_response(completion_obj):
+    comp = completion_obj if isinstance(completion_obj, dict) else {}
+    if bool(comp.get("auto_created_absence", False)):
+        return False
+    return bool(str(comp.get("resposta", "")).strip())
+
+def _challenge_completion_pending_review(completion_obj):
+    comp = completion_obj if isinstance(completion_obj, dict) else {}
+    if not _challenge_completion_has_real_response(comp):
+        return False
+    feedback_txt = str(comp.get("feedback", "")).strip()
+    score_val = comp.get("score", None)
+    status_norm = normalize_text(comp.get("status", ""))
+    if feedback_txt:
+        return False
+    if score_val not in (None, ""):
+        return False
+    return status_norm not in {"aprovado", "reprovado", "reprovado sem resposta"}
+
 def _sync_overdue_challenges_status():
     today_ref = datetime.date.today()
     now_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -5380,15 +5399,17 @@ def _sync_overdue_challenges_status():
 
 def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
-    return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
+    return sum(
+        int(c.get("pontos") or 0)
+        for c in st.session_state.get("challenge_completions", [])
+        if str(c.get("aluno", "")).strip() == aluno_nome and _challenge_completion_has_real_response(c)
+    )
 
 def _student_points_ranking():
     points_by_student = {}
-    for student in st.session_state.get("students", []):
-        nome = str(student.get("nome", "")).strip()
-        if nome:
-            points_by_student[nome] = 0
     for comp in st.session_state.get("challenge_completions", []):
+        if not _challenge_completion_has_real_response(comp):
+            continue
         aluno = str(comp.get("aluno", "")).strip()
         if not aluno:
             continue
@@ -24197,13 +24218,38 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.info(f"Auto-geracao: {created} desafio(s) criados para {week_now}.")
             else:
                 st.warning("Auto-geracao ativa (ACTIVE_AUTO_CHALLENGES=1), mas GROQ_API_KEY nao esta configurado.")
-        c_pub, c_stats = st.columns([1, 1])
+        challenge_rows_all = list(st.session_state.get("challenges", []) or [])
+        completion_rows_all = list(st.session_state.get("challenge_completions", []) or [])
+        current_week_label = current_week_key(datetime.date.today())
+        render_challenges_top_banner(
+            "Desafios",
+            "Crie, revise, publique e acompanhe desafios com uma leitura mais clara entre edição e operação.",
+            week_label=current_week_label,
+            metrics=[
+                {"label": "Desafios publicados", "value": len(challenge_rows_all), "sub": "ativos no sistema", "tone": "blue"},
+                {"label": "Respostas registradas", "value": len([c for c in completion_rows_all if _challenge_completion_has_real_response(c)]), "sub": "histórico consolidado", "tone": "green"},
+                {"label": "Concluídos na semana", "value": len([c for c in completion_rows_all if _challenge_completion_has_real_response(c) and str(c.get('semana', '')).strip() == current_week_label]), "sub": "respostas do período atual", "tone": "orange"},
+                {"label": "Turmas impactadas", "value": len({str(ch.get('target_turma', '')).strip() or ','.join(_challenge_send_turmas(ch)) or str(ch.get('nivel', '')).strip() for ch in challenge_rows_all if isinstance(ch, dict)}), "sub": "alcance dos desafios ativos", "tone": "slate"},
+            ],
+        )
+
+        c_pub, c_stats = st.columns([1.55, 0.95], gap="large")
 
         with c_pub:
-            st.markdown("### Publicar / editar")
+            render_panel_intro(
+                "Criação e edição do desafio",
+                "Organize contexto, conteúdo, opções e revisão final em blocos distintos para reduzir ruído operacional.",
+                stats=[
+                    ("Semana", current_week_label),
+                    ("Publicados", len(challenge_rows_all)),
+                    ("Concluídos", len(completion_rows_all)),
+                ],
+            )
             target_options = ["Por livro", "Turma", "Aluno VIP"]
             if st.session_state.get("coord_ch_target_type") not in target_options:
                 st.session_state["coord_ch_target_type"] = target_options[0]
+            st.markdown("#### 1. Destino e contexto")
+            st.caption("Defina primeiro para quem o desafio será criado, em qual semana e com qual base pedagógica.")
             target_choice = st.selectbox("Diretorio do desafio", target_options, key="coord_ch_target_type")
             target_type = _challenge_target_type(target_choice)
             target_turma = ""
@@ -24286,6 +24332,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             title_color_key = f"{key_prefix}_title_color"
             desc_bold_key = f"{key_prefix}_desc_bold"
             desc_color_key = f"{key_prefix}_desc_color"
+            delete_confirm_key = f"{key_prefix}_delete_confirm"
 
             pending_draft_patch = st.session_state.pop(draft_patch_key, None)
             if isinstance(pending_draft_patch, dict):
@@ -24350,6 +24397,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state[draft_error_key] = ""
             if creation_mode_key not in st.session_state:
                 st.session_state[creation_mode_key] = "Manual (sem IA)"
+            if delete_confirm_key not in st.session_state:
+                st.session_state[delete_confirm_key] = False
             pending_draft_action = str(st.session_state.pop(draft_action_key, "")).strip()
             if pending_draft_action == "gen_ai":
                 api_key = get_groq_api_key()
@@ -24439,8 +24488,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             st.markdown("#### Referencia do desafio (automatica)")
             st.caption(f"Livro/Nivel: {reference_book or '-'}")
             st.caption(f"Conteudo atual: {reference_subject or 'Nao informado'}")
+            render_challenge_collection_card(
+                "Base automática do desafio",
+                "Resumo do contexto pedagógico que será usado na criação e na leitura do item.",
+                items=[
+                    {
+                        "title": reference_book or "-",
+                        "meta": f"Conteúdo atual: {reference_subject or 'Nao informado'} | Linha: {reference_theme}",
+                        "badge": target_choice,
+                    }
+                ],
+                tone="blue",
+            )
 
             autor = st.session_state.get("user_name", "Coordenacao")
+            st.markdown("#### 2. Modo de criação")
             creation_mode = st.radio(
                 "Modo de criacao do desafio",
                 ["Manual (sem IA)", "Gerar com IA"],
@@ -24459,7 +24521,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if st.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
                     st.session_state[draft_action_key] = "gen_ai"
                     st.rerun()
-            manual_col1, manual_col2, manual_col3 = st.columns([1, 1, 1])
+            st.markdown("#### 3. Ações principais")
+            st.caption("Salvar é a ação principal. As demais ações ficam como apoio ao mesmo fluxo de edição.")
+            manual_col1, manual_col2, manual_col3 = st.columns([1.2, 1, 1])
             if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
                 st.session_state[draft_patch_key] = {
                     titulo_key: "",
@@ -24472,6 +24536,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     desc_bold_key: False,
                     desc_color_key: "#111827",
                     draft_info_key: "Formulario limpo para criacao manual.",
+                    delete_confirm_key: False,
                 }
                 st.rerun()
             if manual_col2.button("Carregar desafio salvo", key=f"{key_prefix}_load_existing"):
@@ -24497,26 +24562,36 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     raw_send_turmas = [part.strip() for part in raw_send_turmas.split(",") if part.strip()]
                 load_patch[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
                 load_patch[draft_info_key] = "Desafio salvo carregado no formulario." if existing else "Nao existe desafio salvo para esse destino/semana."
+                load_patch[delete_confirm_key] = False
                 st.session_state[draft_patch_key] = load_patch
                 st.rerun()
             if manual_col3.button("Excluir desafio salvo", key=f"{key_prefix}_delete_existing"):
-                if not existing:
-                    st.info("Nao existe desafio salvo para esse destino/semana.")
-                else:
-                    deleted = delete_weekly_challenge_for_target(
-                        nivel,
-                        semana,
-                        target_type=target_type,
-                        target_turma=target_turma,
-                        target_aluno=target_aluno,
-                    )
-                    if deleted:
-                        st.success("Desafio excluido com sucesso.")
-                        st.rerun()
-                    st.error("Nao foi possivel excluir o desafio selecionado.")
+                st.session_state[delete_confirm_key] = True
+            if st.session_state.get(delete_confirm_key, False):
+                st.warning("Confirme a exclusao do desafio salvo para este destino e semana.")
+                dc1, dc2 = st.columns(2)
+                if dc1.button("Confirmar exclusao", key=f"{key_prefix}_delete_yes", type="primary"):
+                    if not existing:
+                        st.info("Nao existe desafio salvo para esse destino/semana.")
+                    else:
+                        deleted = delete_weekly_challenge_for_target(
+                            nivel,
+                            semana,
+                            target_type=target_type,
+                            target_turma=target_turma,
+                            target_aluno=target_aluno,
+                        )
+                        st.session_state[delete_confirm_key] = False
+                        if deleted:
+                            st.success("Desafio excluido com sucesso.")
+                            st.rerun()
+                        st.error("Nao foi possivel excluir o desafio selecionado.")
+                if dc2.button("Cancelar exclusao", key=f"{key_prefix}_delete_no"):
+                    st.session_state[delete_confirm_key] = False
+                    st.rerun()
 
-            st.markdown("#### Ajuste final antes de salvar")
-            st.caption("Edite o desafio aqui antes de publicar. A caixa abaixo tambem aceita edicao direta.")
+            st.markdown("#### 4. Conteúdo do desafio")
+            st.caption("Refine título, descrição, rubrica, dica e pontos antes de revisar o preview.")
 
             titulo = st.text_input("Titulo", key=titulo_key)
             descricao = st.text_area(
@@ -24524,7 +24599,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 height=160,
                 key=descricao_key,
             )
-            st.markdown("##### Formatacao visual")
+            st.markdown("#### 5. Formatação e opções")
+            st.caption("Organize o acabamento visual e as opções de publicação sem misturar com o conteúdo principal.")
             fmt_col1, fmt_col2 = st.columns(2)
             with fmt_col1:
                 st.checkbox("Titulo em negrito", key=title_bold_key)
@@ -24557,6 +24633,25 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 key=notify_key,
             )
 
+            render_challenge_preview_card(
+                titulo,
+                descricao,
+                rubrica,
+                dica,
+                meta_rows=[
+                    ("Semana", semana),
+                    ("Destino", _challenge_target_label({"target_type": target_type, "target_turma": target_turma, "target_aluno": target_aluno, "nivel": nivel, "target_turmas_envio": target_turmas_envio})),
+                    ("Nível", nivel),
+                    ("Pontos", int(pontos)),
+                    ("Prazo", "Sem prazo" if sem_prazo else (due_date.strftime("%d/%m/%Y") if isinstance(due_date, datetime.date) else "-")),
+                    ("Turmas", ", ".join(target_turmas_envio) if target_turmas_envio else "Todas do livro"),
+                ],
+                title_color=_challenge_color(st.session_state.get(title_color_key, "#1e3a8a"), "#1e3a8a"),
+                description_color=_challenge_color(st.session_state.get(desc_color_key, "#111827"), "#111827"),
+                title_bold=bool(st.session_state.get(title_bold_key, False)),
+                description_bold=bool(st.session_state.get(desc_bold_key, False)),
+            )
+
             preview_text = (
                 f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel, 'target_turmas_envio': target_turmas_envio})}\n"
                 f"Turmas de envio: {', '.join(target_turmas_envio) if target_turmas_envio else 'Todas do livro'}\n"
@@ -24582,17 +24677,18 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if preview_key not in st.session_state or current_preview.strip() == previous_seed.strip():
                 st.session_state[preview_key] = preview_text
             st.session_state[preview_seed_key] = preview_text
-            st.text_area(
-                "Pre-visualizacao e edicao antes de postar",
-                height=240,
-                key=preview_key,
-                help="Voce pode ajustar o texto aqui. Para salvar usando esta caixa, marque a opcao abaixo.",
-            )
-            st.checkbox(
-                "Salvar usando o texto da pre-visualizacao (opcional)",
-                key=use_preview_on_save_key,
-                help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
-            )
+            with st.expander("Modo avançado: pré-visualização técnica", expanded=False):
+                st.text_area(
+                    "Pre-visualizacao e edicao antes de postar",
+                    height=240,
+                    key=preview_key,
+                    help="Voce pode ajustar o texto aqui. Para salvar usando esta caixa, marque a opcao abaixo.",
+                )
+                st.checkbox(
+                    "Salvar usando o texto da pre-visualizacao (opcional)",
+                    key=use_preview_on_save_key,
+                    help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
+                )
 
             save_clicked = st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar")
 
@@ -24676,23 +24772,72 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.caption(f"Criado em: {existing.get('created_at','')} | Atualizado em: {existing.get('updated_at','')}")
 
         with c_stats:
-            st.markdown("### Acompanhamento")
+            pending_review_items = [
+                comp for comp in completion_rows_all
+                if _challenge_completion_pending_review(comp)
+            ]
+            render_panel_intro(
+                "Painel de acompanhamento",
+                "Ranking, concluídos e respostas aparecem em leitura mais rápida, sem competir com a criação do desafio.",
+                stats=[
+                    ("Ranking", len([c for c in completion_rows_all if _challenge_completion_has_real_response(c)])),
+                    ("Semana atual", current_week_label),
+                    ("Fila", len(pending_review_items)),
+                ],
+            )
             comps = st.session_state.get("challenge_completions", []) or []
             if not comps:
                 st.info("Sem desafios concluidos ainda.")
             else:
-                dfc = pd.DataFrame(comps)
+                dfc = pd.DataFrame([c for c in comps if _challenge_completion_has_real_response(c)])
                 if dfc.empty:
                     st.info("Sem desafios concluidos ainda.")
                 else:
-                    st.markdown("#### Ranking (pontos)")
                     rank = dfc.groupby("aluno", as_index=False)["pontos"].sum().sort_values("pontos", ascending=False)
-                    st.dataframe(rank, use_container_width=True)
-                    st.markdown("#### Concluidos (recentes)")
                     recent = dfc.sort_values("done_at", ascending=False).head(50)
-                    st.dataframe(recent, use_container_width=True)
-                    st.markdown("#### Respostas para avaliacao")
-                    for comp in recent.to_dict("records"):
+                    render_challenge_collection_card(
+                        "Classificação",
+                        "Resumo dos alunos com maior pontuação acumulada.",
+                        items=[
+                            {
+                                "title": str(row.get("aluno", "")).strip() or "Aluno",
+                                "meta": f"Posição {idx + 1}",
+                                "badge": f"{int(row.get('pontos', 0) or 0)} pts",
+                            }
+                            for idx, row in enumerate(rank.head(5).to_dict("records"))
+                        ],
+                        empty_text="Ainda nao ha ranking de desafios.",
+                        tone="green",
+                    )
+                    render_challenge_collection_card(
+                        "Concluídos recentes",
+                        "Últimas respostas registradas no sistema.",
+                        items=[
+                            {
+                                "title": str(comp.get("challenge_title", "")).strip() or "Desafio",
+                                "meta": f"{str(comp.get('aluno', '')).strip() or 'Aluno'} | {str(comp.get('done_at', '')).strip() or '-'}",
+                                "badge": str(comp.get("status", "")).strip() or "-",
+                            }
+                            for comp in recent.head(6).to_dict("records")
+                        ],
+                        empty_text="Nenhum desafio concluido ainda.",
+                        tone="blue",
+                    )
+                    render_challenge_collection_card(
+                        "Respostas para avaliação",
+                        "Somente respostas reais que ainda aguardam avaliação.",
+                        items=[
+                            {
+                                "title": str(comp.get("aluno", "")).strip() or "Aluno",
+                                "meta": f"{str(comp.get('challenge_title', '')).strip() or 'Desafio'} | Nota {str(comp.get('score', '')).strip() or '0'}",
+                                "badge": str(comp.get("status", "")).strip() or "-",
+                            }
+                            for comp in pending_review_items[:6]
+                        ],
+                        empty_text="Nenhuma resposta pendente de avaliação.",
+                        tone="orange",
+                    )
+                    for comp in pending_review_items:
                         label = (
                             f"{str(comp.get('aluno', '')).strip() or 'Aluno'} | "
                             f"{str(comp.get('challenge_title', '')).strip() or 'Desafio'} | "
@@ -24709,20 +24854,83 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.markdown("**Feedback / avaliacao**")
                                 st.write(str(comp.get("feedback", "")).strip())
 
-        st.markdown("### Desafios publicados")
+        render_panel_intro(
+            "Desafios publicados",
+            "Gerencie os desafios ativos com filtros básicos e uma leitura mais limpa das informações principais.",
+            stats=[
+                ("Publicados", len(challenge_rows_all)),
+                ("Com prazo", len([ch for ch in challenge_rows_all if str(ch.get("due_date", "")).strip()])),
+                ("Sem prazo", len([ch for ch in challenge_rows_all if not str(ch.get("due_date", "")).strip()])),
+            ],
+        )
         chs = list(st.session_state.get("challenges", []) or [])
         if not chs:
             st.info("Nenhum desafio publicado ainda.")
         else:
-            df = pd.DataFrame(chs)
+            weeks_filter = ["Todas"] + sorted({str(ch.get("semana", "")).strip() for ch in chs if str(ch.get("semana", "")).strip()}, reverse=True)
+            levels_filter = ["Todos"] + sorted({_norm_book_level(ch.get("nivel", "")) for ch in chs if _norm_book_level(ch.get("nivel", ""))})
+            dest_filter = ["Todos"] + sorted({_challenge_target_label(ch) for ch in chs if isinstance(ch, dict)})
+            pf1, pf2, pf3 = st.columns([1.1, 1.1, 1.6])
+            selected_week = pf1.selectbox("Semana", weeks_filter, key="coord_ch_filter_week")
+            selected_level = pf2.selectbox("Nivel", levels_filter, key="coord_ch_filter_level")
+            search_title = pf3.text_input("Buscar desafio", key="coord_ch_filter_search", placeholder="Título, referência ou destino")
+
+            filtered_chs = []
+            for ch in chs:
+                week_txt = str(ch.get("semana", "")).strip()
+                level_txt = _norm_book_level(ch.get("nivel", ""))
+                target_txt = _challenge_target_label(ch)
+                blob = " ".join([
+                    str(ch.get("titulo", "")).strip(),
+                    str(ch.get("reference_book", "")).strip(),
+                    str(ch.get("reference_subject", "")).strip(),
+                    target_txt,
+                ]).lower()
+                if selected_week != "Todas" and week_txt != selected_week:
+                    continue
+                if selected_level != "Todos" and level_txt != selected_level:
+                    continue
+                if str(search_title).strip() and str(search_title).strip().lower() not in blob:
+                    continue
+                filtered_chs.append(ch)
+
+            render_challenge_collection_card(
+                "Visão rápida dos publicados",
+                "Use os filtros para reduzir a lista e localizar o item certo antes de carregar no editor.",
+                items=[
+                    {
+                        "title": str(ch.get("titulo", "")).strip() or "Desafio",
+                        "meta": f"{str(ch.get('semana', '')).strip()} | {_challenge_target_label(ch)} | {_norm_book_level(ch.get('nivel', ''))}",
+                        "badge": str(ch.get("due_date", "")).strip() or "Sem prazo",
+                    }
+                    for ch in filtered_chs[:4]
+                ],
+                empty_text="Nenhum desafio encontrado com os filtros atuais.",
+                tone="slate",
+            )
+
+            df = pd.DataFrame(filtered_chs)
             if df.empty:
                 st.info("Nenhum desafio publicado ainda.")
             else:
                 df["destino"] = [
                     _challenge_target_label(ch) if isinstance(ch, dict) else "-"
-                    for ch in chs
+                    for ch in filtered_chs
                 ]
-                col_order = [c for c in ["semana", "destino", "nivel", "target_turmas_envio", "reference_theme", "reference_book", "reference_subject", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
+                df["referencia"] = [
+                    " | ".join(
+                        part for part in [
+                            str(ch.get("reference_book", "")).strip(),
+                            str(ch.get("reference_subject", "")).strip(),
+                        ] if part
+                    ) or "-"
+                    for ch in filtered_chs
+                ]
+                df["status_publicacao"] = [
+                    "Com prazo" if str(ch.get("due_date", "")).strip() else "Sem prazo"
+                    for ch in filtered_chs
+                ]
+                col_order = [c for c in ["semana", "destino", "nivel", "referencia", "titulo", "pontos", "status_publicacao", "due_date", "autor", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
