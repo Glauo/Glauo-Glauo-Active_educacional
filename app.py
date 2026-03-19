@@ -654,13 +654,11 @@ def get_logo_path():
 
 def render_sidebar_logo(logo_path):
     logo_html = ""
-    if logo_path and Path(logo_path).exists():
-        logo_suffix = str(Path(logo_path).suffix or ".png").lower().lstrip(".")
-        logo_mime = "jpeg" if logo_suffix in {"jpg", "jpeg"} else logo_suffix
-        logo_b64 = base64.b64encode(Path(logo_path).read_bytes()).decode("ascii")
+    logo_uri = _sidebar_logo_data_uri(str(logo_path)) if logo_path else ""
+    if logo_uri:
         logo_html = (
             '<div class="sidebar-brand-image-wrap">'
-            f'<img class="sidebar-brand-image" src="data:image/{logo_mime};base64,{logo_b64}" alt="Ativo Educacional">'
+            f'<img class="sidebar-brand-image" src="{logo_uri}" alt="Ativo Educacional">'
             "</div>"
         )
     st.markdown(
@@ -674,6 +672,16 @@ def render_sidebar_logo(logo_path):
         unsafe_allow_html=True,
     )
 
+@st.cache_data(show_spinner=False)
+def _sidebar_logo_data_uri(path_str):
+    path = Path(path_str)
+    if not path.exists():
+        return ""
+    logo_suffix = str(path.suffix or ".png").lower().lstrip(".")
+    logo_mime = "jpeg" if logo_suffix in {"jpg", "jpeg"} else logo_suffix
+    logo_b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/{logo_mime};base64,{logo_b64}"
+
 def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_name="", greeting=""):
     nome = str(user_name or "").strip()
     role_txt = str(role_name or "").strip() or "-"
@@ -681,12 +689,16 @@ def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_n
     unit_txt = str(unit_name or "").strip()
     initial = (nome[:1] or role_txt[:1] or "A").upper()
     greeting_html = f'<div class="sidebar-profile-greeting">{html.escape(str(greeting))}</div>' if str(greeting).strip() else ""
-    unit_html = (
-        '<div class="sidebar-profile-meta-row">'
-        '<span>Unidade</span>'
-        f'<strong>{html.escape(unit_txt)}</strong>'
-        '</div>'
-    ) if unit_txt else ""
+    meta_rows = [
+        '<div class="sidebar-profile-meta-row"><span>Perfil</span>'
+        f'<strong>{html.escape(profile_txt)}</strong></div>'
+    ]
+    if unit_txt:
+        meta_rows.append(
+            '<div class="sidebar-profile-meta-row"><span>Unidade</span>'
+            f'<strong>{html.escape(unit_txt)}</strong></div>'
+        )
+    rows_html = "".join(meta_rows)
     st.markdown(
         f"""
         <div class="sidebar-profile-shell">
@@ -698,13 +710,7 @@ def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_n
                     <div class="sidebar-profile-role">{html.escape(role_txt)}</div>
                 </div>
             </div>
-            <div class="sidebar-profile-meta">
-                <div class="sidebar-profile-meta-row">
-                    <span>Perfil</span>
-                    <strong>{html.escape(profile_txt)}</strong>
-                </div>
-                {unit_html}
-            </div>
+            <div class="sidebar-profile-meta">{rows_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -10392,7 +10398,6 @@ def sidebar_menu(title, options, key):
             option_label = f"{icon}  {option}"
             if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
                 st.session_state[key] = option
-                st.rerun()
         if idx_section != len(grouped_sections) - 1:
             st.markdown('<div class="sidebar-group-divider"></div>', unsafe_allow_html=True)
     return st.session_state[key]
@@ -14318,6 +14323,7 @@ else:
         .sidebar-profile-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 14px; background: rgba(244,248,255,0.9); border: 1px solid rgba(219,231,246,0.9); }
         .sidebar-profile-meta-row span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #7a8ca8; }
         .sidebar-profile-meta-row strong { color: #17326b; font-size: 0.86rem; line-height: 1.35; text-align: right; }
+        .sidebar-profile-shell pre, .sidebar-profile-shell code, .sidebar-profile-shell [data-testid="stCodeBlock"] { display: none !important; }
         .sidebar-inline-chip { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,0.92); border: 1px solid rgba(202,217,240,0.8); box-shadow: 0 10px 20px rgba(15,23,42,0.05); }
         .sidebar-inline-chip span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #71859f; }
         .sidebar-inline-chip strong { color: #17326b; font-size: 0.9rem; }
