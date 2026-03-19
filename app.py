@@ -653,14 +653,26 @@ def get_logo_path():
     return None
 
 def render_sidebar_logo(logo_path):
-    st.markdown('<div class="sidebar-brand-shell">', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-brand-kicker">Active Educacional</div>', unsafe_allow_html=True)
-    if logo_path:
-        col_left, col_logo, col_right = st.columns([0.8, 4.8, 0.8])
-        with col_logo:
-            st.image(str(logo_path), width=190)
-    st.markdown('<div class="sidebar-brand-sub">Plataforma de gestão acadêmica e operacional</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    logo_html = ""
+    if logo_path and Path(logo_path).exists():
+        logo_suffix = str(Path(logo_path).suffix or ".png").lower().lstrip(".")
+        logo_mime = "jpeg" if logo_suffix in {"jpg", "jpeg"} else logo_suffix
+        logo_b64 = base64.b64encode(Path(logo_path).read_bytes()).decode("ascii")
+        logo_html = (
+            '<div class="sidebar-brand-image-wrap">'
+            f'<img class="sidebar-brand-image" src="data:image/{logo_mime};base64,{logo_b64}" alt="Ativo Educacional">'
+            "</div>"
+        )
+    st.markdown(
+        f"""
+        <div class="sidebar-brand-shell">
+            <div class="sidebar-brand-kicker">Active Educacional</div>
+            {logo_html}
+            <div class="sidebar-brand-sub">Plataforma de gestão acadêmica e operacional</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_name="", greeting=""):
     nome = str(user_name or "").strip()
@@ -13545,10 +13557,9 @@ def run_commercial_panel():
             ],
             "menu_sales",
         )
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
         if st.button("Sair"):
             logout_user()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     menu_sales_map = {
         "Leads": "Leads",
@@ -14283,9 +14294,9 @@ else:
         section[data-testid="stSidebar"] .stButton > button:active { transform: translateY(0) scale(0.995) !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
-        .logout-btn .stButton > button { background: linear-gradient(180deg, #fff6f6 0%, #ffecec 100%) !important; border-color: #f4c7c7 !important; color: #991b1b !important; min-height: 46px !important; border-radius: 16px !important; box-shadow: 0 10px 20px rgba(153,27,27,0.08) !important; }
-        .logout-btn .stButton > button:hover { background: linear-gradient(180deg, #fff1f1 0%, #ffe2e2 100%) !important; border-color: #eba8a8 !important; color: #b91c1c !important; transform: translateY(-1px); }
-        .logout-btn .stButton > button:active { background: #ffe5e5 !important; border-color: #ef9a9a !important; color: #7f1d1d !important; }
+        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button { background: linear-gradient(180deg, #fff6f6 0%, #ffecec 100%) !important; border-color: #f4c7c7 !important; color: #991b1b !important; min-height: 46px !important; border-radius: 16px !important; box-shadow: 0 10px 20px rgba(153,27,27,0.08) !important; }
+        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button:hover { background: linear-gradient(180deg, #fff1f1 0%, #ffe2e2 100%) !important; border-color: #eba8a8 !important; color: #b91c1c !important; transform: translateY(-1px); }
+        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button:active { background: #ffe5e5 !important; border-color: #ef9a9a !important; color: #7f1d1d !important; }
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
@@ -14294,6 +14305,8 @@ else:
         .sidebar-brand-shell { position: relative; margin: 0 0 18px; padding: 18px 18px 14px; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(241,247,255,0.96)); border: 1px solid rgba(191,211,238,0.7); box-shadow: 0 18px 42px rgba(15,23,42,0.08); overflow: hidden; }
         .sidebar-brand-shell::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 56%, #ea580c 100%); opacity: 0.95; }
         .sidebar-brand-kicker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; color: #5f728d; text-align: center; margin-bottom: 8px; }
+        .sidebar-brand-image-wrap { display:flex; justify-content:center; margin: 4px 0 8px; }
+        .sidebar-brand-image { width: 190px; max-width: 100%; height: auto; display:block; }
         .sidebar-brand-sub { margin-top: 10px; text-align: center; color: #61758f; font-size: 0.82rem; line-height: 1.5; }
         .sidebar-profile-shell { margin: 0 0 18px; padding: 16px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(244,249,255,0.98)); border: 1px solid rgba(193,213,239,0.74); box-shadow: 0 16px 34px rgba(15,23,42,0.08); }
         .sidebar-profile-head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
@@ -14315,7 +14328,7 @@ else:
         .sidebar-group-divider { height: 1px; margin: 6px 4px 4px; background: linear-gradient(90deg, rgba(203,213,225,0), rgba(203,213,225,0.88), rgba(203,213,225,0)); }
         .sidebar-nav-item-special .stButton > button { background: linear-gradient(180deg, rgba(245,249,255,0.98) 0%, rgba(238,246,255,0.98) 100%) !important; border-color: rgba(164,192,231,0.95) !important; }
         .sidebar-nav-item-special .stButton > button:hover { border-color: #86aee8 !important; }
-        .logout-btn { margin-top: 12px; padding: 14px 14px 4px; border-top: 1px solid rgba(203,213,225,0.75); }
+        .logout-divider { margin: 10px 4px 8px; border-top: 1px solid rgba(203,213,225,0.75); }
         .profile-card, .profile-label, .profile-value, .sidebar-section-title { display:none !important; }
         .dash-card { background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,251,255,0.98) 100%); padding: 22px; border-radius: 18px; border: 1px solid #dbe7f6; box-shadow: 0 12px 28px rgba(15,23,42,0.06); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow:hidden; }
         .dash-card:before { content:""; position:absolute; inset:0 auto auto 0; width:100%; height:4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 55%, #ea580c 100%); opacity:.88; }
@@ -14995,9 +15008,8 @@ elif st.session_state["role"] == "Aluno":
             ],
             "menu_aluno",
         )
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_aluno_map = {
         "Painel": "Dashboard",
@@ -15661,9 +15673,8 @@ elif st.session_state["role"] == "Professor":
             ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz", "Suporte"],
             "menu_prof",
         )
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_prof_map = {
         "Minhas Turmas": "Minhas Turmas",
@@ -16924,9 +16935,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         filtered_options.append(item)
             coord_menu_options = filtered_options
         menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_coord_map = {
         "Dashboard": "Dashboard",
