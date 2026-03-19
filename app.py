@@ -19203,131 +19203,266 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
         _require_permission("teachers.view")
+        st.markdown(
+            """
+            <style>
+            .teacher-admin-summary {display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.94); border:1px solid rgba(148,163,184,0.18); border-radius:20px; padding:16px 18px; box-shadow:0 16px 34px rgba(15,23,42,0.06);}
+            .teacher-admin-summary-row {display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:10px 0; border-bottom:1px solid rgba(226,232,240,0.9);}
+            .teacher-admin-summary-row:last-child {border-bottom:none; padding-bottom:0;}
+            .teacher-admin-summary-row span {font-size:.84rem; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:.04em;}
+            .teacher-admin-summary-row strong {font-size:.98rem; color:#0f172a; text-align:right;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        teachers_all = list(st.session_state.get("teachers", []))
+        classes_all = list(st.session_state.get("classes", []))
+        students_all = list(st.session_state.get("students", []))
+        active_students = [s for s in students_all if str(s.get("status", "Ativo")).strip().lower() != "inativo"]
+        classes_without_teacher = [c for c in classes_all if str(c.get("professor", "")).strip() in ("", "Sem Professor")]
+        teachers_with_classes = {
+            str(c.get("professor", "")).strip()
+            for c in classes_all
+            if str(c.get("professor", "")).strip() and str(c.get("professor", "")).strip() != "Sem Professor"
+        }
+        students_linked_to_teacher = 0
+        for aluno in active_students:
+            turma_nome = str(aluno.get("turma", "")).strip()
+            turma_obj_tmp = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma_nome), None)
+            professor_turma = str((turma_obj_tmp or {}).get("professor", "")).strip()
+            if professor_turma and professor_turma != "Sem Professor":
+                students_linked_to_teacher += 1
+
         render_section_hero(
-            "Equipe pedagógica organizada em um painel premium",
-            "Cadastre docentes, acompanhe turmas vinculadas e mantenha o contato centralizado.",
+            "Equipe pedagógica em um módulo mais executivo e operacional",
+            "Cadastre, edite, acompanhe vínculos com turmas e valide a cobertura de contato dos professores em uma estrutura mais clara para a coordenação.",
             [
-                f"{len(st.session_state.get('teachers', []))} professores",
-                f"{len({str(c.get('professor','')).strip() for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip()})} com turmas",
+                f"{len(teachers_all)} professores cadastrados",
+                f"{len(teachers_with_classes)} com turmas ativas",
+                f"{len(classes_without_teacher)} pendências de alocação",
             ],
         )
-        prof_cards = st.columns(3)
-        with prof_cards[0]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Professores</div><div class='v'>{len(st.session_state.get('teachers', []))}</div><div class='s'>cadastros ativos</div></div>",
-                unsafe_allow_html=True,
-            )
-        with prof_cards[1]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Turmas sem professor</div><div class='v'>{len([c for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip() in ('', 'Sem Professor')])}</div><div class='s'>requer alocação</div></div>",
-                unsafe_allow_html=True,
-            )
-        with prof_cards[2]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Alunos ativos</div><div class='v'>{len([s for s in st.session_state.get('students', []) if str(s.get('status','Ativo')).strip().lower() != 'inativo'])}</div><div class='s'>base ativa</div></div>",
-                unsafe_allow_html=True,
-            )
-        tab1, tab2 = st.tabs(["Novo Professor", "Gerenciar / Excluir"])
-        with tab1:
+
+        metrics_cols = st.columns(4)
+        metric_payload = [
+            ("Professores", str(len(teachers_all)), "cadastros ativos"),
+            ("Com turmas", str(len(teachers_with_classes)), "docentes alocados"),
+            ("Turmas sem professor", str(len(classes_without_teacher)), "requerem ação"),
+            ("Alunos vinculados", str(students_linked_to_teacher), "base ligada a docentes"),
+        ]
+        for col, (label, value, subtitle) in zip(metrics_cols, metric_payload):
+            with col:
+                st.markdown(
+                    f"<div class='students-kpi'><div class='k'>{html.escape(label)}</div><div class='v'>{html.escape(value)}</div><div class='s'>{html.escape(subtitle)}</div></div>",
+                    unsafe_allow_html=True,
+                )
+
+        action_col, filter_col = st.columns([1.15, 2.2], gap="large")
+        with action_col:
             render_panel_intro(
-                "Cadastro de professor",
-                "Registre dados essenciais e já vincule o docente à comunicação do sistema.",
-                [("Avisos", "automáticos"), ("Turmas", "integradas")],
+                "Ações rápidas",
+                "Defina o fluxo de trabalho principal antes de operar o módulo para reduzir ruído visual e acelerar a rotina administrativa.",
+                [("Cadastro", "edição"), ("Turmas", "vínculo"), ("Comunicação", "docente")],
             )
-            with st.form("add_prof", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                with c1: nome = st.text_input("Nome")
-                with c2: area = st.text_input("Area")
-                c_email, c_cel = st.columns(2)
-                with c_email: email_prof = st.text_input("E-mail do Professor")
-                with c_cel: celular_prof = st.text_input("Celular/WhatsApp do Professor")
+            workspace = st.radio(
+                "Fluxo da gestão",
+                ["Cadastro / edição", "Turmas vinculadas", "Comunicação", "Lista operacional"],
+                key="teachers_workspace",
+                label_visibility="collapsed",
+            )
+            st.caption("A área principal abaixo se adapta ao fluxo selecionado.")
 
-                c3, c4 = st.columns(2)
-                with c3: login_prof = st.text_input("Login do Professor")
-                with c4: senha_prof = st.text_input("Senha do Professor", type="password")
+        with filter_col:
+            render_panel_intro(
+                "Filtros operacionais",
+                "Refine a base visível por nome, status ou turma vinculada antes de editar, revisar pendências ou consultar a lista.",
+                [("Busca", "rápida"), ("Status", "claro"), ("Turma", "associada")],
+            )
+            filter_c1, filter_c2, filter_c3 = st.columns([1.6, 1, 1], gap="medium")
+            with filter_c1:
+                prof_search = st.text_input("Buscar professor", placeholder="Nome, área, e-mail ou login", key="teachers_search")
+            with filter_c2:
+                prof_status_filter = st.selectbox(
+                    "Status operacional",
+                    ["Todos", "Com turmas", "Sem turmas", "Com login", "Sem login", "Sem contato"],
+                    key="teachers_status_filter",
+                )
+            with filter_c3:
+                turma_filter_options = ["Todas"] + sorted({
+                    str(c.get("nome", "")).strip()
+                    for c in classes_all
+                    if str(c.get("nome", "")).strip()
+                })
+                prof_turma_filter = st.selectbox("Turma vinculada", turma_filter_options, key="teachers_turma_filter")
 
-                n1, n2 = st.columns(2)
-                with n1:
-                    send_prof_email = st.checkbox(
-                        "Enviar mensagem por e-mail",
-                        value=True,
-                        key="add_prof_notify_email",
-                    )
-                with n2:
-                    send_prof_whatsapp = st.checkbox(
-                        "Enviar mensagem por WhatsApp",
-                        value=True,
-                        key="add_prof_notify_whatsapp",
-                    )
+        teacher_rows = []
+        for teacher in teachers_all:
+            teacher_name = str(teacher.get("nome", "")).strip()
+            teacher_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == teacher_name]
+            teacher_students = [
+                s for s in active_students
+                if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in teacher_classes}
+            ]
+            status_parts = ["Com turmas" if teacher_classes else "Sem turmas"]
+            status_parts.append("Com login" if str(teacher.get("usuario", "")).strip() else "Sem login")
+            if not any([str(teacher.get("email", "")).strip(), str(teacher.get("celular", "")).strip()]):
+                status_parts.append("Sem contato")
+            teacher_rows.append(
+                {
+                    "Professor": teacher_name or "-",
+                    "Área": str(teacher.get("area", "")).strip() or "-",
+                    "E-mail": str(teacher.get("email", "")).strip() or "-",
+                    "WhatsApp": str(teacher.get("celular", "")).strip() or "-",
+                    "Login": str(teacher.get("usuario", "")).strip() or "-",
+                    "Turmas": len(teacher_classes),
+                    "Alunos ativos": len(teacher_students),
+                    "Turmas vinculadas": ", ".join(str(c.get("nome", "")).strip() for c in teacher_classes) or "Nenhuma",
+                    "Status": " | ".join(status_parts),
+                }
+            )
 
-                if st.form_submit_button("Cadastrar"):
-                    if not _has_permission("teachers.create"):
-                        st.error("Sem permissão para cadastrar professores.")
-                        st.stop()
-                    if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                        st.error("ERRO: Para criar o login, informe usuário e senha.")
-                    elif login_prof and find_user(login_prof):
-                        st.error("ERRO: Este login já existe.")
-                    else:
-                        st.session_state["teachers"].append(
-                            {
-                                "nome": nome,
-                                "area": area,
-                                "email": email_prof.strip().lower(),
-                                "celular": celular_prof.strip(),
-                                "usuario": login_prof.strip(),
-                                "senha": senha_prof.strip(),
-                            }
-                        )
-                        save_list(TEACHERS_FILE, st.session_state["teachers"])
-                        if login_prof and senha_prof:
-                            st.session_state["users"].append(
-                                {
-                                    "usuario": login_prof.strip(),
-                                    "senha": senha_prof.strip(),
-                                    "perfil": "Professor",
-                                    "pessoa": nome,
-                                    "email": email_prof.strip().lower(),
-                                    "celular": celular_prof.strip(),
-                                }
-                            )
-                            save_users(st.session_state["users"])
-                        if wiz_event_enabled("on_teacher_created"):
-                            _notify_direct_contacts(
-                                nome or "Professor",
-                                [email_prof] if bool(send_prof_email) else [],
-                                [celular_prof] if bool(send_prof_whatsapp) else [],
-                                "[Active] Cadastro de professor concluído",
-                                "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
-                                "Cadastro Professor",
-                            )
-                        st.success("Cadastro realizado com sucesso!")
-        with tab2:
-            if not st.session_state["teachers"]:
-                st.info("Nenhum professor cadastrado.")
-            else:
-                prof_nomes = [t["nome"] for t in st.session_state["teachers"]]
-                prof_sel = st.selectbox("Selecione o Professor", prof_nomes)
-                prof_obj = next((t for t in st.session_state["teachers"] if t["nome"] == prof_sel), None)
-                if prof_obj:
-                    with st.form("edit_prof"):
-                        new_nome = st.text_input("Nome", value=prof_obj["nome"])
-                        new_area = st.text_input("Area", value=prof_obj.get("area", ""))
-                        ec1, ec2 = st.columns(2)
-                        with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
-                        with ec2: new_cel = st.text_input("Celular/WhatsApp", value=prof_obj.get("celular", ""))
+        def _teacher_row_matches(row):
+            search_norm = normalize_text(prof_search)
+            search_blob = normalize_text(
+                " ".join(
+                    [
+                        str(row.get("Professor", "")),
+                        str(row.get("Área", "")),
+                        str(row.get("E-mail", "")),
+                        str(row.get("WhatsApp", "")),
+                        str(row.get("Login", "")),
+                        str(row.get("Turmas vinculadas", "")),
+                        str(row.get("Status", "")),
+                    ]
+                )
+            )
+            if search_norm and search_norm not in search_blob:
+                return False
+            status_blob = str(row.get("Status", ""))
+            if prof_status_filter == "Com turmas" and "Com turmas" not in status_blob:
+                return False
+            if prof_status_filter == "Sem turmas" and "Sem turmas" not in status_blob:
+                return False
+            if prof_status_filter == "Com login" and "Com login" not in status_blob:
+                return False
+            if prof_status_filter == "Sem login" and "Sem login" not in status_blob:
+                return False
+            if prof_status_filter == "Sem contato" and "Sem contato" not in status_blob:
+                return False
+            if prof_turma_filter != "Todas":
+                turma_names = [item.strip() for item in str(row.get("Turmas vinculadas", "")).split(",")]
+                if prof_turma_filter not in turma_names:
+                    return False
+            return True
 
+        filtered_teacher_rows = [row for row in teacher_rows if _teacher_row_matches(row)]
+        filtered_teacher_names = [row["Professor"] for row in filtered_teacher_rows if row.get("Professor") and row.get("Professor") != "-"]
+        selected_teacher_name = st.selectbox(
+            "Professor em foco",
+            filtered_teacher_names if filtered_teacher_names else [""],
+            key="teachers_focus_name",
+        )
+        prof_obj = next((t for t in teachers_all if str(t.get("nome", "")).strip() == str(selected_teacher_name).strip()), None) if selected_teacher_name else None
+
+        body_left, body_right = st.columns([1.55, 1], gap="large")
+
+        with body_left:
+            if workspace == "Cadastro / edição":
+                render_panel_intro(
+                    "Cadastro e manutenção do professor",
+                    "Registre dados básicos, contato, login e status operacional em um fluxo mais claro para o administrativo.",
+                    [("Novo", "cadastro"), ("Editar", "rapidamente"), ("Excluir", "com segurança")],
+                )
+                create_col, edit_col = st.columns([1.05, 1.2], gap="large")
+                with create_col:
+                    st.markdown("#### Novo professor")
+                    with st.form("add_prof", clear_on_submit=True):
+                        c1, c2 = st.columns(2)
+                        with c1: nome = st.text_input("Nome completo")
+                        with c2: area = st.text_input("Área / especialidade")
+                        c_email, c_cel = st.columns(2)
+                        with c_email: email_prof = st.text_input("E-mail profissional")
+                        with c_cel: celular_prof = st.text_input("Celular / WhatsApp")
                         c3, c4 = st.columns(2)
-                        with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
-                        with c4: new_senha = st.text_input("Senha do Professor", value=prof_obj.get("senha", ""), type="password")
+                        with c3: login_prof = st.text_input("Login do professor")
+                        with c4: senha_prof = st.text_input("Senha do professor", type="password")
+                        n1, n2 = st.columns(2)
+                        with n1:
+                            send_prof_email = st.checkbox("Enviar credenciais por e-mail", value=True, key="add_prof_notify_email")
+                        with n2:
+                            send_prof_whatsapp = st.checkbox("Enviar aviso por WhatsApp", value=True, key="add_prof_notify_whatsapp")
 
-                        c_edit, c_del = st.columns([1, 1])
-                        with c_edit:
-                            if st.form_submit_button("Salvar Alterações"):
+                        if st.form_submit_button("Cadastrar professor", use_container_width=True):
+                            if not _has_permission("teachers.create"):
+                                st.error("Sem permissão para cadastrar professores.")
+                                st.stop()
+                            if (login_prof and not senha_prof) or (senha_prof and not login_prof):
+                                st.error("ERRO: Para criar o login, informe usuário e senha.")
+                            elif login_prof and find_user(login_prof):
+                                st.error("ERRO: Este login já existe.")
+                            else:
+                                st.session_state["teachers"].append(
+                                    {
+                                        "nome": nome,
+                                        "area": area,
+                                        "email": email_prof.strip().lower(),
+                                        "celular": celular_prof.strip(),
+                                        "usuario": login_prof.strip(),
+                                        "senha": senha_prof.strip(),
+                                    }
+                                )
+                                save_list(TEACHERS_FILE, st.session_state["teachers"])
+                                if login_prof and senha_prof:
+                                    st.session_state["users"].append(
+                                        {
+                                            "usuario": login_prof.strip(),
+                                            "senha": senha_prof.strip(),
+                                            "perfil": "Professor",
+                                            "pessoa": nome,
+                                            "email": email_prof.strip().lower(),
+                                            "celular": celular_prof.strip(),
+                                        }
+                                    )
+                                    save_users(st.session_state["users"])
+                                if wiz_event_enabled("on_teacher_created"):
+                                    _notify_direct_contacts(
+                                        nome or "Professor",
+                                        [email_prof] if bool(send_prof_email) else [],
+                                        [celular_prof] if bool(send_prof_whatsapp) else [],
+                                        "[Active] Cadastro de professor concluído",
+                                        "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
+                                        "Cadastro Professor",
+                                    )
+                                st.success("Cadastro realizado com sucesso!")
+                                st.rerun()
+
+                with edit_col:
+                    st.markdown("#### Gestão do professor selecionado")
+                    if not prof_obj:
+                        st.info("Use os filtros e selecione um professor para editar ou excluir.")
+                    else:
+                        linked_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip()]
+                        st.caption(f"Turmas vinculadas: {len(linked_classes)} | Login: {str(prof_obj.get('usuario', '')).strip() or 'não configurado'}")
+                        with st.form("edit_prof"):
+                            new_nome = st.text_input("Nome", value=prof_obj["nome"])
+                            new_area = st.text_input("Área", value=prof_obj.get("area", ""))
+                            ec1, ec2 = st.columns(2)
+                            with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
+                            with ec2: new_cel = st.text_input("Celular / WhatsApp", value=prof_obj.get("celular", ""))
+                            c3, c4 = st.columns(2)
+                            with c3: new_login = st.text_input("Login do professor", value=prof_obj.get("usuario", ""))
+                            with c4: new_senha = st.text_input("Senha do professor", value=prof_obj.get("senha", ""), type="password")
+                            c_edit, c_del = st.columns([1.15, 0.85])
+                            with c_edit:
+                                save_prof = st.form_submit_button("Salvar alterações", use_container_width=True)
+                            with c_del:
+                                delete_prof = st.form_submit_button("Excluir professor", type="primary", use_container_width=True)
+
+                            if save_prof:
                                 old_login = prof_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or prof_obj.get("senha", "")
-
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
                                     st.error("ERRO: Este login já existe.")
                                 else:
@@ -19338,6 +19473,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                             user_obj["senha"] = senha
                                             user_obj["perfil"] = "Professor"
                                             user_obj["pessoa"] = new_nome
+                                            user_obj["email"] = new_email.strip().lower()
+                                            user_obj["celular"] = new_cel.strip()
                                         else:
                                             st.session_state["users"].append(
                                                 {
@@ -19345,16 +19482,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                     "senha": senha,
                                                     "perfil": "Professor",
                                                     "pessoa": new_nome,
+                                                    "email": new_email.strip().lower(),
+                                                    "celular": new_cel.strip(),
                                                 }
                                             )
                                         save_users(st.session_state["users"])
-
                                     old_nome = prof_obj["nome"]
                                     for turma in st.session_state["classes"]:
                                         if str(turma.get("professor", "")).strip() == str(old_nome).strip():
                                             turma["professor"] = new_nome
                                     save_list(CLASSES_FILE, st.session_state["classes"])
-
                                     prof_obj["nome"] = new_nome
                                     prof_obj["area"] = new_area
                                     prof_obj["email"] = new_email.strip().lower()
@@ -19364,8 +19501,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     save_list(TEACHERS_FILE, st.session_state["teachers"])
                                     st.success("Professor atualizado!")
                                     st.rerun()
-                        with c_del:
-                            if st.form_submit_button("EXCLUIR PROFESSOR", type="primary"):
+
+                            if delete_prof:
                                 if not _has_permission("teachers.delete"):
                                     st.error("Sem permissão para excluir professores.")
                                     st.stop()
@@ -19375,18 +19512,147 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     if user_obj and user_obj.get("perfil") == "Professor":
                                         st.session_state["users"].remove(user_obj)
                                         save_users(st.session_state["users"])
-
                                 for turma in st.session_state["classes"]:
                                     if str(turma.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip():
                                         turma["professor"] = "Sem Professor"
                                 save_list(CLASSES_FILE, st.session_state["classes"])
-
                                 st.session_state["teachers"].remove(prof_obj)
                                 save_list(TEACHERS_FILE, st.session_state["teachers"])
                                 st.error("Professor excluído.")
                                 st.rerun()
 
+            elif workspace == "Turmas vinculadas":
+                render_panel_intro(
+                    "Vínculo com turmas",
+                    "Visualize alocação por docente, pendências de turma sem responsável e o impacto operacional em alunos ativos.",
+                    [("Turmas", "claras"), ("Pendências", "visíveis"), ("Alocação", "rápida")],
+                )
+                teacher_assignment_rows = []
+                for teacher in teachers_all:
+                    teacher_name = str(teacher.get("nome", "")).strip()
+                    linked_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == teacher_name]
+                    linked_students = [s for s in active_students if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in linked_classes}]
+                    teacher_assignment_rows.append(
+                        {
+                            "Professor": teacher_name or "-",
+                            "Área": str(teacher.get("area", "")).strip() or "-",
+                            "Turmas": len(linked_classes),
+                            "Lista de turmas": ", ".join(str(c.get("nome", "")).strip() for c in linked_classes) or "Nenhuma",
+                            "Alunos ativos": len(linked_students),
+                            "Status": "Alocado" if linked_classes else "Sem turma",
+                        }
+                    )
+                st.dataframe(pd.DataFrame(teacher_assignment_rows), use_container_width=True, hide_index=True)
+                if classes_without_teacher:
+                    st.warning("Existem turmas sem professor definido. Use Gestão de Turmas para concluir a alocação.")
+                    pending_rows = [{"Turma": str(c.get("nome", "")).strip() or "-", "Módulo": str(c.get("modulo", "")).strip() or "-", "Livro": str(c.get("livro", "")).strip() or "-", "Dias": str(c.get("dias", "")).strip() or "-"} for c in classes_without_teacher]
+                    st.dataframe(pd.DataFrame(pending_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.success("Todas as turmas cadastradas já possuem professor responsável.")
+
+            elif workspace == "Comunicação":
+                render_panel_intro(
+                    "Comunicação e avisos",
+                    "Acompanhe cobertura de contato do corpo docente e a prontidão para automações sem deixar essa área solta no layout.",
+                    [("E-mail", "cobertura"), ("WhatsApp", "prontidão"), ("Login", "acesso")],
+                )
+                teachers_with_email = sum(1 for t in teachers_all if str(t.get("email", "")).strip())
+                teachers_with_whatsapp = sum(1 for t in teachers_all if str(t.get("celular", "")).strip())
+                teachers_with_login = sum(1 for t in teachers_all if str(t.get("usuario", "")).strip())
+                comm_cols = st.columns(3)
+                for col, (label, value, subtitle) in zip(
+                    comm_cols,
+                    [
+                        ("Com e-mail", str(teachers_with_email), "aptos para notificações"),
+                        ("Com WhatsApp", str(teachers_with_whatsapp), "contato operacional"),
+                        ("Com login", str(teachers_with_login), "acesso configurado"),
+                    ],
+                ):
+                    with col:
+                        st.markdown(
+                            f"<div class='students-kpi'><div class='k'>{html.escape(label)}</div><div class='v'>{html.escape(value)}</div><div class='s'>{html.escape(subtitle)}</div></div>",
+                            unsafe_allow_html=True,
+                        )
+                communication_rows = [
+                    {
+                        "Professor": str(t.get("nome", "")).strip() or "-",
+                        "E-mail": str(t.get("email", "")).strip() or "-",
+                        "WhatsApp": str(t.get("celular", "")).strip() or "-",
+                        "Login": "Configurado" if str(t.get("usuario", "")).strip() else "Pendente",
+                        "Aviso automático no cadastro": "Ativo" if wiz_event_enabled("on_teacher_created") else "Desligado",
+                    }
+                    for t in teachers_all
+                ]
+                st.dataframe(pd.DataFrame(communication_rows), use_container_width=True, hide_index=True)
+                st.info("Os avisos automáticos são enviados no cadastro quando a automação correspondente está ativa. Para disparos adicionais, use o módulo de Mensagens.")
+
+            else:
+                render_panel_intro(
+                    "Lista operacional de professores",
+                    "Consulte a equipe docente com leitura rápida, melhor espaçamento e status mais claros para a rotina do administrativo.",
+                    [("Tabela", "premium"), ("Filtros", "ativos"), ("Leitura", "rápida")],
+                )
+                if filtered_teacher_rows:
+                    st.dataframe(pd.DataFrame(filtered_teacher_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum professor encontrado com os filtros atuais.")
+
+        with body_right:
+            render_panel_intro(
+                "Resumo executivo do professor",
+                "Valide rapidamente cadastro, vínculo com turmas e cobertura de contato antes de editar ou tomar uma decisão operacional.",
+                [("Resumo", "instantâneo"), ("Vínculo", "visível"), ("Pendências", "claras")],
+            )
+            if prof_obj:
+                selected_teacher_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip()]
+                selected_teacher_students = [s for s in active_students if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in selected_teacher_classes}]
+                summary_rows = [
+                    ("Professor", str(prof_obj.get("nome", "")).strip() or "-"),
+                    ("Área", str(prof_obj.get("area", "")).strip() or "-"),
+                    ("E-mail", str(prof_obj.get("email", "")).strip() or "-"),
+                    ("WhatsApp", str(prof_obj.get("celular", "")).strip() or "-"),
+                    ("Login", str(prof_obj.get("usuario", "")).strip() or "Não configurado"),
+                    ("Turmas vinculadas", str(len(selected_teacher_classes))),
+                    ("Alunos ativos", str(len(selected_teacher_students))),
+                    ("Status", "Com turmas" if selected_teacher_classes else "Sem turmas"),
+                ]
+                st.markdown(
+                    "<div class='teacher-admin-summary'>"
+                    + "".join(
+                        f"<div class='teacher-admin-summary-row'><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
+                        for label, value in summary_rows
+                    )
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if selected_teacher_classes:
+                    st.markdown("#### Turmas vinculadas")
+                    turma_summary_rows = [
+                        {
+                            "Turma": str(c.get("nome", "")).strip() or "-",
+                            "Módulo": str(c.get("modulo", "")).strip() or "-",
+                            "Livro": str(c.get("livro", "")).strip() or "-",
+                        }
+                        for c in selected_teacher_classes
+                    ]
+                    st.dataframe(pd.DataFrame(turma_summary_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.warning("Professor sem turma vinculada no momento.")
+            else:
+                st.info("Selecione um professor para abrir o resumo executivo, status e turmas associadas.")
+
+            st.markdown("#### Pendências do módulo")
+            st.markdown(
+                "<div class='teacher-admin-summary'>"
+                + f"<div class='teacher-admin-summary-row'><span>Turmas sem professor</span><strong>{len(classes_without_teacher)}</strong></div>"
+                + f"<div class='teacher-admin-summary-row'><span>Professores sem login</span><strong>{sum(1 for t in teachers_all if not str(t.get('usuario','')).strip())}</strong></div>"
+                + f"<div class='teacher-admin-summary-row'><span>Professores sem contato</span><strong>{sum(1 for t in teachers_all if not any([str(t.get('email','')).strip(), str(t.get('celular','')).strip()]))}</strong></div>"
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
     elif menu_coord == "Turmas":
+
         st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
         _require_permission("classes.view")
         render_section_hero(
