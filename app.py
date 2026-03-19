@@ -653,11 +653,50 @@ def get_logo_path():
     return None
 
 def render_sidebar_logo(logo_path):
-    if not logo_path:
-        return
-    col_left, col_logo, col_right = st.columns([1, 5, 1])
-    with col_logo:
-        st.image(str(logo_path), width=190)
+    st.markdown('<div class="sidebar-brand-shell">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-brand-kicker">Active Educacional</div>', unsafe_allow_html=True)
+    if logo_path:
+        col_left, col_logo, col_right = st.columns([0.8, 4.8, 0.8])
+        with col_logo:
+            st.image(str(logo_path), width=190)
+    st.markdown('<div class="sidebar-brand-sub">Plataforma de gestão acadêmica e operacional</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_name="", greeting=""):
+    nome = str(user_name or "").strip()
+    role_txt = str(role_name or "").strip() or "-"
+    profile_txt = str(profile_name or "").strip() or role_txt
+    unit_txt = str(unit_name or "").strip()
+    initial = (nome[:1] or role_txt[:1] or "A").upper()
+    greeting_html = f'<div class="sidebar-profile-greeting">{html.escape(str(greeting))}</div>' if str(greeting).strip() else ""
+    unit_html = (
+        '<div class="sidebar-profile-meta-row">'
+        '<span>Unidade</span>'
+        f'<strong>{html.escape(unit_txt)}</strong>'
+        '</div>'
+    ) if unit_txt else ""
+    st.markdown(
+        f"""
+        <div class="sidebar-profile-shell">
+            <div class="sidebar-profile-head">
+                <div class="sidebar-profile-avatar">{html.escape(initial)}</div>
+                <div class="sidebar-profile-copy">
+                    {greeting_html}
+                    <div class="sidebar-profile-name">{html.escape(nome or 'Usuário')}</div>
+                    <div class="sidebar-profile-role">{html.escape(role_txt)}</div>
+                </div>
+            </div>
+            <div class="sidebar-profile-meta">
+                <div class="sidebar-profile-meta-row">
+                    <span>Perfil</span>
+                    <strong>{html.escape(profile_txt)}</strong>
+                </div>
+                {unit_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def get_mister_wiz_logo_path():
     candidates = [
@@ -10229,6 +10268,49 @@ def _mark_student_messages_read(student_name, messages_list):
     save_list(STUDENTS_FILE, st.session_state.get("students", []))
     return len(new_ids)
 
+def _sidebar_grouped_options(title, options, key):
+    opts = [str(opt).strip() for opt in (options or []) if str(opt).strip()]
+    if not opts:
+        return []
+    if key == "menu_coord":
+        grouping = {
+            "Visão Geral": ["Dashboard", "Agenda", "Links Ao Vivo"],
+            "Acadêmico": ["Alunos", "Professores", "Turmas", "Relatório de Aulas", "Relatórios", "Notas", "Lições de Casa", "Desafios", "Biblioteca", "Certificados"],
+            "Operação": ["Usuários", "Permissões", "Financeiro", "Estoque", "Caixa de Entrada"],
+            "Especiais": ["ASSISTENTE WIZ", "Professor Wiz", "WhatsApp (Evolution)", "Backup", "Suporte"],
+        }
+    elif key == "menu_prof":
+        grouping = {
+            "Rotina": ["Minhas Turmas", "Agenda", "Mensagens"],
+            "Acadêmico": ["Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca"],
+            "Suporte": ["Professor Wiz", "Suporte"],
+        }
+    elif key == "menu_aluno":
+        grouping = {
+            "Visão Geral": ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens"],
+            "Aprendizado": ["Atividades", "Lições de Casa", "Desafios", "Aulas Gravadas", "Materiais de Estudo"],
+            "Serviços": ["Financeiro", "Professor Wiz", "Suporte"],
+        }
+    elif key == "menu_sales":
+        grouping = {
+            "Comercial": ["Leads", "Agenda Comercial", "Alunos Matriculados"],
+            "Financeiro": ["Financeiro Matricula"],
+            "Comunicação": ["WhatsApp Leads", "Professor Wiz", "Suporte"],
+        }
+    else:
+        grouping = {title or "Navegação": opts}
+    sections = []
+    used = set()
+    for group_label, group_items in grouping.items():
+        section_items = [item for item in group_items if item in opts and item not in used]
+        if section_items:
+            sections.append((group_label, section_items))
+            used.update(section_items)
+    leftovers = [item for item in opts if item not in used]
+    if leftovers:
+        sections.append(("Mais opções", leftovers))
+    return sections
+
 def sidebar_menu(title, options, key):
     icon_map = {
         "Dashboard": "🏠",
@@ -10260,25 +10342,52 @@ def sidebar_menu(title, options, key):
         "Backup": "🛟",
         "ASSISTENTE WIZ": "🤖",
         "Professor Wiz": "✨",
+        "Suporte": "🛠️",
+        "Leads": "🧲",
+        "Agenda Comercial": "🗓️",
+        "Financeiro Matricula": "💳",
+        "Alunos Matriculados": "🧾",
+        "WhatsApp Leads": "💬",
+        "Boletim e Frequencia": "📈",
+        "Lançar Notas": "🧮",
+        "Lancar Notas": "🧮",
     }
+    st.markdown('<div class="sidebar-nav-shell">', unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div class="sidebar-section-title">
-            <span class="sidebar-section-kicker">Painel</span>
-            <span class="sidebar-section-name">{title}</span>
+        <div class="sidebar-nav-header">
+            <span class="sidebar-section-kicker">Navegação</span>
+            <span class="sidebar-section-name">{html.escape(title)}</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
     if key not in st.session_state or st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
-    for option in options:
-        active = st.session_state[key] == option
-        icon = icon_map.get(str(option).strip(), "•")
-        option_label = f"{icon}  {option}"
-        if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
-            st.session_state[key] = option
-            st.rerun()
+    grouped_sections = _sidebar_grouped_options(title, options, key)
+    special_items = {"Desafios", "WhatsApp (Evolution)", "ASSISTENTE WIZ", "Backup", "Professor Wiz"}
+    for idx_section, (group_label, section_items) in enumerate(grouped_sections):
+        st.markdown(
+            f"""
+            <div class="sidebar-group-title">
+                <span>{html.escape(group_label)}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        for option in section_items:
+            active = st.session_state[key] == option
+            icon = icon_map.get(str(option).strip(), "•")
+            option_label = f"{icon}  {option}"
+            wrapper_class = "sidebar-nav-item-special" if option in special_items else "sidebar-nav-item"
+            st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
+            if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
+                st.session_state[key] = option
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        if idx_section != len(grouped_sections) - 1:
+            st.markdown('<div class="sidebar-group-divider"></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     return st.session_state[key]
 
 
@@ -13422,19 +13531,12 @@ def run_commercial_panel():
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        st.markdown(f"### {st.session_state.get('user_name', '')}")
-        st.markdown(
-            f"""
-<div class="profile-card">
-  <div class="profile-label">Tipo</div>
-  <div class="profile-value">{st.session_state.get('role', '')}</div>
-  <div class="profile-label">Perfil</div>
-  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
-</div>
-""",
-            unsafe_allow_html=True,
+        render_sidebar_profile_card(
+            st.session_state.get("user_name", ""),
+            role_name=st.session_state.get("role", ""),
+            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
+            greeting="Comercial",
         )
-        st.markdown("---")
         menu_sales_label = sidebar_menu(
             "Comercial",
             [
@@ -13448,7 +13550,6 @@ def run_commercial_panel():
             ],
             "menu_sales",
         )
-        st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"):
             logout_user()
@@ -14178,27 +14279,49 @@ else:
         :root { --sidebar-width: 324px; --sidebar-menu-btn-width: 286px; }
         section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
-        section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
+        section[data-testid="stSidebar"] { background-color: #eef4ff; border-right: 1px solid rgba(191, 211, 238, 0.75); box-shadow: 8px 0 34px rgba(15,23,42,0.08); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        .sidebar-section-title { display:flex; flex-direction:column; gap:2px; margin: 4px 0 12px; padding: 0 4px; }
-        .sidebar-section-kicker { font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.14em; color:#7a8ca8; }
+        .sidebar-section-kicker { font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.16em; color:#7a8ca8; }
         .sidebar-section-name { font-family:'Sora', sans-serif; font-size:1.05rem; font-weight:700; color:#1e3a8a; }
-        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(241,247,255,0.98) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 15px; transition: all 0.18s ease; margin-bottom: 8px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05); height: 44px !important; min-height: 44px !important; max-height: 44px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
-        section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
-        section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 44px !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 44px !important; }
-        .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
-        .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
-        .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
+        section[data-testid="stSidebar"] .stButton > button { position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.98) 100%); border: 1px solid rgba(203,218,241,0.92); color: #32475f; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 18px; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease; margin-bottom: 8px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; font-size: 0.95rem !important; }
+        section[data-testid="stSidebar"] .stButton > button:active { transform: translateY(0) scale(0.995) !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
+        .logout-btn .stButton > button { background: linear-gradient(180deg, #fff6f6 0%, #ffecec 100%) !important; border-color: #f4c7c7 !important; color: #991b1b !important; min-height: 46px !important; border-radius: 16px !important; box-shadow: 0 10px 20px rgba(153,27,27,0.08) !important; }
+        .logout-btn .stButton > button:hover { background: linear-gradient(180deg, #fff1f1 0%, #ffe2e2 100%) !important; border-color: #eba8a8 !important; color: #b91c1c !important; transform: translateY(-1px); }
+        .logout-btn .stButton > button:active { background: #ffe5e5 !important; border-color: #ef9a9a !important; color: #7f1d1d !important; }
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
         section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
-        .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
-        .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
-        .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
+        .sidebar-brand-shell { position: relative; margin: 0 0 18px; padding: 18px 18px 14px; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(241,247,255,0.96)); border: 1px solid rgba(191,211,238,0.7); box-shadow: 0 18px 42px rgba(15,23,42,0.08); overflow: hidden; }
+        .sidebar-brand-shell::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 56%, #ea580c 100%); opacity: 0.95; }
+        .sidebar-brand-kicker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; color: #5f728d; text-align: center; margin-bottom: 8px; }
+        .sidebar-brand-sub { margin-top: 10px; text-align: center; color: #61758f; font-size: 0.82rem; line-height: 1.5; }
+        .sidebar-profile-shell { margin: 0 0 18px; padding: 16px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(244,249,255,0.98)); border: 1px solid rgba(193,213,239,0.74); box-shadow: 0 16px 34px rgba(15,23,42,0.08); }
+        .sidebar-profile-head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+        .sidebar-profile-avatar { width: 48px; height: 48px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1e40af 0%, #0f766e 72%, #ea580c 100%); color: #fff; font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.15rem; box-shadow: 0 12px 24px rgba(30,64,175,0.22); }
+        .sidebar-profile-greeting { font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #7387a3; margin-bottom: 2px; }
+        .sidebar-profile-name { font-family: 'Sora', sans-serif; font-size: 1rem; font-weight: 700; color: #17326b; line-height: 1.25; }
+        .sidebar-profile-role { margin-top: 4px; color: #5f728d; font-size: 0.86rem; font-weight: 700; }
+        .sidebar-profile-meta { display: grid; gap: 8px; }
+        .sidebar-profile-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 14px; background: rgba(244,248,255,0.9); border: 1px solid rgba(219,231,246,0.9); }
+        .sidebar-profile-meta-row span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #7a8ca8; }
+        .sidebar-profile-meta-row strong { color: #17326b; font-size: 0.86rem; line-height: 1.35; text-align: right; }
+        .sidebar-inline-chip { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,0.92); border: 1px solid rgba(202,217,240,0.8); box-shadow: 0 10px 20px rgba(15,23,42,0.05); }
+        .sidebar-inline-chip span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #71859f; }
+        .sidebar-inline-chip strong { color: #17326b; font-size: 0.9rem; }
+        .sidebar-nav-shell { margin: 0 0 16px; padding: 16px 14px 12px; border-radius: 24px; background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(247,250,255,0.98) 100%); border: 1px solid rgba(198,215,240,0.72); box-shadow: 0 18px 38px rgba(15,23,42,0.07); }
+        .sidebar-nav-header { display:flex; flex-direction:column; gap:4px; margin: 0 0 10px; padding: 0 4px; }
+        .sidebar-group-title { padding: 10px 6px 6px; }
+        .sidebar-group-title span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #7a8ca8; }
+        .sidebar-group-divider { height: 1px; margin: 10px 4px 8px; background: linear-gradient(90deg, rgba(203,213,225,0), rgba(203,213,225,0.88), rgba(203,213,225,0)); }
+        .sidebar-nav-item-special .stButton > button { background: linear-gradient(180deg, rgba(245,249,255,0.98) 0%, rgba(238,246,255,0.98) 100%) !important; border-color: rgba(164,192,231,0.95) !important; }
+        .sidebar-nav-item-special .stButton > button:hover { border-color: #86aee8 !important; }
+        .logout-btn { margin-top: 12px; padding: 14px 14px 4px; border-top: 1px solid rgba(203,213,225,0.75); }
+        .profile-card, .profile-label, .profile-value, .sidebar-section-title { display:none !important; }
         .dash-card { background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,251,255,0.98) 100%); padding: 22px; border-radius: 18px; border: 1px solid #dbe7f6; box-shadow: 0 12px 28px rgba(15,23,42,0.06); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow:hidden; }
         .dash-card:before { content:""; position:absolute; inset:0 auto auto 0; width:100%; height:4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 55%, #ea580c 100%); opacity:.88; }
         .dash-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15,23,42,0.1); border-color: #c7d7ee; }
@@ -14357,9 +14480,14 @@ else:
         }
         section[data-testid="stSidebar"] > div {
             background:
-                linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(244,249,255,0.96) 100%) !important;
-            backdrop-filter: blur(6px);
+                radial-gradient(460px 220px at 15% 0%, rgba(37,99,235,0.14), transparent 65%),
+                linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,249,255,0.98) 100%) !important;
+            backdrop-filter: blur(8px);
         }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { scrollbar-width: thin; scrollbar-color: rgba(59,130,246,0.35) transparent; }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar { width: 8px; }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar-track { background: transparent; }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(37,99,235,0.28), rgba(15,118,110,0.28)); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
         section[data-testid="stSidebar"] hr {
             border-color: rgba(148,163,184,0.28) !important;
         }
@@ -14586,6 +14714,10 @@ else:
             .challenge-preview-card,
             .challenge-collection-card,
             .challenge-metric-card { border-radius: 18px; }
+            .sidebar-brand-shell,
+            .sidebar-profile-shell,
+            .sidebar-nav-shell { border-radius: 18px; }
+            .sidebar-profile-head { align-items: flex-start; }
             section[data-testid="stSidebar"] {
                 position: relative !important;
                 min-width: 100vw !important;
@@ -14828,26 +14960,27 @@ elif st.session_state["role"] == "Aluno":
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        st.markdown(f"### Olá, {st.session_state['user_name']}")
-        if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
-        st.markdown(
-            f"""
-<div class="profile-card">
-  <div class="profile-label">Tipo</div>
-  <div class="profile-value">{st.session_state.get('role', '')}</div>
-  <div class="profile-label">Perfil</div>
-  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
-</div>
-""",
-            unsafe_allow_html=True,
+        render_sidebar_profile_card(
+            st.session_state.get("user_name", ""),
+            role_name=st.session_state.get("role", ""),
+            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
+            unit_name=st.session_state.get("unit", ""),
+            greeting="Olá,",
         )
         aluno_sidebar_obj = next(
             (s for s in st.session_state.get("students", []) if s.get("nome") == st.session_state.get("user_name", "")),
             {},
         )
         nivel_aluno_sidebar = student_book_level(aluno_sidebar_obj) or "Sem nivel definido"
-        st.info(f"Nível: {nivel_aluno_sidebar}")
-        st.markdown("---")
+        st.markdown(
+            f"""
+            <div class="sidebar-inline-chip">
+                <span>Nível</span>
+                <strong>{html.escape(str(nivel_aluno_sidebar))}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         menu_aluno_label = sidebar_menu(
             "Navegacao",
             [
@@ -14867,7 +15000,6 @@ elif st.session_state["role"] == "Aluno":
             ],
             "menu_aluno",
         )
-        st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -15523,25 +15655,17 @@ elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        st.markdown(f"### {st.session_state['user_name']}")
-        st.markdown(
-            f"""
-<div class="profile-card">
-  <div class="profile-label">Tipo</div>
-  <div class="profile-value">{st.session_state.get('role', '')}</div>
-  <div class="profile-label">Perfil</div>
-  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
-</div>
-""",
-            unsafe_allow_html=True,
+        render_sidebar_profile_card(
+            st.session_state.get("user_name", ""),
+            role_name=st.session_state.get("role", ""),
+            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
+            greeting="Professor",
         )
-        st.markdown("---")
         menu_prof_label = sidebar_menu(
             "Gestão",
             ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz", "Suporte"],
             "menu_prof",
         )
-        st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -16730,19 +16854,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        st.markdown(f"### {st.session_state['user_name']}")
-        st.markdown(
-            f"""
-<div class="profile-card">
-  <div class="profile-label">Tipo</div>
-  <div class="profile-value">{st.session_state.get('role', '')}</div>
-  <div class="profile-label">Perfil</div>
-  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
-</div>
-""",
-            unsafe_allow_html=True,
+        render_sidebar_profile_card(
+            st.session_state.get("user_name", ""),
+            role_name=st.session_state.get("role", ""),
+            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
+            greeting="Coordenação",
         )
-        st.markdown("---")
         coord_menu_options = [
             "Dashboard",
             "Agenda",
@@ -16812,7 +16929,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         filtered_options.append(item)
             coord_menu_options = filtered_options
         menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
-        st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
         st.markdown('</div>', unsafe_allow_html=True)
