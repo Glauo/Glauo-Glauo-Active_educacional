@@ -10307,6 +10307,118 @@ def render_panel_intro(title, description="", stats=None):
         unsafe_allow_html=True,
     )
 
+def _challenge_tone_palette(tone="blue"):
+    palettes = {
+        "blue": ("#1d4ed8", "#eff6ff", "#dbeafe"),
+        "green": ("#059669", "#ecfdf5", "#d1fae5"),
+        "orange": ("#ea580c", "#fff7ed", "#fed7aa"),
+        "slate": ("#334155", "#f8fafc", "#e2e8f0"),
+        "rose": ("#e11d48", "#fff1f2", "#fecdd3"),
+    }
+    return palettes.get(tone, palettes["blue"])
+
+def render_challenges_top_banner(title, subtitle="", week_label="", metrics=None):
+    chips = []
+    if week_label:
+        chips.append(f"Semana {week_label}")
+    render_section_hero(title, subtitle, chips=chips)
+    cards = metrics or []
+    if not cards:
+        return
+    blocks = []
+    for item in cards:
+        tone = str((item or {}).get("tone", "blue")).strip().lower() or "blue"
+        accent, bg, border = _challenge_tone_palette(tone)
+        blocks.append(
+            (
+                f'<div class="challenge-metric-card" style="background:{bg};border:1px solid {border};">'
+                f'<div class="challenge-metric-label" style="color:{accent};">{html.escape(str(item.get("label", "")))}</div>'
+                f'<div class="challenge-metric-value">{html.escape(str(item.get("value", "-")))}</div>'
+                f'<div class="challenge-metric-sub">{html.escape(str(item.get("sub", "")))}</div>'
+                '</div>'
+            )
+        )
+    st.markdown(
+        '<div class="challenge-metric-grid">' + "".join(blocks) + '</div>',
+        unsafe_allow_html=True,
+    )
+
+def render_challenge_preview_card(title, descricao, rubrica, dica, meta_rows=None, title_color="#1e3a8a", description_color="#111827", title_bold=False, description_bold=False):
+    meta_rows = meta_rows or []
+    meta_html = "".join(
+        (
+            '<div class="challenge-preview-meta-item">'
+            f'<span>{html.escape(str(label))}</span>'
+            f'<strong>{html.escape(str(value))}</strong>'
+            '</div>'
+        )
+        for label, value in meta_rows
+    )
+    rubrica_html = (
+        '<div class="challenge-preview-block">'
+        '<div class="challenge-preview-kicker">Rubrica</div>'
+        f'<div>{html.escape(str(rubrica or "-"))}</div>'
+        '</div>'
+    )
+    dica_html = (
+        '<div class="challenge-preview-block">'
+        '<div class="challenge-preview-kicker">Dica</div>'
+        f'<div>{html.escape(str(dica or "-"))}</div>'
+        '</div>'
+    )
+    st.markdown(
+        (
+            '<div class="challenge-preview-card">'
+            '<div class="challenge-preview-head">'
+            '<div>'
+            '<div class="challenge-preview-kicker">Pré-visualização do desafio</div>'
+            f'<div class="challenge-preview-title" style="color:{html.escape(str(title_color))};font-weight:{"800" if title_bold else "700"};">{html.escape(str(title or "Titulo do desafio"))}</div>'
+            '</div>'
+            '</div>'
+            f'<div class="challenge-preview-description" style="color:{html.escape(str(description_color))};font-weight:{"700" if description_bold else "500"};">{html.escape(str(descricao or "Descricao do desafio")).replace(chr(10), "<br>")}</div>'
+            '<div class="challenge-preview-grid">'
+            + rubrica_html
+            + dica_html +
+            '</div>'
+            '<div class="challenge-preview-meta">'
+            + meta_html +
+            '</div>'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+def render_challenge_collection_card(title, subtitle="", items=None, empty_text="Sem itens.", tone="blue"):
+    items = items or []
+    accent, bg, border = _challenge_tone_palette(tone)
+    if not items:
+        body_html = f'<div class="challenge-empty">{html.escape(str(empty_text))}</div>'
+    else:
+        body_html = ""
+        for item in items:
+            badge = str((item or {}).get("badge", "")).strip()
+            body_html += (
+                '<div class="challenge-collection-item">'
+                '<div class="challenge-collection-main">'
+                f'<div class="challenge-collection-title">{html.escape(str(item.get("title", "-")))}</div>'
+                f'<div class="challenge-collection-meta">{html.escape(str(item.get("meta", "")))}</div>'
+                '</div>'
+                + (
+                    f'<span class="challenge-collection-badge" style="color:{accent};background:{bg};border:1px solid {border};">{html.escape(badge)}</span>'
+                    if badge else ""
+                )
+                + '</div>'
+            )
+    st.markdown(
+        (
+            '<div class="challenge-collection-card">'
+            f'<div class="challenge-collection-header"><div><h4>{html.escape(str(title))}</h4><p>{html.escape(str(subtitle))}</p></div></div>'
+            f'{body_html}'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
 STUDENT_IMPORT_COLUMNS = [
     "nome",
     "matricula",
@@ -14081,6 +14193,32 @@ else:
         .section-hero p { margin:0; color:rgba(255,255,255,0.88); line-height:1.55; }
         .section-hero-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
         .section-hero-chip { display:inline-flex; align-items:center; padding:8px 11px; border-radius:999px; background:rgba(255,255,255,0.16); border:1px solid rgba(255,255,255,0.18); font-size:.82rem; font-weight:700; white-space:nowrap; }
+        .challenge-metric-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin:0 0 18px; }
+        .challenge-metric-card { border-radius:20px; padding:16px 18px; box-shadow:0 14px 28px rgba(15,23,42,0.05); }
+        .challenge-metric-label { font-size:.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
+        .challenge-metric-value { font-family:'Sora', sans-serif; font-size:1.55rem; font-weight:800; color:#0f172a; line-height:1; }
+        .challenge-metric-sub { margin-top:8px; font-size:.86rem; color:#5f728d; line-height:1.45; }
+        .challenge-preview-card { background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); border:1px solid rgba(148,163,184,.2); border-radius:24px; padding:22px; box-shadow:0 18px 38px rgba(15,23,42,.06); margin:10px 0 16px; }
+        .challenge-preview-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:14px; }
+        .challenge-preview-kicker { font-size:.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#5f728d; margin-bottom:8px; }
+        .challenge-preview-title { font-family:'Sora', sans-serif; font-size:1.4rem; line-height:1.2; }
+        .challenge-preview-description { font-size:1rem; line-height:1.7; margin-bottom:16px; }
+        .challenge-preview-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-bottom:14px; }
+        .challenge-preview-block { background:#f8fbff; border:1px solid rgba(148,163,184,.16); border-radius:18px; padding:14px 16px; color:#102a54; line-height:1.6; }
+        .challenge-preview-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+        .challenge-preview-meta-item { background:#fff; border:1px solid rgba(148,163,184,.14); border-radius:14px; padding:12px 14px; }
+        .challenge-preview-meta-item span { display:block; font-size:.74rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#71859f; margin-bottom:6px; }
+        .challenge-preview-meta-item strong { color:#102a54; font-size:.96rem; line-height:1.45; }
+        .challenge-collection-card { background:linear-gradient(180deg,#ffffff 0%,#f9fbff 100%); border:1px solid rgba(148,163,184,.2); border-radius:22px; padding:18px 18px 14px; box-shadow:0 16px 32px rgba(15,23,42,.05); margin:0 0 14px; }
+        .challenge-collection-header h4 { margin:0; font-family:'Sora', sans-serif; font-size:1rem; color:#102a54; }
+        .challenge-collection-header p { margin:6px 0 0; font-size:.88rem; color:#64748b; line-height:1.5; }
+        .challenge-collection-item { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:12px 0; border-top:1px solid rgba(226,232,240,.8); }
+        .challenge-collection-item:first-of-type { border-top:none; padding-top:16px; }
+        .challenge-collection-main { min-width:0; }
+        .challenge-collection-title { font-weight:800; color:#102a54; line-height:1.4; }
+        .challenge-collection-meta { margin-top:4px; color:#64748b; font-size:.86rem; line-height:1.5; }
+        .challenge-collection-badge { display:inline-flex; align-items:center; white-space:nowrap; border-radius:999px; padding:6px 10px; font-size:.76rem; font-weight:800; }
+        .challenge-empty { margin-top:16px; border:1px dashed rgba(148,163,184,.34); border-radius:16px; padding:14px 16px; color:#64748b; background:#fcfdff; }
         .panel-intro { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%); border:1px solid var(--active-border); border-radius:20px; padding:18px 20px; box-shadow:0 12px 28px rgba(15,23,42,0.05); margin: 0 0 16px; }
         .panel-intro-header h3 { margin:0 0 6px; font-family:'Sora', sans-serif; font-size:1.12rem; color:#17326b; }
         .panel-intro-header p { margin:0; color:#60738f; line-height:1.55; }
@@ -14424,6 +14562,9 @@ else:
             div[data-testid="stForm"] { padding: 16px !important; }
             .dash-card { padding: 16px; border-radius: 14px; }
             .card-value { font-size: 1.45rem; }
+            .challenge-preview-card,
+            .challenge-collection-card,
+            .challenge-metric-card { border-radius: 18px; }
             section[data-testid="stSidebar"] {
                 position: relative !important;
                 min-width: 100vw !important;
