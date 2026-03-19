@@ -10352,7 +10352,6 @@ def sidebar_menu(title, options, key):
         "Lançar Notas": "🧮",
         "Lancar Notas": "🧮",
     }
-    st.markdown('<div class="sidebar-nav-shell">', unsafe_allow_html=True)
     st.markdown(
         f"""
         <div class="sidebar-nav-header">
@@ -10379,15 +10378,11 @@ def sidebar_menu(title, options, key):
             active = st.session_state[key] == option
             icon = icon_map.get(str(option).strip(), "•")
             option_label = f"{icon}  {option}"
-            wrapper_class = "sidebar-nav-item-special" if option in special_items else "sidebar-nav-item"
-            st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
             if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
                 st.session_state[key] = option
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
         if idx_section != len(grouped_sections) - 1:
             st.markdown('<div class="sidebar-group-divider"></div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
     return st.session_state[key]
 
 
@@ -14283,7 +14278,7 @@ else:
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
         .sidebar-section-kicker { font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.16em; color:#7a8ca8; }
         .sidebar-section-name { font-family:'Sora', sans-serif; font-size:1.05rem; font-weight:700; color:#1e3a8a; }
-        section[data-testid="stSidebar"] .stButton > button { position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.98) 100%); border: 1px solid rgba(203,218,241,0.92); color: #32475f; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 18px; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease; margin-bottom: 8px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        section[data-testid="stSidebar"] .stButton > button { position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.98) 100%); border: 1px solid rgba(203,218,241,0.92); color: #32475f; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 18px; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease; margin-bottom: 4px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; font-size: 0.95rem !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: translateY(0) scale(0.995) !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
@@ -14313,11 +14308,11 @@ else:
         .sidebar-inline-chip { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,0.92); border: 1px solid rgba(202,217,240,0.8); box-shadow: 0 10px 20px rgba(15,23,42,0.05); }
         .sidebar-inline-chip span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #71859f; }
         .sidebar-inline-chip strong { color: #17326b; font-size: 0.9rem; }
-        .sidebar-nav-shell { margin: 0 0 16px; padding: 16px 14px 12px; border-radius: 24px; background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(247,250,255,0.98) 100%); border: 1px solid rgba(198,215,240,0.72); box-shadow: 0 18px 38px rgba(15,23,42,0.07); }
-        .sidebar-nav-header { display:flex; flex-direction:column; gap:4px; margin: 0 0 10px; padding: 0 4px; }
-        .sidebar-group-title { padding: 10px 6px 6px; }
+        .sidebar-nav-shell { margin: 0 0 12px; padding: 14px 14px 10px; border-radius: 24px; background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(247,250,255,0.98) 100%); border: 1px solid rgba(198,215,240,0.72); box-shadow: 0 18px 38px rgba(15,23,42,0.07); }
+        .sidebar-nav-header { display:flex; flex-direction:column; gap:4px; margin: 0 0 6px; padding: 0 4px; }
+        .sidebar-group-title { padding: 6px 6px 4px; }
         .sidebar-group-title span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #7a8ca8; }
-        .sidebar-group-divider { height: 1px; margin: 10px 4px 8px; background: linear-gradient(90deg, rgba(203,213,225,0), rgba(203,213,225,0.88), rgba(203,213,225,0)); }
+        .sidebar-group-divider { height: 1px; margin: 6px 4px 4px; background: linear-gradient(90deg, rgba(203,213,225,0), rgba(203,213,225,0.88), rgba(203,213,225,0)); }
         .sidebar-nav-item-special .stButton > button { background: linear-gradient(180deg, rgba(245,249,255,0.98) 0%, rgba(238,246,255,0.98) 100%) !important; border-color: rgba(164,192,231,0.95) !important; }
         .sidebar-nav-item-special .stButton > button:hover { border-color: #86aee8 !important; }
         .logout-btn { margin-top: 12px; padding: 14px 14px 4px; border-top: 1px solid rgba(203,213,225,0.75); }
