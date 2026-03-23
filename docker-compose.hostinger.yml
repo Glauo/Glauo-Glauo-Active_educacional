@@ -35,10 +35,6 @@ services:
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     volumes:
       - ./data:/app/data
-
-volumes:
-  caddy_data:
-  caddy_config:
   wizbot:
     build: .
     restart: unless-stopped
@@ -60,3 +56,7 @@ volumes:
       WIZ_WEBHOOK_PORT: 8787
     volumes:
       - ./data:/app/data
+
+volumes:
+  caddy_data:
+  caddy_config:
