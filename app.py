@@ -16980,6 +16980,307 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 ]
                 st.dataframe(pd.DataFrame(supplier_items), use_container_width=True)
 
+        def _finance_metric_card(title, value, subtitle="", tone="blue"):
+            tone_map = {
+                "blue": ("#1d4ed8", "#eff6ff"),
+                "green": ("#059669", "#ecfdf5"),
+                "orange": ("#ea580c", "#fff7ed"),
+                "red": ("#dc2626", "#fef2f2"),
+                "slate": ("#334155", "#f8fafc"),
+            }
+            accent, bg = tone_map.get(tone, tone_map["blue"])
+            st.markdown(
+                (
+                    f'<div style="background:{bg};border:1px solid rgba(148,163,184,.18);border-radius:18px;'
+                    f'padding:18px 18px 16px;box-shadow:0 12px 30px rgba(15,23,42,.06);height:100%;">'
+                    f'<div style="font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:{accent};">{title}</div>'
+                    f'<div style="margin-top:10px;font-size:2rem;font-weight:800;color:#0f172a;line-height:1.05;">{value}</div>'
+                    f'<div style="margin-top:8px;color:#64748b;font-size:.9rem;line-height:1.4;">{subtitle}</div>'
+                    f'</div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        def _finance_section_intro(title, description, chip=None):
+            chip_html = (
+                f'<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;'
+                f'background:rgba(255,255,255,.72);border:1px solid rgba(148,163,184,.22);color:#1e3a8a;'
+                f'font-size:.78rem;font-weight:800;letter-spacing:.04em;">{chip}</span>'
+                if chip
+                else ""
+            )
+            st.markdown(
+                (
+                    '<div style="background:linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(248,250,252,.92) 100%);'
+                    'border:1px solid rgba(148,163,184,.16);border-radius:22px;padding:18px 20px;'
+                    'box-shadow:0 14px 34px rgba(15,23,42,.06);margin:10px 0 16px;">'
+                    '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+                    f'<div><div style="font-size:1.35rem;font-weight:800;color:#0f172a;">{title}</div>'
+                    f'<div style="margin-top:6px;color:#64748b;font-size:.96rem;line-height:1.55;">{description}</div></div>'
+                    f'{chip_html}'
+                    '</div></div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        receivables_all = list(st.session_state.get("receivables", []) or [])
+        payables_all = list(st.session_state.get("payables", []) or [])
+        sales_payments_all = list(st.session_state.get("sales_payments", []) or [])
+        today_fin = datetime.date.today()
+        month_start_fin = today_fin.replace(day=1)
+        month_end_fin = add_months(month_start_fin, 1) - datetime.timedelta(days=1)
+
+        def _receivable_amount(item):
+            return parse_money(item.get("valor_parcela", item.get("valor", 0)))
+
+        def _payable_amount(item):
+            return parse_money(item.get("valor_parcela", item.get("valor", 0)))
+
+        def _student_profile_by_name(student_name):
+            student_name = str(student_name or "").strip()
+            if not student_name:
+                return {}
+            return next(
+                (
+                    s for s in st.session_state.get("students", [])
+                    if str(s.get("nome", "")).strip() == student_name
+                ),
+                {},
+            ) or {}
+
+        def _student_financial_account_panel():
+            student_names = sorted(
+                {
+                    str(r.get("aluno", "")).strip()
+                    for r in st.session_state.get("receivables", [])
+                    if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                    and str(r.get("aluno", "")).strip()
+                }
+            )
+            if not student_names:
+                st.info("Nenhum aluno com lançamentos financeiros encontrado.")
+                return
+
+            if st.session_state.get("finance_student_account_name") not in student_names:
+                st.session_state["finance_student_account_name"] = student_names[0]
+
+            st.markdown("### Conta do aluno")
+            account_col, meta_col = st.columns([1.4, 1])
+            with account_col:
+                selected_student = st.selectbox(
+                    "Aluno",
+                    student_names,
+                    key="finance_student_account_name",
+                )
+            student_obj = _student_profile_by_name(selected_student)
+            student_receivables = [
+                r for r in st.session_state.get("receivables", [])
+                if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                and str(r.get("aluno", "")).strip() == selected_student
+            ]
+            open_student_items = [
+                r for r in student_receivables
+                if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+            ]
+            overdue_student_items = [
+                r for r in _financial_overdue_items(student_receivables, date_field="vencimento")
+                if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+            ]
+            with meta_col:
+                st.caption("Resumo do aluno")
+                st.markdown(
+                    f"**Turma:** {str(student_obj.get('turma', '')).strip() or 'Não informada'}  \n"
+                    f"**Responsável:** {str(((student_obj.get('responsavel', {}) or {}).get('nome', ''))).strip() or 'Não informado'}"
+                )
+
+            af1, af2, af3 = st.columns(3)
+            with af1:
+                _finance_metric_card(
+                    "A pagar",
+                    format_money(sum(_receivable_amount(r) for r in open_student_items)),
+                    f"{len(open_student_items)} lançamento(s) em aberto",
+                    tone="blue",
+                )
+            with af2:
+                _finance_metric_card(
+                    "Vencidas",
+                    format_money(sum(_receivable_amount(r) for r in overdue_student_items)),
+                    f"{len(overdue_student_items)} cobrança(s) atrasada(s)",
+                    tone="red",
+                )
+            with af3:
+                _finance_metric_card(
+                    "Todas",
+                    format_money(sum(_receivable_amount(r) for r in student_receivables)),
+                    f"{len(student_receivables)} lançamento(s) no histórico",
+                    tone="green",
+                )
+
+            tab_open, tab_overdue, tab_all = st.tabs(["A pagar", "Vencidas", "Todas"])
+
+            def _render_student_receivable_cards(items, scope_key):
+                if not items:
+                    st.info("Nenhum lançamento neste filtro.")
+                    return
+                sorted_items = sorted(
+                    items,
+                    key=lambda item: parse_date(item.get("vencimento", "")) or datetime.date.max,
+                )
+                for idx_item, rec_obj in enumerate(sorted_items):
+                    status_txt = str(rec_obj.get("status", "")).strip() or "Aberto"
+                    due_txt = str(rec_obj.get("vencimento", "")).strip()
+                    desc_txt = str(rec_obj.get("descricao", "")).strip() or "Cobrança"
+                    amount_txt = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
+                    code_txt = str(rec_obj.get("codigo", "")).strip()
+                    with st.expander(
+                        f"{desc_txt} | Venc. {due_txt or '-'} | R$ {amount_txt or '0,00'} | {status_txt}",
+                        expanded=False,
+                    ):
+                        info1, info2, info3, info4 = st.columns(4)
+                        info1.metric("Tipo", str(rec_obj.get("categoria", "")).strip() or "-")
+                        info2.metric("Parcela", str(rec_obj.get("parcela", "")).strip() or "-")
+                        info3.metric("Cobrança", str(rec_obj.get("cobranca", "")).strip() or "-")
+                        info4.metric("Código", code_txt or "-")
+                        st.caption(
+                            f"Boleto: {str(rec_obj.get('boleto_status', '')).strip() or 'Nao gerado'}"
+                        )
+                        action1, action2, action3, action4 = st.columns(4)
+                        if action1.button(
+                            "Dar baixa",
+                            key=f"student_fin_mark_paid_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                            disabled=str(rec_obj.get("status", "")).strip().lower() == "pago",
+                        ):
+                            rec_obj["status"] = "Pago"
+                            hoje_txt = datetime.date.today().strftime("%d/%m/%Y")
+                            rec_obj["baixa_data"] = hoje_txt
+                            rec_obj["data_pagamento"] = hoje_txt
+                            rec_obj["baixa_tipo"] = "Painel do aluno"
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.success("Baixa realizada.")
+                            st.rerun()
+                        if action2.button(
+                            "Enviar cobrança",
+                            key=f"student_fin_send_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                        ):
+                            ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                            if ok_send:
+                                st.success(
+                                    f"Cobrança enviada. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                    f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                                )
+                            else:
+                                st.error(f"Falha ao enviar cobrança: {status_send}.")
+                        if action3.button(
+                            "Excluir",
+                            key=f"student_fin_delete_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            current_receivables = st.session_state.get("receivables", [])
+                            if rec_obj in current_receivables:
+                                current_receivables.remove(rec_obj)
+                                save_list(RECEIVABLES_FILE, current_receivables)
+                                st.success("Cobrança excluída.")
+                                st.rerun()
+                            st.error("Não foi possível localizar a cobrança para excluir.")
+                        if action4.button(
+                            "Editar cobrança",
+                            key=f"student_fin_edit_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                        ):
+                            selected_idx = next(
+                                (
+                                    idx_ref for idx_ref, obj_ref in enumerate(st.session_state.get("receivables", []))
+                                    if obj_ref is rec_obj
+                                ),
+                                None,
+                            )
+                            if selected_idx is not None:
+                                st.session_state["finance_receber_menu"] = "Gerenciamento de Recebimentos"
+                                st.session_state["manage_rec_idx"] = selected_idx
+                                st.rerun()
+                            st.error("Não foi possível abrir esta cobrança para edição.")
+                        if rec_obj.get("boleto_url"):
+                            st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
+                        if rec_obj.get("boleto_linha_digitavel"):
+                            st.code(str(rec_obj.get("boleto_linha_digitavel")).strip(), language="text")
+
+            with tab_open:
+                _render_student_receivable_cards(open_student_items, "open")
+            with tab_overdue:
+                _render_student_receivable_cards(overdue_student_items, "overdue")
+            with tab_all:
+                _render_student_receivable_cards(student_receivables, "all")
+
+        open_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
+        paid_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() == "pago"]
+        overdue_receivables_all = _financial_overdue_items(receivables_all, date_field="vencimento")
+        open_student_receivables = [r for r in open_receivables if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"]
+        open_payables = [p for p in payables_all if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
+        paid_payables = [p for p in payables_all if str(p.get("status", "")).strip().lower() == "pago"]
+        professor_payables = [p for p in payables_all if str(p.get("categoria_lancamento", "")).strip().lower() == "professor"]
+        professor_payables_open = [p for p in professor_payables if str(p.get("status", "")).strip().lower() != "pago"]
+
+        total_received_month = sum(
+            _receivable_amount(r)
+            for r in paid_receivables
+            if month_start_fin <= (parse_date(r.get("data_pagamento", "")) or parse_date(r.get("data", "")) or today_fin) <= month_end_fin
+        )
+        total_to_receive = sum(_receivable_amount(r) for r in open_receivables)
+        total_overdue = sum(_receivable_amount(r) for r in overdue_receivables_all)
+        mensalidades_abertas = [r for r in open_student_receivables if normalize_text(r.get("categoria", "")) == "mensalidade"]
+        matriculas_pendentes = [r for r in open_student_receivables if normalize_text(r.get("categoria", "")) in {"taxa de matricula", "matricula"}]
+        rematriculas_pendentes = [r for r in open_student_receivables if "rematricula" in normalize_text(r.get("categoria", ""))]
+        materiais_pendentes = [r for r in open_student_receivables if "material" in normalize_text(r.get("categoria", ""))]
+        pagamentos_professores_pend = sum(_payable_amount(p) for p in professor_payables_open)
+
+        finance_sections = [
+            "Visão Geral",
+            "Recebimentos",
+            "Professores",
+            "Recibos",
+            "Cobrança e Inadimplência",
+            "Relatórios",
+            "Configurações",
+        ]
+        if st.session_state.get("finance_workspace_menu") not in finance_sections:
+            st.session_state["finance_workspace_menu"] = "Visão Geral"
+        st.markdown(
+            (
+                '<div style="background:linear-gradient(135deg, rgba(30,64,175,.98) 0%, rgba(15,118,110,.94) 55%, rgba(234,88,12,.90) 100%);'
+                'border-radius:24px;padding:20px 22px;color:#fff;box-shadow:0 20px 46px rgba(30,64,175,.20);margin:0 0 18px;">'
+                '<div style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;opacity:.85;">Financeiro escolar</div>'
+                '<div style="font-size:1.85rem;font-weight:800;margin-top:6px;">Controle financeiro premium da escola</div>'
+                '<div style="margin-top:8px;font-size:1rem;line-height:1.6;opacity:.92;">Mensalidades, materiais, matrículas, professores, recibos e inadimplência em um fluxo mais claro.</div>'
+                '</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        ws_cols_top = st.columns(4)
+        ws_cols_bottom = st.columns(3)
+        workspace_layout = [
+            (ws_cols_top[0], finance_sections[0], 0),
+            (ws_cols_top[1], finance_sections[1], 1),
+            (ws_cols_top[2], finance_sections[2], 2),
+            (ws_cols_top[3], finance_sections[3], 3),
+            (ws_cols_bottom[0], finance_sections[4], 4),
+            (ws_cols_bottom[1], finance_sections[5], 5),
+            (ws_cols_bottom[2], finance_sections[6], 6),
+        ]
+        for col_ref, option, idx_option in workspace_layout:
+            selected = str(st.session_state.get("finance_workspace_menu", "")) == option
+            if col_ref.button(
+                option,
+                key=f"finance_workspace_box_{idx_option}",
+                use_container_width=True,
+                type="primary" if selected else "secondary",
+            ):
+                st.session_state["finance_workspace_menu"] = option
+                st.rerun()
+        finance_workspace = st.session_state.get("finance_workspace_menu", finance_sections[0])
+
         if finance_focus in ("receber", "pagar"):
             with st.container(border=True):
                 st.markdown("### Vencimentos em destaque")
@@ -16992,24 +17293,187 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.session_state.pop("finance_overdue_focus", None)
                     st.rerun()
 
-        finance_main_options = ["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial", "Vencimentos"]
-        if finance_focus in ("receber", "pagar"):
-            st.session_state["finance_main_menu"] = "Vencimentos"
-        if st.session_state.get("finance_main_menu") not in finance_main_options:
-            st.session_state["finance_main_menu"] = finance_main_options[0]
-        st.markdown("### Areas do Financeiro")
-        fm_cols = st.columns(len(finance_main_options))
-        for i, option in enumerate(finance_main_options):
-            selected = str(st.session_state.get("finance_main_menu", "")) == option
-            if fm_cols[i].button(
-                option,
-                key=f"finance_main_box_{i}",
-                use_container_width=True,
-                type="primary" if selected else "secondary",
-            ):
-                st.session_state["finance_main_menu"] = option
+        if finance_workspace == "Visão Geral":
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                _finance_metric_card("Recebido no mês", format_money(total_received_month), "Pagamentos efetivados no período", tone="green")
+            with c2:
+                _finance_metric_card("A receber", format_money(total_to_receive), "Carteira em aberto", tone="blue")
+            with c3:
+                _finance_metric_card("Vencidos", format_money(total_overdue), "Cobranças já atrasadas", tone="red")
+            with c4:
+                _finance_metric_card("Mensalidades abertas", len(mensalidades_abertas), "Cobranças recorrentes pendentes", tone="orange")
+            c5, c6, c7, c8 = st.columns(4)
+            with c5:
+                _finance_metric_card("Matrículas pendentes", len(matriculas_pendentes), "Taxas de matrícula em aberto", tone="slate")
+            with c6:
+                _finance_metric_card("Rematrículas pendentes", len(rematriculas_pendentes), "Renovações em aberto", tone="slate")
+            with c7:
+                _finance_metric_card("Materiais pendentes", len(materiais_pendentes), "Didático ainda não liquidado", tone="orange")
+            with c8:
+                _finance_metric_card("Professores", format_money(pagamentos_professores_pend), "Pagamentos pendentes de docentes", tone="blue")
+
+            st.markdown("### Atalhos rápidos")
+            qa1, qa2, qa3, qa4, qa5 = st.columns(5)
+            if qa1.button("Lançar mensalidade", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Lancar Recebimento"
                 st.rerun()
-        finance_main = st.session_state.get("finance_main_menu", finance_main_options[0])
+            if qa2.button("Lançar matrícula", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Lancar Recebimento"
+                st.rerun()
+            if qa3.button("Lançar rematrícula", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Lancar Recebimento"
+                st.rerun()
+            if qa4.button("Lançar material", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Lancar Material do Estoque"
+                st.rerun()
+            if qa5.button("Registrar pagamento", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Baixa de Recebimentos"
+                st.rerun()
+            qb1, qb2, qb3, qb4, qb5 = st.columns(5)
+            if qb1.button("Emitir recibo", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recibos"
+                st.rerun()
+            if qb2.button("Cobrar por WhatsApp", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Cobrança e Inadimplência"
+                st.rerun()
+            if qb3.button("Ver inadimplentes", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Cobrança e Inadimplência"
+                st.rerun()
+            if qb4.button("Buscar aluno", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Recebimentos"
+                st.session_state["finance_receber_menu"] = "Recebimentos"
+                st.rerun()
+            if qb5.button("Pagamento de professor", use_container_width=True):
+                st.session_state["finance_workspace_menu"] = "Professores"
+                st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
+                st.rerun()
+
+            next_due_rows = sorted(
+                [r for r in open_receivables if parse_date(r.get("vencimento", ""))],
+                key=lambda r: parse_date(r.get("vencimento", "")) or datetime.date.max,
+            )[:8]
+            last_paid_rows = sorted(
+                paid_receivables,
+                key=lambda r: parse_date(r.get("data_pagamento", "")) or parse_date(r.get("data", "")) or datetime.date.min,
+                reverse=True,
+            )[:8]
+            overdue_recent_rows = sorted(
+                overdue_receivables_all,
+                key=lambda r: parse_date(r.get("vencimento", "")) or datetime.date.min,
+            )[:8]
+            g1, g2 = st.columns(2)
+            with g1:
+                st.markdown("### Próximos vencimentos")
+                if next_due_rows:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "aluno": str(r.get("aluno", "")).strip(),
+                            "tipo": str(r.get("categoria", "")).strip(),
+                            "vencimento": str(r.get("vencimento", "")).strip(),
+                            "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                            "status": str(r.get("status", "")).strip(),
+                        } for r in next_due_rows
+                    ]), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Sem vencimentos próximos.")
+            with g2:
+                st.markdown("### Últimos recebimentos")
+                if last_paid_rows:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "aluno": str(r.get("aluno", "")).strip(),
+                            "tipo": str(r.get("categoria", "")).strip(),
+                            "data": str(r.get("data_pagamento", r.get("data", ""))).strip(),
+                            "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                            "forma": str(r.get("cobranca", "")).strip(),
+                        } for r in last_paid_rows
+                    ]), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum recebimento recente.")
+            st.markdown("### Inadimplentes recentes")
+            if overdue_recent_rows:
+                st.dataframe(pd.DataFrame([
+                    {
+                        "aluno": str(r.get("aluno", "")).strip(),
+                        "responsavel": str(((next((s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == str(r.get("aluno", "")).strip()), {}) or {}).get("responsavel", {}) or {}).get("nome", "")).strip(),
+                        "turma": str((next((s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == str(r.get("aluno", "")).strip()), {}) or {}).get("turma", "")).strip(),
+                        "tipo": str(r.get("categoria", "")).strip(),
+                        "vencimento": str(r.get("vencimento", "")).strip(),
+                        "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                        "status": str(r.get("status", "")).strip(),
+                    } for r in overdue_recent_rows
+                ]), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum inadimplente recente.")
+
+        finance_main = "__overview__"
+        if finance_workspace == "Recebimentos":
+            finance_main = "Contas a Receber"
+        elif finance_workspace == "Professores":
+            finance_main = "Contas a Pagar"
+        elif finance_workspace == "Recibos":
+            finance_main = "Contas a Pagar"
+            st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
+        elif finance_workspace == "Cobrança e Inadimplência":
+            finance_main = "Vencimentos"
+        elif finance_workspace == "Configurações":
+            finance_main = "Contas a Receber"
+            st.session_state["finance_receber_menu"] = "Configuracao automatica de e-mail e boleto"
+        elif finance_workspace == "Relatórios":
+            finance_main = "__reports__"
+
+        if finance_main == "__reports__":
+            _finance_section_intro(
+                "Relatórios financeiros",
+                "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
+                chip="Relatórios",
+            )
+            st.markdown("### Relatórios")
+            rf1, rf2 = st.columns(2)
+            with rf1:
+                report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
+            with rf2:
+                report_end = st.date_input("Período final", value=month_end_fin, format="DD/MM/YYYY", key="finance_report_end")
+            rec_report = [
+                r for r in receivables_all
+                if report_start <= (parse_date(r.get("vencimento", "")) or parse_date(r.get("data", "")) or today_fin) <= report_end
+            ]
+            pay_report = [
+                p for p in payables_all
+                if report_start <= (parse_date(p.get("vencimento", "")) or parse_date(p.get("data", "")) or today_fin) <= report_end
+            ]
+            rc1, rc2, rc3 = st.columns(3)
+            with rc1:
+                _finance_metric_card("Recebimentos do período", format_money(sum(_receivable_amount(r) for r in rec_report if str(r.get("status", "")).strip().lower() == "pago")), "Liquidados no intervalo", tone="green")
+            with rc2:
+                _finance_metric_card("Mensalidades em aberto", len([r for r in rec_report if normalize_text(r.get("categoria", "")) == "mensalidade" and str(r.get("status", "")).strip().lower() != "pago"]), "No período filtrado", tone="orange")
+            with rc3:
+                _finance_metric_card("Pagamentos professores", format_money(sum(_payable_amount(p) for p in pay_report if str(p.get("categoria_lancamento", "")).strip().lower() == "professor")), "Lançados no período", tone="blue")
+            st.dataframe(pd.DataFrame([
+                {
+                    "tipo": "Recebimento",
+                    "referencia": str(r.get("aluno", "")).strip(),
+                    "categoria": str(r.get("categoria", "")).strip(),
+                    "vencimento": str(r.get("vencimento", "")).strip(),
+                    "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                    "status": str(r.get("status", "")).strip(),
+                } for r in rec_report[:200]
+            ] + [
+                {
+                    "tipo": "Professor/Despesa",
+                    "referencia": str(p.get("fornecedor", "")).strip(),
+                    "categoria": str(p.get("categoria_lancamento", "")).strip(),
+                    "vencimento": str(p.get("vencimento", "")).strip(),
+                    "valor": str(p.get("valor_parcela", p.get("valor", ""))).strip(),
+                    "status": str(p.get("status", "")).strip(),
+                } for p in pay_report[:200]
+            ]), use_container_width=True, hide_index=True)
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
@@ -17023,28 +17487,51 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ]
             if st.session_state.get("finance_receber_menu") not in finance_receber_options:
                 st.session_state["finance_receber_menu"] = finance_receber_options[0]
-            st.markdown("### Opcoes de Contas a Receber")
-            fr_cols_top = st.columns(4)
-            fr_cols_bottom = st.columns(3)
-            fr_layout = [
-                (fr_cols_top[0], finance_receber_options[0], 0),
-                (fr_cols_top[1], finance_receber_options[1], 1),
-                (fr_cols_top[2], finance_receber_options[2], 2),
-                (fr_cols_top[3], finance_receber_options[3], 3),
-                (fr_cols_bottom[0], finance_receber_options[4], 4),
-                (fr_cols_bottom[1], finance_receber_options[5], 5),
-                (fr_cols_bottom[2], finance_receber_options[6], 6),
-            ]
-            for col_ref, option, idx_option in fr_layout:
-                selected = str(st.session_state.get("finance_receber_menu", "")) == option
-                if col_ref.button(
-                    option,
-                    key=f"finance_receber_box_{idx_option}",
-                    use_container_width=True,
-                    type="primary" if selected else "secondary",
-                ):
-                    st.session_state["finance_receber_menu"] = option
-                    st.rerun()
+            receber_chip = "Recebimentos"
+            receber_desc = "Lance cobranças, acompanhe carteiras em aberto, faça baixas e mantenha boleto, e-mail e WhatsApp configurados sem poluição visual."
+            receber_title = "Recebimentos"
+            if finance_workspace == "Configurações":
+                receber_chip = "Configurações"
+                receber_title = "Configurações financeiras"
+                receber_desc = "Centralize automação de boleto, e-mail e mensagens financeiras sem misturar isso com lançamentos do dia a dia."
+            _finance_section_intro(
+                receber_title,
+                receber_desc,
+                chip=receber_chip,
+            )
+            fr_map = {
+                "Lançar cobrança": finance_receber_options[0],
+                "Carteira de recebimentos": finance_receber_options[1],
+                "Ações em massa": finance_receber_options[2],
+                "Gerenciar cobranças": finance_receber_options[3],
+                "Material didático": finance_receber_options[4],
+                "Registrar pagamento": finance_receber_options[5],
+                "Automação e boletos": finance_receber_options[6],
+            }
+            current_receber = st.session_state.get("finance_receber_menu", finance_receber_options[0])
+            selected_receber_label = next(
+                (label for label, value in fr_map.items() if value == current_receber),
+                "Lançar cobrança",
+            )
+            receive_nav_col, receive_hint_col = st.columns([1.4, 1])
+            with receive_nav_col:
+                finance_receber_label = st.selectbox(
+                    "Área de trabalho",
+                    list(fr_map.keys()),
+                    index=list(fr_map.keys()).index(selected_receber_label),
+                    key="finance_receber_menu_select",
+                )
+            with receive_hint_col:
+                st.caption("Ação principal")
+                st.markdown(
+                    f"**{finance_receber_label}**  \nUse este atalho para navegar sem abrir vários blocos ao mesmo tempo."
+                )
+            finance_receber_target = fr_map[finance_receber_label]
+            if finance_receber_target != current_receber:
+                st.session_state["finance_receber_menu"] = finance_receber_target
+                st.rerun()
+            with st.container(border=True):
+                _student_financial_account_panel()
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             if finance_receber_menu == "Configuracao automatica de e-mail e boleto":
                 with st.expander("Configuracao automatica de e-mail e boleto", expanded=True):
@@ -17870,32 +18357,88 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ]
             if st.session_state.get("finance_pagar_menu") not in finance_pagar_options:
                 st.session_state["finance_pagar_menu"] = finance_pagar_options[0]
-            st.markdown("### Opcoes de Contas a Pagar")
-            fp_cols_top = st.columns(3)
-            fp_cols_bottom = st.columns(2)
-            fp_layout = [
-                (fp_cols_top[0], finance_pagar_options[0], 0),
-                (fp_cols_top[1], finance_pagar_options[1], 1),
-                (fp_cols_top[2], finance_pagar_options[2], 2),
-                (fp_cols_bottom[0], finance_pagar_options[3], 3),
-                (fp_cols_bottom[1], finance_pagar_options[4], 4),
-            ]
-            for col_ref, option, idx_option in fp_layout:
-                selected = str(st.session_state.get("finance_pagar_menu", "")) == option
-                if col_ref.button(
-                    option,
-                    key=f"finance_pagar_box_{idx_option}",
-                    use_container_width=True,
-                    type="primary" if selected else "secondary",
-                ):
-                    st.session_state["finance_pagar_menu"] = option
-                    st.rerun()
+            pagar_chip = "Professores" if finance_workspace != "Recibos" else "Recibos"
+            pagar_title = "Professores e pagamentos"
+            pagar_desc = "Separe despesas da escola, histórico financeiro e pagamento de professores em um fluxo mais objetivo."
+            if finance_workspace == "Recibos":
+                pagar_title = "Recibos"
+                pagar_desc = "Consulte comprovantes e acesse rapidamente a emissão de recibos de pagamentos confirmados."
+            _finance_section_intro(
+                pagar_title,
+                pagar_desc,
+                chip=pagar_chip,
+            )
+            fp_map = {
+                "Pagamento de professor": finance_pagar_options[0],
+                "Lançar despesa": finance_pagar_options[1],
+                "Histórico de despesas": finance_pagar_options[2],
+                "Ações em massa": finance_pagar_options[3],
+                "Gerenciar despesas": finance_pagar_options[4],
+            }
+            current_pagar = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
+            selected_pagar_label = next(
+                (label for label, value in fp_map.items() if value == current_pagar),
+                "Pagamento de professor",
+            )
+            pay_nav_col, pay_hint_col = st.columns([1.4, 1])
+            with pay_nav_col:
+                finance_pagar_label = st.selectbox(
+                    "Área de trabalho",
+                    list(fp_map.keys()),
+                    index=list(fp_map.keys()).index(selected_pagar_label),
+                    key="finance_pagar_menu_select",
+                )
+            with pay_hint_col:
+                if finance_workspace == "Recibos":
+                    recibos_emitidos = len([r for r in paid_receivables if str(r.get("data_pagamento", "")).strip()]) + len(
+                        [p for p in sales_payments_all if str(p.get("recibo_numero", "")).strip()]
+                    )
+                    _finance_metric_card("Recibos disponíveis", recibos_emitidos, "Histórico de pagamentos pagos e comprovados", tone="green")
+                else:
+                    st.caption("Controle rápido")
+                    st.markdown("**Professor** e **despesa** ficam separados do contas a receber, com histórico mais limpo.")
+            finance_pagar_target = fp_map[finance_pagar_label]
+            if finance_pagar_target != current_pagar:
+                st.session_state["finance_pagar_menu"] = finance_pagar_target
+                st.rerun()
             finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
             if finance_pagar_menu != "Pagamento de Aulas do Professor":
                 st.caption("Recibo de pagamento do professor fica em: Pagamento de Aulas do Professor.")
                 if st.button("Abrir Gerador de Recibo (Professor)", key="finance_open_teacher_receipt_shortcut"):
                     st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
                     st.rerun()
+            if finance_workspace == "Recibos":
+                st.markdown("### Histórico rápido de recibos")
+                paid_receipt_rows = [
+                    {
+                        "origem": "Recebimento",
+                        "aluno": str(r.get("aluno", "")).strip(),
+                        "responsavel": str(((next((s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == str(r.get("aluno", "")).strip()), {}) or {}).get("responsavel", {}) or {}).get("nome", "")).strip(),
+                        "descricao": str(r.get("descricao", "")).strip(),
+                        "data": str(r.get("data_pagamento", r.get("data", ""))).strip(),
+                        "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                        "forma": str(r.get("cobranca", "")).strip(),
+                    }
+                    for r in paid_receivables[:20]
+                ]
+                sales_receipt_rows = [
+                    {
+                        "origem": "Matrícula",
+                        "aluno": str(p.get("aluno", "")).strip(),
+                        "responsavel": "",
+                        "descricao": f"Recibo {str(p.get('recibo_numero', '')).strip()}",
+                        "data": str(p.get("data_pagamento", "")).strip(),
+                        "valor": str(p.get("valor", "")).strip(),
+                        "forma": str(p.get("forma_pagamento", "")).strip(),
+                    }
+                    for p in sales_payments_all
+                    if str(p.get("recibo_numero", "")).strip()
+                ][:20]
+                receipt_rows = (paid_receipt_rows + sales_receipt_rows)[:40]
+                if receipt_rows:
+                    st.dataframe(pd.DataFrame(receipt_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum recibo disponível ainda. Os recibos aparecem aqui após pagamentos confirmados.")
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
             if finance_pagar_menu == "Pagamento de Aulas do Professor":
@@ -18739,7 +19282,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_aprov_options = ["Pagamentos de matricula"]
             if st.session_state.get("finance_aprov_menu") not in finance_aprov_options:
                 st.session_state["finance_aprov_menu"] = finance_aprov_options[0]
-            st.markdown("### Opcoes de Aprovacoes Comercial")
+            _finance_section_intro(
+                "Aprovações comerciais",
+                "Conferência de pagamentos de matrícula enviados pelo time comercial, sem misturar com o restante do financeiro.",
+                chip="Comercial",
+            )
             aprov_selected = str(st.session_state.get("finance_aprov_menu", "")) == finance_aprov_options[0]
             if st.button(
                 finance_aprov_options[0],
@@ -18861,19 +19408,46 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
             if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
                 st.session_state["finance_overdue_mode"] = finance_venc_options[0]
-            st.markdown("### Opcoes de Vencimentos")
-            fv1, fv2 = st.columns(2)
-            venc_layout = [(fv1, finance_venc_options[0], 0), (fv2, finance_venc_options[1], 1)]
-            for col_ref, option, idx_option in venc_layout:
-                selected = str(st.session_state.get("finance_overdue_mode", "")) == option
-                if col_ref.button(
-                    option,
-                    key=f"finance_venc_box_{idx_option}",
-                    use_container_width=True,
-                    type="primary" if selected else "secondary",
-                ):
-                    st.session_state["finance_overdue_mode"] = option
-                    st.rerun()
+            _finance_section_intro(
+                "Cobrança e inadimplência",
+                "Liste atrasos por aluno, responsável e vencimento, com leitura rápida e menos ruído operacional.",
+                chip="Inadimplência",
+            )
+            overdue_label_map = {
+                "Recebimentos vencidos": finance_venc_options[0],
+                "Pagamentos vencidos": finance_venc_options[1],
+            }
+            current_overdue = st.session_state.get("finance_overdue_mode", finance_venc_options[0])
+            current_overdue_label = next(
+                (label for label, value in overdue_label_map.items() if value == current_overdue),
+                "Recebimentos vencidos",
+            )
+            overdue_col_a, overdue_col_b, overdue_col_c = st.columns([1.2, 1, 1])
+            with overdue_col_a:
+                selected_overdue_label = st.selectbox(
+                    "Painel",
+                    list(overdue_label_map.keys()),
+                    index=list(overdue_label_map.keys()).index(current_overdue_label),
+                    key="finance_overdue_mode_select",
+                )
+            with overdue_col_b:
+                _finance_metric_card(
+                    "Em atraso",
+                    len(overdue_receivables_all) if current_overdue == finance_venc_options[0] else len(_financial_overdue_items(payables_all, date_field="vencimento")),
+                    "Itens em aberto fora do prazo",
+                    tone="red",
+                )
+            with overdue_col_c:
+                _finance_metric_card(
+                    "Valor exposto",
+                    format_money(total_overdue if current_overdue == finance_venc_options[0] else sum(_payable_amount(p) for p in _financial_overdue_items(payables_all, date_field="vencimento"))),
+                    "Volume do painel atual",
+                    tone="orange",
+                )
+            overdue_target = overdue_label_map[selected_overdue_label]
+            if overdue_target != current_overdue:
+                st.session_state["finance_overdue_mode"] = overdue_target
+                st.rerun()
             overdue_mode = st.session_state.get("finance_overdue_mode", finance_venc_options[0])
             if overdue_mode == "A receber vencidos":
                 _render_overdue_receivables_panel()

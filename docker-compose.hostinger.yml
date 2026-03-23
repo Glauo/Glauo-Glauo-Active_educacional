@@ -19,3 +19,24 @@ services:
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     volumes:
       - ./data:/app/data
+  wizbot:
+    build: .
+    restart: unless-stopped
+    command: ["python", "whatsapp_wiz_webhook.py"]
+    environment:
+      ACTIVE_DATA_DIR: /app/data
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
+      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL}
+      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL}
+      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER}
+      WAPI_BASE_URL: ${WAPI_BASE_URL}
+      WAPI_TOKEN: ${WAPI_TOKEN}
+      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
+      ACTIVE_ADMIN_WHATSAPP: ${ACTIVE_ADMIN_WHATSAPP}
+      ACTIVE_ADMIN_WHATSAPPS: ${ACTIVE_ADMIN_WHATSAPPS}
+      ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN}
+      WIZ_WEBHOOK_HOST: 0.0.0.0
+      WIZ_WEBHOOK_PORT: 8787
+    volumes:
+      - ./data:/app/data
