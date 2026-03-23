@@ -5659,6 +5659,151 @@ def _delete_grade_record_by_id(grade_id):
         save_list(GRADES_FILE, st.session_state.get("grades", []))
     return changed
 
+def _delete_homework_activity_by_id(activity_id):
+    activity_id = str(activity_id or "").strip()
+    if not activity_id:
+        return False
+    before_activities = len(st.session_state.get("activities", []))
+    st.session_state["activities"] = [
+        activity
+        for activity in st.session_state.get("activities", [])
+        if str(activity.get("id", "")).strip() != activity_id
+    ]
+    before_submissions = len(st.session_state.get("activity_submissions", []))
+    st.session_state["activity_submissions"] = [
+        submission
+        for submission in st.session_state.get("activity_submissions", [])
+        if str(submission.get("activity_id", "")).strip() != activity_id
+    ]
+    before_grades = len(st.session_state.get("grades", []))
+    st.session_state["grades"] = [
+        grade
+        for grade in st.session_state.get("grades", [])
+        if not (
+            str(grade.get("origem_tipo", "")).strip().lower() == "atividade"
+            and str(grade.get("origem_id", "")).strip() == activity_id
+        )
+    ]
+    changed = (
+        len(st.session_state.get("activities", [])) != before_activities
+        or len(st.session_state.get("activity_submissions", [])) != before_submissions
+        or len(st.session_state.get("grades", [])) != before_grades
+    )
+    if changed:
+        save_list(ACTIVITIES_FILE, st.session_state.get("activities", []))
+        save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state.get("activity_submissions", []))
+        save_list(GRADES_FILE, st.session_state.get("grades", []))
+    return changed
+
+def _delete_challenge_by_id(challenge_id):
+    challenge_id = str(challenge_id or "").strip()
+    if not challenge_id:
+        return False
+    before_challenges = len(st.session_state.get("challenges", []))
+    st.session_state["challenges"] = [
+        challenge
+        for challenge in st.session_state.get("challenges", [])
+        if str(challenge.get("id", "")).strip() != challenge_id
+    ]
+    before_completions = len(st.session_state.get("challenge_completions", []))
+    st.session_state["challenge_completions"] = [
+        completion
+        for completion in st.session_state.get("challenge_completions", [])
+        if str(completion.get("challenge_id", "")).strip() != challenge_id
+    ]
+    before_grades = len(st.session_state.get("grades", []))
+    st.session_state["grades"] = [
+        grade
+        for grade in st.session_state.get("grades", [])
+        if not (
+            str(grade.get("origem_tipo", "")).strip().lower() == "desafio"
+            and str(grade.get("origem_id", "")).strip() == challenge_id
+        )
+    ]
+    changed = (
+        len(st.session_state.get("challenges", [])) != before_challenges
+        or len(st.session_state.get("challenge_completions", [])) != before_completions
+        or len(st.session_state.get("grades", [])) != before_grades
+    )
+    if changed:
+        save_list(CHALLENGES_FILE, st.session_state.get("challenges", []))
+        save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state.get("challenge_completions", []))
+        save_list(GRADES_FILE, st.session_state.get("grades", []))
+    return changed
+
+def _render_grade_management_actions(grade_rows, key_prefix):
+    grade_rows = [g for g in (grade_rows or []) if isinstance(g, dict)]
+    if not grade_rows:
+        st.info("Nenhuma nota disponivel para acoes rapidas.")
+        return
+    st.markdown("#### Ações rápidas")
+    status_options = ["Pendente", "Aprovado", "Reprovado", "Avaliada", "Avaliada sem resposta", "Reprovado sem resposta"]
+    for idx, grade_obj in enumerate(grade_rows, start=1):
+        grade_id = _ensure_grade_record_id(grade_obj)
+        origem_tipo = str(grade_obj.get("origem_tipo", "")).strip().lower() or "manual"
+        current_status = str(grade_obj.get("status", "")).strip()
+        if current_status not in status_options:
+            current_status = status_options[0]
+        exp_label = (
+            f"{idx}. {str(grade_obj.get('aluno', '')).strip() or 'Aluno'} | "
+            f"{str(grade_obj.get('avaliacao', '')).strip() or 'Avaliacao'} | "
+            f"{str(grade_obj.get('nota', '')).strip() or '-'}"
+        )
+        with st.expander(exp_label):
+            with st.form(f"{key_prefix}_form_{grade_id}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    grade_data = st.date_input(
+                        "Data",
+                        value=_parse_record_date(grade_obj.get("data", "")) or datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key=f"{key_prefix}_date_{grade_id}",
+                    )
+                    grade_status = st.selectbox(
+                        "Status",
+                        status_options,
+                        index=status_options.index(current_status),
+                        key=f"{key_prefix}_status_{grade_id}",
+                    )
+                with c2:
+                    grade_nota = st.text_input(
+                        "Nota",
+                        value=str(grade_obj.get("nota", "")).strip(),
+                        key=f"{key_prefix}_value_{grade_id}",
+                    )
+                    grade_autor = st.text_input(
+                        "Autor",
+                        value=str(grade_obj.get("autor", "")).strip(),
+                        key=f"{key_prefix}_author_{grade_id}",
+                    )
+                grade_avaliacao = st.text_input(
+                    "Avaliacao",
+                    value=str(grade_obj.get("avaliacao", "")).strip(),
+                    key=f"{key_prefix}_title_{grade_id}",
+                )
+                grade_obs = st.text_area(
+                    "Observacao / feedback",
+                    value=str(grade_obj.get("observacao", "")).strip() or str(grade_obj.get("feedback", "")).strip(),
+                    key=f"{key_prefix}_obs_{grade_id}",
+                )
+                if st.form_submit_button("Editar nota", type="primary"):
+                    grade_obj["data"] = grade_data.strftime("%d/%m/%Y") if grade_data else datetime.date.today().strftime("%d/%m/%Y")
+                    grade_obj["avaliacao"] = str(grade_avaliacao).strip() or "Avaliacao"
+                    grade_obj["nota"] = str(grade_nota).strip() or "0"
+                    grade_obj["status"] = str(grade_status).strip() or "Pendente"
+                    grade_obj["autor"] = str(grade_autor).strip() or "Administrador"
+                    grade_obj["observacao"] = str(grade_obs).strip()
+                    save_list(GRADES_FILE, st.session_state.get("grades", []))
+                    st.success("Nota atualizada com sucesso.")
+                    st.rerun()
+            if origem_tipo in {"atividade", "desafio"}:
+                st.caption("Nota integrada: se a origem for sincronizada novamente, o registro pode ser recriado.")
+            if st.button("Excluir nota", key=f"{key_prefix}_delete_{grade_id}"):
+                if _delete_grade_record_by_id(grade_id):
+                    st.success("Nota excluida com sucesso.")
+                    st.rerun()
+                st.error("Nao foi possivel excluir a nota selecionada.")
+
 def _find_grade_by_origin(origem_tipo, origem_id, aluno_nome):
     origem_tipo = str(origem_tipo or "").strip().lower()
     origem_id = str(origem_id or "").strip()
@@ -6356,6 +6501,7 @@ def _publish_homework_activity(
 
 def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     turmas = sorted({str(t).strip() for t in (turmas_disponiveis or []) if str(t).strip()})
+    can_manage_admin_only = panel_key == "coord_homework" and _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
     if not turmas:
         st.info("Nenhuma turma disponivel para publicar licao de casa.")
         return
@@ -6779,21 +6925,38 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
                     if str(atividade.get("descricao", "")).strip():
                         st.write(str(atividade.get("descricao", "")).strip())
+                    close_col, delete_col = st.columns(2)
                     if _is_activity_open(atividade):
-                        if st.button("Encerrar licao", key=f"{panel_key}_close_hw_{activity_id}"):
+                        if close_col.button("Encerrar licao", key=f"{panel_key}_close_hw_{activity_id}"):
                             atividade["status"] = "Encerrada"
                             atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             save_list(ACTIVITIES_FILE, st.session_state["activities"])
                             st.success("Licao encerrada.")
                             st.rerun()
                     else:
-                        if st.button("Reabrir licao", key=f"{panel_key}_open_hw_{activity_id}"):
+                        if close_col.button("Reabrir licao", key=f"{panel_key}_open_hw_{activity_id}"):
                             atividade["status"] = "Ativa"
                             atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             _remove_auto_absence_submissions_for_activity(activity_id)
                             save_list(ACTIVITIES_FILE, st.session_state["activities"])
                             st.success("Licao reaberta.")
                             st.rerun()
+                    if can_manage_admin_only:
+                        delete_key = f"{panel_key}_delete_hw_confirm_{activity_id}"
+                        if delete_col.button("Excluir licao", key=f"{panel_key}_delete_hw_{activity_id}"):
+                            st.session_state[delete_key] = True
+                        if st.session_state.get(delete_key, False):
+                            st.warning("Confirme a exclusao desta licao. As respostas e notas vinculadas tambem serao removidas.")
+                            dc1, dc2 = st.columns(2)
+                            if dc1.button("Confirmar exclusao", key=f"{panel_key}_delete_hw_yes_{activity_id}", type="primary"):
+                                st.session_state[delete_key] = False
+                                if _delete_homework_activity_by_id(activity_id):
+                                    st.success("Licao excluida com sucesso.")
+                                    st.rerun()
+                                st.error("Nao foi possivel excluir a licao selecionada.")
+                            if dc2.button("Cancelar", key=f"{panel_key}_delete_hw_no_{activity_id}"):
+                                st.session_state[delete_key] = False
+                                st.rerun()
 
     with tab_respostas:
         _homework_shell(
@@ -14635,7 +14798,16 @@ else:
             border: 1px solid #d0ddf2 !important;
             background: #fbfdff !important;
             min-height: 46px !important;
+            color: #16325c !important;
+            -webkit-text-fill-color: #16325c !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+        div[data-testid="stTextInput"] input::placeholder,
+        div[data-testid="stTextArea"] textarea::placeholder,
+        div[data-testid="stNumberInput"] input::placeholder,
+        div[data-testid="stDateInput"] input::placeholder {
+            color: #90a1b9 !important;
+            -webkit-text-fill-color: #90a1b9 !important;
         }
         div[data-testid="stTextInput"] input:focus,
         div[data-testid="stTextArea"] textarea:focus,
@@ -16423,13 +16595,28 @@ elif st.session_state["role"] == "Professor":
                             st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
                             if str(atividade.get("descricao", "")).strip():
                                 st.write(str(atividade.get("descricao", "")).strip())
-
+                            a1, a2 = st.columns(2)
                             if _is_activity_open(atividade):
-                                if st.button("Encerrar atividade", key=f"close_activity_{activity_id}"):
+                                if a1.button("Encerrar atividade", key=f"close_activity_{activity_id}"):
                                     atividade["status"] = "Encerrada"
                                     atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                                     save_list(ACTIVITIES_FILE, st.session_state["activities"])
                                     st.success("Atividade encerrada.")
+                                    st.rerun()
+                            delete_key = f"prof_delete_activity_confirm_{activity_id}"
+                            if a2.button("Excluir tarefa", key=f"prof_delete_activity_{activity_id}"):
+                                st.session_state[delete_key] = True
+                            if st.session_state.get(delete_key, False):
+                                st.warning("Confirme a exclusao desta tarefa. As respostas e notas vinculadas tambem serao removidas.")
+                                dc1, dc2 = st.columns(2)
+                                if dc1.button("Confirmar exclusao", key=f"prof_delete_activity_yes_{activity_id}", type="primary"):
+                                    st.session_state[delete_key] = False
+                                    if _delete_homework_activity_by_id(activity_id):
+                                        st.success("Tarefa excluida com sucesso.")
+                                        st.rerun()
+                                    st.error("Nao foi possivel excluir a tarefa selecionada.")
+                                if dc2.button("Cancelar", key=f"prof_delete_activity_no_{activity_id}"):
+                                    st.session_state[delete_key] = False
                                     st.rerun()
                             else:
                                 if st.button("Reabrir atividade", key=f"open_activity_{activity_id}"):
@@ -23724,6 +23911,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Notas</div>', unsafe_allow_html=True)
+        is_admin_panel = bool(
+            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            or _has_permission("permissions.manage")
+        )
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
         integradas = [
             g for g in st.session_state.get("grades", [])
@@ -23738,7 +23929,62 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 ("Alunos com nota", len({str(g.get("aluno", "")).strip() for g in st.session_state.get("grades", []) if str(g.get("aluno", "")).strip()})),
             ],
         )
-        tab_pend, tab_hw, tab_des = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios"])
+        grades_changed = False
+        for grade in st.session_state.get("grades", []):
+            if not str(grade.get("id", "")).strip():
+                _ensure_grade_record_id(grade)
+                grades_changed = True
+        if grades_changed:
+            save_list(GRADES_FILE, st.session_state.get("grades", []))
+        if is_admin_panel:
+            grade_rows_all = list(st.session_state.get("grades", []) or [])
+            if grade_rows_all:
+                st.markdown("### Gestão rápida de notas")
+                gm1, gm2 = st.columns([1.3, 1.7])
+                origin_filter = gm1.selectbox(
+                    "Mostrar",
+                    ["Todas", "Manuais", "Integradas"],
+                    key="admin_visible_grade_origin_filter",
+                )
+                filtered_visible_rows = []
+                for grade in grade_rows_all:
+                    origem_tipo = str(grade.get("origem_tipo", "")).strip().lower()
+                    if origin_filter == "Manuais" and origem_tipo in {"atividade", "desafio"}:
+                        continue
+                    if origin_filter == "Integradas" and origem_tipo not in {"atividade", "desafio"}:
+                        continue
+                    filtered_visible_rows.append(grade)
+                filtered_visible_rows.sort(
+                    key=lambda item: (
+                        _parse_record_date(item.get("data", "")) or datetime.date(1900, 1, 1),
+                        str(item.get("aluno", "")).strip().lower(),
+                        str(item.get("avaliacao", "")).strip().lower(),
+                    ),
+                    reverse=True,
+                )
+                option_map = {
+                    (
+                        f"{str(g.get('data', '')).strip() or '-'} | "
+                        f"{str(g.get('aluno', '')).strip() or 'Aluno'} | "
+                        f"{str(g.get('avaliacao', '')).strip() or 'Avaliacao'} | "
+                        f"{str(g.get('nota', '')).strip() or '-'}"
+                    ): g
+                    for g in filtered_visible_rows
+                }
+                selected_grade_label = gm2.selectbox(
+                    "Selecionar nota para editar ou excluir",
+                    list(option_map.keys()) if option_map else ["Nenhuma nota disponível"],
+                    key="admin_visible_grade_selector",
+                )
+                selected_grade = option_map.get(selected_grade_label)
+                if selected_grade:
+                    _render_grade_management_actions([selected_grade], "admin_top_grade_action")
+            else:
+                st.info("Nenhuma nota registrada para gerenciar.")
+        if is_admin_panel:
+            tab_pend, tab_hw, tab_des, tab_manage = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios", "Gerenciar notas"])
+        else:
+            tab_pend, tab_hw, tab_des = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios"])
         with tab_pend:
             if pendentes:
                 st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
@@ -23776,6 +24022,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
                     st.success("Notas aprovadas!")
                     st.rerun()
+                if is_admin_panel:
+                    _render_grade_management_actions(pendentes, "coord_quick_pending_grade")
             else:
                 st.info("Nenhuma nota pendente.")
         with tab_hw:
@@ -23789,6 +24037,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if cols_hw:
                     df_hw = df_hw[cols_hw]
                 st.dataframe(df_hw, use_container_width=True)
+                if is_admin_panel:
+                    _render_grade_management_actions(hw_rows, "coord_quick_hw_grade")
             else:
                 st.info("Nenhuma licao de casa ou atividade corrigida ainda.")
         with tab_des:
@@ -23832,8 +24082,76 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         if feedback_txt:
                             st.markdown("**Feedback / avaliacao**")
                             st.write(feedback_txt)
+                if is_admin_panel:
+                    _render_grade_management_actions(des_rows, "coord_quick_ch_grade")
             else:
                 st.info("Nenhum desafio concluido ainda.")
+        if is_admin_panel:
+            with tab_manage:
+                grade_rows_all = list(st.session_state.get("grades", []) or [])
+                if not grade_rows_all:
+                    st.info("Nenhuma nota registrada para gerenciar.")
+                else:
+                    origem_manage = st.selectbox(
+                        "Tipo de nota",
+                        ["Todas", "Manuais", "Integradas"],
+                        key="coord_manage_grade_origin_filter",
+                    )
+                    turma_opts_manage = ["Todas"] + sorted({
+                        str(g.get("turma", "")).strip()
+                        for g in grade_rows_all
+                        if str(g.get("turma", "")).strip()
+                    })
+                    aluno_opts_manage = ["Todos"] + sorted({
+                        str(g.get("aluno", "")).strip()
+                        for g in grade_rows_all
+                        if str(g.get("aluno", "")).strip()
+                    })
+                    mf1, mf2 = st.columns(2)
+                    turma_manage = mf1.selectbox("Turma", turma_opts_manage, key="coord_manage_grade_turma")
+                    aluno_manage = mf2.selectbox("Aluno", aluno_opts_manage, key="coord_manage_grade_aluno")
+
+                    managed_rows = []
+                    for grade in grade_rows_all:
+                        origem_tipo = str(grade.get("origem_tipo", "")).strip().lower()
+                        if origem_manage == "Manuais" and origem_tipo in {"atividade", "desafio"}:
+                            continue
+                        if origem_manage == "Integradas" and origem_tipo not in {"atividade", "desafio"}:
+                            continue
+                        if turma_manage != "Todas" and str(grade.get("turma", "")).strip() != turma_manage:
+                            continue
+                        if aluno_manage != "Todos" and str(grade.get("aluno", "")).strip() != aluno_manage:
+                            continue
+                        managed_rows.append(grade)
+
+                    managed_rows.sort(
+                        key=lambda item: (
+                            _parse_record_date(item.get("data", "")) or datetime.date(1900, 1, 1),
+                            str(item.get("aluno", "")).strip().lower(),
+                            str(item.get("avaliacao", "")).strip().lower(),
+                        ),
+                        reverse=True,
+                    )
+                    if not managed_rows:
+                        st.info("Nenhuma nota encontrada com os filtros selecionados.")
+                    else:
+                        df_manage = pd.DataFrame(
+                            [
+                                {
+                                    "data": str(g.get("data", "")).strip(),
+                                    "aluno": str(g.get("aluno", "")).strip(),
+                                    "turma": str(g.get("turma", "")).strip(),
+                                    "avaliacao": str(g.get("avaliacao", "")).strip(),
+                                    "nota": str(g.get("nota", "")).strip(),
+                                    "status": str(g.get("status", "")).strip(),
+                                    "origem": str(g.get("origem", "")).strip(),
+                                    "autor": str(g.get("autor", "")).strip(),
+                                }
+                                for g in managed_rows
+                            ]
+                        )
+                        st.dataframe(df_manage, use_container_width=True, hide_index=True)
+                        _render_grade_management_actions(managed_rows, "coord_manage_grade")
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
@@ -24314,6 +24632,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
     elif menu_coord == "Desafios":
         st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        is_admin_panel = bool(
+            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            or _has_permission("permissions.manage")
+        )
         auto_enabled = str(os.getenv("ACTIVE_AUTO_CHALLENGES", "")).strip().lower() in ("1", "true", "yes", "on")
         if auto_enabled:
             api_key = get_groq_api_key()
@@ -25063,6 +25385,38 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if "semana" in df.columns and "nivel" in df.columns:
                     df = df.sort_values(["semana", "nivel"], ascending=[False, True])
                 st.dataframe(df, use_container_width=True)
+                if is_admin_panel:
+                    st.markdown("#### Acoes rapidas dos desafios")
+                    for idx, challenge_obj in enumerate(filtered_chs, start=1):
+                        challenge_id = str(challenge_obj.get("id", "")).strip()
+                        quick_label = (
+                            f"{idx}. {str(challenge_obj.get('titulo', '')).strip() or 'Desafio'} | "
+                            f"{str(challenge_obj.get('semana', '')).strip() or '-'} | "
+                            f"{_challenge_target_label(challenge_obj)}"
+                        )
+                        with st.expander(quick_label):
+                            st.caption(
+                                f"Nivel: {_norm_book_level(challenge_obj.get('nivel', '')) or '-'} | "
+                                f"Prazo: {str(challenge_obj.get('due_date', '')).strip() or 'Sem prazo'} | "
+                                f"Autor: {str(challenge_obj.get('autor', '')).strip() or '-'}"
+                            )
+                            if str(challenge_obj.get("descricao", "")).strip():
+                                st.write(str(challenge_obj.get("descricao", "")).strip())
+                            delete_key = f"coord_delete_challenge_confirm_{challenge_id}"
+                            if st.button("Excluir desafio publicado", key=f"coord_delete_challenge_{challenge_id}"):
+                                st.session_state[delete_key] = True
+                            if st.session_state.get(delete_key, False):
+                                st.warning("Confirme a exclusao deste desafio. As respostas e notas vinculadas tambem serao removidas.")
+                                dc1, dc2 = st.columns(2)
+                                if dc1.button("Confirmar exclusao", key=f"coord_delete_challenge_yes_{challenge_id}", type="primary"):
+                                    st.session_state[delete_key] = False
+                                    if _delete_challenge_by_id(challenge_id):
+                                        st.success("Desafio excluido com sucesso.")
+                                        st.rerun()
+                                    st.error("Nao foi possivel excluir o desafio selecionado.")
+                                if dc2.button("Cancelar", key=f"coord_delete_challenge_no_{challenge_id}"):
+                                    st.session_state[delete_key] = False
+                                    st.rerun()
 
     elif menu_coord == "WhatsApp":
         st.markdown('<div class="main-header">WhatsApp (Evolution)</div>', unsafe_allow_html=True)
