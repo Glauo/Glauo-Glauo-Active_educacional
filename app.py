@@ -6093,7 +6093,8 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     turmas = sorted({str(t).strip() for t in (turmas_disponiveis or []) if str(t).strip()})
     st.markdown('<div class="main-header">Licoes de Casa Semanais</div>', unsafe_allow_html=True)
     st.caption("Publique licoes de casa semanais por turma. O aluno responde direto no portal.")
-    can_manage_admin_only = panel_key == "coord_homework" and _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+    active_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
+    can_manage_admin_only = panel_key == "coord_homework" and active_profile == "Admin"
     if not turmas:
         st.info("Nenhuma turma disponivel para publicar licao de casa.")
         return
