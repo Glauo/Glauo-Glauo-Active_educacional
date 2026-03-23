@@ -139,8 +139,6 @@ if "evo_instances_cache_error" not in st.session_state:
     st.session_state["evo_instances_cache_error"] = ""
 if "wiz_settings" not in st.session_state:
     st.session_state["wiz_settings"] = {}
-if "wiz_reference_docs" not in st.session_state:
-    st.session_state["wiz_reference_docs"] = []
 if "finance_settings" not in st.session_state:
     st.session_state["finance_settings"] = {}
 if "wiz_action_plan" not in st.session_state:
@@ -191,10 +189,8 @@ SALES_LEADS_FILE = DATA_DIR / "sales_leads.json"
 SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
-WIZ_REFERENCE_DOCS_FILE = DATA_DIR / "wiz_reference_docs.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
-PERMISSIONS_AUDIT_FILE = DATA_DIR / "permissions_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 AUTO_RESTORE_EMPTY_FILES = (
     USERS_FILE,
@@ -625,17 +621,6 @@ def _qr_content_to_png_bytes(content):
     except Exception:
         return None
 
-
-def _fpdf_output_bytes(pdf):
-    if pdf is None:
-        return None
-    raw = pdf.output(dest="S")
-    if isinstance(raw, bytes):
-        return raw
-    if isinstance(raw, bytearray):
-        return bytes(raw)
-    return str(raw).encode("latin-1", "ignore")
-
 # --- FUNCOES DE UTILIDADE ---
 def get_logo_path():
     candidates = [
@@ -653,68 +638,11 @@ def get_logo_path():
     return None
 
 def render_sidebar_logo(logo_path):
-    logo_html = ""
-    logo_uri = _sidebar_logo_data_uri(str(logo_path)) if logo_path else ""
-    if logo_uri:
-        logo_html = (
-            '<div class="sidebar-brand-image-wrap">'
-            f'<img class="sidebar-brand-image" src="{logo_uri}" alt="Ativo Educacional">'
-            "</div>"
-        )
-    st.markdown(
-        f"""
-        <div class="sidebar-brand-shell">
-            <div class="sidebar-brand-kicker">Active Educacional</div>
-            {logo_html}
-            <div class="sidebar-brand-sub">Plataforma de gestão acadêmica e operacional</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-@st.cache_data(show_spinner=False)
-def _sidebar_logo_data_uri(path_str):
-    path = Path(path_str)
-    if not path.exists():
-        return ""
-    logo_suffix = str(path.suffix or ".png").lower().lstrip(".")
-    logo_mime = "jpeg" if logo_suffix in {"jpg", "jpeg"} else logo_suffix
-    logo_b64 = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:image/{logo_mime};base64,{logo_b64}"
-
-def render_sidebar_profile_card(user_name, role_name="", profile_name="", unit_name="", greeting=""):
-    nome = str(user_name or "").strip()
-    role_txt = str(role_name or "").strip() or "-"
-    profile_txt = str(profile_name or "").strip() or role_txt
-    unit_txt = str(unit_name or "").strip()
-    initial = (nome[:1] or role_txt[:1] or "A").upper()
-    greeting_html = f'<div class="sidebar-profile-greeting">{html.escape(str(greeting))}</div>' if str(greeting).strip() else ""
-    meta_rows = [
-        '<div class="sidebar-profile-meta-row"><span>Perfil</span>'
-        f'<strong>{html.escape(profile_txt)}</strong></div>'
-    ]
-    if unit_txt:
-        meta_rows.append(
-            '<div class="sidebar-profile-meta-row"><span>Unidade</span>'
-            f'<strong>{html.escape(unit_txt)}</strong></div>'
-        )
-    rows_html = "".join(meta_rows)
-    st.markdown(
-        f"""
-        <div class="sidebar-profile-shell">
-            <div class="sidebar-profile-head">
-                <div class="sidebar-profile-avatar">{html.escape(initial)}</div>
-                <div class="sidebar-profile-copy">
-                    {greeting_html}
-                    <div class="sidebar-profile-name">{html.escape(nome or 'Usuário')}</div>
-                    <div class="sidebar-profile-role">{html.escape(role_txt)}</div>
-                </div>
-            </div>
-            <div class="sidebar-profile-meta">{rows_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if not logo_path:
+        return
+    col_left, col_logo, col_right = st.columns([1, 5, 1])
+    with col_logo:
+        st.image(str(logo_path), width=190)
 
 def get_mister_wiz_logo_path():
     candidates = [
@@ -1202,7 +1130,6 @@ def _backup_datasets():
         ("grades.json", "grades", GRADES_FILE),
         ("fee_templates.json", "fee_templates", FEE_TEMPLATES_FILE),
         ("email_log.json", "email_log", EMAIL_LOG_FILE),
-        ("wiz_reference_docs.json", "wiz_reference_docs", WIZ_REFERENCE_DOCS_FILE),
     ]
 
 def _build_backup_zip_bytes():
@@ -2376,7 +2303,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
     )
     try:
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = get_active_chatbot_model()
+        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
         result = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -2961,7 +2888,7 @@ def _wiz_execute_actions(actions):
                     {
                         "usuario": usuario,
                         "senha": senha,
-                    "perfil": perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Atendimento") else "Coordenador",
+                        "perfil": perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin") else "Coordenador",
                         "pessoa": str(data.get("pessoa", "")),
                         "email": str(data.get("email", "")).strip().lower(),
                         "celular": str(data.get("celular", "")),
@@ -3002,7 +2929,7 @@ def _wiz_execute_actions(actions):
                         obj["senha"] = str(data.get("senha", "")).strip()
                     if str(data.get("perfil", "")).strip():
                         perfil = str(data.get("perfil", "")).strip()
-                        obj["perfil"] = perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Comercial", "Atendimento") else obj.get("perfil", "Coordenador")
+                        obj["perfil"] = perfil if perfil in ("Aluno", "Professor", "Coordenador", "Admin", "Comercial") else obj.get("perfil", "Coordenador")
                     if str(data.get("pessoa", data.get("nome", ""))).strip():
                         obj["pessoa"] = str(data.get("pessoa", data.get("nome", ""))).strip()
                     if str(data.get("email", "")).strip():
@@ -3739,84 +3666,7 @@ def _wiz_attachment_kind(uploaded_file):
         return "sheet"
     if ext == ".pdf":
         return "pdf"
-    if ext == ".docx":
-        return "docx"
     return "file"
-
-def _wiz_extract_docx_text(raw_bytes):
-    if not raw_bytes:
-        return ""
-    try:
-        with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
-            if "word/document.xml" not in zf.namelist():
-                return ""
-            xml_raw = zf.read("word/document.xml").decode("utf-8", errors="replace")
-        xml_raw = re.sub(r"</w:p>", "\n", xml_raw)
-        xml_raw = re.sub(r"<[^>]+>", " ", xml_raw)
-        xml_raw = re.sub(r"\s+", " ", xml_raw)
-        return xml_raw.strip()
-    except Exception:
-        return ""
-
-
-def _wiz_reference_context(max_docs=6, max_chars=6500, query=""):
-    docs = st.session_state.get("wiz_reference_docs", []) or []
-    if not isinstance(docs, list) or not docs:
-        return ""
-    def _score_doc(doc_obj, tokens):
-        name = str(doc_obj.get("name", "")).strip()
-        source = str(doc_obj.get("source", "")).strip()
-        text = str(doc_obj.get("text", "")).strip()
-        if not text:
-            return 0
-        blob = normalize_text(f"{name} {source} {text[:2000]}")
-        score = 0
-        for tok in tokens:
-            if tok and tok in blob:
-                score += 1
-        return score
-
-    tokens = []
-    if query:
-        raw_tokens = re.split(r"[^a-zA-Z0-9áéíóúãõç]+", str(query or ""))
-        tokens = [normalize_text(t) for t in raw_tokens if len(t.strip()) >= 3]
-        tokens = [t for t in tokens if t]
-
-    ranked = []
-    for item in docs:
-        if not isinstance(item, dict):
-            continue
-        score = _score_doc(item, tokens) if tokens else 1
-        ranked.append((score, item))
-    ranked = sorted(ranked, key=lambda x: x[0], reverse=True)
-
-    blocks = []
-    for score, item in ranked:
-        if tokens and score <= 0:
-            continue
-        name = str(item.get("name", "arquivo")).strip() or "arquivo"
-        source = str(item.get("source", "Biblioteca Wiz")).strip() or "Biblioteca Wiz"
-        text = str(item.get("text", "")).strip()
-        if not text:
-            continue
-        blocks.append(f"[{name} | {source}]\n{text}")
-        if len(blocks) >= max_docs:
-            break
-    if not blocks and ranked:
-        for _, item in ranked[:max_docs]:
-            name = str(item.get("name", "arquivo")).strip() or "arquivo"
-            source = str(item.get("source", "Biblioteca Wiz")).strip() or "Biblioteca Wiz"
-            text = str(item.get("text", "")).strip()
-            if not text:
-                continue
-            blocks.append(f"[{name} | {source}]\n{text}")
-    if not blocks:
-        return ""
-    merged = "\n\n".join(blocks)
-    if len(merged) > max_chars:
-        merged = merged[:max_chars] + "\n..."
-    return "Referencias oficiais da escola (use apenas as relacionadas ao tema/livro solicitado; ignore temas diferentes):\n" + merged
-
 
 def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
     summaries = []
@@ -3862,8 +3712,6 @@ def _wiz_extract_attachment_context(uploaded_files, max_chars=1800):
                         text = ""
                 except Exception:
                     text = ""
-            elif kind == "docx" and raw:
-                text = _wiz_extract_docx_text(raw)
         except Exception:
             text = ""
         if text:
@@ -4103,82 +3951,6 @@ def run_wiz_assistant():
 
     _render_wiz_automation_panel()
 
-    st.markdown("### Memória de Referências do Wiz (PDF/DOCX)")
-    st.caption("Envie apostilas, contratos e materiais oficiais. O Wiz usará essa base como referência automática nas respostas.")
-    kb_uploads = st.file_uploader(
-        "Adicionar arquivos à memória do Wiz",
-        accept_multiple_files=True,
-        type=["pdf", "docx", "txt", "md"],
-        key="wiz_reference_uploads",
-    )
-    kb_col1, kb_col2 = st.columns([1.2, 1.0])
-    with kb_col1:
-        if st.button("Salvar arquivos na memória", key="wiz_reference_save_btn", type="primary"):
-            if not kb_uploads:
-                st.warning("Selecione ao menos um arquivo.")
-            else:
-                added = 0
-                docs = st.session_state.get("wiz_reference_docs", [])
-                if not isinstance(docs, list):
-                    docs = []
-                for up in kb_uploads:
-                    name = str(getattr(up, "name", "arquivo")).strip() or "arquivo"
-                    kind = _wiz_attachment_kind(up)
-                    try:
-                        raw = up.getvalue() if hasattr(up, "getvalue") else b""
-                    except Exception:
-                        raw = b""
-                    text = ""
-                    if kind == "pdf":
-                        _, blocks = _wiz_extract_attachment_context([up], max_chars=12000)
-                        if blocks:
-                            text = str(blocks[0]).split("\n", 1)[-1].strip()
-                    elif kind == "docx":
-                        text = _wiz_extract_docx_text(raw)
-                    elif kind == "text":
-                        text = raw.decode("utf-8", errors="replace") if raw else ""
-                    text = re.sub(r"\s+", " ", str(text or "")).strip()
-                    if not text:
-                        continue
-                    if len(text) > 16000:
-                        text = text[:16000] + "..."
-                    docs = [d for d in docs if str(d.get("name", "")).strip().lower() != name.lower()]
-                    docs.append(
-                        {
-                            "id": uuid.uuid4().hex,
-                            "name": name,
-                            "kind": kind,
-                            "source": "Upload no Assistente Wiz",
-                            "saved_at": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            "text": text,
-                        }
-                    )
-                    added += 1
-                st.session_state["wiz_reference_docs"] = docs
-                save_list(WIZ_REFERENCE_DOCS_FILE, docs)
-                if added:
-                    st.success(f"{added} arquivo(s) salvo(s) na memória do Wiz.")
-                    st.rerun()
-                else:
-                    st.warning("Nenhum conteúdo legível foi extraído dos arquivos enviados.")
-    with kb_col2:
-        if st.button("Limpar memória do Wiz", key="wiz_reference_clear_btn"):
-            st.session_state["wiz_reference_docs"] = []
-            save_list(WIZ_REFERENCE_DOCS_FILE, [])
-            st.success("Memória de referências do Wiz apagada.")
-            st.rerun()
-
-    kb_docs = st.session_state.get("wiz_reference_docs", [])
-    if isinstance(kb_docs, list) and kb_docs:
-        with st.expander("Arquivos na memória", expanded=False):
-            for idx, doc in enumerate(kb_docs, start=1):
-                doc_name = str(doc.get("name", f"arquivo_{idx}")).strip() or f"arquivo_{idx}"
-                doc_kind = str(doc.get("kind", "")).strip()
-                doc_saved = str(doc.get("saved_at", "")).strip()
-                st.caption(f"{idx}. {doc_name} ({doc_kind}) - salvo em {doc_saved}")
-    else:
-        st.info("Nenhum arquivo de referência salvo na memória do Wiz ainda.")
-
     chat_key = f"wiz:{(st.session_state.get('user_name') or '').strip().lower()}"
     if chat_key not in st.session_state["active_chat_histories"]:
         st.session_state["active_chat_histories"][chat_key] = []
@@ -4188,7 +3960,7 @@ def run_wiz_assistant():
     uploaded_files = st.file_uploader(
         "Anexar arquivo(s) e imagem(ns)",
         accept_multiple_files=True,
-        type=["png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "docx", "txt", "md", "csv", "json", "xlsx", "xls"],
+        type=["png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "txt", "md", "csv", "json", "xlsx", "xls"],
         key="wiz_simple_uploads",
     )
 
@@ -4321,7 +4093,7 @@ def run_wiz_assistant():
 
     fallback_actions = _wiz_actions_from_book_uploads(user_text, uploaded_files) if wiz_auto_exec else []
     if not api_key and not fallback_actions:
-        st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para usar o Assistente Wiz.")
+        st.error("Configure GROQ_API_KEY para usar o Assistente Wiz.")
         return
 
     if api_key:
@@ -4363,14 +4135,13 @@ def run_wiz_assistant():
                 "Se nao conseguir confirmar algo no sistema, diga explicitamente que nao foi possivel confirmar agora.",
                 "Nunca mencione DietHealth.",
                 get_active_context_text(),
-                _wiz_reference_context(max_docs=8, max_chars=8000),
             ]
         )
         request_messages = [{"role": "system", "content": system_prompt}]
         request_messages += chat_history[-12:]
         request_messages.append({"role": "user", "content": full_user_text})
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = get_active_chatbot_model()
+        model_name = os.getenv("ACTIVE_WIZ_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
         with st.spinner("Wiz esta pensando..."):
             try:
                 result = client.chat.completions.create(
@@ -4390,16 +4161,7 @@ def run_wiz_assistant():
     st.rerun()
 
 def ensure_admin_user(users):
-    admin_user = next(
-        (u for u in users if str(u.get("usuario", "")).strip().lower() == ADMIN_USERNAME.lower()),
-        None,
-    )
-    if admin_user:
-        admin_user["usuario"] = ADMIN_USERNAME
-        admin_user["perfil"] = "Admin"
-        admin_user["pessoa"] = str(admin_user.get("pessoa", "")).strip() or "Administrador"
-        admin_user["senha"] = str(admin_user.get("senha", "")).strip() or ADMIN_PASSWORD
-    else:
+    if not any(u.get("usuario") == ADMIN_USERNAME for u in users):
         users.append({
             "usuario": ADMIN_USERNAME,
             "senha": ADMIN_PASSWORD,
@@ -5374,99 +5136,19 @@ def complete_challenge(challenge_obj, aluno_nome, resposta=None, score=None, fee
     else:
         st.session_state["challenge_completions"].append(rec)
     save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state["challenge_completions"])
-    _sync_challenge_grade_record(rec)
     return True, "Registrado."
-
-def _challenge_completion_has_real_response(completion_obj):
-    comp = completion_obj if isinstance(completion_obj, dict) else {}
-    if bool(comp.get("auto_created_absence", False)):
-        return False
-    return bool(str(comp.get("resposta", "")).strip())
-
-def _challenge_completion_pending_review(completion_obj):
-    comp = completion_obj if isinstance(completion_obj, dict) else {}
-    if not _challenge_completion_has_real_response(comp):
-        return False
-    feedback_txt = str(comp.get("feedback", "")).strip()
-    score_val = comp.get("score", None)
-    status_norm = normalize_text(comp.get("status", ""))
-    if feedback_txt:
-        return False
-    if score_val not in (None, ""):
-        return False
-    return status_norm not in {"aprovado", "reprovado", "reprovado sem resposta"}
-
-def _sync_overdue_challenges_status():
-    today_ref = datetime.date.today()
-    now_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    completions_changed = False
-    expired_ids = set()
-
-    for challenge_obj in st.session_state.get("challenges", []):
-        if not isinstance(challenge_obj, dict):
-            continue
-        challenge_id = str(challenge_obj.get("id", "")).strip()
-        due_obj = parse_date(challenge_obj.get("due_date", ""))
-        if not challenge_id or not due_obj or due_obj >= today_ref:
-            continue
-        expired_ids.add(challenge_id)
-        target_students = _students_for_challenge_target(
-            challenge_obj.get("nivel", ""),
-            target_type=challenge_obj.get("target_type", "nivel"),
-            target_turma=challenge_obj.get("target_turma", ""),
-            target_aluno=challenge_obj.get("target_aluno", ""),
-            target_turmas_envio=_challenge_send_turmas(challenge_obj),
-        )
-        for student in target_students:
-            if normalize_text(student.get("status", "ativo")) == "inativo":
-                continue
-            aluno_nome = str(student.get("nome", "")).strip()
-            if not aluno_nome or get_challenge_submission(challenge_id, aluno_nome):
-                continue
-            rec = {
-                "id": uuid.uuid4().hex,
-                "challenge_id": challenge_id,
-                "aluno": aluno_nome,
-                "nivel": _norm_book_level(challenge_obj.get("nivel", "")),
-                "semana": str(challenge_obj.get("semana", "")).strip(),
-                "challenge_title": str(challenge_obj.get("titulo", "")).strip() or "Desafio",
-                "challenge_target": _challenge_target_label(challenge_obj),
-                "resposta": "",
-                "score": 0,
-                "feedback": "Sem resposta o desafio.",
-                "status": "Reprovado sem resposta",
-                "pontos": 0,
-                "done_at": now_txt,
-                "auto_created_absence": True,
-            }
-            st.session_state["challenge_completions"].append(rec)
-            completions_changed = True
-
-    if completions_changed:
-        save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state.get("challenge_completions", []))
-
-    if expired_ids:
-        kept = [
-            ch for ch in st.session_state.get("challenges", [])
-            if str(ch.get("id", "")).strip() not in expired_ids
-        ]
-        if len(kept) != len(st.session_state.get("challenges", [])):
-            st.session_state["challenges"] = kept
-            save_list(CHALLENGES_FILE, st.session_state.get("challenges", []))
 
 def student_points(aluno_nome):
     aluno_nome = str(aluno_nome or "").strip()
-    return sum(
-        int(c.get("pontos") or 0)
-        for c in st.session_state.get("challenge_completions", [])
-        if str(c.get("aluno", "")).strip() == aluno_nome and _challenge_completion_has_real_response(c)
-    )
+    return sum(int(c.get("pontos") or 0) for c in st.session_state.get("challenge_completions", []) if str(c.get("aluno", "")).strip() == aluno_nome)
 
 def _student_points_ranking():
     points_by_student = {}
+    for student in st.session_state.get("students", []):
+        nome = str(student.get("nome", "")).strip()
+        if nome:
+            points_by_student[nome] = 0
     for comp in st.session_state.get("challenge_completions", []):
-        if not _challenge_completion_has_real_response(comp):
-            continue
         aluno = str(comp.get("aluno", "")).strip()
         if not aluno:
             continue
@@ -5495,8 +5177,6 @@ def _student_all_assessment_rows(aluno_nome):
 
     for grade in st.session_state.get("grades", []):
         if str(grade.get("aluno", "")).strip() != aluno:
-            continue
-        if str(grade.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}:
             continue
         avaliacao = str(grade.get("avaliacao", "")).strip() or "Avaliacao"
         nota_txt = str(grade.get("nota", "")).strip()
@@ -5659,6 +5339,151 @@ def _delete_grade_record_by_id(grade_id):
         save_list(GRADES_FILE, st.session_state.get("grades", []))
     return changed
 
+def _delete_homework_activity_by_id(activity_id):
+    activity_id = str(activity_id or "").strip()
+    if not activity_id:
+        return False
+    before_activities = len(st.session_state.get("activities", []))
+    st.session_state["activities"] = [
+        activity
+        for activity in st.session_state.get("activities", [])
+        if str(activity.get("id", "")).strip() != activity_id
+    ]
+    before_submissions = len(st.session_state.get("activity_submissions", []))
+    st.session_state["activity_submissions"] = [
+        submission
+        for submission in st.session_state.get("activity_submissions", [])
+        if str(submission.get("activity_id", "")).strip() != activity_id
+    ]
+    before_grades = len(st.session_state.get("grades", []))
+    st.session_state["grades"] = [
+        grade
+        for grade in st.session_state.get("grades", [])
+        if not (
+            str(grade.get("origem_tipo", "")).strip().lower() == "atividade"
+            and str(grade.get("origem_id", "")).strip() == activity_id
+        )
+    ]
+    changed = (
+        len(st.session_state.get("activities", [])) != before_activities
+        or len(st.session_state.get("activity_submissions", [])) != before_submissions
+        or len(st.session_state.get("grades", [])) != before_grades
+    )
+    if changed:
+        save_list(ACTIVITIES_FILE, st.session_state.get("activities", []))
+        save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state.get("activity_submissions", []))
+        save_list(GRADES_FILE, st.session_state.get("grades", []))
+    return changed
+
+def _delete_challenge_by_id(challenge_id):
+    challenge_id = str(challenge_id or "").strip()
+    if not challenge_id:
+        return False
+    before_challenges = len(st.session_state.get("challenges", []))
+    st.session_state["challenges"] = [
+        challenge
+        for challenge in st.session_state.get("challenges", [])
+        if str(challenge.get("id", "")).strip() != challenge_id
+    ]
+    before_completions = len(st.session_state.get("challenge_completions", []))
+    st.session_state["challenge_completions"] = [
+        completion
+        for completion in st.session_state.get("challenge_completions", [])
+        if str(completion.get("challenge_id", "")).strip() != challenge_id
+    ]
+    before_grades = len(st.session_state.get("grades", []))
+    st.session_state["grades"] = [
+        grade
+        for grade in st.session_state.get("grades", [])
+        if not (
+            str(grade.get("origem_tipo", "")).strip().lower() == "desafio"
+            and str(grade.get("origem_id", "")).strip() == challenge_id
+        )
+    ]
+    changed = (
+        len(st.session_state.get("challenges", [])) != before_challenges
+        or len(st.session_state.get("challenge_completions", [])) != before_completions
+        or len(st.session_state.get("grades", [])) != before_grades
+    )
+    if changed:
+        save_list(CHALLENGES_FILE, st.session_state.get("challenges", []))
+        save_list(CHALLENGE_COMPLETIONS_FILE, st.session_state.get("challenge_completions", []))
+        save_list(GRADES_FILE, st.session_state.get("grades", []))
+    return changed
+
+def _render_grade_management_actions(grade_rows, key_prefix):
+    grade_rows = [g for g in (grade_rows or []) if isinstance(g, dict)]
+    if not grade_rows:
+        st.info("Nenhuma nota disponivel para acoes rapidas.")
+        return
+    st.markdown("#### Ações rápidas")
+    status_options = ["Pendente", "Aprovado", "Reprovado", "Avaliada", "Avaliada sem resposta", "Reprovado sem resposta"]
+    for idx, grade_obj in enumerate(grade_rows, start=1):
+        grade_id = _ensure_grade_record_id(grade_obj)
+        origem_tipo = str(grade_obj.get("origem_tipo", "")).strip().lower() or "manual"
+        current_status = str(grade_obj.get("status", "")).strip()
+        if current_status not in status_options:
+            current_status = status_options[0]
+        exp_label = (
+            f"{idx}. {str(grade_obj.get('aluno', '')).strip() or 'Aluno'} | "
+            f"{str(grade_obj.get('avaliacao', '')).strip() or 'Avaliacao'} | "
+            f"{str(grade_obj.get('nota', '')).strip() or '-'}"
+        )
+        with st.expander(exp_label):
+            with st.form(f"{key_prefix}_form_{grade_id}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    grade_data = st.date_input(
+                        "Data",
+                        value=_parse_record_date(grade_obj.get("data", "")) or datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key=f"{key_prefix}_date_{grade_id}",
+                    )
+                    grade_status = st.selectbox(
+                        "Status",
+                        status_options,
+                        index=status_options.index(current_status),
+                        key=f"{key_prefix}_status_{grade_id}",
+                    )
+                with c2:
+                    grade_nota = st.text_input(
+                        "Nota",
+                        value=str(grade_obj.get("nota", "")).strip(),
+                        key=f"{key_prefix}_value_{grade_id}",
+                    )
+                    grade_autor = st.text_input(
+                        "Autor",
+                        value=str(grade_obj.get("autor", "")).strip(),
+                        key=f"{key_prefix}_author_{grade_id}",
+                    )
+                grade_avaliacao = st.text_input(
+                    "Avaliacao",
+                    value=str(grade_obj.get("avaliacao", "")).strip(),
+                    key=f"{key_prefix}_title_{grade_id}",
+                )
+                grade_obs = st.text_area(
+                    "Observacao / feedback",
+                    value=str(grade_obj.get("observacao", "")).strip() or str(grade_obj.get("feedback", "")).strip(),
+                    key=f"{key_prefix}_obs_{grade_id}",
+                )
+                if st.form_submit_button("Editar nota", type="primary"):
+                    grade_obj["data"] = grade_data.strftime("%d/%m/%Y") if grade_data else datetime.date.today().strftime("%d/%m/%Y")
+                    grade_obj["avaliacao"] = str(grade_avaliacao).strip() or "Avaliacao"
+                    grade_obj["nota"] = str(grade_nota).strip() or "0"
+                    grade_obj["status"] = str(grade_status).strip() or "Pendente"
+                    grade_obj["autor"] = str(grade_autor).strip() or "Administrador"
+                    grade_obj["observacao"] = str(grade_obs).strip()
+                    save_list(GRADES_FILE, st.session_state.get("grades", []))
+                    st.success("Nota atualizada com sucesso.")
+                    st.rerun()
+            if origem_tipo in {"atividade", "desafio"}:
+                st.caption("Nota integrada: se a origem for sincronizada novamente, o registro pode ser recriado.")
+            if st.button("Excluir nota", key=f"{key_prefix}_delete_{grade_id}"):
+                if _delete_grade_record_by_id(grade_id):
+                    st.success("Nota excluida com sucesso.")
+                    st.rerun()
+                st.error("Nao foi possivel excluir a nota selecionada.")
+
 def _find_grade_by_origin(origem_tipo, origem_id, aluno_nome):
     origem_tipo = str(origem_tipo or "").strip().lower()
     origem_id = str(origem_id or "").strip()
@@ -5793,7 +5618,6 @@ def _sync_all_assessment_grade_records():
         _sync_activity_grade_record(sub, activity_obj)
     for comp in st.session_state.get("challenge_completions", []):
         _sync_challenge_grade_record(comp)
-
 def _parse_float(value, default=0.0):
     try:
         return float(str(value).replace(",", "."))
@@ -6021,12 +5845,9 @@ def upsert_activity_submission(activity_obj, aluno_nome, turma_nome, answers_by_
         record["score_professor"] = None
         record["feedback_professor"] = ""
         record["avaliado_em"] = ""
-        _remove_assessment_grade_record("atividade", str(record.get("id", "")).strip(), aluno_nome)
     else:
         st.session_state["activity_submissions"].append(record)
     save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
-    if not scoring.get("needs_manual_review"):
-        _sync_activity_grade_record(record, activity_obj)
     return True, "Resposta enviada."
 
 def activity_submission_final_score(submission_obj):
@@ -6043,85 +5864,6 @@ def _is_homework_activity(activity_obj):
     titulo = normalize_text(activity_obj.get("titulo", ""))
     markers = ("licao de casa", "licoes de casa", "tarefa de casa", "homework")
     return any(tag in tipo for tag in markers) or any(tag in titulo for tag in markers)
-
-def _remove_auto_absence_submissions_for_activity(activity_id):
-    activity_id = str(activity_id or "").strip()
-    if not activity_id:
-        return False
-    kept = []
-    changed = False
-    for submission in st.session_state.get("activity_submissions", []):
-        if (
-            str(submission.get("activity_id", "")).strip() == activity_id
-            and bool(submission.get("auto_created_absence", False))
-        ):
-            _remove_assessment_grade_record(
-                "atividade",
-                str(submission.get("id", "")).strip(),
-                str(submission.get("aluno", "")).strip(),
-            )
-            changed = True
-            continue
-        kept.append(submission)
-    if changed:
-        st.session_state["activity_submissions"] = kept
-        save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state.get("activity_submissions", []))
-    return changed
-
-def _sync_overdue_homework_status():
-    today_ref = datetime.date.today()
-    now_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    activities_changed = False
-    submissions_changed = False
-
-    for activity in st.session_state.get("activities", []):
-        if not isinstance(activity, dict) or not _is_homework_activity(activity):
-            continue
-        activity_id = str(activity.get("id", "")).strip()
-        turma_nome = str(activity.get("turma", "")).strip()
-        due_obj = parse_date(activity.get("due_date", ""))
-        if not activity_id or not turma_nome or not due_obj or due_obj >= today_ref:
-            continue
-
-        if _is_activity_open(activity):
-            activity["status"] = "Encerrada"
-            activity["updated_at"] = now_txt
-            activities_changed = True
-
-        total_pontos = _activity_points_total(activity)
-        for student in st.session_state.get("students", []):
-            if str(student.get("turma", "")).strip() != turma_nome:
-                continue
-            if normalize_text(student.get("status", "ativo")) == "inativo":
-                continue
-            aluno_nome = str(student.get("nome", "")).strip()
-            if not aluno_nome or get_activity_submission(activity_id, aluno_nome):
-                continue
-            submission = {
-                "id": uuid.uuid4().hex,
-                "activity_id": activity_id,
-                "atividade_titulo": str(activity.get("titulo", "")).strip(),
-                "atividade_tipo": str(activity.get("tipo", "")).strip(),
-                "aluno": aluno_nome,
-                "turma": turma_nome,
-                "respostas": [],
-                "score_auto": 0,
-                "score_total": int(total_pontos),
-                "score_professor": 0.0,
-                "feedback_professor": "Sem resposta o trabalho.",
-                "status": "Avaliada sem resposta",
-                "submitted_at": "",
-                "avaliado_em": now_txt,
-                "updated_at": now_txt,
-                "auto_created_absence": True,
-            }
-            st.session_state["activity_submissions"].append(submission)
-            submissions_changed = True
-
-    if activities_changed:
-        save_list(ACTIVITIES_FILE, st.session_state.get("activities", []))
-    if submissions_changed:
-        save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state.get("activity_submissions", []))
 
 def _recent_class_lessons_for_homework(turma_nome, limit=4):
     turma_nome = str(turma_nome or "").strip()
@@ -6253,18 +5995,12 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
     lesson_context = [str(x).strip() for x in (lesson_context or []) if str(x).strip()]
     focus = str(foco_extra or "").strip()
     lessons_text = "; ".join(lesson_context[:4]) if lesson_context else "Sem licao registrada."
-    wiz_query = f"{livro_nome} {focus} {lessons_text} ingles english licao livro"
-    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000, query=wiz_query)
-    if not wiz_refs:
-        wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
 
     messages = [
         {
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria licoes de casa semanais de ingles para turmas escolares.\n"
-                "Use como base o conteudo da turma, o foco informado e os materiais da memoria Wiz IA quando relacionados ao livro/tema solicitado.\n"
-                "Se o foco mencionar livro/licao/ingles, siga exatamente e ignore temas nao relacionados (ex: inteligencia emocional).\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -6276,7 +6012,6 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
                 f"Semana: {week_key}\n"
                 f"Licoes recentes da turma: {lessons_text}\n"
                 f"Foco opcional informado pelo professor/coordenador: {focus or 'Nenhum'}\n\n"
-                f"{wiz_refs}\n\n"
                 f"Crie uma licao de casa semanal com {question_count} questoes.\n"
                 "A atividade deve poder ser respondida no portal do aluno.\n\n"
                 "Retorne JSON com campos:\n"
@@ -6356,90 +6091,12 @@ def _publish_homework_activity(
 
 def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     turmas = sorted({str(t).strip() for t in (turmas_disponiveis or []) if str(t).strip()})
+    st.markdown('<div class="main-header">Licoes de Casa Semanais</div>', unsafe_allow_html=True)
+    st.caption("Publique licoes de casa semanais por turma. O aluno responde direto no portal.")
+    can_manage_admin_only = panel_key == "coord_homework" and _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
     if not turmas:
         st.info("Nenhuma turma disponivel para publicar licao de casa.")
         return
-
-    homework_items_all = [
-        a for a in st.session_state.get("activities", [])
-        if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
-    ]
-    render_section_hero(
-        "Central de lições de casa",
-        "Gere, publique e acompanhe tarefas por turma com apoio da IA, revisão manual e leitura clara das respostas dos alunos.",
-        [
-            f"{len(turmas)} turmas",
-            f"{len(homework_items_all)} lições registradas",
-        ],
-    )
-    render_panel_intro(
-        "Fluxo operacional das lições",
-        "Escolha entre gerar com IA ou publicar manualmente, revise o resumo antes de publicar e acompanhe execução e respostas no mesmo painel.",
-        [
-            ("Ativas", len([a for a in homework_items_all if _is_activity_open(a)])),
-            ("Encerradas", len([a for a in homework_items_all if not _is_activity_open(a)])),
-        ],
-    )
-
-    def _homework_shell(step, title, description, tone="blue"):
-        tone_map = {
-            "blue": ("#1d4ed8", "#2563eb"),
-            "green": ("#059669", "#10b981"),
-            "orange": ("#ea580c", "#f97316"),
-            "slate": ("#334155", "#0f172a"),
-        }
-        left, right = tone_map.get(tone, tone_map["blue"])
-        st.markdown(
-            (
-                f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
-                f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
-                f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
-                f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
-                f'background:linear-gradient(90deg,{left},{right});"></div>'
-                f'<div style="display:flex;gap:14px;align-items:flex-start;">'
-                f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
-                f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
-                f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
-                f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
-                f'</div></div>'
-            ),
-            unsafe_allow_html=True,
-        )
-
-    def _homework_card(title, rows, tone="blue", badge="Resumo"):
-        tone_map = {
-            "blue": ("#2563eb", "rgba(37,99,235,.12)"),
-            "green": ("#10b981", "rgba(16,185,129,.12)"),
-            "orange": ("#f97316", "rgba(249,115,22,.12)"),
-            "slate": ("#334155", "rgba(51,65,85,.12)"),
-        }
-        accent, chip_bg = tone_map.get(tone, tone_map["blue"])
-        blocks = []
-        for label, value in rows:
-            blocks.append(
-                (
-                    '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
-                    'border-radius:16px;padding:14px 16px;">'
-                    f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
-                    f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
-                    '</div>'
-                )
-            )
-        st.markdown(
-            (
-                '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
-                'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
-                f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
-                f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
-                + "".join(blocks) +
-                '</div></div>'
-            ),
-            unsafe_allow_html=True,
-        )
 
     draft_key = f"{panel_key}_homework_ai_draft"
     tab_ia, tab_manual, tab_publicadas, tab_respostas = st.tabs(
@@ -6447,28 +6104,11 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
     )
 
     with tab_ia:
-        _homework_shell(
-            "1",
-            "Gerar uma lição com apoio da IA",
-            "Selecione a turma, revise o livro e as últimas lições registradas e só então peça a geração semanal para o Wiz.",
-            tone="blue",
-        )
         turma_sel = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_ia_turma")
         turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_sel), {})
         livro_turma = _norm_book_level(turma_obj.get("livro", ""))
         semana = current_week_key(datetime.date.today())
         licoes_recentes = _recent_class_lessons_for_homework(turma_sel, limit=4)
-        _homework_card(
-            "Contexto da turma para a geração",
-            [
-                ("Turma", turma_sel),
-                ("Livro/Nível", livro_turma or "Nao definido"),
-                ("Semana", semana),
-                ("Lições recentes", " | ".join(licoes_recentes[:2]) if licoes_recentes else "Sem histórico recente"),
-            ],
-            tone="blue",
-            badge="IA",
-        )
         st.caption(f"Livro/Nivel da turma: {livro_turma or 'Nao definido'}")
         if licoes_recentes:
             st.caption("Ultimas licoes da turma: " + " | ".join(licoes_recentes[:3]))
@@ -6512,7 +6152,7 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if st.button("Gerar licao semanal com IA", type="primary", key=f"{panel_key}_hw_ia_generate"):
             api_key = get_groq_api_key()
             if not api_key:
-                st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar licao com IA.")
+                st.error("Configure GROQ_API_KEY para gerar licao com IA.")
             else:
                 try:
                     draft = generate_weekly_homework_ai(
@@ -6534,30 +6174,12 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
 
         draft = st.session_state.get(draft_key)
         if isinstance(draft, dict):
-            due_obj = draft.get("due_date")
-            due_txt = due_obj.strftime("%d/%m/%Y") if isinstance(due_obj, (datetime.date, datetime.datetime)) else str(due_obj or "")
-            _homework_shell(
-                "2",
-                "Revisar o rascunho antes da publicação",
-                "Confira título, descrição, prazo e estrutura das questões antes de liberar a tarefa para os alunos.",
-                tone="green",
-            )
-            _homework_card(
-                "Resumo do rascunho gerado",
-                [
-                    ("Título", draft.get("titulo", "")),
-                    ("Turma", draft.get("turma", "")),
-                    ("Prazo", due_txt or "Sem prazo"),
-                    ("Questões", len(draft.get("questions", []) or [])),
-                    ("Reenvio", "Sim" if draft.get("allow_resubmission") else "Nao"),
-                    ("Comunicado", "Sim" if draft.get("notify_students", True) else "Nao"),
-                ],
-                tone="green",
-                badge="Rascunho",
-            )
+            st.markdown("---")
             st.markdown("### Rascunho gerado")
             st.markdown(f"**Titulo:** {draft.get('titulo', '')}")
             st.write(str(draft.get("descricao", "")).strip())
+            due_obj = draft.get("due_date")
+            due_txt = due_obj.strftime("%d/%m/%Y") if isinstance(due_obj, (datetime.date, datetime.datetime)) else str(due_obj or "")
             st.caption(f"Turma: {draft.get('turma', '')} | Prazo: {due_txt or 'Sem prazo'}")
 
             for idx, q in enumerate(draft.get("questions", []), start=1):
@@ -6595,12 +6217,6 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.rerun()
 
     with tab_manual:
-        _homework_shell(
-            "1",
-            "Publicar lição manualmente",
-            "Monte a tarefa em blocos claros: turma, conteúdo, prazo, política de reenvio e questões antes da publicação final.",
-            tone="orange",
-        )
         with st.form(f"{panel_key}_hw_manual_form"):
             turma_atividade = st.selectbox("Turma", turmas, key=f"{panel_key}_hw_manual_turma")
             titulo_atividade = st.text_input("Titulo", key=f"{panel_key}_hw_manual_titulo")
@@ -6628,19 +6244,6 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                 value=3,
                 step=1,
                 key=f"{panel_key}_hw_manual_qtd",
-            )
-            _homework_card(
-                "Resumo da publicação manual",
-                [
-                    ("Turma", turma_atividade),
-                    ("Titulo", titulo_atividade.strip() or "Definir título"),
-                    ("Prazo", format_date_br(due_date) if due_date else "-"),
-                    ("Questões", int(qtd_questoes)),
-                    ("Reenvio", "Sim" if allow_resubmission else "Nao"),
-                    ("Comunicado", "Sim" if enviar_comunicado else "Nao"),
-                ],
-                tone="orange",
-                badge="Prévia",
             )
             st.caption("Monte as questoes abaixo. Em multipla escolha, informe uma opcao por linha.")
 
@@ -6728,13 +6331,10 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.rerun()
 
     with tab_publicadas:
-        _homework_shell(
-            "1",
-            "Gerenciar lições já publicadas",
-            "Acompanhe quais tarefas seguem ativas, quantas respostas já chegaram e encerre ou reabra a publicação sem sair da lista.",
-            tone="slate",
-        )
-        homework_items = homework_items_all
+        homework_items = [
+            a for a in st.session_state.get("activities", [])
+            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
+        ]
         homework_items = sorted(
             homework_items,
             key=lambda a: (
@@ -6746,17 +6346,6 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if not homework_items:
             st.info("Nenhuma licao de casa publicada ainda.")
         else:
-            _homework_card(
-                "Panorama das publicações",
-                [
-                    ("Total", len(homework_items)),
-                    ("Ativas", len([a for a in homework_items if _is_activity_open(a)])),
-                    ("Encerradas", len([a for a in homework_items if not _is_activity_open(a)])),
-                    ("Turmas cobertas", len({str(a.get("turma", "")).strip() for a in homework_items if str(a.get("turma", "")).strip()})),
-                ],
-                tone="slate",
-                badge="Gestão",
-            )
             for atividade in homework_items:
                 activity_id = str(atividade.get("id", "")).strip()
                 titulo = str(atividade.get("titulo", "Licao de Casa")).strip() or "Licao de Casa"
@@ -6779,30 +6368,43 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                     st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
                     if str(atividade.get("descricao", "")).strip():
                         st.write(str(atividade.get("descricao", "")).strip())
+                    close_col, delete_col = st.columns(2)
                     if _is_activity_open(atividade):
-                        if st.button("Encerrar licao", key=f"{panel_key}_close_hw_{activity_id}"):
+                        if close_col.button("Encerrar licao", key=f"{panel_key}_close_hw_{activity_id}"):
                             atividade["status"] = "Encerrada"
                             atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             save_list(ACTIVITIES_FILE, st.session_state["activities"])
                             st.success("Licao encerrada.")
                             st.rerun()
                     else:
-                        if st.button("Reabrir licao", key=f"{panel_key}_open_hw_{activity_id}"):
+                        if close_col.button("Reabrir licao", key=f"{panel_key}_open_hw_{activity_id}"):
                             atividade["status"] = "Ativa"
                             atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-                            _remove_auto_absence_submissions_for_activity(activity_id)
                             save_list(ACTIVITIES_FILE, st.session_state["activities"])
                             st.success("Licao reaberta.")
                             st.rerun()
+                    if can_manage_admin_only:
+                        delete_key = f"{panel_key}_delete_hw_confirm_{activity_id}"
+                        if delete_col.button("Excluir licao", key=f"{panel_key}_delete_hw_{activity_id}"):
+                            st.session_state[delete_key] = True
+                        if st.session_state.get(delete_key, False):
+                            st.warning("Confirme a exclusao desta licao. As respostas e notas vinculadas tambem serao removidas.")
+                            dc1, dc2 = st.columns(2)
+                            if dc1.button("Confirmar exclusao", key=f"{panel_key}_delete_hw_yes_{activity_id}", type="primary"):
+                                st.session_state[delete_key] = False
+                                if _delete_homework_activity_by_id(activity_id):
+                                    st.success("Licao excluida com sucesso.")
+                                    st.rerun()
+                                st.error("Nao foi possivel excluir a licao selecionada.")
+                            if dc2.button("Cancelar", key=f"{panel_key}_delete_hw_no_{activity_id}"):
+                                st.session_state[delete_key] = False
+                                st.rerun()
 
     with tab_respostas:
-        _homework_shell(
-            "1",
-            "Acompanhar respostas dos alunos",
-            "Selecione a lição publicada para verificar entregas, pendências e progresso da turma com leitura mais direta.",
-            tone="blue",
-        )
-        homework_items = homework_items_all
+        homework_items = [
+            a for a in st.session_state.get("activities", [])
+            if str(a.get("turma", "")).strip() in set(turmas) and _is_homework_activity(a)
+        ]
         homework_items = sorted(
             homework_items,
             key=lambda a: (
@@ -6814,17 +6416,6 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
         if not homework_items:
             st.info("Nenhuma licao de casa publicada para acompanhar respostas.")
         else:
-            _homework_card(
-                "Panorama das respostas",
-                [
-                    ("Lições disponíveis", len(homework_items)),
-                    ("Turmas", len({str(a.get("turma", "")).strip() for a in homework_items if str(a.get("turma", "")).strip()})),
-                    ("Ativas", len([a for a in homework_items if _is_activity_open(a)])),
-                    ("Encerradas", len([a for a in homework_items if not _is_activity_open(a)])),
-                ],
-                tone="blue",
-                badge="Monitoramento",
-            )
             atividade_labels = []
             atividade_map = {}
             for atividade in homework_items:
@@ -6916,7 +6507,6 @@ def run_weekly_homework_panel(panel_key, turmas_disponiveis, autor_nome):
                             sub["status"] = "Avaliada"
                             sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                             save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
-                            _sync_activity_grade_record(sub, activity_obj)
                             st.success("Avaliacao salva.")
                             st.rerun()
 
@@ -8015,9 +7605,9 @@ def _extract_json_object(text):
 def _groq_chat_text(messages, temperature=0.2, max_tokens=900):
     api_key = get_groq_api_key()
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY/ACTIVE_GROQ_API_KEY nao configurado.")
+        raise RuntimeError("GROQ_API_KEY nao configurado.")
     client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-    model_name = _clean_config_value(_get_config_value("ACTIVE_CHALLENGE_MODEL", "")) or get_active_chatbot_model()
+    model_name = os.getenv("ACTIVE_CHALLENGE_MODEL", os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"))
     result = client.chat.completions.create(
         model=model_name,
         messages=messages,
@@ -8032,27 +7622,13 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
     reference_title = str(reference_title or "").strip()
     reference_text = str(reference_text or "").strip()
     challenge_theme = str(challenge_theme or "Livro / Conteudo atual").strip()
-    wiz_query = " ".join(
-        [
-            reference_title,
-            challenge_theme,
-            reference_text[:220],
-            level,
-            "livro licao lesson ingles english",
-        ]
-    ).strip()
-    wiz_refs = _wiz_reference_context(max_docs=8, max_chars=8000, query=wiz_query)
-    if not wiz_refs:
-        wiz_refs = "Materiais da memoria Wiz IA: nenhum documento carregado."
     messages = [
         {
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria desafios semanais educacionais da Mister Wiz.\n"
                 "Gere UM desafio adequado ao nivel do aluno e que possa ser respondido no portal.\n"
-                "Use a referencia pedagogica enviada e os materiais da memoria Wiz IA como base obrigatoria do desafio.\n"
-                "Se o pedido for de Ingles ou outro livro, use exclusivamente o livro/licao solicitados.\n"
-                "Ignore temas fora da referencia (ex.: inteligencia emocional) se nao foram solicitados.\n"
+                "Use a referencia pedagogica enviada como base obrigatoria do desafio.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -8064,7 +7640,6 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
                 f"Linha do desafio: {challenge_theme}\n"
                 f"Livro/Nivel de referencia: {reference_title or level or '-'}\n\n"
                 f"Referencia pedagogica para gerar o desafio:\n{reference_text or 'Sem referencia adicional informada.'}\n\n"
-                f"{wiz_refs}\n\n"
                 "Crie um desafio de 10 a 20 minutos com foco na referencia acima.\n"
                 "Formato: resposta escrita curta (texto).\n\n"
                 "Campos obrigatorios no JSON:\n"
@@ -8835,7 +8410,7 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
         pdf.cell(0, 6, obs, align="C")
         pdf.set_text_color(0, 0, 0)
 
-    return _fpdf_output_bytes(pdf)
+    return pdf.output(dest="S").encode("latin-1", "ignore")
 
 def add_receivable(
     aluno,
@@ -9535,7 +9110,7 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     pdf.set_text_color(71, 85, 105)
     pdf.multi_cell(0, 4.5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo informado."))
 
-    return _fpdf_output_bytes(pdf)
+    return pdf.output(dest="S").encode("latin-1", "ignore")
 
 def _teacher_payment_already_launched(session_obj):
     ref = _teacher_payment_ref_for_session(session_obj)
@@ -9580,158 +9155,8 @@ def allowed_portals(profile):
     if profile == "Professor": return ["Professor"]
     if profile == "Comercial": return ["Comercial"]
     if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
-    if profile == "Atendimento": return ["Coordenador"]
-    # Admin keeps universal access to every portal exposed by the system.
-    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial", "Atendimento"]
+    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
     return []
-
-def _is_admin_account(profile=None):
-    profile = str(profile or st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
-    return profile == "Admin"
-
-def _permissions_registry():
-    return [
-        ("Acessos gerais", [
-            ("access.dashboard", "Dashboard"),
-            ("access.agenda", "Agenda"),
-            ("access.links", "Links ao vivo"),
-            ("reports.view", "Relatórios"),
-            ("support.view", "Suporte"),
-        ]),
-        ("Alunos", [
-            ("students.view", "Visualizar alunos"),
-            ("students.create", "Cadastrar alunos"),
-            ("students.edit", "Editar alunos"),
-            ("students.delete", "Excluir alunos"),
-            ("students.details", "Ver detalhes completos"),
-        ]),
-        ("Professores", [
-            ("teachers.view", "Visualizar professores"),
-            ("teachers.create", "Cadastrar professores"),
-            ("teachers.edit", "Editar professores"),
-            ("teachers.delete", "Excluir professores"),
-        ]),
-        ("Turmas e aulas", [
-            ("classes.view", "Visualizar turmas"),
-            ("classes.create", "Criar turmas"),
-            ("classes.edit", "Editar turmas"),
-            ("classes.delete", "Excluir turmas"),
-            ("classes.sessions", "Visualizar aulas"),
-            ("classes.edit_sessions", "Editar aulas"),
-            ("classes.reschedule", "Reagendar aulas"),
-        ]),
-        ("Financeiro", [
-            ("finance.view", "Visualizar financeiro"),
-            ("finance.view_basic", "Consulta básica financeira"),
-            ("finance.edit", "Editar financeiro"),
-            ("finance.launch", "Lançar pagamento"),
-            ("finance.discount", "Aplicar desconto"),
-            ("finance.reports", "Relatórios financeiros"),
-        ]),
-        ("Conteúdos e comunicação", [
-            ("content.view", "Caixa de entrada"),
-            ("homework.view", "Lições de casa"),
-            ("challenges.view", "Desafios"),
-            ("whatsapp.view", "WhatsApp"),
-            ("wiz.view", "Assistente Wiz"),
-        ]),
-        ("Biblioteca e certificados", [
-            ("books.view", "Biblioteca"),
-            ("certificates.view", "Certificados"),
-        ]),
-        ("Estoque", [
-            ("inventory.view", "Estoque"),
-        ]),
-        ("Backup", [
-            ("backup.view", "Backup"),
-        ]),
-        ("Usuários e controle", [
-            ("users.view", "Visualizar usuários"),
-            ("users.create", "Criar usuários"),
-            ("users.edit", "Editar usuários"),
-            ("users.inactivate", "Inativar usuários"),
-            ("permissions.manage", "Configurar permissões"),
-        ]),
-        ("Configurações", [
-            ("settings.view", "Acessar configurações"),
-            ("settings.edit", "Editar parâmetros gerais"),
-        ]),
-    ]
-
-def _all_permission_keys():
-    keys = []
-    for _, items in _permissions_registry():
-        keys.extend([key for key, _ in items])
-    return keys
-
-def _default_permissions_for_role(role):
-    role = str(role or "").strip()
-    all_keys = set(_all_permission_keys())
-    if role == "Admin":
-        return all_keys
-    if role == "Coordenador":
-        return all_keys - {"permissions.manage"}
-    if role == "Atendimento":
-        return {
-            "access.dashboard",
-            "access.agenda",
-            "access.links",
-            "students.view",
-            "students.create",
-            "students.edit",
-            "students.details",
-            "teachers.view",
-            "classes.view",
-            "classes.sessions",
-            "finance.view_basic",
-            "content.view",
-            "support.view",
-        }
-    return set()
-
-def _current_user_obj():
-    username = str(st.session_state.get("user_name", "")).strip()
-    if not username:
-        return None
-    return next((u for u in st.session_state.get("users", []) if str(u.get("usuario", "")).strip() == username), None)
-
-def _user_permissions(profile=None, user_obj=None):
-    profile = str(profile or st.session_state.get("account_profile") or st.session_state.get("role") or "")
-    if _is_admin_account(profile):
-        return set(_all_permission_keys())
-    user_obj = user_obj or _current_user_obj()
-    stored = []
-    if user_obj:
-        stored = user_obj.get("permissoes", []) or []
-    if stored:
-        return set([str(p).strip() for p in stored if str(p).strip()])
-    return _default_permissions_for_role(profile)
-
-def _has_permission(key):
-    profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-    if _is_admin_account(profile):
-        return True
-    return str(key).strip() in _user_permissions(profile=profile)
-
-def _require_permission(key, message="Acesso negado para esta área."):
-    if not _has_permission(key):
-        st.error(message)
-        st.stop()
-
-def _append_permissions_audit(target_user, changes):
-    logs = load_list(PERMISSIONS_AUDIT_FILE)
-    if not isinstance(logs, list):
-        logs = []
-    actor = str(st.session_state.get("user_name", "")).strip() or "admin"
-    logs.append(
-        {
-            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "admin": actor,
-            "usuario": target_user,
-            "mudancas": changes,
-        }
-    )
-    save_list(PERMISSIONS_AUDIT_FILE, logs)
 
 def _send_email_smtp(to_email, subject, body):
     host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "").strip()
@@ -10286,49 +9711,6 @@ def _mark_student_messages_read(student_name, messages_list):
     save_list(STUDENTS_FILE, st.session_state.get("students", []))
     return len(new_ids)
 
-def _sidebar_grouped_options(title, options, key):
-    opts = [str(opt).strip() for opt in (options or []) if str(opt).strip()]
-    if not opts:
-        return []
-    if key == "menu_coord":
-        grouping = {
-            "Visão Geral": ["Dashboard", "Agenda", "Links Ao Vivo"],
-            "Acadêmico": ["Alunos", "Professores", "Turmas", "Relatório de Aulas", "Relatórios", "Notas", "Lições de Casa", "Desafios", "Biblioteca", "Certificados"],
-            "Operação": ["Usuários", "Permissões", "Financeiro", "Estoque", "Caixa de Entrada"],
-            "Especiais": ["ASSISTENTE WIZ", "Professor Wiz", "WhatsApp (Evolution)", "Backup", "Suporte"],
-        }
-    elif key == "menu_prof":
-        grouping = {
-            "Rotina": ["Minhas Turmas", "Agenda", "Mensagens"],
-            "Acadêmico": ["Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca"],
-            "Suporte": ["Professor Wiz", "Suporte"],
-        }
-    elif key == "menu_aluno":
-        grouping = {
-            "Visão Geral": ["Painel", "Agenda", "Minhas Aulas", "Boletim e Frequencia", "Mensagens"],
-            "Aprendizado": ["Atividades", "Lições de Casa", "Desafios", "Aulas Gravadas", "Materiais de Estudo"],
-            "Serviços": ["Financeiro", "Professor Wiz", "Suporte"],
-        }
-    elif key == "menu_sales":
-        grouping = {
-            "Comercial": ["Leads", "Agenda Comercial", "Alunos Matriculados"],
-            "Financeiro": ["Financeiro Matricula"],
-            "Comunicação": ["WhatsApp Leads", "Professor Wiz", "Suporte"],
-        }
-    else:
-        grouping = {title or "Navegação": opts}
-    sections = []
-    used = set()
-    for group_label, group_items in grouping.items():
-        section_items = [item for item in group_items if item in opts and item not in used]
-        if section_items:
-            sections.append((group_label, section_items))
-            used.update(section_items)
-    leftovers = [item for item in opts if item not in used]
-    if leftovers:
-        sections.append(("Mais opções", leftovers))
-    return sections
-
 def sidebar_menu(title, options, key):
     icon_map = {
         "Dashboard": "🏠",
@@ -10347,8 +9729,7 @@ def sidebar_menu(title, options, key):
         "Certificados": "📜",
         "Biblioteca": "📚",
         "Livros": "📚",
-        "Aprovação Notas": "📋",
-        "Notas": "📋",
+        "Aprovação Notas": "✅",
         "Caixa de Entrada": "📨",
         "Conteúdos": "🗂️",
         "Desafios": "🧩",
@@ -10360,206 +9741,18 @@ def sidebar_menu(title, options, key):
         "Backup": "🛟",
         "ASSISTENTE WIZ": "🤖",
         "Professor Wiz": "✨",
-        "Suporte": "🛠️",
-        "Leads": "🧲",
-        "Agenda Comercial": "🗓️",
-        "Financeiro Matricula": "💳",
-        "Alunos Matriculados": "🧾",
-        "WhatsApp Leads": "💬",
-        "Boletim e Frequencia": "📈",
-        "Lançar Notas": "🧮",
-        "Lancar Notas": "🧮",
     }
-    st.markdown(
-        f"""
-        <div class="sidebar-nav-header">
-            <span class="sidebar-section-kicker">Navegação</span>
-            <span class="sidebar-section-name">{html.escape(title)}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
     if key not in st.session_state or st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
-    grouped_sections = _sidebar_grouped_options(title, options, key)
-    special_items = {"Desafios", "WhatsApp (Evolution)", "ASSISTENTE WIZ", "Backup", "Professor Wiz"}
-    for idx_section, (group_label, section_items) in enumerate(grouped_sections):
-        st.markdown(
-            f"""
-            <div class="sidebar-group-title">
-                <span>{html.escape(group_label)}</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        for option in section_items:
-            active = st.session_state[key] == option
-            icon = icon_map.get(str(option).strip(), "•")
-            option_label = f"{icon}  {option}"
-            if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
-                st.session_state[key] = option
-        if idx_section != len(grouped_sections) - 1:
-            st.markdown('<div class="sidebar-group-divider"></div>', unsafe_allow_html=True)
+    for option in options:
+        active = st.session_state[key] == option
+        icon = icon_map.get(str(option).strip(), "•")
+        option_label = f"{icon}  {option}"
+        if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
+            st.session_state[key] = option
+            st.rerun()
     return st.session_state[key]
-
-
-def render_section_hero(title, description="", chips=None):
-    chips = [str(c).strip() for c in (chips or []) if str(c).strip()]
-    chips_html = "".join(
-        f"<span class='section-hero-chip'>{html.escape(chip)}</span>" for chip in chips
-    )
-    desc_html = f"<p>{html.escape(description)}</p>" if str(description).strip() else ""
-    st.markdown(
-        f"""
-        <div class="section-hero">
-            <div class="section-hero-copy">
-                <div class="section-hero-kicker">Visao executiva</div>
-                <h2>{html.escape(title)}</h2>
-                {desc_html}
-            </div>
-            <div class="section-hero-chips">{chips_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_panel_intro(title, description="", stats=None):
-    stats = stats or []
-    stats_html = "".join(
-        f"""
-        <div class="panel-intro-stat">
-            <span>{html.escape(str(label))}</span>
-            <strong>{html.escape(str(value))}</strong>
-        </div>
-        """
-        for label, value in stats
-    )
-    desc_html = f"<p>{html.escape(description)}</p>" if str(description).strip() else ""
-    st.markdown(
-        f"""
-        <div class="panel-intro">
-            <div class="panel-intro-header">
-                <h3>{html.escape(title)}</h3>
-                {desc_html}
-            </div>
-            <div class="panel-intro-stats">{stats_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def _challenge_tone_palette(tone="blue"):
-    palettes = {
-        "blue": ("#1d4ed8", "#eff6ff", "#dbeafe"),
-        "green": ("#059669", "#ecfdf5", "#d1fae5"),
-        "orange": ("#ea580c", "#fff7ed", "#fed7aa"),
-        "slate": ("#334155", "#f8fafc", "#e2e8f0"),
-        "rose": ("#e11d48", "#fff1f2", "#fecdd3"),
-    }
-    return palettes.get(tone, palettes["blue"])
-
-def render_challenges_top_banner(title, subtitle="", week_label="", metrics=None):
-    chips = []
-    if week_label:
-        chips.append(f"Semana {week_label}")
-    render_section_hero(title, subtitle, chips=chips)
-    cards = metrics or []
-    if not cards:
-        return
-    blocks = []
-    for item in cards:
-        tone = str((item or {}).get("tone", "blue")).strip().lower() or "blue"
-        accent, bg, border = _challenge_tone_palette(tone)
-        blocks.append(
-            (
-                f'<div class="challenge-metric-card" style="background:{bg};border:1px solid {border};">'
-                f'<div class="challenge-metric-label" style="color:{accent};">{html.escape(str(item.get("label", "")))}</div>'
-                f'<div class="challenge-metric-value">{html.escape(str(item.get("value", "-")))}</div>'
-                f'<div class="challenge-metric-sub">{html.escape(str(item.get("sub", "")))}</div>'
-                '</div>'
-            )
-        )
-    st.markdown(
-        '<div class="challenge-metric-grid">' + "".join(blocks) + '</div>',
-        unsafe_allow_html=True,
-    )
-
-def render_challenge_preview_card(title, descricao, rubrica, dica, meta_rows=None, title_color="#1e3a8a", description_color="#111827", title_bold=False, description_bold=False):
-    meta_rows = meta_rows or []
-    meta_html = "".join(
-        (
-            '<div class="challenge-preview-meta-item">'
-            f'<span>{html.escape(str(label))}</span>'
-            f'<strong>{html.escape(str(value))}</strong>'
-            '</div>'
-        )
-        for label, value in meta_rows
-    )
-    rubrica_html = (
-        '<div class="challenge-preview-block">'
-        '<div class="challenge-preview-kicker">Rubrica</div>'
-        f'<div>{html.escape(str(rubrica or "-"))}</div>'
-        '</div>'
-    )
-    dica_html = (
-        '<div class="challenge-preview-block">'
-        '<div class="challenge-preview-kicker">Dica</div>'
-        f'<div>{html.escape(str(dica or "-"))}</div>'
-        '</div>'
-    )
-    st.markdown(
-        (
-            '<div class="challenge-preview-card">'
-            '<div class="challenge-preview-head">'
-            '<div>'
-            '<div class="challenge-preview-kicker">Pré-visualização do desafio</div>'
-            f'<div class="challenge-preview-title" style="color:{html.escape(str(title_color))};font-weight:{"800" if title_bold else "700"};">{html.escape(str(title or "Titulo do desafio"))}</div>'
-            '</div>'
-            '</div>'
-            f'<div class="challenge-preview-description" style="color:{html.escape(str(description_color))};font-weight:{"700" if description_bold else "500"};">{html.escape(str(descricao or "Descricao do desafio")).replace(chr(10), "<br>")}</div>'
-            '<div class="challenge-preview-grid">'
-            + rubrica_html
-            + dica_html +
-            '</div>'
-            '<div class="challenge-preview-meta">'
-            + meta_html +
-            '</div>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-def render_challenge_collection_card(title, subtitle="", items=None, empty_text="Sem itens.", tone="blue"):
-    items = items or []
-    accent, bg, border = _challenge_tone_palette(tone)
-    if not items:
-        body_html = f'<div class="challenge-empty">{html.escape(str(empty_text))}</div>'
-    else:
-        body_html = ""
-        for item in items:
-            badge = str((item or {}).get("badge", "")).strip()
-            body_html += (
-                '<div class="challenge-collection-item">'
-                '<div class="challenge-collection-main">'
-                f'<div class="challenge-collection-title">{html.escape(str(item.get("title", "-")))}</div>'
-                f'<div class="challenge-collection-meta">{html.escape(str(item.get("meta", "")))}</div>'
-                '</div>'
-                + (
-                    f'<span class="challenge-collection-badge" style="color:{accent};background:{bg};border:1px solid {border};">{html.escape(badge)}</span>'
-                    if badge else ""
-                )
-                + '</div>'
-            )
-    st.markdown(
-        (
-            '<div class="challenge-collection-card">'
-            f'<div class="challenge-collection-header"><div><h4>{html.escape(str(title))}</h4><p>{html.escape(str(subtitle))}</p></div></div>'
-            f'{body_html}'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
 
 STUDENT_IMPORT_COLUMNS = [
     "nome",
@@ -10904,53 +10097,14 @@ def render_library(title="Biblioteca", turma=None, turma_options=None):
                         st.video(v.get("url"))
 
 def get_groq_api_key():
-    candidates = [
-        _get_config_value("GROQ_API_KEY", ""),
-        _get_config_value("ACTIVE_GROQ_API_KEY", ""),
-        _get_config_value("ACTIVE_WIZ_API_KEY", ""),
-        _get_config_value("GROQ_KEY", ""),
-        _get_config_value("GROQ_TOKEN", ""),
-    ]
-    for raw_value in candidates:
-        key = _clean_config_value(raw_value)
-        if key:
-            return key
-    # Last-resort fallback for providers/panels that rename env keys.
-    for env_name, env_value in os.environ.items():
-        name_norm = str(env_name or "").strip().upper()
-        if "GROQ" not in name_norm and "WIZ" not in name_norm:
-            continue
-        if "KEY" not in name_norm and "TOKEN" not in name_norm:
-            continue
-        key = _clean_config_value(env_value)
-        if key:
-            return key
+    key = ""
     try:
-        for secret_name, secret_value in dict(st.secrets).items():
-            name_norm = str(secret_name or "").strip().upper()
-            if "GROQ" not in name_norm and "WIZ" not in name_norm:
-                continue
-            if "KEY" not in name_norm and "TOKEN" not in name_norm:
-                continue
-            key = _clean_config_value(secret_value)
-            if key:
-                return key
+        key = str(st.secrets.get("GROQ_API_KEY", "")).strip()
     except Exception:
-        pass
-    return ""
-
-def get_active_chatbot_model():
-    candidates = [
-        _get_config_value("ACTIVE_WIZ_MODEL", ""),
-        _get_config_value("ACTIVE_CHATBOT_MODEL", ""),
-        _get_config_value("GROQ_MODEL", ""),
-        _get_config_value("ACTIVE_GROQ_MODEL", ""),
-    ]
-    for raw_value in candidates:
-        model_name = _clean_config_value(raw_value)
-        if model_name:
-            return model_name
-    return "llama-3.3-70b-versatile"
+        key = ""
+    if not key:
+        key = str(os.getenv("GROQ_API_KEY", "")).strip()
+    return key
 
 def get_active_chat_history_key():
     role = (st.session_state.get("role") or "").strip().lower()
@@ -11011,9 +10165,6 @@ def get_active_system_prompt(mode, include_context=True):
     base.append(f"Perfil atual do usuario no sistema: {role}.")
     if include_context:
         base.append(get_active_context_text())
-    refs = _wiz_reference_context()
-    if refs:
-        base.append(refs)
     return "\n".join(base)
 
 def student_wiz_context(student_name):
@@ -11069,7 +10220,6 @@ def get_tutor_wiz_prompt(contexto_aluno=None):
         "Voce e o Professor Wiz (IA) da escola de ingles Mister Wiz.",
         "Atenda somente conteudos de ingles.",
         "Ensine baseado no nivel do livro do aluno e no conteudo da turma.",
-        "Ao criar desafios, provas, tarefas e trabalhos de casa, use os materiais da memoria Wiz IA como referencia principal.",
         "Se o aluno pedir algo fora de ingles, recuse com educacao e redirecione para ingles.",
         "Responda em portugues do Brasil com exemplos em ingles quando necessario.",
         f"Livro atual do aluno: {livro}.",
@@ -11079,9 +10229,6 @@ def get_tutor_wiz_prompt(contexto_aluno=None):
         base.append("Licoes recentes da turma: " + "; ".join(licoes))
     if materiais:
         base.append("Materiais recentes da turma: " + "; ".join(materiais))
-    refs = _wiz_reference_context(max_docs=4, max_chars=2800)
-    if refs:
-        base.append(refs)
     base.append("Sempre proponha explicacao curta + exercicio pratico + correcao guiada.")
     return "\n".join(base)
 
@@ -11353,1046 +10500,25 @@ def _student_active_account_context(student_obj):
 
 
 def get_student_active_prompt(student_obj):
-    lines = [
-        "Voce e o Bot Mister Wiz integrado ao sistema Active Educacional.",
-        "O CPF do aluno ja foi confirmado nesta sessao antes desta consulta.",
-        "Responda somente com dados do proprio aluno informado abaixo.",
-        "Nunca exponha dados de outros alunos, professores ou usuarios.",
-        "Nao invente informacoes. Se o dado nao estiver no contexto, diga claramente que nao foi encontrado no Active.",
-        _student_active_account_context(student_obj),
-    ]
-    refs = _wiz_reference_context(max_docs=4, max_chars=2800)
-    if refs:
-        lines.append(refs)
-    return "\n".join(lines)
-
-
-def _class_session_grade_metrics(session_obj):
-    sess = session_obj if isinstance(session_obj, dict) else {}
-    turma = str(sess.get("turma", "")).strip()
-    if not turma:
-        return {"nota_media": None, "notas_lancadas": 0, "faltas": 0, "presenca_media": None}
-    sess_date = _class_session_effective_date(sess)
-    if not sess_date:
-        return {"nota_media": None, "notas_lancadas": 0, "faltas": 0, "presenca_media": None}
-
-    prof_norm = normalize_text(sess.get("professor", ""))
-    notes = []
-    presences = []
-    abs_students = set()
-    for grade in st.session_state.get("grades", []):
-        if str(grade.get("turma", "")).strip() != turma:
-            continue
-        grade_date = parse_date(grade.get("data", ""))
-        if grade_date != sess_date:
-            continue
-        if prof_norm:
-            autor_norm = normalize_text(grade.get("autor", ""))
-            if autor_norm and autor_norm != prof_norm:
-                continue
-        avaliacao_norm = normalize_text(grade.get("avaliacao", ""))
-        nota_txt = str(grade.get("nota", "")).strip()
-        match = re.search(r"-?\d+(?:[.,]\d+)?", nota_txt)
-        if not match:
-            continue
-        value = _parse_float(match.group(0), default=None)
-        if value is None:
-            continue
-        if "presenca" in avaliacao_norm or "%" in nota_txt:
-            clipped = max(0.0, min(100.0, float(value)))
-            presences.append(clipped)
-            if clipped < 100.0:
-                aluno_nome = str(grade.get("aluno", "")).strip()
-                if aluno_nome:
-                    abs_students.add(aluno_nome)
-        else:
-            notes.append(float(value))
-
-    note_avg = (sum(notes) / len(notes)) if notes else None
-    presence_avg = (sum(presences) / len(presences)) if presences else None
-    return {
-        "nota_media": note_avg,
-        "notas_lancadas": len(notes),
-        "faltas": len(abs_students),
-        "presenca_media": presence_avg,
-    }
-
-
-def _build_class_sessions_report_rows(date_start=None, date_end=None, professor="Todos", turma="Todas", status_filter="Finalizadas"):
-    prof_target = str(professor or "Todos").strip() or "Todos"
-    turma_target = str(turma or "Todas").strip() or "Todas"
-    prof_norm = normalize_text(prof_target)
-    status_sel = str(status_filter or "Finalizadas").strip() or "Finalizadas"
-    rows = []
-    for sess in st.session_state.get("class_sessions", []):
-        is_final = _class_session_is_finalized(sess)
-        if status_sel == "Finalizadas" and not is_final:
-            continue
-        if status_sel == "Em andamento" and is_final:
-            continue
-        turma_nome = str(sess.get("turma", "")).strip()
-        prof_nome = str(sess.get("professor", "")).strip()
-        if turma_target != "Todas" and turma_nome != turma_target:
-            continue
-        if prof_target != "Todos" and normalize_text(prof_nome) != prof_norm:
-            continue
-        sess_date = _class_session_effective_date(sess)
-        if date_start and sess_date and sess_date < date_start:
-            continue
-        if date_end and sess_date and sess_date > date_end:
-            continue
-        if (date_start or date_end) and not sess_date:
-            continue
-
-        turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
-        payment = _teacher_payment_info_for_session(sess)
-        payment_status = _teacher_payment_status_for_session(sess)
-        metrics = _class_session_grade_metrics(sess)
-
-        hora_abriu = str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip()
-        hora_fechou = str(sess.get("hora_fim_real", sess.get("hora_fim_prevista", ""))).strip()
-        duration_min = _session_duration_minutes_from_times(sess, turma_obj)
-        licao = str(sess.get("licao", "")).strip() or str(sess.get("resumo_final", "")).strip()
-        nota_media = metrics.get("nota_media")
-        notas_lancadas = int(metrics.get("notas_lancadas", 0) or 0)
-        faltas = int(metrics.get("faltas", 0) or 0)
-        valor_aula = float(payment.get("valor", 0) or 0)
-        extra_flag = _class_session_extra_flag(sess, turma_obj)
-
-        rows.append(
-            {
-                "Data": sess_date.strftime("%d/%m/%Y") if isinstance(sess_date, datetime.date) else str(sess.get("data", "")).strip(),
-                "Professor": prof_nome or str(turma_obj.get("professor", "")).strip() or "-",
-                "Turma": turma_nome or "-",
-                "Livro/Nível": str(turma_obj.get("livro", "")).strip() or "-",
-                "Lição": licao or "-",
-                "Abriu": hora_abriu or "-",
-                "Fechou": hora_fechou or "-",
-                "Duração (min)": int(duration_min) if duration_min > 0 else 0,
-                "Valor/Aula": format_money(valor_aula),
-                "_valor_aula_num": valor_aula,
-                "Tipo da Aula": str(payment.get("modulo", "")).strip() or str(turma_obj.get("modulo", "")).strip() or "-",
-                "Aula Extra": "Sim" if extra_flag else "Não",
-                "Pagamento Professor": payment_status.get("status_label", "Pendente"),
-                "Pago em": payment_status.get("paid_at", "-"),
-                "Lançamento": payment_status.get("payable_code", "-"),
-                "Notas Lançadas": notas_lancadas,
-                "Nota Média": f"{float(nota_media):.1f}" if nota_media is not None else "-",
-                "_nota_media_num": float(nota_media) if nota_media is not None else None,
-                "Faltas": faltas,
-                "Status": str(sess.get("status", "")).strip() or ("Finalizada" if is_final else "Em andamento"),
-            }
-        )
-
-    rows.sort(
-        key=lambda x: (
-            parse_date(x.get("Data", "")) or datetime.date(1900, 1, 1),
-            parse_time(x.get("Abriu", "00:00")) or datetime.time(0, 0),
-        ),
-        reverse=True,
-    )
-    return rows
-
-
-def _class_session_extra_flag(session_obj, turma_obj=None):
-    sess = session_obj if isinstance(session_obj, dict) else {}
-    turma = turma_obj if isinstance(turma_obj, dict) else {}
-    for key in ("aula_extra", "extra", "is_extra", "extra_class", "extra_lesson"):
-        value = sess.get(key, None)
-        if isinstance(value, bool):
-            return value
-        if str(value).strip().lower() in ("1", "true", "sim", "yes", "extra"):
-            return True
-    combined = " ".join(
+    return "\n".join(
         [
-            str(sess.get("titulo", "")).strip(),
-            str(sess.get("descricao", "")).strip(),
-            str(sess.get("tipo_aula", "")).strip(),
-            str(turma.get("modulo", "")).strip(),
+            "Voce e o Bot Mister Wiz integrado ao sistema Active Educacional.",
+            "O CPF do aluno ja foi confirmado nesta sessao antes desta consulta.",
+            "Responda somente com dados do proprio aluno informado abaixo.",
+            "Nunca exponha dados de outros alunos, professores ou usuarios.",
+            "Nao invente informacoes. Se o dado nao estiver no contexto, diga claramente que nao foi encontrado no Active.",
+            _student_active_account_context(student_obj),
         ]
-    ).lower()
-    return "extra" in combined or "avulsa" in combined
-
-
-def _teacher_payment_status_for_session(session_obj):
-    ref = _teacher_payment_ref_for_session(session_obj)
-    payable = next(
-        (p for p in st.session_state.get("payables", []) if str(p.get("class_session_ref", "")).strip() == ref),
-        {},
-    )
-    status_raw = str(payable.get("status", "")).strip()
-    status_norm = status_raw.lower()
-    paid_at = str(payable.get("baixa_data", "")).strip() or str(payable.get("data_pagamento", "")).strip() or "-"
-    return {
-        "status_label": status_raw or "Pendente",
-        "is_paid": status_norm == "pago",
-        "paid_at": paid_at,
-        "payable_code": str(payable.get("codigo", "")).strip() or str(payable.get("id", "")).strip() or "-",
-    }
-
-
-def _student_receivables(student_name):
-    aluno = str(student_name or "").strip()
-    items = [
-        r for r in st.session_state.get("receivables", [])
-        if str(r.get("aluno", "")).strip() == aluno
-    ]
-    items.sort(
-        key=lambda item: (
-            parse_date(item.get("vencimento", "")) or datetime.date(2100, 1, 1),
-            str(item.get("descricao", "")).strip(),
-        )
-    )
-    return items
-
-
-def _student_receivables_summary(student_name):
-    items = _student_receivables(student_name)
-    open_items = [r for r in items if str(r.get("status", "")).strip().lower() != "pago"]
-    paid_items = [r for r in items if str(r.get("status", "")).strip().lower() == "pago"]
-    total_open = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in open_items)
-    total_paid = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in paid_items)
-    return {
-        "all": items,
-        "open": open_items,
-        "paid": paid_items,
-        "total_open": total_open,
-        "total_paid": total_paid,
-    }
-
-
-def _coerce_report_date(value):
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, datetime.date):
-        return value
-    text = str(value or "").strip()
-    if not text:
-        return None
-    parsed = parse_date(text)
-    if parsed:
-        return parsed
-    try:
-        return datetime.date.fromisoformat(text[:10])
-    except Exception:
-        return None
-
-
-def _record_matches_period(record, start_date=None, end_date=None, date_fields=None):
-    if not start_date and not end_date:
-        return True
-    record = record or {}
-    for field in date_fields or []:
-        date_value = _coerce_report_date(record.get(field))
-        if not date_value:
-            continue
-        if start_date and date_value < start_date:
-            return False
-        if end_date and date_value > end_date:
-            return False
-        return True
-    return False
-
-
-def _student_receivables_summary_period(student_name, start_date=None, end_date=None):
-    items = _student_receivables(student_name)
-    filtered_items = [
-        item for item in items
-        if _record_matches_period(
-            item,
-            start_date=start_date,
-            end_date=end_date,
-            date_fields=["data_pagamento", "vencimento", "data", "created_at", "updated_at"],
-        )
-    ] if (start_date or end_date) else items
-    open_items = [r for r in filtered_items if str(r.get("status", "")).strip().lower() != "pago"]
-    paid_items = [r for r in filtered_items if str(r.get("status", "")).strip().lower() == "pago"]
-    total_open = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in open_items)
-    total_paid = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in paid_items)
-    return {
-        "all": filtered_items,
-        "open": open_items,
-        "paid": paid_items,
-        "total_open": total_open,
-        "total_paid": total_paid,
-    }
-
-
-def _report_card_html(title, value, subtitle="", tone="blue"):
-    return (
-        f"<div class='report-kpi-card report-{html.escape(str(tone or 'blue'))}'>"
-        f"<div class='k'>{html.escape(str(title or ''))}</div>"
-        f"<div class='v'>{html.escape(str(value or '-'))}</div>"
-        f"<div class='s'>{html.escape(str(subtitle or ''))}</div>"
-        "</div>"
     )
 
 
-def _render_report_kpis(cards):
-    if not cards:
-        return
-    st.markdown(
-        "<div class='report-kpi-grid'>"
-        + "".join(_report_card_html(card.get("title"), card.get("value"), card.get("subtitle"), card.get("tone")) for card in cards)
-        + "</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def _report_print_html_bytes(title, subtitle, rows, preferred_columns):
-    columns = [col for col in preferred_columns if any(col in row for row in rows)] if rows else list(preferred_columns)
-    if not columns and rows:
-        columns = list(rows[0].keys())
-    head_html = "".join(f"<th>{html.escape(str(col))}</th>" for col in columns)
-    body_html = "".join(
-        "<tr>" + "".join(f"<td>{html.escape(str(row.get(col, '') or ''))}</td>" for col in columns) + "</tr>"
-        for row in (rows or [])
-    ) or "<tr><td colspan='99'>Nenhum dado encontrado.</td></tr>"
-    document = f"""
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(str(title or 'Relatorio'))}</title>
-  <style>
-    body {{ font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }}
-    h1 {{ margin: 0 0 6px; font-size: 24px; }}
-    p {{ margin: 0 0 18px; color: #475569; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
-    th, td {{ border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; vertical-align: top; }}
-    th {{ background: #eff6ff; }}
-    tr:nth-child(even) td {{ background: #f8fafc; }}
-  </style>
-</head>
-<body>
-  <h1>{html.escape(str(title or 'Relatorio'))}</h1>
-  <p>{html.escape(str(subtitle or ''))}</p>
-  <table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>
-  <script>window.addEventListener("load", function() {{ setTimeout(function() {{ window.print(); }}, 250); }});</script>
-</body>
-</html>
-"""
-    return document.encode("utf-8")
-
-
-def _render_print_button(title, subtitle, rows, preferred_columns):
-    html_bytes = _report_print_html_bytes(title, subtitle, rows, preferred_columns)
-    html_b64 = base64.b64encode(html_bytes).decode("ascii")
-    st.markdown(
-        f'<a class="report-print-button" href="data:text/html;base64,{html_b64}" target="_blank" rel="noopener noreferrer">Imprimir relatório</a>',
-        unsafe_allow_html=True,
-    )
-
-
-def _report_period_subtitle(start_date, end_date):
-    return f"Período analisado: {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
-
-
-def _class_ops_shell(step, title, description, tone="blue"):
-    tone_map = {
-        "blue": ("#1d4ed8", "#2563eb"),
-        "green": ("#059669", "#10b981"),
-        "orange": ("#ea580c", "#f97316"),
-        "slate": ("#334155", "#0f172a"),
-    }
-    left, right = tone_map.get(tone, tone_map["blue"])
-    st.markdown(
-        (
-            f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
-            f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
-            f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
-            f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
-            f'background:linear-gradient(90deg,{left},{right});"></div>'
-            f'<div style="display:flex;gap:14px;align-items:flex-start;">'
-            f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
-            f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
-            f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
-            f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-            f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
-            f'</div></div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def _class_summary_card(title, rows, tone="blue", badge="Resumo"):
-    tone_map = {
-        "blue": ("#2563eb", "rgba(37,99,235,.12)"),
-        "green": ("#10b981", "rgba(16,185,129,.12)"),
-        "orange": ("#f97316", "rgba(249,115,22,.12)"),
-        "slate": ("#334155", "rgba(51,65,85,.12)"),
-    }
-    accent, chip_bg = tone_map.get(tone, tone_map["blue"])
-    blocks = []
-    for label, value in rows:
-        blocks.append(
-            (
-                '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
-                'border-radius:16px;padding:14px 16px;">'
-                f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
-                f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
-                '</div>'
-            )
-        )
-    st.markdown(
-        (
-            '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
-            'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
-            f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-            f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
-            f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
-            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
-            + "".join(blocks) +
-            '</div></div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def render_class_sessions_premium_report():
-    all_sessions = st.session_state.get("class_sessions", [])
-    render_section_hero(
-        "Relatório executivo das aulas realizadas",
-        "Analise produção por professor, turma e período com visão consolidada, detalhamento operacional e exportações em um único fluxo.",
-        [
-            f"{len(all_sessions)} sessoes registradas",
-            f"{len({str(s.get('professor', '')).strip() for s in all_sessions if str(s.get('professor', '')).strip()})} professores envolvidos",
-        ],
-    )
-    render_panel_intro(
-        "Painel de performance das aulas",
-        "Filtre o período, revise os indicadores centrais e avance para o detalhamento e exportação do relatório.",
-        [
-            ("Finalizadas", len([s for s in all_sessions if str(s.get("status", "")).strip().lower() == "finalizada"])),
-            ("Em andamento", len([s for s in all_sessions if str(s.get("status", "")).strip().lower() == "em andamento"])),
-        ],
-    )
-    st.markdown(
-        """
-        <style>
-        .class-report-card {
-            border-radius: 16px;
-            padding: 16px 18px;
-            color: #e2e8f0;
-            border: 1px solid rgba(148,163,184,0.25);
-            box-shadow: 0 14px 30px rgba(15,23,42,0.16);
-            min-height: 108px;
-        }
-        .class-report-card .k { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 8px; }
-        .class-report-card .v { font-family: 'Sora', sans-serif; font-size: 1.8rem; line-height: 1; font-weight: 700; color: #fff; }
-        .class-report-card .s { margin-top: 8px; font-size: .85rem; color: #dbeafe; }
-        .class-blue { background: linear-gradient(135deg,#1d4ed8 0%,#1e40af 100%); }
-        .class-green { background: linear-gradient(135deg,#059669 0%,#0f766e 100%); }
-        .class-orange { background: linear-gradient(135deg,#ea580c 0%,#c2410c 100%); }
-        .class-slate { background: linear-gradient(135deg,#334155 0%,#0f172a 100%); }
-        .report-print-button {
-            display: inline-flex; align-items: center; justify-content: center; width: 100%;
-            min-height: 44px; border-radius: 14px; background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
-            color: #ffffff !important; text-decoration: none; font-weight: 700; border: 1px solid rgba(148,163,184,0.22);
-            box-shadow: 0 10px 22px rgba(15,23,42,0.16);
-        }
-        .report-print-button:hover { transform: translateY(-1px); opacity: .96; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    prof_options = sorted({str(s.get("professor", "")).strip() for s in all_sessions if str(s.get("professor", "")).strip()})
-    turma_options = sorted({str(s.get("turma", "")).strip() for s in all_sessions if str(s.get("turma", "")).strip()})
-    today = datetime.date.today()
-    month_start = today.replace(day=1)
-
-    _class_ops_shell(
-        "1",
-        "Configurar o período do relatório",
-        "Defina intervalo, professor, turma e status para trabalhar com uma base já limpa antes de abrir o detalhamento.",
-        tone="blue",
-    )
-    f1, f2, f3, f4, f5 = st.columns([1.2, 1.2, 1.1, 1.1, 1.0])
-    with f1:
-        start_date = st.date_input("De", value=month_start, format="DD/MM/YYYY", key="class_report_start")
-    with f2:
-        end_date = st.date_input("Até", value=today, format="DD/MM/YYYY", key="class_report_end")
-    with f3:
-        prof_sel = st.selectbox("Professor", ["Todos"] + prof_options, key="class_report_prof")
-    with f4:
-        turma_sel = st.selectbox("Turma", ["Todas"] + turma_options, key="class_report_turma")
-    with f5:
-        status_sel = st.selectbox("Status", ["Finalizadas", "Em andamento", "Todas"], key="class_report_status")
-
-    rows = _build_class_sessions_report_rows(
-        date_start=start_date,
-        date_end=end_date,
-        professor=prof_sel,
-        turma=turma_sel,
-        status_filter=status_sel,
-    )
-
-    total_aulas = len(rows)
-    total_valor = sum(float(r.get("_valor_aula_num", 0) or 0) for r in rows)
-    notas_validas = [float(r.get("_nota_media_num")) for r in rows if r.get("_nota_media_num") is not None]
-    media_geral = (sum(notas_validas) / len(notas_validas)) if notas_validas else None
-    faltas_total = sum(int(r.get("Faltas", 0) or 0) for r in rows)
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f"<div class='class-report-card class-blue'><div class='k'>Aulas no período</div><div class='v'>{total_aulas}</div><div class='s'>professores com aula: {len({r.get('Professor','') for r in rows if r.get('Professor') and r.get('Professor') != '-'})}</div></div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"<div class='class-report-card class-green'><div class='k'>Valor total</div><div class='v'>{format_money(total_valor)}</div><div class='s'>somatório por aula finalizada/filtrada</div></div>", unsafe_allow_html=True)
-    with c3:
-        media_txt = f"{media_geral:.1f}" if media_geral is not None else "-"
-        st.markdown(f"<div class='class-report-card class-orange'><div class='k'>Nota média</div><div class='v'>{media_txt}</div><div class='s'>base: notas lançadas por turma/data</div></div>", unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"<div class='class-report-card class-slate'><div class='k'>Faltas registradas</div><div class='v'>{faltas_total}</div><div class='s'>alunos com presença &lt; 100% no dia</div></div>", unsafe_allow_html=True)
-    c5, c6 = st.columns(2)
-    pagos_count = len([r for r in rows if str(r.get("Pagamento Professor", "")).strip().lower() == "pago"])
-    extras_count = len([r for r in rows if str(r.get("Aula Extra", "")).strip().lower() == "sim"])
-    with c5:
-        st.markdown(f"<div class='class-report-card class-green'><div class='k'>Aulas já pagas</div><div class='v'>{pagos_count}</div><div class='s'>contas a pagar lançadas como pagas</div></div>", unsafe_allow_html=True)
-    with c6:
-        st.markdown(f"<div class='class-report-card class-orange'><div class='k'>Aulas extras</div><div class='v'>{extras_count}</div><div class='s'>detectadas por sinalização da sessão/modulo</div></div>", unsafe_allow_html=True)
-
-    if not rows:
-        st.info("Nenhuma aula encontrada com os filtros informados.")
-        return
-
-    _class_summary_card(
-        "Resumo gerencial do período filtrado",
-        [
-            ("Período", f"{start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"),
-            ("Professor", prof_sel),
-            ("Turma", turma_sel),
-            ("Status", status_sel),
-            ("Valor total", format_money(total_valor)),
-            ("Nota média", f"{media_geral:.1f}" if media_geral is not None else "-"),
-        ],
-        tone="green",
-        badge="Conferência",
-    )
-
-    df = pd.DataFrame(rows)
-    view_cols = [
-        "Data",
-        "Professor",
-        "Turma",
-        "Livro/Nível",
-        "Aula Extra",
-        "Lição",
-        "Abriu",
-        "Fechou",
-        "Duração (min)",
-        "Valor/Aula",
-        "Tipo da Aula",
-        "Pagamento Professor",
-        "Pago em",
-        "Lançamento",
-        "Notas Lançadas",
-        "Nota Média",
-        "Faltas",
-        "Status",
-    ]
-    df_view = df[[c for c in view_cols if c in df.columns]]
-    _class_ops_shell(
-        "2",
-        "Revisar a produção registrada",
-        "Consulte a visão detalhada das sessões e depois valide o consolidado por professor antes de exportar.",
-        tone="green",
-    )
-    st.markdown("### Relatório detalhado")
-    st.dataframe(df_view, use_container_width=True, hide_index=True)
-
-    resumo_prof = (
-        df.groupby("Professor", dropna=False)
-        .agg(
-            Aulas=("Professor", "count"),
-            Valor_Total=("_valor_aula_num", "sum"),
-            Faltas=("Faltas", "sum"),
-        )
-        .reset_index()
-        .sort_values(["Valor_Total", "Aulas"], ascending=[False, False])
-    )
-    resumo_prof["Valor_Total"] = resumo_prof["Valor_Total"].apply(format_money)
-    st.markdown("### Resumo por professor")
-    st.dataframe(resumo_prof, use_container_width=True, hide_index=True)
-
-    _class_ops_shell(
-        "3",
-        "Exportar ou imprimir o relatório",
-        "Gere o arquivo no formato desejado ou envie diretamente para impressão quando a conferência estiver concluída.",
-        tone="orange",
-    )
-    d1, d2, d3, d4 = st.columns(4)
-    with d1:
-        csv_bytes = df_view.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "Baixar CSV do relatório",
-            data=csv_bytes,
-            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            key="class_report_csv",
-        )
-    with d2:
-        xlsx_buffer = io.BytesIO()
-        with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
-            df_view.to_excel(writer, index=False, sheet_name="Aulas")
-            resumo_prof.to_excel(writer, index=False, sheet_name="Resumo Professores")
-        st.download_button(
-            "Baixar Excel do relatório",
-            data=xlsx_buffer.getvalue(),
-            file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="class_report_xlsx",
-        )
-    report_subtitle = _report_period_subtitle(start_date, end_date)
-    pdf_bytes = _generic_report_pdf_bytes(
-        title="Relatorio Detalhado de Aulas",
-        subtitle=report_subtitle,
-        rows=df_view.to_dict("records"),
-        preferred_columns=view_cols,
-    )
-    with d3:
-        if pdf_bytes:
-            st.download_button(
-                "Baixar PDF do relatorio",
-                data=pdf_bytes,
-                file_name=f"relatorio_aulas_{datetime.date.today().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                key="class_report_pdf",
-            )
-    with d4:
-        _render_print_button("Relatorio Detalhado de Aulas", report_subtitle, df_view.to_dict("records"), view_cols)
-
-
-def _generic_report_pdf_bytes(title, subtitle, rows, preferred_columns=None):
-    rows = rows if isinstance(rows, list) else []
-    columns = [str(c).strip() for c in (preferred_columns or []) if str(c).strip()]
-    if not columns and rows:
-        sample = rows[0] if isinstance(rows[0], dict) else {}
-        columns = [str(c).strip() for c in sample.keys() if str(c).strip()]
-    if not columns:
-        return None
-
-    def _safe(txt):
-        raw = str(txt or "")
-        raw = unicodedata.normalize("NFKD", raw)
-        raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
-        return raw.encode("latin-1", "ignore").decode("latin-1")
-
-    def _wrap_value_for_pdf(label, value, chunk_size=88):
-        base = _safe(f"{label}: {value}")
-        if len(base) <= chunk_size:
-            return [base]
-        words = re.split(r"(\s+)", base)
-        lines = []
-        current = ""
-        for token in words:
-            token = token or ""
-            if not token.strip():
-                candidate = f"{current}{token}"
-                current = candidate if len(candidate) <= chunk_size else current
-                continue
-            if len(token) > chunk_size:
-                if current.strip():
-                    lines.append(current.strip())
-                    current = ""
-                for idx in range(0, len(token), chunk_size):
-                    lines.append(token[idx:idx + chunk_size])
-                continue
-            candidate = f"{current}{token}" if current else token
-            if len(candidate) > chunk_size and current.strip():
-                lines.append(current.strip())
-                current = token.strip()
-            else:
-                current = candidate
-        if current.strip():
-            lines.append(current.strip())
-        return lines or [base[:chunk_size]]
-
-    try:
-        from fpdf import FPDF
-    except Exception:
-        FPDF = None
-
-    if FPDF is None:
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.pdfgen import canvas
-        except Exception:
-            return None
-        buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-        y = height - 36
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(36, y, _safe(title))
-        y -= 16
-        c.setFont("Helvetica", 9)
-        c.drawString(36, y, _safe(subtitle))
-        y -= 18
-        for idx, row in enumerate(rows, start=1):
-            line = f"{idx}. " + " | ".join(f"{col}: {row.get(col, '-')}" for col in columns)
-            parts = re.findall(r".{1,115}(?:\\s|$)", line)
-            for part in parts:
-                if y < 50:
-                    c.showPage()
-                    y = height - 36
-                    c.setFont("Helvetica", 9)
-                c.drawString(36, y, _safe(part.strip()))
-                y -= 12
-            y -= 4
-        c.save()
-        return buffer.getvalue()
-
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
-    pdf.add_page()
-    pdf.set_margins(12, 12, 12)
-    pdf.set_draw_color(148, 163, 184)
-    pdf.rect(8, 8, 194, 281)
-    pdf.set_font("Helvetica", "B", 15)
-    pdf.set_x(pdf.l_margin)
-    pdf.cell(0, 8, _safe(title), ln=1)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(71, 85, 105)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(0, 5, _safe(subtitle))
-    pdf.set_text_color(15, 23, 42)
-    pdf.ln(1)
-    for idx, row in enumerate(rows, start=1):
-        row = row if isinstance(row, dict) else {}
-        pdf.set_fill_color(241, 245, 249)
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 6.5, _safe(f"Registro {idx}"), ln=1, fill=True)
-        pdf.set_font("Helvetica", "", 8.5)
-        for col in columns:
-            value = str(row.get(col, "-")).strip() or "-"
-            for line in _wrap_value_for_pdf(col, value):
-                pdf.set_x(pdf.l_margin)
-                pdf.multi_cell(0, 4.5, line)
-        pdf.ln(1.5)
-    return _fpdf_output_bytes(pdf)
-
-
-def _admin_student_report_rows(turma_filter="Todas", status_filter="Todos", start_date=None, end_date=None):
-    turma_target = str(turma_filter or "Todas").strip() or "Todas"
-    status_target = str(status_filter or "Todos").strip() or "Todos"
-    rows = []
-    for aluno in sorted(st.session_state.get("students", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
-        turma_nome = str(aluno.get("turma", "")).strip() or "Sem Turma"
-        status_nome = str(aluno.get("status", "")).strip() or "-"
-        if turma_target != "Todas" and turma_nome != turma_target:
-            continue
-        if status_target != "Todos" and status_nome != status_target:
-            continue
-        turma_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == turma_nome), {})
-        summary = _student_receivables_summary_period(str(aluno.get("nome", "")).strip(), start_date=start_date, end_date=end_date)
-        sessoes = [
-            sess for sess in st.session_state.get("class_sessions", [])
-            if str(sess.get("turma", "")).strip() == turma_nome
-            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
-        ]
-        rows.append(
-            {
-                "Aluno": str(aluno.get("nome", "")).strip() or "-",
-                "Turma": turma_nome,
-                "Professor": str(turma_obj.get("professor", "")).strip() or "-",
-                "Livro/Nível": student_book_level(aluno) or "-",
-                "Status": status_nome,
-                "Celular": str(aluno.get("celular", "")).strip() or "-",
-                "E-mail": str(aluno.get("email", "")).strip() or "-",
-                "Responsável": str((aluno.get("responsavel", {}) or {}).get("nome", "")).strip() or "-",
-                "Sessões no período": len(sessoes),
-                "A Receber": format_money(summary.get("total_open", 0.0)),
-                "Pago": format_money(summary.get("total_paid", 0.0)),
-                "Lançamentos em aberto": len(summary.get("open", [])),
-                "_a_receber_num": float(summary.get("total_open", 0.0) or 0),
-                "_pago_num": float(summary.get("total_paid", 0.0) or 0),
-                "_sessoes_num": len(sessoes),
-            }
-        )
-    return rows
-
-
-def _admin_teacher_report_rows(start_date=None, end_date=None):
-    rows = []
-    for teacher in sorted(st.session_state.get("teachers", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
-        nome = str(teacher.get("nome", "")).strip()
-        turmas = [c for c in st.session_state.get("classes", []) if str(c.get("professor", "")).strip() == nome]
-        alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas}]
-        sessoes = [
-            sess for sess in st.session_state.get("class_sessions", [])
-            if (str(sess.get("professor", "")).strip() == nome or str(sess.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in turmas})
-            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
-        ]
-        finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
-        extras = [sess for sess in finalizadas if _class_session_extra_flag(sess)]
-        payables = [
-            p for p in st.session_state.get("payables", [])
-            if str(p.get("professor", "")).strip() == nome
-            and _record_matches_period(p, start_date, end_date, ["data_pagamento", "vencimento", "data", "created_at", "updated_at"])
-        ] if (start_date or end_date) else [p for p in st.session_state.get("payables", []) if str(p.get("professor", "")).strip() == nome]
-        total_aberto = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() != "pago")
-        total_pago = sum(parse_money(p.get("valor_parcela", p.get("valor", 0))) for p in payables if str(p.get("status", "")).strip().lower() == "pago")
-        rows.append(
-            {
-                "Professor": nome or "-",
-                "Celular": str(teacher.get("celular", "")).strip() or "-",
-                "E-mail": str(teacher.get("email", "")).strip() or "-",
-                "Turmas": len(turmas),
-                "Alunos": len(alunos),
-                "Aulas Finalizadas": len(finalizadas),
-                "Aulas Extras": len(extras),
-                "A Receber": format_money(total_aberto),
-                "Pago": format_money(total_pago),
-                "_turmas_num": len(turmas),
-                "_alunos_num": len(alunos),
-                "_aulas_finalizadas_num": len(finalizadas),
-                "_aulas_extras_num": len(extras),
-                "_a_receber_num": float(total_aberto or 0),
-                "_pago_num": float(total_pago or 0),
-            }
-        )
-    return rows
-
-
-def _admin_class_report_rows(start_date=None, end_date=None):
-    rows = []
-    for turma in sorted(st.session_state.get("classes", []), key=lambda item: str(item.get("nome", "")).strip().lower()):
-        nome = str(turma.get("nome", "")).strip()
-        alunos = [s for s in st.session_state.get("students", []) if str(s.get("turma", "")).strip() == nome]
-        sessoes = [
-            sess for sess in st.session_state.get("class_sessions", [])
-            if str(sess.get("turma", "")).strip() == nome
-            and ((not start_date and not end_date) or _record_matches_period({"data": _class_session_effective_date(sess)}, start_date, end_date, ["data"]))
-        ]
-        finalizadas = [sess for sess in sessoes if _class_session_is_finalized(sess)]
-        extras = [sess for sess in finalizadas if _class_session_extra_flag(sess, turma)]
-        valor_receber = 0.0
-        for aluno in alunos:
-            valor_receber += _student_receivables_summary_period(str(aluno.get("nome", "")).strip(), start_date=start_date, end_date=end_date).get("total_open", 0.0)
-        rows.append(
-            {
-                "Turma": nome or "-",
-                "Professor": str(turma.get("professor", "")).strip() or "-",
-                "Livro/Nível": str(turma.get("livro", "")).strip() or str(turma.get("nivel", "")).strip() or "-",
-                "Módulo": str(turma.get("modulo", "")).strip() or "-",
-                "Dias": str(turma.get("dias", "")).strip() or ", ".join(turma.get("dias_semana", []) or []) or "-",
-                "Horário": str(turma.get("hora_inicio", "")).strip() or "-",
-                "Alunos": len(alunos),
-                "Aulas Finalizadas": len(finalizadas),
-                "Aulas Extras": len(extras),
-                "A Receber da Turma": format_money(valor_receber),
-                "_alunos_num": len(alunos),
-                "_aulas_finalizadas_num": len(finalizadas),
-                "_aulas_extras_num": len(extras),
-                "_a_receber_num": float(valor_receber or 0),
-            }
-        )
-    return rows
-
-
-def _render_admin_report_dataset(title, rows, preferred_columns, filename_prefix, subtitle="", cards=None):
-    st.markdown(f"### {title}")
-    if subtitle:
-        st.caption(subtitle)
-    _render_report_kpis(cards or [])
-    if not rows:
-        st.info("Nenhum dado encontrado para este relatório.")
-        return
-    df = pd.DataFrame(rows)
-    df_view = df[[c for c in preferred_columns if c in df.columns]]
-    st.dataframe(df_view, use_container_width=True, hide_index=True)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        xlsx_buffer = io.BytesIO()
-        with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
-            df_view.to_excel(writer, index=False, sheet_name="Relatorio")
-        st.download_button(
-            "Baixar Excel",
-            data=xlsx_buffer.getvalue(),
-            file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"{filename_prefix}_xlsx",
-        )
-    with c2:
-        st.download_button(
-            "Baixar CSV",
-            data=df_view.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            key=f"{filename_prefix}_csv",
-        )
-    with c3:
-        pdf_bytes = _generic_report_pdf_bytes(
-            title=title,
-            subtitle=subtitle or f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            rows=df_view.to_dict("records"),
-            preferred_columns=preferred_columns,
-        )
-        if pdf_bytes:
-            st.download_button(
-                "Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                key=f"{filename_prefix}_pdf",
-            )
-    with c4:
-        _render_print_button(
-            title,
-            subtitle or f"Gerado em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            df_view.to_dict("records"),
-            preferred_columns,
-        )
-
-
-def _admin_class_report_cards(rows):
-    total_turmas = len(rows)
-    total_alunos = sum(int(row.get("_alunos_num", 0) or 0) for row in rows)
-    total_aulas = sum(int(row.get("_aulas_finalizadas_num", 0) or 0) for row in rows)
-    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
-    return [
-        {"title": "Turmas listadas", "value": total_turmas, "subtitle": "visão consolidada por turma", "tone": "blue"},
-        {"title": "Alunos vinculados", "value": total_alunos, "subtitle": "somatório nas turmas filtradas", "tone": "green"},
-        {"title": "Aulas finalizadas", "value": total_aulas, "subtitle": "sessões dentro do período", "tone": "slate"},
-        {"title": "A receber", "value": format_money(total_receber), "subtitle": "saldo aberto das turmas", "tone": "orange"},
-    ]
-
-
-def _admin_teacher_report_cards(rows):
-    total_professores = len(rows)
-    total_turmas = sum(int(row.get("_turmas_num", 0) or 0) for row in rows)
-    total_pago = sum(float(row.get("_pago_num", 0) or 0) for row in rows)
-    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
-    return [
-        {"title": "Professores", "value": total_professores, "subtitle": "cadastros exibidos", "tone": "blue"},
-        {"title": "Turmas atendidas", "value": total_turmas, "subtitle": "carga consolidada", "tone": "slate"},
-        {"title": "Pago", "value": format_money(total_pago), "subtitle": "pagamentos no período", "tone": "green"},
-        {"title": "A receber", "value": format_money(total_receber), "subtitle": "pendências no período", "tone": "orange"},
-    ]
-
-
-def _admin_student_report_cards(rows):
-    total_alunos = len(rows)
-    ativos = len([row for row in rows if normalize_text(row.get("Status", "")) == "ativo"])
-    total_pago = sum(float(row.get("_pago_num", 0) or 0) for row in rows)
-    total_receber = sum(float(row.get("_a_receber_num", 0) or 0) for row in rows)
-    return [
-        {"title": "Alunos", "value": total_alunos, "subtitle": "registros exibidos", "tone": "blue"},
-        {"title": "Ativos", "value": ativos, "subtitle": "status ativo no filtro atual", "tone": "green"},
-        {"title": "Pago", "value": format_money(total_pago), "subtitle": "financeiro do período", "tone": "slate"},
-        {"title": "A receber", "value": format_money(total_receber), "subtitle": "saldo aberto do período", "tone": "orange"},
-    ]
-
-
-def render_admin_reports_center():
-    st.markdown(
-        """
-        <style>
-        .report-shell {
-            background: linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(241,245,249,0.88) 100%);
-            border: 1px solid rgba(191,219,254,0.58);
-            border-radius: 28px;
-            padding: 22px 24px 18px;
-            box-shadow: 0 20px 52px rgba(15,23,42,0.10);
-            margin-bottom: 18px;
-        }
-        .report-kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 14px;
-            margin: 10px 0 18px;
-        }
-        .report-kpi-card {
-            border-radius: 18px;
-            padding: 16px 18px;
-            color: #eff6ff;
-            box-shadow: 0 14px 28px rgba(15,23,42,0.14);
-            border: 1px solid rgba(255,255,255,0.10);
-            min-height: 102px;
-        }
-        .report-kpi-card .k { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: rgba(226,232,240,0.92); margin-bottom: 9px; }
-        .report-kpi-card .v { font-family: 'Sora', sans-serif; font-size: 1.65rem; font-weight: 700; line-height: 1.08; color: #ffffff; }
-        .report-kpi-card .s { font-size: .84rem; margin-top: 10px; color: rgba(226,232,240,0.88); }
-        .report-blue { background: linear-gradient(135deg,#1d4ed8 0%,#1e3a8a 100%); }
-        .report-green { background: linear-gradient(135deg,#0f9f6e 0%,#0f766e 100%); }
-        .report-orange { background: linear-gradient(135deg,#f97316 0%,#c2410c 100%); }
-        .report-slate { background: linear-gradient(135deg,#334155 0%,#0f172a 100%); }
-        .report-print-button {
-            display: inline-flex; align-items: center; justify-content: center; width: 100%;
-            min-height: 44px; border-radius: 14px; background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
-            color: #ffffff !important; text-decoration: none; font-weight: 700; border: 1px solid rgba(148,163,184,0.22);
-            box-shadow: 0 10px 22px rgba(15,23,42,0.16);
-        }
-        .report-print-button:hover { transform: translateY(-1px); opacity: .96; }
-        .report-filter-caption { margin-top: 4px; color: #64748b; font-size: .9rem; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="main-header">Central de Relatórios</div>', unsafe_allow_html=True)
-    st.caption("Relatórios detalhados de aulas, turmas, professores e alunos com exportação em Excel e PDF.")
-    today = datetime.date.today()
-    default_start = today.replace(day=1)
-    st.markdown("<div class='report-shell'>", unsafe_allow_html=True)
-    pf1, pf2 = st.columns(2)
-    with pf1:
-        period_start = st.date_input("Período inicial", value=default_start, format="DD/MM/YYYY", key="admin_reports_period_start")
-    with pf2:
-        period_end = st.date_input("Período final", value=today, format="DD/MM/YYYY", key="admin_reports_period_end")
-    st.markdown(f"<div class='report-filter-caption'>{_report_period_subtitle(period_start, period_end)}</div>", unsafe_allow_html=True)
-    tabs = st.tabs(["Aulas", "Turmas", "Professores", "Alunos"])
-    with tabs[0]:
-        render_class_sessions_premium_report()
-    with tabs[1]:
-        rows = _admin_class_report_rows(start_date=period_start, end_date=period_end)
-        _render_admin_report_dataset(
-            "Relatório detalhado de turmas",
-            rows,
-            ["Turma", "Professor", "Livro/Nível", "Módulo", "Dias", "Horário", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber da Turma"],
-            "relatorio_turmas",
-            subtitle=_report_period_subtitle(period_start, period_end),
-            cards=_admin_class_report_cards(rows),
-        )
-    with tabs[2]:
-        rows = _admin_teacher_report_rows(start_date=period_start, end_date=period_end)
-        _render_admin_report_dataset(
-            "Relatório detalhado de professores",
-            rows,
-            ["Professor", "Celular", "E-mail", "Turmas", "Alunos", "Aulas Finalizadas", "Aulas Extras", "A Receber", "Pago"],
-            "relatorio_professores",
-            subtitle=_report_period_subtitle(period_start, period_end),
-            cards=_admin_teacher_report_cards(rows),
-        )
-    with tabs[3]:
-        turma_opts = ["Todas"] + sorted({str(s.get("turma", "Sem Turma")).strip() or "Sem Turma" for s in st.session_state.get("students", [])})
-        status_opts = ["Todos"] + sorted({str(s.get("status", "")).strip() or "-" for s in st.session_state.get("students", [])})
-        f1, f2 = st.columns(2)
-        with f1:
-            turma_filter = st.selectbox("Turma", turma_opts, key="admin_report_students_turma")
-        with f2:
-            status_filter = st.selectbox("Status do aluno", status_opts, key="admin_report_students_status")
-        rows = _admin_student_report_rows(turma_filter=turma_filter, status_filter=status_filter, start_date=period_start, end_date=period_end)
-        _render_admin_report_dataset(
-            "Relatório detalhado de alunos",
-            rows,
-            ["Aluno", "Turma", "Professor", "Livro/Nível", "Status", "Celular", "E-mail", "Responsável", "Sessões no período", "A Receber", "Pago", "Lançamentos em aberto"],
-            "relatorio_alunos",
-            subtitle=_report_period_subtitle(period_start, period_end),
-            cards=_admin_student_report_cards(rows),
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao contexto da Active Educacional e Mister Wiz.", force_system_context=False):
-    st.markdown(f'<div class="main-header">{title}</div>', unsafe_allow_html=True)
-    st.caption(subtitle)
+def run_active_chatbot():
+    st.markdown('<div class="main-header">Professor Wiz</div>', unsafe_allow_html=True)
+    st.caption("Assistente dedicado ao contexto da Active Educacional e Mister Wiz.")
 
     api_key = get_groq_api_key()
     if not api_key:
-        st.error("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY em secrets/variavel de ambiente para usar o chatbot.")
+        st.error("Configure GROQ_API_KEY em secrets ou variavel de ambiente para usar o chatbot.")
         return
 
     role = st.session_state.get("role", "")
@@ -12410,9 +10536,7 @@ def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao c
         st.caption("Modo automatico do professor: apoio pedagogico para aula e avaliacao.")
         c_prof_ctx, c_prof_temp = st.columns(2)
         with c_prof_ctx:
-            include_context = True if force_system_context else st.checkbox("Usar contexto do sistema", value=True, key="prof_wiz_context")
-            if force_system_context:
-                st.info("Contexto do sistema habilitado obrigatoriamente neste suporte.")
+            include_context = st.checkbox("Usar contexto do sistema", value=True, key="prof_wiz_context")
         with c_prof_temp:
             st.session_state["active_chat_temp"] = st.slider(
                 "Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05, key="prof_wiz_temp"
@@ -12425,9 +10549,7 @@ def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao c
         with c1:
             mode = st.selectbox("Modo", mode_options, key="active_chat_mode")
         with c2:
-            include_context = True if force_system_context else st.checkbox("Usar contexto do sistema", value=True, key="coord_wiz_context")
-            if force_system_context:
-                st.info("Contexto do sistema habilitado obrigatoriamente neste suporte.")
+            include_context = st.checkbox("Usar contexto do sistema", value=True, key="coord_wiz_context")
         with c3:
             st.session_state["active_chat_temp"] = st.slider(
                 "Criatividade", min_value=0.0, max_value=1.0, value=float(st.session_state["active_chat_temp"]), step=0.05, key="coord_wiz_temp"
@@ -12591,7 +10713,7 @@ def run_active_chatbot(title="Professor Wiz", subtitle="Assistente dedicado ao c
 
         if not answer:
             client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-            model_name = get_active_chatbot_model()
+            model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
             with st.spinner("Gerando resposta..."):
                 try:
                     result = client.chat.completions.create(
@@ -12709,7 +10831,7 @@ def run_student_finance_assistant():
 
     api_key = get_groq_api_key()
     if not api_key:
-        st.warning("Assistente IA indisponivel: configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para liberar o Wiz nesta tela.")
+        st.warning("Assistente IA indisponivel: configure GROQ_API_KEY para liberar o Wiz nesta tela.")
         return
 
     chat_key = f"finance:{get_active_chat_history_key()}"
@@ -12739,7 +10861,7 @@ def run_student_finance_assistant():
         request_messages = [{"role": "system", "content": system_prompt}] + chat_history[-12:]
 
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        model_name = get_active_chatbot_model()
+        model_name = os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")
         with st.spinner("Gerando resposta..."):
             try:
                 result = client.chat.completions.create(
@@ -13543,12 +11665,19 @@ def run_commercial_panel():
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        render_sidebar_profile_card(
-            st.session_state.get("user_name", ""),
-            role_name=st.session_state.get("role", ""),
-            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
-            greeting="Comercial",
+        st.markdown(f"### {st.session_state.get('user_name', '')}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
+        st.markdown("---")
         menu_sales_label = sidebar_menu(
             "Comercial",
             [
@@ -13558,13 +11687,14 @@ def run_commercial_panel():
                 "Alunos Matriculados",
                 "WhatsApp Leads",
                 "Professor Wiz",
-                "Suporte",
             ],
             "menu_sales",
         )
-        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"):
             logout_user()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     menu_sales_map = {
         "Leads": "Leads",
@@ -13573,7 +11703,6 @@ def run_commercial_panel():
         "Alunos Matriculados": "Alunos Matriculados",
         "WhatsApp Leads": "WhatsApp Leads",
         "Professor Wiz": "Professor Wiz",
-        "Suporte": "Suporte",
     }
     menu_sales = menu_sales_map.get(menu_sales_label, "Leads")
 
@@ -14226,12 +12355,6 @@ def run_commercial_panel():
 
     elif menu_sales == "Professor Wiz":
         run_active_chatbot()
-    elif menu_sales == "Suporte":
-        run_active_chatbot(
-            title="Suporte Wiz",
-            subtitle="Suporte IA para usuários do sistema, com referência ao contexto do Active.",
-            force_system_context=True,
-        )
 
 restore_login_from_query()
 
@@ -14254,19 +12377,23 @@ if not st.session_state.get("logged_in", False):
         .hero-subtitle { font-size: 1rem; color: #64748b; }
         .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
         .hero-meta { font-size: 0.92rem; color: #1e3a8a; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
-        .feature-block { margin-top: 22px; background: linear-gradient(145deg, rgba(8,15,48,0.92) 0%, rgba(28,58,149,0.82) 58%, rgba(37,99,235,0.74) 100%); border-radius: 28px; padding: 22px 24px; border: 1px solid rgba(148,163,184,0.18); box-shadow: 0 26px 60px rgba(15,23,42,0.18); position: relative; overflow: hidden; color: #e2e8f0; }
+        .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
         .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.18rem; font-weight: 700; color: #f8fafc; margin-bottom: 12px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; position: relative; z-index: 1; }
-        .feature-card { border-radius: 18px; padding: 14px 16px; min-height: 92px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 24px rgba(15, 23, 42, 0.22) !important; backdrop-filter: blur(10px); transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.28) !important; }
-        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.22), rgba(30,58,138,0.22)) !important; border-color: rgba(96,165,250,0.32); }
-        .feature-card.feature-green { background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(13,148,136,0.22)) !important; border-color: rgba(45,212,191,0.28); }
-        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(249,115,22,0.22), rgba(217,70,239,0.14)) !important; border-color: rgba(251,146,60,0.30); }
-        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.95rem; line-height: 1.25; }
-        .feature-sub { font-size: 0.82rem; color: rgba(226,232,240,0.82); margin-top: 6px; line-height: 1.5; }
-        .feature-cta { margin-top: 14px; display: flex; justify-content: flex-end; }
-        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg,#22c55e 0%,#16a34a 100%); color: white !important; font-weight: 700; padding: 10px 14px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 8px 18px rgba(34, 197, 94, 0.26); }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
+        .feature-card { border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.3) !important; }
+        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.34), rgba(30,58,138,0.28)) !important; border-color: rgba(37,99,235,0.55); }
+        .feature-card.feature-green { background: linear-gradient(135deg, rgba(34,197,94,0.3), rgba(22,163,74,0.24)) !important; border-color: rgba(22,163,74,0.55); }
+        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(251,146,60,0.34), rgba(234,88,12,0.25)) !important; border-color: rgba(234,88,12,0.55); }
+        .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
+        .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
+        .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
+        .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
+        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.98rem; }
+        .feature-sub { font-size: 0.84rem; color: #cbd5e1; margin-top: 4px; }
+        .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
+        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; min-height: 520px; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
@@ -14287,103 +12414,34 @@ else:
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
         .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
-        :root { --sidebar-width: 324px; --sidebar-menu-btn-width: 286px; }
+        :root { --sidebar-width: 336px; --sidebar-menu-btn-width: 300px; }
         section[data-testid="stAppViewContainer"] { background: #eef5ff; }
         .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
-        section[data-testid="stSidebar"] { background-color: #eef4ff; border-right: 1px solid rgba(191, 211, 238, 0.75); box-shadow: 8px 0 34px rgba(15,23,42,0.08); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
+        section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        .sidebar-section-kicker { font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.16em; color:#7a8ca8; }
-        .sidebar-section-name { font-family:'Sora', sans-serif; font-size:1.05rem; font-weight:700; color:#1e3a8a; }
-        section[data-testid="stSidebar"] .stButton > button { position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.98) 100%); border: 1px solid rgba(203,218,241,0.92); color: #32475f; text-align: left; font-weight: 700; padding: 0 1rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 18px; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease; margin-bottom: 4px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; font-size: 0.95rem !important; }
-        section[data-testid="stSidebar"] .stButton > button:active { transform: translateY(0) scale(0.995) !important; }
+        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(16,185,129,0.08) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 13px; transition: all 0.2s ease; margin-bottom: 7px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
+        section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
         section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
-        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button { background: linear-gradient(180deg, #fff6f6 0%, #ffecec 100%) !important; border-color: #f4c7c7 !important; color: #991b1b !important; min-height: 46px !important; border-radius: 16px !important; box-shadow: 0 10px 20px rgba(153,27,27,0.08) !important; }
-        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button:hover { background: linear-gradient(180deg, #fff1f1 0%, #ffe2e2 100%) !important; border-color: #eba8a8 !important; color: #b91c1c !important; transform: translateY(-1px); }
-        section[data-testid="stSidebar"] div[data-testid="stButton"]:last-of-type > button:active { background: #ffe5e5 !important; border-color: #ef9a9a !important; color: #7f1d1d !important; }
+        .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
+        .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
+        .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
         section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
-        .sidebar-brand-shell { position: relative; margin: 0 0 18px; padding: 18px 18px 14px; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(241,247,255,0.96)); border: 1px solid rgba(191,211,238,0.7); box-shadow: 0 18px 42px rgba(15,23,42,0.08); overflow: hidden; }
-        .sidebar-brand-shell::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 56%, #ea580c 100%); opacity: 0.95; }
-        .sidebar-brand-kicker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; color: #5f728d; text-align: center; margin-bottom: 8px; }
-        .sidebar-brand-image-wrap { display:flex; justify-content:center; margin: 4px 0 8px; }
-        .sidebar-brand-image { width: 190px; max-width: 100%; height: auto; display:block; }
-        .sidebar-brand-sub { margin-top: 10px; text-align: center; color: #61758f; font-size: 0.82rem; line-height: 1.5; }
-        .sidebar-profile-shell { margin: 0 0 18px; padding: 16px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(244,249,255,0.98)); border: 1px solid rgba(193,213,239,0.74); box-shadow: 0 16px 34px rgba(15,23,42,0.08); }
-        .sidebar-profile-head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
-        .sidebar-profile-avatar { width: 48px; height: 48px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1e40af 0%, #0f766e 72%, #ea580c 100%); color: #fff; font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.15rem; box-shadow: 0 12px 24px rgba(30,64,175,0.22); }
-        .sidebar-profile-greeting { font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #7387a3; margin-bottom: 2px; }
-        .sidebar-profile-name { font-family: 'Sora', sans-serif; font-size: 1rem; font-weight: 700; color: #17326b; line-height: 1.25; }
-        .sidebar-profile-role { margin-top: 4px; color: #5f728d; font-size: 0.86rem; font-weight: 700; }
-        .sidebar-profile-meta { display: grid; gap: 8px; }
-        .sidebar-profile-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 14px; background: rgba(244,248,255,0.9); border: 1px solid rgba(219,231,246,0.9); }
-        .sidebar-profile-meta-row span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #7a8ca8; }
-        .sidebar-profile-meta-row strong { color: #17326b; font-size: 0.86rem; line-height: 1.35; text-align: right; }
-        .sidebar-profile-shell pre, .sidebar-profile-shell code, .sidebar-profile-shell [data-testid="stCodeBlock"] { display: none !important; }
-        .sidebar-inline-chip { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,0.92); border: 1px solid rgba(202,217,240,0.8); box-shadow: 0 10px 20px rgba(15,23,42,0.05); }
-        .sidebar-inline-chip span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #71859f; }
-        .sidebar-inline-chip strong { color: #17326b; font-size: 0.9rem; }
-        .sidebar-nav-shell { margin: 0 0 12px; padding: 14px 14px 10px; border-radius: 24px; background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(247,250,255,0.98) 100%); border: 1px solid rgba(198,215,240,0.72); box-shadow: 0 18px 38px rgba(15,23,42,0.07); }
-        .sidebar-nav-header { display:flex; flex-direction:column; gap:4px; margin: 0 0 6px; padding: 0 4px; }
-        .sidebar-group-title { padding: 6px 6px 4px; }
-        .sidebar-group-title span { font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #7a8ca8; }
-        .sidebar-group-divider { height: 1px; margin: 6px 4px 4px; background: linear-gradient(90deg, rgba(203,213,225,0), rgba(203,213,225,0.88), rgba(203,213,225,0)); }
-        .sidebar-nav-item-special .stButton > button { background: linear-gradient(180deg, rgba(245,249,255,0.98) 0%, rgba(238,246,255,0.98) 100%) !important; border-color: rgba(164,192,231,0.95) !important; }
-        .sidebar-nav-item-special .stButton > button:hover { border-color: #86aee8 !important; }
-        .logout-divider { margin: 10px 4px 8px; border-top: 1px solid rgba(203,213,225,0.75); }
-        .profile-card, .profile-label, .profile-value, .sidebar-section-title { display:none !important; }
-        .dash-card { background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,251,255,0.98) 100%); padding: 22px; border-radius: 18px; border: 1px solid #dbe7f6; box-shadow: 0 12px 28px rgba(15,23,42,0.06); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow:hidden; }
-        .dash-card:before { content:""; position:absolute; inset:0 auto auto 0; width:100%; height:4px; background: linear-gradient(90deg, #1e40af 0%, #0f766e 55%, #ea580c 100%); opacity:.88; }
-        .dash-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15,23,42,0.1); border-color: #c7d7ee; }
+        .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
+        .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
+        .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
+        .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
+        .dash-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.06); border-color: #cbd5e1; }
         .card-title { font-size: 0.9rem; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
         .card-value { font-family: 'Sora', sans-serif; font-size: 2rem; font-weight: 700; color: #0f172a; }
         .card-sub { font-size: 0.85rem; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
         .trend-up { color: #10b981; background: #ecfdf5; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
         .trend-neutral { color: #64748b; }
-        .section-hero { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; background: linear-gradient(135deg, rgba(30,64,175,0.98) 0%, rgba(15,118,110,0.94) 58%, rgba(234,88,12,0.9) 100%); color:#fff; border-radius:24px; padding:20px 22px; box-shadow: 0 18px 38px rgba(30,64,175,0.22); margin: 0 0 18px; }
-        .section-hero-copy { max-width: 760px; }
-        .section-hero-kicker { font-size:.72rem; text-transform:uppercase; letter-spacing:.16em; font-weight:800; opacity:.82; margin-bottom:8px; }
-        .section-hero h2 { font-family:'Sora', sans-serif; font-size:1.5rem; margin:0 0 8px; color:#fff; }
-        .section-hero p { margin:0; color:rgba(255,255,255,0.88); line-height:1.55; }
-        .section-hero-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
-        .section-hero-chip { display:inline-flex; align-items:center; padding:8px 11px; border-radius:999px; background:rgba(255,255,255,0.16); border:1px solid rgba(255,255,255,0.18); font-size:.82rem; font-weight:700; white-space:nowrap; }
-        .challenge-metric-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin:0 0 18px; }
-        .challenge-metric-card { border-radius:20px; padding:16px 18px; box-shadow:0 14px 28px rgba(15,23,42,0.05); }
-        .challenge-metric-label { font-size:.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
-        .challenge-metric-value { font-family:'Sora', sans-serif; font-size:1.55rem; font-weight:800; color:#0f172a; line-height:1; }
-        .challenge-metric-sub { margin-top:8px; font-size:.86rem; color:#5f728d; line-height:1.45; }
-        .challenge-preview-card { background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); border:1px solid rgba(148,163,184,.2); border-radius:24px; padding:22px; box-shadow:0 18px 38px rgba(15,23,42,.06); margin:10px 0 16px; }
-        .challenge-preview-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:14px; }
-        .challenge-preview-kicker { font-size:.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#5f728d; margin-bottom:8px; }
-        .challenge-preview-title { font-family:'Sora', sans-serif; font-size:1.4rem; line-height:1.2; }
-        .challenge-preview-description { font-size:1rem; line-height:1.7; margin-bottom:16px; }
-        .challenge-preview-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-bottom:14px; }
-        .challenge-preview-block { background:#f8fbff; border:1px solid rgba(148,163,184,.16); border-radius:18px; padding:14px 16px; color:#102a54; line-height:1.6; }
-        .challenge-preview-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-        .challenge-preview-meta-item { background:#fff; border:1px solid rgba(148,163,184,.14); border-radius:14px; padding:12px 14px; }
-        .challenge-preview-meta-item span { display:block; font-size:.74rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#71859f; margin-bottom:6px; }
-        .challenge-preview-meta-item strong { color:#102a54; font-size:.96rem; line-height:1.45; }
-        .challenge-collection-card { background:linear-gradient(180deg,#ffffff 0%,#f9fbff 100%); border:1px solid rgba(148,163,184,.2); border-radius:22px; padding:18px 18px 14px; box-shadow:0 16px 32px rgba(15,23,42,.05); margin:0 0 14px; }
-        .challenge-collection-header h4 { margin:0; font-family:'Sora', sans-serif; font-size:1rem; color:#102a54; }
-        .challenge-collection-header p { margin:6px 0 0; font-size:.88rem; color:#64748b; line-height:1.5; }
-        .challenge-collection-item { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:12px 0; border-top:1px solid rgba(226,232,240,.8); }
-        .challenge-collection-item:first-of-type { border-top:none; padding-top:16px; }
-        .challenge-collection-main { min-width:0; }
-        .challenge-collection-title { font-weight:800; color:#102a54; line-height:1.4; }
-        .challenge-collection-meta { margin-top:4px; color:#64748b; font-size:.86rem; line-height:1.5; }
-        .challenge-collection-badge { display:inline-flex; align-items:center; white-space:nowrap; border-radius:999px; padding:6px 10px; font-size:.76rem; font-weight:800; }
-        .challenge-empty { margin-top:16px; border:1px dashed rgba(148,163,184,.34); border-radius:16px; padding:14px 16px; color:#64748b; background:#fcfdff; }
-        .panel-intro { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%); border:1px solid var(--active-border); border-radius:20px; padding:18px 20px; box-shadow:0 12px 28px rgba(15,23,42,0.05); margin: 0 0 16px; }
-        .panel-intro-header h3 { margin:0 0 6px; font-family:'Sora', sans-serif; font-size:1.12rem; color:#17326b; }
-        .panel-intro-header p { margin:0; color:#60738f; line-height:1.55; }
-        .panel-intro-stats { display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; }
-        .panel-intro-stat { min-width:130px; padding:10px 12px; border-radius:16px; background:#f3f8ff; border:1px solid #dce7f8; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
-        .panel-intro-stat span { display:block; font-size:.75rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#7388a5; margin-bottom:4px; }
-        .panel-intro-stat strong { font-family:'Sora', sans-serif; font-size:1rem; color:#17326b; }
         .finance-radio-anchor { display:none; }
         div[data-testid="stVerticalBlock"]:has(.finance-radio-anchor) div[data-testid="stRadio"] [role="radiogroup"] {
             display: flex;
@@ -14635,7 +12693,16 @@ else:
             border: 1px solid #d0ddf2 !important;
             background: #fbfdff !important;
             min-height: 46px !important;
+            color: #16325c !important;
+            -webkit-text-fill-color: #16325c !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+        div[data-testid="stTextInput"] input::placeholder,
+        div[data-testid="stTextArea"] textarea::placeholder,
+        div[data-testid="stNumberInput"] input::placeholder,
+        div[data-testid="stDateInput"] input::placeholder {
+            color: #90a1b9 !important;
+            -webkit-text-fill-color: #90a1b9 !important;
         }
         div[data-testid="stTextInput"] input:focus,
         div[data-testid="stTextArea"] textarea:focus,
@@ -14820,14 +12887,10 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     st.session_state["sales_leads"] = load_list(SALES_LEADS_FILE)
     st.session_state["sales_agenda"] = load_list(SALES_AGENDA_FILE)
     st.session_state["sales_payments"] = load_list(SALES_PAYMENTS_FILE)
-    st.session_state["wiz_reference_docs"] = load_list(WIZ_REFERENCE_DOCS_FILE)
 
     _ensure_challenge_store_ids()
-    _sync_overdue_challenges_status()
     _ensure_activity_store_ids()
-    _sync_overdue_homework_status()
     _ensure_sales_store_defaults()
-    _sync_all_assessment_grade_records()
 
     books_before = st.session_state.get("books", [])
     books_normalized = ensure_library_catalog(books_before)
@@ -14905,7 +12968,7 @@ if not st.session_state.get("logged_in", False):
                     """<div class="login-header">Conecte-se</div><div class="login-sub">Acesse a Plataforma Educacional</div>""",
                     unsafe_allow_html=True,
                 )
-                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Atendimento", "Coordenador", "Admin"])
+                role = st.selectbox("Perfil", ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"])
                 unidades = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"]
                 unidade_sel = st.selectbox("Unidade", unidades)
                 if unidade_sel == "Outra":
@@ -14927,8 +12990,6 @@ if not st.session_state.get("logged_in", False):
                 st.error("Usuario ou senha invalidos.")
             else:
                 perfil_conta = user.get("perfil", "")
-                if _is_admin_account(perfil_conta):
-                    role = "Admin"
                 if role not in allowed_portals(perfil_conta):
                     st.error(f"Este usuario nao tem permissao de {role}.")
                 else:
@@ -14946,18 +13007,21 @@ if not st.session_state.get("logged_in", False):
         ("Financeiro", "Controle de matriculas, parcelas e recebimentos."),
     ]
     feature_palette = ["feature-blue", "feature-green", "feature-orange"]
-    cards_html = []
-    for idx, (title, sub) in enumerate(feature_cards):
-        feature_class = feature_palette[idx % len(feature_palette)]
-        cards_html.append(
-            f"""
+    for i in range(0, len(feature_cards), 3):
+        cols = st.columns(3, gap="large")
+        for offset, (col, card) in enumerate(zip(cols, feature_cards[i:i+3])):
+            title, sub = card
+            feature_class = feature_palette[(i + offset) % len(feature_palette)]
+            with col:
+                st.markdown(
+                    f"""
 <div class="feature-card {feature_class}">
-  <div class="feature-text">{html.escape(title)}</div>
-  <div class="feature-sub">{html.escape(sub)}</div>
+  <div class="feature-text">{title}</div>
+  <div class="feature-sub">{sub}</div>
 </div>
-"""
-        )
-    st.markdown(f'<div class="feature-grid">{"".join(cards_html)}</div>', unsafe_allow_html=True)
+""",
+                    unsafe_allow_html=True,
+                )
     st.markdown(
         f"""
 <div class="feature-cta">
@@ -14974,27 +13038,26 @@ elif st.session_state["role"] == "Aluno":
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        render_sidebar_profile_card(
-            st.session_state.get("user_name", ""),
-            role_name=st.session_state.get("role", ""),
-            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
-            unit_name=st.session_state.get("unit", ""),
-            greeting="Olá,",
+        st.markdown(f"### Olá, {st.session_state['user_name']}")
+        if st.session_state["unit"]: st.caption(f"Unidade: {st.session_state['unit']}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
         aluno_sidebar_obj = next(
             (s for s in st.session_state.get("students", []) if s.get("nome") == st.session_state.get("user_name", "")),
             {},
         )
         nivel_aluno_sidebar = student_book_level(aluno_sidebar_obj) or "Sem nivel definido"
-        st.markdown(
-            f"""
-            <div class="sidebar-inline-chip">
-                <span>Nível</span>
-                <strong>{html.escape(str(nivel_aluno_sidebar))}</strong>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.info(f"Nível: {nivel_aluno_sidebar}")
+        st.markdown("---")
         menu_aluno_label = sidebar_menu(
             "Navegacao",
             [
@@ -15010,12 +13073,13 @@ elif st.session_state["role"] == "Aluno":
                 "Financeiro",
                 "Materiais de Estudo",
                 "Professor Wiz",
-                "Suporte",
             ],
             "menu_aluno",
         )
-        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_aluno_map = {
         "Painel": "Dashboard",
@@ -15030,7 +13094,6 @@ elif st.session_state["role"] == "Aluno":
         "Financeiro": "Financeiro",
         "Materiais de Estudo": "Materiais de Estudo",
         "Professor Wiz": "Professor Wiz",
-        "Suporte": "Suporte",
     }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
 
@@ -15365,7 +13428,7 @@ elif st.session_state["role"] == "Aluno":
                 if str(a.get("turma", "")).strip() == turma_aluno
             ]
             if only_homework:
-                atividades_turma = [a for a in atividades_turma if _is_homework_activity(a) and _is_activity_open(a)]
+                atividades_turma = [a for a in atividades_turma if _is_homework_activity(a)]
             atividades_turma = sorted(
                 atividades_turma,
                 key=lambda a: (
@@ -15563,7 +13626,7 @@ elif st.session_state["role"] == "Aluno":
                 else:
                     api_key = get_groq_api_key()
                     if not api_key:
-                        st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY em secrets/variavel de ambiente.")
+                        st.error("Para responder e ser avaliado automaticamente, configure GROQ_API_KEY em secrets/variavel de ambiente.")
                     else:
                         default_answer = str(sub.get("resposta", "") or "")
                         resp_key = f"challenge_answer_{cid}_{aluno_nome}".replace(" ", "_")
@@ -15654,12 +13717,6 @@ elif st.session_state["role"] == "Aluno":
         run_student_finance_assistant()
     elif menu_aluno == "Professor Wiz":
         run_active_chatbot()
-    elif menu_aluno == "Suporte":
-        run_active_chatbot(
-            title="Suporte Wiz",
-            subtitle="Suporte IA para alunos com contexto real do sistema.",
-            force_system_context=True,
-        )
 
 # =============================================================================
 # PROFESSOR
@@ -15668,19 +13725,28 @@ elif st.session_state["role"] == "Professor":
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        render_sidebar_profile_card(
-            st.session_state.get("user_name", ""),
-            role_name=st.session_state.get("role", ""),
-            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
-            greeting="Professor",
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
+        st.markdown("---")
         menu_prof_label = sidebar_menu(
             "Gestão",
-            ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz", "Suporte"],
+            ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz"],
             "menu_prof",
         )
-        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_prof_map = {
         "Minhas Turmas": "Minhas Turmas",
@@ -15693,71 +13759,11 @@ elif st.session_state["role"] == "Professor":
         "Biblioteca": "Livros",
         "Livros": "Livros",
         "Professor Wiz": "Assistente IA",
-        "Suporte": "Suporte",
     }
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
 
-    def _teacher_panel_shell(step, title, description, tone="blue"):
-        tone_map = {
-            "blue": ("#1d4ed8", "#2563eb"),
-            "green": ("#059669", "#10b981"),
-            "orange": ("#ea580c", "#f97316"),
-            "slate": ("#334155", "#0f172a"),
-        }
-        left, right = tone_map.get(tone, tone_map["blue"])
-        st.markdown(
-            (
-                f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
-                f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
-                f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
-                f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
-                f'background:linear-gradient(90deg,{left},{right});"></div>'
-                f'<div style="display:flex;gap:14px;align-items:flex-start;">'
-                f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
-                f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
-                f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
-                f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
-                f'</div></div>'
-            ),
-            unsafe_allow_html=True,
-        )
-
-    def _teacher_panel_card(title, rows, tone="blue", badge="Resumo"):
-        tone_map = {
-            "blue": ("#2563eb", "rgba(37,99,235,.12)"),
-            "green": ("#10b981", "rgba(16,185,129,.12)"),
-            "orange": ("#f97316", "rgba(249,115,22,.12)"),
-            "slate": ("#334155", "rgba(51,65,85,.12)"),
-        }
-        accent, chip_bg = tone_map.get(tone, tone_map["blue"])
-        blocks = []
-        for label, value in rows:
-            blocks.append(
-                (
-                    '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
-                    'border-radius:16px;padding:14px 16px;">'
-                    f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
-                    f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
-                    '</div>'
-                )
-            )
-        st.markdown(
-            (
-                '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
-                'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
-                f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
-                f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
-                + "".join(blocks) +
-                '</div></div>'
-            ),
-            unsafe_allow_html=True,
-        )
-
     if menu_prof == "Minhas Turmas":
+        st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
         minhas_turmas = [
             c for c in st.session_state["classes"]
@@ -15766,30 +13772,13 @@ elif st.session_state["role"] == "Professor":
         if not minhas_turmas:
             st.info("Nenhuma turma atribuída a você.")
         else:
-            total_alunos_prof = sum(
-                1 for s in st.session_state["students"]
-                if str(s.get("turma", "")).strip() in {str(t.get("nome", "")).strip() for t in minhas_turmas}
-            )
-            render_section_hero(
-                "Operação das suas turmas",
-                "Revise dados da turma, mantenha o link ao vivo atualizado, publique materiais e acompanhe os alunos da sua operação.",
-                [
-                    f"{len(minhas_turmas)} turmas ativas",
-                    f"{total_alunos_prof} alunos vinculados",
-                ],
-            )
-            render_panel_intro(
-                "Painel operacional do professor",
-                "Selecione a turma para acessar contexto pedagógico, ações de aula ao vivo, materiais e a base de alunos sem sair da mesma tela.",
-                [
-                    ("Turmas", len(minhas_turmas)),
-                    ("Alunos", total_alunos_prof),
-                ],
-            )
             turma_options = [t["nome"] for t in minhas_turmas]
             turma_selecionada = st.selectbox("Selecione a Turma", turma_options)
             turma_obj = next(t for t in minhas_turmas if t["nome"] == turma_selecionada)
 
+            st.markdown("### Detalhes da Turma")
+            st.write(f"**Turma:** {turma_obj.get('nome', '')}")
+            st.write(f"**Professor:** {turma_obj.get('professor', '')}")
             dias_turma_exibicao = str(turma_obj.get("dias", "")).strip()
             if not dias_turma_exibicao:
                 dias_turma_exibicao = format_class_schedule(
@@ -15797,36 +13786,10 @@ elif st.session_state["role"] == "Professor":
                     str(turma_obj.get("hora_inicio", "")).strip(),
                     str(turma_obj.get("hora_fim", "")).strip(),
                 )
-            alunos_turma = [
-                s for s in st.session_state["students"]
-                if s.get("turma") == turma_selecionada
-            ]
+            st.write(f"**Dias e Horários:** {dias_turma_exibicao or 'Horário a definir'}")
+            st.write(f"**Link da Aula Ao Vivo:** {turma_obj.get('link_zoom', 'Não informado')}")
 
-            _teacher_panel_shell(
-                "1",
-                "Revisar o contexto da turma",
-                "Confirme o quadro atual da turma para garantir coerência entre professor, horário, link e base de alunos antes de qualquer ação.",
-                tone="blue",
-            )
-            _teacher_panel_card(
-                "Resumo da turma selecionada",
-                [
-                    ("Turma", turma_obj.get("nome", "")),
-                    ("Professor", turma_obj.get("professor", "")),
-                    ("Dias e horários", dias_turma_exibicao or "Horario a definir"),
-                    ("Link ao vivo", turma_obj.get("link_zoom", "Nao informado")),
-                    ("Alunos", len(alunos_turma)),
-                ],
-                tone="blue",
-                badge="Turma",
-            )
-
-            _teacher_panel_shell(
-                "2",
-                "Atualizar o link da aula ao vivo",
-                "Mantenha o canal oficial da turma atualizado para evitar ruído operacional no início das aulas.",
-                tone="green",
-            )
+            st.markdown("### Aula ao Vivo")
             with st.form("prof_update_link"):
                 link_live = st.text_input("Link da aula ao vivo", value=turma_obj.get("link_zoom", ""))
                 if st.form_submit_button("Salvar link"):
@@ -15835,12 +13798,7 @@ elif st.session_state["role"] == "Professor":
                     st.success("Link atualizado!")
                     st.rerun()
 
-            _teacher_panel_shell(
-                "3",
-                "Publicar material para a turma",
-                "Cadastre conteúdo de apoio diretamente na turma selecionada e mantenha a trilha de estudo atualizada.",
-                tone="orange",
-            )
+            st.markdown("### Material de Estudo")
             with st.form("prof_add_material"):
                 titulo = st.text_input("Título do material")
                 descricao = st.text_area("Descrição")
@@ -15868,12 +13826,10 @@ elif st.session_state["role"] == "Professor":
                         st.success("Material publicado!")
                         st.rerun()
 
-            _teacher_panel_shell(
-                "4",
-                "Consultar os alunos da turma",
-                "Use esta base para revisar rapidamente quem está matriculado e validar dados de contato da operação.",
-                tone="slate",
-            )
+            alunos_turma = [
+                s for s in st.session_state["students"]
+                if s.get("turma") == turma_selecionada
+            ]
             st.markdown("### Alunos da Turma")
             if not alunos_turma:
                 st.info("Nenhum aluno matriculado nesta turma.")
@@ -15884,6 +13840,7 @@ elif st.session_state["role"] == "Professor":
                     df_alunos = df_alunos[col_order]
                 st.dataframe(df_alunos, use_container_width=True)
     elif menu_prof == "Agenda":
+        st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
         turmas_prof = [
             c.get("nome") for c in st.session_state["classes"]
@@ -15892,127 +13849,13 @@ elif st.session_state["role"] == "Professor":
         if not turmas_prof:
             st.info("Nenhuma turma atribuída a você.")
         else:
-            agenda_prof = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
-            sessoes_prof = [
-                s for s in st.session_state.get("class_sessions", [])
-                if str(s.get("professor", "")).strip() == str(st.session_state.get("user_name", "")).strip()
-            ]
-
-            def _teacher_class_shell(step, title, description, tone="blue"):
-                tone_map = {
-                    "blue": ("#1d4ed8", "#2563eb"),
-                    "green": ("#059669", "#10b981"),
-                    "orange": ("#ea580c", "#f97316"),
-                    "slate": ("#334155", "#0f172a"),
-                }
-                left, right = tone_map.get(tone, tone_map["blue"])
-                st.markdown(
-                    (
-                        f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
-                        f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
-                        f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
-                        f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
-                        f'background:linear-gradient(90deg,{left},{right});"></div>'
-                        f'<div style="display:flex;gap:14px;align-items:flex-start;">'
-                        f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
-                        f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
-                        f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
-                        f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                        f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
-                        f'</div></div>'
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-            def _teacher_class_card(title, rows, tone="blue", badge="Resumo"):
-                tone_map = {
-                    "blue": ("#2563eb", "rgba(37,99,235,.12)"),
-                    "green": ("#10b981", "rgba(16,185,129,.12)"),
-                    "orange": ("#f97316", "rgba(249,115,22,.12)"),
-                    "slate": ("#334155", "rgba(51,65,85,.12)"),
-                }
-                accent, chip_bg = tone_map.get(tone, tone_map["blue"])
-                blocks = []
-                for label, value in rows:
-                    blocks.append(
-                        (
-                            '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
-                            'border-radius:16px;padding:14px 16px;">'
-                            f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
-                            f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
-                            '</div>'
-                        )
-                    )
-                st.markdown(
-                    (
-                        '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
-                        'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
-                        f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                        f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
-                        f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">{html.escape(str(badge))}</span></div>'
-                        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
-                        + "".join(blocks) +
-                        '</div></div>'
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-            render_section_hero(
-                "Agenda operacional do professor",
-                "Acompanhe o calendário das suas turmas, inicie e encerre aulas com contexto claro e mantenha o histórico sempre visível.",
-                [
-                    f"{len(turmas_prof)} turmas",
-                    f"{len(agenda_prof)} aulas na agenda",
-                    f"{len([s for s in sessoes_prof if str(s.get('status', '')).strip().lower() == 'finalizada'])} aulas finalizadas",
-                ],
-            )
-            render_panel_intro(
-                "Central de execução das aulas",
-                "Revise sua agenda, selecione a turma certa e conduza o ciclo de início, encerramento e histórico da aula sem perder contexto operacional.",
-                [
-                    ("Futuras", len([a for a in agenda_prof if (parse_date(a.get("data", "")) or datetime.date(1900, 1, 1)) >= datetime.date.today()])),
-                    ("Em andamento", len([s for s in sessoes_prof if str(s.get("status", "")).strip().lower() == "em andamento"])),
-                ],
-            )
             tab_agenda, tab_controle = st.tabs(["Agenda da Turma", "Iniciar / Fechar Aula"])
 
             with tab_agenda:
-                _teacher_class_shell(
-                    "1",
-                    "Conferir o calendário das turmas",
-                    "Use esta visão para revisar as próximas aulas e validar o que já está publicado para os alunos antes de iniciar uma sessão.",
-                    tone="blue",
-                )
-                agenda = agenda_prof
-                if agenda:
-                    proximas_datas = [
-                        parse_date(a.get("data", ""))
-                        for a in agenda
-                        if parse_date(a.get("data", ""))
-                    ]
-                    hoje = datetime.date.today()
-                    proxima_data = min([d for d in proximas_datas if d >= hoje], default=min(proximas_datas) if proximas_datas else None)
-                    _teacher_class_card(
-                        "Resumo da agenda do professor",
-                        [
-                            ("Turmas ativas", len(turmas_prof)),
-                            ("Aulas agendadas", len(agenda)),
-                            ("Próxima data", format_date_br(proxima_data) if proxima_data else "-"),
-                            ("Aulas futuras", len([a for a in agenda if (parse_date(a.get("data", "")) or datetime.date(1900, 1, 1)) >= hoje])),
-                        ],
-                        tone="blue",
-                        badge="Agenda",
-                    )
+                agenda = [a for a in st.session_state["agenda"] if a.get("turma") in set(turmas_prof)]
                 render_agenda(sort_agenda(agenda), "Nenhuma aula agendada para suas turmas.")
 
             with tab_controle:
-                _teacher_class_shell(
-                    "2",
-                    "Operar início e fechamento da aula",
-                    "Selecione a turma, confira o contexto VIP e então registre a abertura ou o encerramento da aula com segurança.",
-                    tone="green",
-                )
                 turma_ctrl = st.selectbox("Turma", turmas_prof, key="prof_ctrl_turma")
                 turma_obj = next((c for c in st.session_state.get("classes", []) if c.get("nome") == turma_ctrl), {})
                 vip_alunos_turma = _vip_students_for_class(turma_ctrl)
@@ -16021,23 +13864,6 @@ elif st.session_state["role"] == "Professor":
                     if str(a.get("turma", "")).strip() == str(turma_ctrl).strip()
                 ]
                 aulas_turma = sort_agenda(aulas_turma)
-
-                _teacher_class_card(
-                    "Contexto da turma selecionada",
-                    [
-                        ("Turma", turma_ctrl),
-                        ("Professor", st.session_state.get("user_name", "")),
-                        ("Livro/Nível", str(turma_obj.get("livro", "") or turma_obj.get("nivel", "") or "-")),
-                        ("Horario base", format_class_schedule(
-                            turma_obj.get("dias_semana", []),
-                            str(turma_obj.get("hora_inicio", "")).strip(),
-                            str(turma_obj.get("hora_fim", "")).strip(),
-                        ) or "Horario a definir"),
-                        ("Link da aula", str(turma_obj.get("link_zoom", "")).strip() or "Nao informado"),
-                    ],
-                    tone="green",
-                    badge="Turma",
-                )
 
                 st.markdown("### Saldo VIP da turma")
                 if vip_alunos_turma:
@@ -16055,12 +13881,7 @@ elif st.session_state["role"] == "Professor":
                 ]
 
                 if not sessoes_ativas:
-                    _teacher_class_shell(
-                        "3",
-                        "Iniciar uma nova sessão",
-                        "Escolha uma aula da agenda quando existir ou preencha manualmente a lição para iniciar a aula imediatamente.",
-                        tone="orange",
-                    )
+                    st.markdown("### Iniciar aula")
                     with st.form("prof_start_class_session"):
                         aula_idx = -1
                         if aulas_turma:
@@ -16079,19 +13900,6 @@ elif st.session_state["role"] == "Professor":
 
                         licao = st.text_area("Licao/Conteudo da aula", placeholder="Ex: Unit 3 - Simple Present + exercicios de conversacao")
                         resumo_inicio = st.text_area("Objetivo da aula (opcional)")
-                        aula_preview = aulas_turma[aula_idx] if aula_idx >= 0 and aula_idx < len(aulas_turma) else {}
-                        _teacher_class_card(
-                            "Previa da aula que sera iniciada",
-                            [
-                                ("Titulo", str(aula_preview.get("titulo", "")).strip() or "Aula manual"),
-                                ("Data", str(aula_preview.get("data", "")).strip() or format_date_br(datetime.date.today())),
-                                ("Horario", str(aula_preview.get("hora", "")).strip() or str(turma_obj.get("hora_inicio", "")).strip() or "-"),
-                                ("Licao", licao.strip() or "Preencher antes de iniciar"),
-                                ("Objetivo", resumo_inicio.strip() or "-"),
-                            ],
-                            tone="orange",
-                            badge="Prévia",
-                        )
 
                         if st.form_submit_button("Iniciar aula", type="primary"):
                             if not licao.strip():
@@ -16125,22 +13933,10 @@ elif st.session_state["role"] == "Professor":
                                 st.rerun()
                 else:
                     sessao_ativa = sessoes_ativas[0]
-                    _teacher_class_shell(
-                        "3",
-                        "Encerrar a aula em andamento",
-                        "Revise os dados da sessão atual, registre o resumo final e finalize a aula para alimentar o histórico automaticamente.",
-                        tone="slate",
-                    )
-                    _teacher_class_card(
-                        "Sessao atualmente em andamento",
-                        [
-                            ("Turma", sessao_ativa.get("turma", "")),
-                            ("Inicio", sessao_ativa.get("inicio_em", "")),
-                            ("Licao", sessao_ativa.get("licao", "")),
-                            ("Link", sessao_ativa.get("link", "") or "Nao informado"),
-                        ],
-                        tone="slate",
-                        badge="Em andamento",
+                    st.markdown("### Aula em andamento")
+                    st.info(
+                        f"Turma: {sessao_ativa.get('turma','')} | Inicio: {sessao_ativa.get('inicio_em','')} | "
+                        f"Licao: {sessao_ativa.get('licao','')}"
                     )
                     with st.form("prof_close_class_session"):
                         resumo_final = st.text_area(
@@ -16176,12 +13972,6 @@ elif st.session_state["role"] == "Professor":
                                 st.success("Aula fechada e salva no historico dos alunos.")
                             st.rerun()
 
-                _teacher_class_shell(
-                    "4",
-                    "Consultar histórico recente da turma",
-                    "Revise as últimas aulas concluídas para manter continuidade pedagógica e contexto antes da próxima sessão.",
-                    tone="blue",
-                )
                 st.markdown("### Ultimas aulas finalizadas da turma")
                 historico_turma = [
                     s for s in st.session_state.get("class_sessions", [])
@@ -16423,13 +14213,28 @@ elif st.session_state["role"] == "Professor":
                             st.caption(f"Respostas recebidas: {total_submissoes}/{len(alunos_turma)}")
                             if str(atividade.get("descricao", "")).strip():
                                 st.write(str(atividade.get("descricao", "")).strip())
-
+                            a1, a2 = st.columns(2)
                             if _is_activity_open(atividade):
-                                if st.button("Encerrar atividade", key=f"close_activity_{activity_id}"):
+                                if a1.button("Encerrar atividade", key=f"close_activity_{activity_id}"):
                                     atividade["status"] = "Encerrada"
                                     atividade["updated_at"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                                     save_list(ACTIVITIES_FILE, st.session_state["activities"])
                                     st.success("Atividade encerrada.")
+                                    st.rerun()
+                            delete_key = f"prof_delete_activity_confirm_{activity_id}"
+                            if a2.button("Excluir tarefa", key=f"prof_delete_activity_{activity_id}"):
+                                st.session_state[delete_key] = True
+                            if st.session_state.get(delete_key, False):
+                                st.warning("Confirme a exclusao desta tarefa. As respostas e notas vinculadas tambem serao removidas.")
+                                dc1, dc2 = st.columns(2)
+                                if dc1.button("Confirmar exclusao", key=f"prof_delete_activity_yes_{activity_id}", type="primary"):
+                                    st.session_state[delete_key] = False
+                                    if _delete_homework_activity_by_id(activity_id):
+                                        st.success("Tarefa excluida com sucesso.")
+                                        st.rerun()
+                                    st.error("Nao foi possivel excluir a tarefa selecionada.")
+                                if dc2.button("Cancelar", key=f"prof_delete_activity_no_{activity_id}"):
+                                    st.session_state[delete_key] = False
                                     st.rerun()
                             else:
                                 if st.button("Reabrir atividade", key=f"open_activity_{activity_id}"):
@@ -16535,7 +14340,6 @@ elif st.session_state["role"] == "Professor":
                                     sub["status"] = "Avaliada"
                                     sub["avaliado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
                                     save_list(ACTIVITY_SUBMISSIONS_FILE, st.session_state["activity_submissions"])
-                                    _sync_activity_grade_record(sub, activity_obj)
                                     st.success("Avaliacao salva.")
                                     st.rerun()
 
@@ -16550,7 +14354,6 @@ elif st.session_state["role"] == "Professor":
     elif menu_prof == "Notas":
         st.markdown('<div class="main-header">Lancamento de Notas</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
-        prof_nome_exibicao = st.session_state.get("user_name", "Professor")
         turmas_prof = [
             c.get("nome") for c in st.session_state["classes"]
             if str(c.get("professor", "")).strip().lower() == prof_nome
@@ -16558,303 +14361,65 @@ elif st.session_state["role"] == "Professor":
         if not turmas_prof:
             st.info("Nenhuma turma atribuida a voce.")
         else:
-            render_section_hero(
-                "Central de Notas do Professor",
-                "Lancamento rapido, revisao de avaliacoes enviadas e acompanhamento de tarefas e desafios corrigidos.",
-                chips=[
-                    f"{len(turmas_prof)} turma(s)",
-                    f"{len([g for g in st.session_state.get('grades', []) if str(g.get('autor', '')).strip().lower() == prof_nome])} notas registradas",
-                ],
-            )
-            render_panel_intro(
-                "Fluxo de avaliacao",
-                "Escolha a turma, revise indicadores e lance as notas em um formulario mais seguro e organizado.",
-                stats=[
-                    ("Turmas", len(turmas_prof)),
-                    ("Pendentes", len([g for g in st.session_state.get("grades", []) if str(g.get("autor", "")).strip().lower() == prof_nome and str(g.get("status", "")).strip().lower() == "pendente"])),
-                    ("Licoes corrigidas", len([s for s in st.session_state.get("activity_submissions", []) if str(s.get("status", "")).strip().lower() in {"avaliada", "corrigida automaticamente"} and str(s.get("turma", "")).strip() in set(turmas_prof)])),
-                ],
-            )
             turma_nota = st.selectbox("Turma", turmas_prof, key="prof_turma_nota")
             alunos_turma = [s.get("nome") for s in st.session_state["students"] if s.get("turma") == turma_nota]
             if not alunos_turma:
                 st.info("Nao ha alunos nessa turma para lancar nota.")
             else:
-                grades_changed = False
-                for grade in st.session_state.get("grades", []):
-                    if not str(grade.get("id", "")).strip():
-                        _ensure_grade_record_id(grade)
-                        grades_changed = True
-                if grades_changed:
-                    save_list(GRADES_FILE, st.session_state.get("grades", []))
-                _teacher_panel_card(
-                    "Contexto da turma selecionada",
-                    [
-                        ("Turma", turma_nota),
-                        ("Alunos", len(alunos_turma)),
-                        ("Professor", prof_nome_exibicao),
-                    ],
-                    tone="blue",
-                    badge="Turma",
-                )
-                tab_lancar, tab_gerenciar, tab_pend, tab_integradas = st.tabs(
-                    ["Lancar nota manual", "Editar / Excluir", "Pendentes", "Integradas"]
-                )
+                with st.form("prof_launch_grades"):
+                    aluno_nota = st.selectbox("Aluno", alunos_turma)
+                    avaliacao_base = st.text_input("Avaliacao", value="Avaliacao mensal")
+                    data_avaliacao = st.date_input("Data da avaliacao", value=datetime.date.today(), format="DD/MM/YYYY")
+                    c_n1, c_n2, c_n3 = st.columns(3)
+                    with c_n1:
+                        nota_prova = st.number_input("Nota da prova", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                    with c_n2:
+                        nota_conteudo = st.number_input("Nota de conteudo", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
+                    with c_n3:
+                        nota_presenca = st.number_input("Presenca (%)", min_value=0, max_value=100, value=100, step=1)
+                    observacao = st.text_area("Observacao (opcional)")
 
-                with tab_lancar:
-                    _teacher_panel_shell(
-                        1,
-                        "Lancar novas notas",
-                        "Escolha o aluno, a categoria da avaliacao e envie a nota manual para analise do coordenador.",
-                        tone="blue",
-                    )
-                    with st.form("prof_launch_grades"):
-                        base1, base2 = st.columns([1.1, 1.4])
-                        with base1:
-                            aluno_nota = st.selectbox("Aluno", alunos_turma, key="prof_manual_grade_student")
-                            data_avaliacao = st.date_input(
-                                "Data da avaliacao",
-                                value=datetime.date.today(),
-                                format="DD/MM/YYYY",
-                                key="prof_manual_grade_date",
-                            )
-                            categoria_nota = st.selectbox(
-                                "Categoria",
-                                MANUAL_GRADE_CATEGORY_OPTIONS,
-                                key="prof_manual_grade_category",
-                            )
-                        with base2:
-                            avaliacao_base = st.text_input(
-                                "Nome da avaliacao",
-                                value="Avaliacao manual",
-                                key="prof_manual_grade_title",
-                            )
-                            observacao = st.text_area(
-                                "Observacao interna",
-                                placeholder="Opcional: contexto da avaliacao ou orientacoes para o coordenador.",
-                                key="prof_manual_grade_note",
-                            )
-                        cfg_nota = _manual_grade_input_config(categoria_nota)
-                        nota_manual = st.number_input(
-                            "Nota",
-                            min_value=float(cfg_nota["min"]),
-                            max_value=float(cfg_nota["max"]),
-                            value=float(cfg_nota["max"] if cfg_nota["suffix"] == "%" else 0.0),
-                            step=float(cfg_nota["step"]),
-                            key="prof_manual_grade_value",
-                        )
-                        nota_label = _format_manual_grade_value(categoria_nota, nota_manual)
-                        titulo_avaliacao = str(avaliacao_base or "").strip()
-                        avaliacao_final = (
-                            f"{categoria_nota} - {titulo_avaliacao}"
-                            if titulo_avaliacao
-                            else categoria_nota
-                        )
-                        _teacher_panel_card(
-                            "Resumo do envio",
-                            [
-                                ("Aluno", aluno_nota),
-                                ("Categoria", categoria_nota),
-                                ("Avaliacao", avaliacao_final),
-                                ("Nota", nota_label),
-                                ("Status de saida", "Pendente para coordenacao"),
-                            ],
-                            tone="green",
-                            badge="Revisao",
-                        )
-
-                        if st.form_submit_button("Enviar para analise do coordenador", type="primary"):
-                            data_txt = data_avaliacao.strftime("%d/%m/%Y") if data_avaliacao else datetime.date.today().strftime("%d/%m/%Y")
+                    if st.form_submit_button("Enviar para analise do coordenador"):
+                        data_txt = data_avaliacao.strftime("%d/%m/%Y") if data_avaliacao else datetime.date.today().strftime("%d/%m/%Y")
+                        lancamentos = [
+                            ("Nota da prova", f"{nota_prova:.1f}"),
+                            ("Conteudo", f"{nota_conteudo:.1f}"),
+                            ("Presenca", f"{nota_presenca}%"),
+                        ]
+                        for tipo, valor_nota in lancamentos:
                             st.session_state["grades"].append(
                                 {
-                                    "id": uuid.uuid4().hex,
                                     "aluno": aluno_nota,
                                     "turma": turma_nota,
                                     "disciplina": "Ingles",
-                                    "categoria": categoria_nota,
-                                    "avaliacao": avaliacao_final,
-                                    "nota": nota_label,
+                                    "avaliacao": f"{avaliacao_base} - {tipo}",
+                                    "nota": valor_nota,
                                     "status": "Pendente",
                                     "data": data_txt,
-                                    "autor": prof_nome_exibicao,
+                                    "autor": st.session_state.get("user_name", "Professor"),
                                     "observacao": observacao.strip(),
-                                    "origem": "Lancamento manual",
-                                    "origem_tipo": "manual",
                                 }
                             )
-                            save_list(GRADES_FILE, st.session_state["grades"])
-                            st.success("Nota enviada para analise do coordenador.")
-                            st.rerun()
+                        save_list(GRADES_FILE, st.session_state["grades"])
+                        st.success("Notas enviadas para analise do coordenador.")
+                        st.rerun()
 
-                with tab_gerenciar:
-                    _teacher_panel_shell(
-                        2,
-                        "Editar ou excluir nota individual",
-                        "Revise os lancamentos manuais por aluno e ajuste apenas o que foi registrado manualmente nesta turma.",
-                        tone="orange",
-                    )
-                    aluno_manage = st.selectbox(
-                        "Aluno para gerenciar",
-                        alunos_turma,
-                        key="prof_manage_grade_student",
-                    )
-                    registros_aluno = [
-                        g for g in st.session_state.get("grades", [])
-                        if str(g.get("turma", "")).strip() == turma_nota
-                        and str(g.get("aluno", "")).strip() == str(aluno_manage).strip()
-                        and str(g.get("origem_tipo", "")).strip().lower() not in {"atividade", "desafio"}
-                        and str(g.get("autor", "")).strip().lower() == prof_nome
-                    ]
-                    registros_aluno.sort(
-                        key=lambda item: (
-                            _parse_record_date(item.get("data", "")) or datetime.date(1900, 1, 1),
-                            str(item.get("avaliacao", "")).strip().lower(),
-                        ),
-                        reverse=True,
-                    )
-                    if not registros_aluno:
-                        st.info("Nenhuma nota manual desse aluno foi lancada por voce nesta turma.")
-                    else:
-                        for idx, grade_obj in enumerate(registros_aluno, start=1):
-                            grade_id = _ensure_grade_record_id(grade_obj)
-                            categoria_atual = _infer_manual_grade_category(grade_obj)
-                            titulo_atual = _manual_grade_title_from_record(grade_obj) or categoria_atual
-                            nota_atual_txt = str(grade_obj.get("nota", "")).strip()
-                            cfg_atual = _manual_grade_input_config(categoria_atual)
-                            match_valor = re.search(r"-?\d+(?:[.,]\d+)?", nota_atual_txt)
-                            valor_atual = _parse_float(match_valor.group(0), 0.0) if match_valor else 0.0
-                            valor_atual = max(cfg_atual["min"], min(cfg_atual["max"], valor_atual))
-                            status_atual = str(grade_obj.get("status", "")).strip() or "-"
-                            exp_label = (
-                                f"{idx}. {str(grade_obj.get('data', '')).strip() or '-'} | "
-                                f"{categoria_atual} | {titulo_atual} | {nota_atual_txt or '-'} | {status_atual}"
-                            )
-                            with st.expander(exp_label):
-                                with st.form(f"prof_edit_grade_{grade_id}"):
-                                    e1, e2 = st.columns([1.1, 1.4])
-                                    with e1:
-                                        nova_categoria = st.selectbox(
-                                            "Categoria",
-                                            MANUAL_GRADE_CATEGORY_OPTIONS,
-                                            index=MANUAL_GRADE_CATEGORY_OPTIONS.index(categoria_atual)
-                                            if categoria_atual in MANUAL_GRADE_CATEGORY_OPTIONS else 0,
-                                            key=f"prof_edit_grade_category_{grade_id}",
-                                        )
-                                        nova_data = st.date_input(
-                                            "Data",
-                                            value=_parse_record_date(grade_obj.get("data", "")) or datetime.date.today(),
-                                            format="DD/MM/YYYY",
-                                            key=f"prof_edit_grade_date_{grade_id}",
-                                        )
-                                    with e2:
-                                        novo_titulo = st.text_input(
-                                            "Nome da avaliacao",
-                                            value=titulo_atual if titulo_atual != categoria_atual else "",
-                                            key=f"prof_edit_grade_title_{grade_id}",
-                                        )
-                                        nova_observacao = st.text_area(
-                                            "Observacao",
-                                            value=str(grade_obj.get("observacao", "")).strip(),
-                                            key=f"prof_edit_grade_obs_{grade_id}",
-                                        )
-                                    cfg_edit = _manual_grade_input_config(nova_categoria)
-                                    nota_edit = st.number_input(
-                                        "Nota",
-                                        min_value=float(cfg_edit["min"]),
-                                        max_value=float(cfg_edit["max"]),
-                                        value=float(max(cfg_edit["min"], min(cfg_edit["max"], valor_atual))),
-                                        step=float(cfg_edit["step"]),
-                                        key=f"prof_edit_grade_value_{grade_id}",
-                                    )
-                                    if st.form_submit_button("Salvar alteracoes", type="primary"):
-                                        titulo_final = str(novo_titulo or "").strip()
-                                        grade_obj["categoria"] = nova_categoria
-                                        grade_obj["avaliacao"] = (
-                                            f"{nova_categoria} - {titulo_final}"
-                                            if titulo_final
-                                            else nova_categoria
-                                        )
-                                        grade_obj["nota"] = _format_manual_grade_value(nova_categoria, nota_edit)
-                                        grade_obj["data"] = nova_data.strftime("%d/%m/%Y") if nova_data else datetime.date.today().strftime("%d/%m/%Y")
-                                        grade_obj["observacao"] = str(nova_observacao).strip()
-                                        grade_obj["origem"] = "Lancamento manual"
-                                        grade_obj["origem_tipo"] = "manual"
-                                        grade_obj["autor"] = prof_nome_exibicao
-                                        grade_obj["status"] = "Pendente"
-                                        save_list(GRADES_FILE, st.session_state["grades"])
-                                        st.success("Nota atualizada e reenviada para aprovacao da coordenacao.")
-                                        st.rerun()
-                                if st.button("Excluir nota", key=f"prof_delete_grade_{grade_id}"):
-                                    if _delete_grade_record_by_id(grade_id):
-                                        st.success("Nota excluida com sucesso.")
-                                        st.rerun()
-                                    st.error("Nao foi possivel excluir a nota selecionada.")
-
-                with tab_pend:
-                    pendentes_prof = [
-                        g for g in st.session_state["grades"]
-                        if str(g.get("turma", "")).strip() == turma_nota
-                        and str(g.get("status", "")).strip().lower() == "pendente"
-                    ]
-                    if pendentes_prof:
-                        _teacher_panel_shell(
-                            3,
-                            "Pendentes de aprovacao",
-                            "Estas notas ainda aguardam validacao do coordenador.",
-                            tone="orange",
-                        )
-                        _teacher_panel_card(
-                            "Fila de validacao",
-                            [
-                                ("Pendentes", len(pendentes_prof)),
-                                ("Alunos na fila", len({str(g.get("aluno", "")).strip() for g in pendentes_prof if str(g.get("aluno", "")).strip()})),
-                                ("Ultimo envio", str(pendentes_prof[-1].get("data", "")).strip() if pendentes_prof else "-"),
-                            ],
-                            tone="orange",
-                            badge="Status",
-                        )
-                        df_pend = pd.DataFrame(pendentes_prof)
-                        col_order = [c for c in ["data", "aluno", "categoria", "avaliacao", "nota", "status", "autor"] if c in df_pend.columns]
-                        if col_order:
-                            df_pend = df_pend[col_order]
-                        st.dataframe(df_pend, use_container_width=True)
-                    else:
-                        st.info("Nenhuma nota pendente nessa turma.")
-
-                with tab_integradas:
-                    integradas = [
-                        g for g in st.session_state.get("grades", [])
-                        if str(g.get("turma", "")).strip() == turma_nota
-                        and str(g.get("origem_tipo", "")).strip().lower() in {"atividade", "desafio"}
-                    ]
-                    if integradas:
-                        _teacher_panel_shell(
-                            4,
-                            "Avaliacoes integradas",
-                            "Licoes de casa e desafios corrigidos aparecem aqui de forma consolidada para conferencia rapida.",
-                            tone="green",
-                        )
-                        df_integradas = pd.DataFrame(integradas)
-                        cols_integradas = [
-                            c for c in ["data", "aluno", "avaliacao", "nota", "status", "origem", "pontuacao"]
-                            if c in df_integradas.columns
-                        ]
-                        if cols_integradas:
-                            df_integradas = df_integradas[cols_integradas]
-                        st.dataframe(df_integradas, use_container_width=True)
-                    else:
-                        st.info("Nenhuma avaliacao integrada encontrada nessa turma.")
+                pendentes_prof = [
+                    g for g in st.session_state["grades"]
+                    if g.get("turma") == turma_nota and g.get("status") == "Pendente"
+                ]
+                if pendentes_prof:
+                    st.markdown("### Pendentes de aprovacao")
+                    df_pend = pd.DataFrame(pendentes_prof)
+                    col_order = [c for c in ["data", "aluno", "avaliacao", "nota", "status", "autor"] if c in df_pend.columns]
+                    if col_order:
+                        df_pend = df_pend[col_order]
+                    st.dataframe(df_pend, use_container_width=True)
     elif menu_prof == "Livros":
         st.markdown('<div class="main-header">Biblioteca</div>', unsafe_allow_html=True)
         render_books_section(st.session_state.get("books", []), key_prefix="prof_livros")
     elif menu_prof == "Assistente IA":
         run_active_chatbot()
-    elif menu_prof == "Suporte":
-        run_active_chatbot(
-            title="Suporte Wiz",
-            subtitle="Suporte IA para professores com referência ao sistema.",
-            force_system_context=True,
-        )
 
 elif st.session_state["role"] == "Comercial":
     run_commercial_panel()
@@ -16866,12 +14431,19 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     with st.sidebar:
         logo_path = get_logo_path()
         render_sidebar_logo(logo_path)
-        render_sidebar_profile_card(
-            st.session_state.get("user_name", ""),
-            role_name=st.session_state.get("role", ""),
-            profile_name=st.session_state.get("account_profile") or st.session_state.get("role", ""),
-            greeting="Coordenação",
+        st.markdown(f"### {st.session_state['user_name']}")
+        st.markdown(
+            f"""
+<div class="profile-card">
+  <div class="profile-label">Tipo</div>
+  <div class="profile-value">{st.session_state.get('role', '')}</div>
+  <div class="profile-label">Perfil</div>
+  <div class="profile-value">{st.session_state.get('account_profile') or st.session_state.get('role', '')}</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
+        st.markdown("---")
         coord_menu_options = [
             "Dashboard",
             "Agenda",
@@ -16881,68 +14453,26 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Usuários",
             "Turmas",
             "Financeiro",
-            "Relatório de Aulas",
             "Estoque",
             "Certificados",
             "Biblioteca",
-            "Notas",
+            "Aprovação Notas",
             "Lições de Casa",
             "Caixa de Entrada",
             "Desafios",
             "WhatsApp (Evolution)",
-            "Suporte",
             "Backup",
             "Professor Wiz",
         ]
         coord_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
-        if _is_admin_account(coord_profile):
-            report_idx = coord_menu_options.index("Relatório de Aulas")
-            coord_menu_options[report_idx] = "Relatórios"
-            insert_perm = coord_menu_options.index("Usuários") + 1
-            coord_menu_options.insert(insert_perm, "Permissões")
-        if _is_admin_account(coord_profile) or coord_profile == "Coordenador":
+        if coord_profile in ("Admin", "Coordenador"):
             insert_at = coord_menu_options.index("Backup")
             coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
-        menu_permission_map = {
-            "Dashboard": "access.dashboard",
-            "Agenda": "access.agenda",
-            "Links Ao Vivo": "access.links",
-            "Alunos": "students.view",
-            "Professores": "teachers.view",
-            "Usuários": "users.view",
-            "Permissões": "permissions.manage",
-            "Turmas": "classes.view",
-            "Financeiro": ["finance.view", "finance.view_basic"],
-            "Relatório de Aulas": "reports.view",
-            "Relatórios": "reports.view",
-            "Estoque": "inventory.view",
-            "Certificados": "certificates.view",
-            "Biblioteca": "books.view",
-            "Aprovação Notas": "grades.view",
-            "Notas": "grades.view",
-            "Lições de Casa": "homework.view",
-            "Caixa de Entrada": "content.view",
-            "Desafios": "challenges.view",
-            "WhatsApp (Evolution)": "whatsapp.view",
-            "Suporte": "support.view",
-            "Backup": "backup.view",
-            "Professor Wiz": "wiz.view",
-            "ASSISTENTE WIZ": "wiz.view",
-        }
-        if not _is_admin_account(coord_profile):
-            filtered_options = []
-            for item in coord_menu_options:
-                perm = menu_permission_map.get(item, "access.dashboard")
-                if isinstance(perm, (list, tuple, set)):
-                    if any(_has_permission(p) for p in perm):
-                        filtered_options.append(item)
-                else:
-                    if _has_permission(perm):
-                        filtered_options.append(item)
-            coord_menu_options = filtered_options
         menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
-        st.markdown('<div class="logout-divider"></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     menu_coord_map = {
         "Dashboard": "Dashboard",
@@ -16951,23 +14481,18 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Alunos": "Alunos",
         "Professores": "Professores",
         "Usuários": "Usuarios",
-        "Permissões": "Permissoes",
         "Turmas": "Turmas",
         "Financeiro": "Financeiro",
-        "Relatório de Aulas": "Aulas Relatorio",
-        "Relatórios": "Relatorios",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
         "Biblioteca": "Livros",
         "Livros": "Livros",
         "Aprovação Notas": "Notas",
-        "Notas": "Notas",
         "Lições de Casa": "Licoes de Casa",
         "Caixa de Entrada": "Conteudos",
         "Conteúdos": "Conteudos",
         "Desafios": "Desafios",
         "WhatsApp (Evolution)": "WhatsApp",
-        "Suporte": "Suporte",
         "ASSISTENTE WIZ": "Assistente Wiz",
         "Backup": "Backup",
         "Professor Wiz": "Chatbot IA",
@@ -16976,15 +14501,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     if menu_coord == "Dashboard":
         st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
-        render_section_hero(
-            "Operacao central do Active",
-            "Acompanhe alunos, professores, turmas e financeiro em um painel mais executivo, com leitura direta do que exige acao.",
-            [
-                f"{len(st.session_state['students'])} alunos",
-                f"{len(st.session_state['teachers'])} professores",
-                f"{len(st.session_state['classes'])} turmas",
-            ],
-        )
         c1, c2, c3 = st.columns(3)
         with c1: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Total de Alunos</div><div class=\"card-value\">{len(st.session_state['students'])}</div></div><div class=\"card-sub\"><span class=\"trend-up\">Ativos</span></div></div>""", unsafe_allow_html=True)
         with c2: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Professores</div><div class=\"card-value\">{len(st.session_state['teachers'])}</div></div></div>""", unsafe_allow_html=True)
@@ -17066,66 +14582,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.rerun()
 
     elif menu_coord == "Agenda":
-        agenda_all = sort_agenda(st.session_state["agenda"])
-        turmas_agendadas = len({str(a.get("turma", "")).strip() for a in agenda_all if str(a.get("turma", "")).strip()})
-        futuras = []
-        hoje = datetime.date.today()
-        for item in agenda_all:
-            data_item = parse_date(item.get("data", ""))
-            if data_item and data_item >= hoje:
-                futuras.append(item)
-        render_section_hero(
-            "Agenda e lançamento operacional das aulas",
-            "Organize o calendário das turmas, revise a base agendada e registre novas aulas com contexto da turma e comunicação integrada.",
-            [
-                f"{len(agenda_all)} aulas na agenda",
-                f"{len(futuras)} futuras",
-                f"{turmas_agendadas} turmas com agenda",
-            ],
-        )
-        render_panel_intro(
-            "Central de agenda acadêmica",
-            "Use a aba de agenda para revisar o calendário vigente e a aba de nova aula para lançar eventos com contexto, recorrência e disparo aos alunos.",
-            [
-                ("Hoje ou próximas", len(futuras)),
-                ("Total geral", len(agenda_all)),
-            ],
-        )
+        st.markdown('<div class="main-header">Agenda de Aulas</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Aulas Agendadas", "Nova Aula"])
         with tab1:
-            _class_ops_shell(
-                "1",
-                "Conferir a agenda consolidada",
-                "Acompanhe o calendário ativo das turmas antes de incluir novos lançamentos ou ajustar a comunicação da semana.",
-                tone="blue",
-            )
-            agenda = agenda_all
-            if agenda:
-                proximas_datas = [
-                    parse_date(a.get("data", ""))
-                    for a in agenda
-                    if parse_date(a.get("data", ""))
-                ]
-                proxima_data = min([d for d in proximas_datas if d >= hoje], default=min(proximas_datas) if proximas_datas else None)
-                _class_summary_card(
-                    "Resumo da agenda atual",
-                    [
-                        ("Aulas cadastradas", len(agenda)),
-                        ("Turmas cobertas", turmas_agendadas),
-                        ("Próxima data", format_date_br(proxima_data) if proxima_data else "-"),
-                        ("Futuras", len(futuras)),
-                    ],
-                    tone="blue",
-                    badge="Agenda",
-                )
+            agenda = sort_agenda(st.session_state["agenda"])
             render_agenda(agenda, "Nenhuma aula agendada.")
         with tab2:
-            _class_ops_shell(
-                "2",
-                "Lançar uma nova aula",
-                "Escolha a turma, revise o contexto da operação e então preencha datas, recorrência e canais de comunicação antes de confirmar.",
-                tone="green",
-            )
             turmas = class_names()
             if not turmas:
                 st.info("Cadastre turmas antes de agendar aulas.")
@@ -17141,18 +14603,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     dias_turma_default = [dia for dia in dias_turma_default if dia in WEEKDAY_OPTIONS_PT]
                     if not dias_turma_default:
                         dias_turma_default = infer_class_days_from_text(turma_obj.get("dias", ""))
-                    _class_summary_card(
-                        "Contexto da turma selecionada",
-                        [
-                            ("Turma", turma_sel),
-                            ("Professor", prof_default or "-"),
-                            ("Livro/Nível", str(turma_obj.get("livro", "") or turma_obj.get("nivel", "") or "-")),
-                            ("Dias-base", ", ".join(dias_turma_default) if dias_turma_default else "-"),
-                            ("Link atual", link_default or "Nao informado"),
-                        ],
-                        tone="green",
-                        badge="Turma",
-                    )
                     titulo = st.text_input("Título", value="Aula ao vivo")
                     descricao = st.text_area("Descrição")
                     data_aula = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -17203,20 +14653,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             value=True,
                             key="coord_agenda_notify_whatsapp",
                         )
-                    total_previsto = int(semanas) if repetir else 1
-                    _class_summary_card(
-                        "Resumo do lançamento",
-                        [
-                            ("Titulo", titulo.strip() or "Aula ao vivo"),
-                            ("Data inicial", format_date_br(data_aula) if data_aula else "-"),
-                            ("Horario", hora_aula.strftime("%H:%M") if hora_aula else "-"),
-                            ("Recorrencia", "Semanal" if repetir else "Aula unica"),
-                            ("Qtd. prevista", total_previsto),
-                            ("Comunicacao", f"E-mail {'Sim' if enviar_email_convite else 'Nao'} | WhatsApp {'Sim' if enviar_whatsapp_convite else 'Nao'}"),
-                        ],
-                        tone="orange",
-                        badge="Prévia",
-                    )
                     if st.form_submit_button("Agendar aula"):
                         if repetir and repetir_por_data and not dias_repeticao:
                             st.error("Selecione pelo menos um dia para repetição por data.")
@@ -17306,15 +14742,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                             st.success("Aula(s) agendada(s)!")
                             st.rerun()
-
-    elif menu_coord == "Relatorios":
-        if not _is_admin_account():
-            st.error("Os relatórios detalhados são exclusivos do usuário Admin.")
-        else:
-            render_admin_reports_center()
-
-    elif menu_coord == "Aulas Relatorio":
-        render_class_sessions_premium_report()
 
     elif menu_coord == "Links":
         st.markdown('<div class="main-header">Gerenciar Links Ao Vivo</div>', unsafe_allow_html=True)
@@ -17651,7 +15078,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
                     api_key = get_groq_api_key()
                     if not api_key:
-                        st.warning("Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar resumo automatico do pedido.")
+                        st.warning("Configure GROQ_API_KEY para gerar resumo automático do pedido.")
                     else:
                         resumo_itens = [
                             f"{i.get('codigo','')}: {i.get('descricao','')} (saldo {i.get('saldo','')}, mínimo {i.get('minimo','')})"
@@ -17664,7 +15091,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
                         try:
                             result = client.chat.completions.create(
-                                model=get_active_chatbot_model(),
+                                model=os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile"),
                                 messages=[
                                     {"role": "system", "content": system_prompt},
                                     {"role": "user", "content": user_prompt},
@@ -17987,112 +15414,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Alunos":
         st.markdown('<div class="main-header">Gestão de Alunos</div>', unsafe_allow_html=True)
-        _require_permission("students.view")
-        render_section_hero(
-            "Cadastro, consulta e gestao financeira do aluno",
-            "Centralize analise por turma, ficha completa, cadastro e acoes financeiras no mesmo fluxo.",
-            [
-                f"{len(st.session_state.get('students', []))} cadastros",
-                f"{len({str(s.get('turma', '')).strip() for s in st.session_state.get('students', []) if str(s.get('turma', '')).strip()})} turmas com alunos",
-            ],
-        )
-        students_all = st.session_state.get("students", [])
-        students_active = [
-            s for s in students_all
-            if str(s.get("status", "Ativo")).strip().lower() != "inativo"
-        ]
-        students_with_login = [
-            s for s in students_all if str(s.get("usuario", "")).strip()
-        ]
-        students_without_turma = [
-            s for s in students_all
-            if not str(s.get("turma", "")).strip() or str(s.get("turma", "")).strip().lower() == "sem turma"
-        ]
-
-        def _student_ops_shell(step, title, description, tone="blue"):
-            tone_map = {
-                "blue": ("#1d4ed8", "#2563eb"),
-                "green": ("#059669", "#10b981"),
-                "orange": ("#ea580c", "#f97316"),
-            }
-            left, right = tone_map.get(tone, tone_map["blue"])
-            st.markdown(
-                (
-                    f'<div style="background:#ffffff;border:1px solid rgba(148,163,184,.24);'
-                    f'border-radius:22px;padding:20px 22px;margin:10px 0 18px;'
-                    f'box-shadow:0 20px 46px rgba(15,23,42,.08);position:relative;overflow:hidden;">'
-                    f'<div style="position:absolute;inset:0 auto auto 0;height:4px;width:100%;'
-                    f'background:linear-gradient(90deg,{left},{right});"></div>'
-                    f'<div style="display:flex;gap:14px;align-items:flex-start;">'
-                    f'<div style="min-width:38px;height:38px;border-radius:999px;display:flex;'
-                    f'align-items:center;justify-content:center;font-weight:800;color:#fff;'
-                    f'background:linear-gradient(135deg,{left},{right});">{html.escape(str(step))}</div>'
-                    f'<div><div style="font-size:1.18rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                    f'<div style="margin-top:6px;color:#5b6b83;line-height:1.6;">{html.escape(str(description))}</div></div>'
-                    f'</div></div>'
-                ),
-                unsafe_allow_html=True,
-            )
-
-        def _student_summary_card(title, rows, tone="blue"):
-            tone_map = {
-                "blue": ("#2563eb", "rgba(37,99,235,.12)"),
-                "green": ("#10b981", "rgba(16,185,129,.12)"),
-                "orange": ("#f97316", "rgba(249,115,22,.12)"),
-            }
-            accent, chip_bg = tone_map.get(tone, tone_map["blue"])
-            blocks = []
-            for label, value in rows:
-                blocks.append(
-                    (
-                        '<div style="background:#f8fbff;border:1px solid rgba(148,163,184,.16);'
-                        'border-radius:16px;padding:14px 16px;">'
-                        f'<div style="font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a90;">{html.escape(str(label))}</div>'
-                        f'<div style="margin-top:6px;font-size:1rem;font-weight:700;color:#102a54;line-height:1.45;">{html.escape(str(value))}</div>'
-                        '</div>'
-                    )
-                )
-            st.markdown(
-                (
-                    '<div style="background:#ffffff;border:1px solid rgba(148,163,184,.22);border-radius:24px;'
-                    'padding:22px 22px 20px;margin:8px 0 18px;box-shadow:0 20px 46px rgba(15,23,42,.08);">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">'
-                    f'<div style="font-size:1.06rem;font-weight:800;color:#0f274f;">{html.escape(str(title))}</div>'
-                    f'<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;'
-                    f'background:{chip_bg};color:{accent};font-size:.78rem;font-weight:800;">Resumo</span></div>'
-                    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'
-                    + "".join(blocks) +
-                    '</div></div>'
-                ),
-                unsafe_allow_html=True,
-            )
-
-        top_k1, top_k2, top_k3, top_k4 = st.columns(4)
-        with top_k1:
-            st.metric("Alunos ativos", len(students_active))
-        with top_k2:
-            st.metric("Acessos criados", len(students_with_login))
-        with top_k3:
-            st.metric("Sem turma", len(students_without_turma))
-        with top_k4:
-            st.metric("Total geral", len(students_all))
         tab1, tab2, tab3 = st.tabs(["Lista de Alunos", "Cadastro Completo", "Gerenciar / Excluir"])
 
         with tab1:
-            render_panel_intro(
-                "Mapa operacional dos alunos",
-                "Filtre por turma, exporte a base e consulte a ficha financeira do aluno sem sair da tela.",
-                [
-                    ("Ativos", len([s for s in st.session_state.get("students", []) if str(s.get("status", "Ativo")).strip().lower() != "inativo"])),
-                    ("Usuarios", len([s for s in st.session_state.get("students", []) if str(s.get("usuario", "")).strip()])),
-                ],
-            )
-            _student_ops_shell(
-                "1",
-                "Importação e governança da base",
-                "Centralize exportação, modelo de planilha e importação assistida antes de revisar o painel por turma.",
-                tone="blue",
-            )
+            st.markdown("### Importar / Exportar Excel")
             with st.expander("Importar / Exportar Excel", expanded=False):
                 col_exp, col_imp = st.columns(2)
                 with col_exp:
@@ -18149,9 +15474,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             df_import = _normalize_import_df(df_raw)
                             st.dataframe(df_import.head(50), use_container_width=True)
                             if st.button("Importar alunos", key="students_import_btn"):
-                                if not _has_permission("students.create"):
-                                    st.error("Sem permissão para importar alunos.")
-                                    st.stop()
                                 alunos = st.session_state["students"]
                                 index_by_email = {
                                     str(s.get("email", "")).strip().lower(): i
@@ -18237,742 +15559,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     else:
                         st.info("Envie um arquivo Excel para importar alunos.")
 
-            st.markdown(
-                """
-                <style>
-                .students-shell {
-                    background: #ffffff;
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 26px;
-                    padding: 22px 24px;
-                    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-                    margin: 10px 0 22px;
-                }
-                .students-shell h4 {
-                    margin: 0 0 6px;
-                    font-size: 1.2rem;
-                    font-weight: 800;
-                    color: #0f274f;
-                }
-                .students-shell p {
-                    margin: 0;
-                    color: #5b6b83;
-                    font-size: 0.95rem;
-                }
-                .students-kpi {
-                    background: #ffffff;
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 20px;
-                    padding: 16px 18px;
-                    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-                }
-                .students-kpi .k {
-                    font-size: 0.75rem;
-                    letter-spacing: 0.08em;
-                    text-transform: uppercase;
-                    color: #6b7a90;
-                    font-weight: 700;
-                }
-                .students-kpi .v {
-                    font-size: 1.25rem;
-                    font-weight: 800;
-                    color: #102a54;
-                    margin-top: 4px;
-                }
-                .students-kpi .s {
-                    font-size: 0.85rem;
-                    color: #637289;
-                    margin-top: 2px;
-                }
-                .students-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 0.92rem;
-                }
-                .students-table th {
-                    position: sticky;
-                    top: 0;
-                    background: #f1f5fb;
-                    text-align: left;
-                    font-size: 0.78rem;
-                    letter-spacing: 0.06em;
-                    text-transform: uppercase;
-                    color: #5d6f88;
-                    padding: 12px 10px;
-                    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
-                }
-                .students-table td {
-                    padding: 12px 10px;
-                    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-                    color: #1f2d4d;
-                }
-                .students-table tr:nth-child(even) {
-                    background: #f9fbff;
-                }
-                .students-table tr:hover {
-                    background: #eef4ff;
-                }
-                .students-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    padding: 4px 10px;
-                    border-radius: 999px;
-                    font-size: 0.76rem;
-                    font-weight: 700;
-                    border: 1px solid transparent;
-                    white-space: nowrap;
-                }
-                .students-badge[data-tone="green"] {
-                    background: rgba(16, 185, 129, 0.16);
-                    color: #0f766e;
-                    border-color: rgba(16, 185, 129, 0.26);
-                }
-                .students-badge[data-tone="orange"] {
-                    background: rgba(249, 115, 22, 0.16);
-                    color: #c2410c;
-                    border-color: rgba(249, 115, 22, 0.3);
-                }
-                .students-badge[data-tone="red"] {
-                    background: rgba(239, 68, 68, 0.16);
-                    color: #b91c1c;
-                    border-color: rgba(239, 68, 68, 0.3);
-                }
-                .students-badge[data-tone="blue"] {
-                    background: rgba(59, 130, 246, 0.16);
-                    color: #1d4ed8;
-                    border-color: rgba(59, 130, 246, 0.3);
-                }
-                .students-detail-card {
-                    background: #ffffff;
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 24px;
-                    padding: 20px 22px;
-                    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-                    margin: 10px 0 18px;
-                }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
-            if not _has_permission("students.view"):
-                st.warning("Acesso restrito: você não possui permissão para gerir alunos.")
-                st.stop()
-
-            students_all = st.session_state.get("students", [])
-            if students_all:
-                def _append_student_history(student_obj, action, details=""):
-                    history = student_obj.get("historico", [])
-                    if not isinstance(history, list):
-                        history = []
-                    author = str(st.session_state.get("user_name", "")).strip() or "sistema"
-                    profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
-                    history.append(
-                        {
-                            "data": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            "acao": str(action),
-                            "detalhes": str(details),
-                            "autor": author,
-                            "perfil": profile,
-                        }
-                    )
-                    student_obj["historico"] = history
-
-                st.markdown(
-                    """
-                    <div class="students-shell">
-                        <h4>Painel de Gestão de Alunos</h4>
-                        <p>Filtros inteligentes, visão operacional e ficha completa em um único fluxo.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                receivables_all = st.session_state.get("receivables", [])
-                classes_all = st.session_state.get("classes", [])
-
-                def _student_status_tone(status_value):
-                    status_txt = str(status_value or "").strip().lower()
-                    if status_txt in ("ativo", "regular"):
-                        return "green"
-                    if status_txt in ("inadimplente", "pendente", "trancado", "inativo"):
-                        return "red"
-                    if status_txt in ("vip", "experimental"):
-                        return "blue"
-                    if status_txt in ("pausado", "alerta"):
-                        return "orange"
-                    return "blue"
-
-                def _student_receivables(student_name):
-                    return [
-                        r for r in receivables_all
-                        if str(r.get("aluno", "")).strip() == student_name
-                    ]
-
-                def _student_last_payment(student_name):
-                    items = [
-                        parse_date(r.get("baixa_data", ""))
-                        for r in _student_receivables(student_name)
-                        if str(r.get("status", "")).strip().lower() == "pago"
-                    ]
-                    items = [d for d in items if d]
-                    if not items:
-                        return "-"
-                    return max(items).strftime("%d/%m/%Y")
-
-                def _student_next_due(student_name):
-                    items = [
-                        parse_date(r.get("vencimento", ""))
-                        for r in _student_receivables(student_name)
-                        if str(r.get("status", "")).strip().lower() not in ("pago", "quitado")
-                    ]
-                    items = [d for d in items if d]
-                    if not items:
-                        return "-"
-                    return min(items).strftime("%d/%m/%Y")
-
-                def _student_finance_status(student_name):
-                    open_total = sum(
-                        parse_money(r.get("valor_parcela", r.get("valor", 0)))
-                        for r in _student_receivables(student_name)
-                        if str(r.get("status", "")).strip().lower() not in ("pago", "quitado")
-                    )
-                    return "Inadimplente" if open_total > 0 else "Adimplente"
-
-                turma_opts = ["Todas"] + sorted({str(s.get("turma", "")).strip() or "Sem Turma" for s in students_all})
-                prof_opts = ["Todos"] + sorted({
-                    str(c.get("professor", "")).strip()
-                    for c in classes_all if str(c.get("professor", "")).strip()
-                })
-                modulo_opts = ["Todos"] + sorted({str(s.get("modulo", "")).strip() for s in students_all if str(s.get("modulo", "")).strip()})
-                status_opts = ["Todos"] + sorted({str(s.get("status", "")).strip() or "Ativo" for s in students_all})
-                tipo_opts = ["Todos"] + sorted({str(s.get("vip_tipo_plano", "")).strip() for s in students_all if str(s.get("vip_tipo_plano", "")).strip()})
-                finance_opts = ["Todos", "Adimplente", "Inadimplente"]
-
-                f1, f2, f3, f4 = st.columns(4)
-                with f1:
-                    filter_name = st.text_input("Buscar aluno", key="students_filter_name")
-                with f2:
-                    filter_matricula = st.text_input("Matrícula", key="students_filter_matricula")
-                with f3:
-                    filter_turma = st.selectbox("Turma", turma_opts, key="students_filter_turma")
-                with f4:
-                    filter_prof = st.selectbox("Professor", prof_opts, key="students_filter_prof")
-                f5, f6, f7, f8 = st.columns(4)
-                with f5:
-                    filter_modulo = st.selectbox("Módulo/Plano", modulo_opts, key="students_filter_modulo")
-                with f6:
-                    filter_status = st.selectbox("Status", status_opts, key="students_filter_status")
-                with f7:
-                    filter_tipo = st.selectbox("Tipo de aluno", tipo_opts, key="students_filter_tipo")
-                with f8:
-                    filter_finance = st.selectbox("Situação financeira", finance_opts, key="students_filter_finance")
-                f9, f10, f11 = st.columns([1, 1, 1])
-                with f9:
-                    min_aulas = st.number_input("Aulas restantes (mín.)", min_value=0, value=0, step=1, key="students_filter_min_aulas")
-                with f10:
-                    venc_start = st.date_input("Vencimento a partir", value=None, key="students_filter_venc_start", format="DD/MM/YYYY")
-                with f11:
-                    venc_end = st.date_input("Vencimento até", value=None, key="students_filter_venc_end", format="DD/MM/YYYY")
-                cbtn1, cbtn2 = st.columns([1, 1])
-                with cbtn1:
-                    if st.button("Limpar filtros", key="students_filter_clear"):
-                        for k in [
-                            "students_filter_name",
-                            "students_filter_matricula",
-                            "students_filter_turma",
-                            "students_filter_prof",
-                            "students_filter_modulo",
-                            "students_filter_status",
-                            "students_filter_tipo",
-                            "students_filter_finance",
-                            "students_filter_min_aulas",
-                            "students_filter_venc_start",
-                            "students_filter_venc_end",
-                        ]:
-                            st.session_state.pop(k, None)
-                        st.rerun()
-                with cbtn2:
-                    st.caption("Use os filtros para reduzir a base e operar mais rápido.")
-
-                filtered_students = []
-                for student in students_all:
-                    name = str(student.get("nome", "")).strip()
-                    if filter_name and filter_name.lower() not in name.lower():
-                        continue
-                    matricula = str(student.get("matricula", "")).strip()
-                    if filter_matricula and filter_matricula.lower() not in matricula.lower():
-                        continue
-                    turma = str(student.get("turma", "")).strip() or "Sem Turma"
-                    if filter_turma != "Todas" and turma != filter_turma:
-                        continue
-                    professor = ""
-                    turma_obj = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma), {})
-                    professor = str(turma_obj.get("professor", "")).strip()
-                    if filter_prof != "Todos" and professor != filter_prof:
-                        continue
-                    modulo = str(student.get("modulo", "")).strip()
-                    if filter_modulo != "Todos" and modulo != filter_modulo:
-                        continue
-                    status = str(student.get("status", "")).strip() or "Ativo"
-                    if filter_status != "Todos" and status != filter_status:
-                        continue
-                    tipo = str(student.get("vip_tipo_plano", "")).strip()
-                    if filter_tipo != "Todos" and tipo != filter_tipo:
-                        continue
-                    finance_status = _student_finance_status(name)
-                    if filter_finance != "Todos" and finance_status != filter_finance:
-                        continue
-                    aulas_restantes = parse_int(student.get("vip_aulas_restantes", 0)) or 0
-                    if aulas_restantes < int(min_aulas or 0):
-                        continue
-                    if venc_start or venc_end:
-                        next_due = _student_next_due(name)
-                        next_due_dt = parse_date(next_due)
-                        if venc_start and (not next_due_dt or next_due_dt < venc_start):
-                            continue
-                        if venc_end and (not next_due_dt or next_due_dt > venc_end):
-                            continue
-                    filtered_students.append(student)
-
-                st.session_state["students_filtered"] = filtered_students
-                k1, k2, k3, k4 = st.columns(4)
-                with k1:
-                    st.markdown(
-                        f"<div class='students-kpi'><div class='k'>Resultados</div><div class='v'>{len(filtered_students)}</div><div class='s'>alunos filtrados</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                with k2:
-                    st.markdown(
-                        f"<div class='students-kpi'><div class='k'>Turmas</div><div class='v'>{len({str(s.get('turma','')).strip() for s in filtered_students if str(s.get('turma','')).strip()})}</div><div class='s'>com alunos</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                with k3:
-                    inadimplentes = len([s for s in filtered_students if _student_finance_status(str(s.get("nome", "")).strip()) == "Inadimplente"])
-                    st.markdown(
-                        f"<div class='students-kpi'><div class='k'>Inadimplentes</div><div class='v'>{inadimplentes}</div><div class='s'>pendências abertas</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                with k4:
-                    ativos = len([s for s in filtered_students if str(s.get("status", "Ativo")).strip().lower() == "ativo"])
-                    st.markdown(
-                        f"<div class='students-kpi'><div class='k'>Ativos</div><div class='v'>{ativos}</div><div class='s'>em acompanhamento</div></div>",
-                        unsafe_allow_html=True,
-                    )
-
-                sort_key = st.selectbox(
-                    "Ordenar por",
-                    ["Nome", "Matrícula", "Turma", "Aulas restantes", "Próximo vencimento"],
-                    key="students_sort_key",
-                )
-                per_page = st.selectbox("Itens por página", [10, 20, 30, 50], index=1, key="students_per_page")
-                total_pages = max(1, int((len(filtered_students) + int(per_page) - 1) / int(per_page)))
-                current_page = st.number_input(
-                    "Página",
-                    min_value=1,
-                    max_value=total_pages,
-                    value=1,
-                    step=1,
-                    key="students_page_number",
-                )
-                sort_map = {
-                    "Nome": lambda s: str(s.get("nome", "")).strip().lower(),
-                    "Matrícula": lambda s: str(s.get("matricula", "")).strip(),
-                    "Turma": lambda s: str(s.get("turma", "")).strip(),
-                    "Aulas restantes": lambda s: parse_int(s.get("vip_aulas_restantes", 0)) or 0,
-                    "Próximo vencimento": lambda s: parse_date(_student_next_due(str(s.get("nome", "")).strip())) or datetime.date.max,
-                }
-                filtered_students = sorted(filtered_students, key=sort_map.get(sort_key, sort_map["Nome"]))
-                start_idx = (current_page - 1) * per_page
-                page_students = filtered_students[start_idx:start_idx + per_page]
-
-                rows_html = []
-                for student in page_students:
-                    name = str(student.get("nome", "")).strip()
-                    turma = str(student.get("turma", "")).strip() or "Sem Turma"
-                    turma_obj = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma), {})
-                    professor = str(turma_obj.get("professor", "")).strip() or "-"
-                    status = str(student.get("status", "")).strip() or "Ativo"
-                    tone = _student_status_tone(status)
-                    aulas_restantes = parse_int(student.get("vip_aulas_restantes", 0)) or 0
-                    last_payment = _student_last_payment(name)
-                    next_due = _student_next_due(name)
-                    telefone = str(student.get("celular", "")).strip() or "-"
-                    matricula = str(student.get("matricula", "")).strip() or "-"
-                    modulo = str(student.get("modulo", "")).strip() or "-"
-                    rows_html.append(
-                        "<tr>"
-                        f"<td>{html.escape(name)}</td>"
-                        f"<td>{html.escape(matricula)}</td>"
-                        f"<td>{html.escape(turma)}</td>"
-                        f"<td>{html.escape(modulo)}</td>"
-                        f"<td>{html.escape(professor)}</td>"
-                        f"<td><span class='students-badge' data-tone='{tone}'>{html.escape(status)}</span></td>"
-                        f"<td style='text-align:center'>{html.escape(str(aulas_restantes))}</td>"
-                        f"<td>{html.escape(last_payment)}</td>"
-                        f"<td>{html.escape(next_due)}</td>"
-                        f"<td>{html.escape(telefone)}</td>"
-                        "</tr>"
-                    )
-                rows_html_str = "".join(rows_html) or "<tr><td colspan='10' style='text-align:center'>Nenhum aluno encontrado com os filtros.</td></tr>"
-                st.markdown(
-                    f"""
-                    <div class="students-detail-card">
-                        <table class="students-table">
-                            <thead>
-                                <tr>
-                                    <th>Aluno</th>
-                                    <th>Matrícula</th>
-                                    <th>Turma</th>
-                                    <th>Módulo</th>
-                                    <th>Professor</th>
-                                    <th>Status</th>
-                                    <th>Aulas Rest.</th>
-                                    <th>Último pag.</th>
-                                    <th>Próx. venc.</th>
-                                    <th>Telefone</th>
-                                </tr>
-                            </thead>
-                            <tbody>{rows_html_str}</tbody>
-                        </table>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                select_student = st.selectbox(
-                    "Abrir gestão completa do aluno",
-                    [""] + [str(s.get("nome", "")).strip() for s in filtered_students],
-                    key="students_selected_detail",
-                    format_func=lambda n: "Selecione um aluno" if not str(n).strip() else str(n),
-                )
-                if select_student:
-                    student_obj = next((s for s in students_all if str(s.get("nome", "")).strip() == str(select_student).strip()), None)
-                    if student_obj:
-                        turma_obj = next(
-                            (c for c in classes_all if str(c.get("nome", "")).strip() == str(student_obj.get("turma", "")).strip()),
-                            {},
-                        )
-                        finance_summary = _student_receivables_summary(select_student)
-                        st.markdown("<div class='students-detail-card'><h4>Ficha completa</h4></div>", unsafe_allow_html=True)
-                        detail_tabs = st.tabs(["Dados gerais", "Acadêmico", "Aulas", "Financeiro", "Histórico"])
-                        with detail_tabs[0]:
-                            st.markdown("#### Dados gerais")
-                            dg1, dg2, dg3 = st.columns(3)
-                            with dg1:
-                                st.markdown(f"**Aluno:** {student_obj.get('nome','-')}")
-                                st.markdown(f"**Matrícula:** {student_obj.get('matricula','-')}")
-                                st.markdown(f"**CPF:** {student_obj.get('cpf','-')}")
-                                st.markdown(f"**Nascimento:** {student_obj.get('data_nascimento') or student_obj.get('nascimento','-')}")
-                            with dg2:
-                                st.markdown(f"**Telefone:** {student_obj.get('celular','-')}")
-                                st.markdown(f"**WhatsApp:** {student_obj.get('whatsapp','-')}")
-                                st.markdown(f"**Email:** {student_obj.get('email','-')}")
-                                st.markdown(f"**Status:** {student_obj.get('status','-')}")
-                            with dg3:
-                                resp = student_obj.get("responsavel", {}) or {}
-                                st.markdown(f"**Responsável:** {resp.get('nome','-')}")
-                                st.markdown(f"**Contato responsável:** {resp.get('celular','-')}")
-                                st.markdown(f"**Email responsável:** {resp.get('email','-')}")
-                            with st.expander("Editar dados gerais", expanded=False):
-                                with st.form("student_edit_general_form"):
-                                    edit_nome = st.text_input("Nome", value=str(student_obj.get("nome", "")).strip())
-                                    edit_matricula = st.text_input("Matrícula", value=str(student_obj.get("matricula", "")).strip())
-                                    edit_cpf = st.text_input("CPF", value=str(student_obj.get("cpf", "")).strip())
-                                    edit_nasc = st.text_input("Data de nascimento", value=str(student_obj.get("data_nascimento") or student_obj.get("nascimento", "")).strip())
-                                    edit_email = st.text_input("Email", value=str(student_obj.get("email", "")).strip())
-                                    edit_cel = st.text_input("Celular/WhatsApp", value=str(student_obj.get("celular", "")).strip())
-                                    edit_status = st.selectbox("Status", ["Ativo", "Inativo", "Pausado", "Trancado", "Inadimplente", "VIP", "Experimental"], index=0)
-                                    resp_nome = st.text_input("Responsável", value=str((student_obj.get("responsavel", {}) or {}).get("nome", "")).strip())
-                                    resp_cel = st.text_input("Celular responsável", value=str((student_obj.get("responsavel", {}) or {}).get("celular", "")).strip())
-                                    resp_email = st.text_input("Email responsável", value=str((student_obj.get("responsavel", {}) or {}).get("email", "")).strip())
-                                    if st.form_submit_button("Salvar dados gerais", type="primary"):
-                                        if not _has_permission("students.edit"):
-                                            st.error("Sem permissão para editar alunos.")
-                                            st.stop()
-                                        student_obj["nome"] = edit_nome.strip()
-                                        student_obj["matricula"] = edit_matricula.strip()
-                                        student_obj["cpf"] = edit_cpf.strip()
-                                        student_obj["data_nascimento"] = edit_nasc.strip()
-                                        student_obj["email"] = edit_email.strip()
-                                        student_obj["celular"] = edit_cel.strip()
-                                        student_obj["status"] = edit_status
-                                        resp_obj = student_obj.get("responsavel", {}) or {}
-                                        resp_obj["nome"] = resp_nome.strip()
-                                        resp_obj["celular"] = resp_cel.strip()
-                                        resp_obj["email"] = resp_email.strip()
-                                        student_obj["responsavel"] = resp_obj
-                                        _append_student_history(student_obj, "Atualização dados gerais", f"Status: {edit_status}")
-                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
-                                        st.success("Dados gerais atualizados.")
-                                        st.rerun()
-
-                        with detail_tabs[1]:
-                            st.markdown("#### Dados acadêmicos")
-                            st.markdown(f"**Turma atual:** {student_obj.get('turma','-')}")
-                            st.markdown(f"**Professor responsável:** {turma_obj.get('professor','-')}")
-                            st.markdown(f"**Módulo/Plano:** {student_obj.get('modulo','-')}")
-                            st.markdown(f"**Livro/Nível:** {student_book_level(student_obj) or '-'}")
-                            st.markdown(f"**Modalidade:** {student_obj.get('modalidade','-')}")
-                            st.markdown(f"**Aulas restantes:** {student_obj.get('vip_aulas_restantes','-')}")
-                            with st.expander("Editar dados acadêmicos", expanded=False):
-                                with st.form("student_edit_academic_form"):
-                                    edit_turma = st.text_input("Turma", value=str(student_obj.get("turma", "")).strip())
-                                    edit_modulo = st.text_input("Módulo/Plano", value=str(student_obj.get("modulo", "")).strip())
-                                    edit_modalidade = st.text_input("Modalidade", value=str(student_obj.get("modalidade", "")).strip())
-                                    edit_restantes = st.number_input("Aulas restantes", min_value=0, value=parse_int(student_obj.get("vip_aulas_restantes", 0)) or 0)
-                                    if st.form_submit_button("Salvar dados acadêmicos", type="primary"):
-                                        if not _has_permission("students.edit"):
-                                            st.error("Sem permissão para editar alunos.")
-                                            st.stop()
-                                        student_obj["turma"] = edit_turma.strip()
-                                        student_obj["modulo"] = edit_modulo.strip()
-                                        student_obj["modalidade"] = edit_modalidade.strip()
-                                        student_obj["vip_aulas_restantes"] = int(edit_restantes)
-                                        _append_student_history(student_obj, "Atualização acadêmica", f"Turma: {edit_turma.strip()} | Módulo: {edit_modulo.strip()}")
-                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
-                                        st.success("Dados acadêmicos atualizados.")
-                                        st.rerun()
-
-                        with detail_tabs[2]:
-                            st.markdown("#### Histórico de aulas")
-                            sessions = [
-                                s for s in st.session_state.get("class_sessions", [])
-                                if str(s.get("aluno", "")).strip() == str(select_student).strip()
-                            ]
-                            if sessions:
-                                sessions = sorted(sessions, key=lambda s: parse_date(s.get("data", "")) or datetime.date.min, reverse=True)
-                                df_sessions = pd.DataFrame(
-                                    [
-                                        {
-                                            "Data": str(sess.get("data", "")).strip(),
-                                            "Horário": str(sess.get("horario", "")).strip(),
-                                            "Professor": str(sess.get("professor", "")).strip(),
-                                            "Turma": str(sess.get("turma", "")).strip(),
-                                            "Status": str(sess.get("status", "")).strip(),
-                                            "Lição": str(sess.get("licao", "")).strip(),
-                                        }
-                                        for sess in sessions
-                                    ]
-                                )
-                                st.dataframe(df_sessions, use_container_width=True, hide_index=True)
-                            else:
-                                st.info("Nenhuma aula registrada para este aluno.")
-
-                        with detail_tabs[3]:
-                            st.markdown("#### Financeiro completo")
-                            st.markdown(f"**Situação financeira:** {_student_finance_status(select_student)}")
-                            st.markdown(f"**Total em aberto:** {format_money(finance_summary.get('total_open', 0.0))}")
-                            st.markdown(f"**Total pago:** {format_money(finance_summary.get('total_paid', 0.0))}")
-                            obs_fin = str(student_obj.get("financeiro_obs", "")).strip()
-                            if obs_fin:
-                                st.info(f"Observações financeiras: {obs_fin}")
-                            with st.expander("Editar observações financeiras", expanded=False):
-                                with st.form("student_edit_fin_obs"):
-                                    obs_new = st.text_area("Observações financeiras", value=obs_fin)
-                                    if st.form_submit_button("Salvar observações", type="primary"):
-                                        if not _has_permission("finance.edit"):
-                                            st.error("Sem permissão para editar financeiro.")
-                                            st.stop()
-                                        student_obj["financeiro_obs"] = obs_new.strip()
-                                        _append_student_history(student_obj, "Atualização financeira", "Observações financeiras atualizadas")
-                                        save_list(STUDENTS_FILE, st.session_state.get("students", []))
-                                        st.success("Observações financeiras atualizadas.")
-                                        st.rerun()
-                            finance_rows = []
-                            for item in finance_summary.get("all", []):
-                                finance_rows.append(
-                                    {
-                                        "Descrição": str(item.get("descricao", "")).strip(),
-                                        "Categoria": str(item.get("categoria", "")).strip(),
-                                        "Valor": format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))),
-                                        "Vencimento": str(item.get("vencimento", "")).strip(),
-                                        "Status": str(item.get("status", "")).strip(),
-                                        "Pago em": str(item.get("baixa_data", "")).strip(),
-                                    }
-                                )
-                            if finance_rows:
-                                st.dataframe(pd.DataFrame(finance_rows), use_container_width=True, hide_index=True)
-                            else:
-                                st.info("Nenhum lançamento financeiro encontrado para este aluno.")
-
-                        with detail_tabs[4]:
-                            st.markdown("#### Histórico geral")
-                            history = student_obj.get("historico", []) or []
-                            if history:
-                                st.dataframe(pd.DataFrame(history), use_container_width=True, hide_index=True)
-                            else:
-                                st.info("Sem histórico registrado para este aluno.")
-
-            else:
-                st.info("Nenhum aluno cadastrado.")
-
-            show_legacy = st.checkbox("Mostrar blocos legados (antigos)", value=False, key="students_legacy_toggle")
-            if show_legacy and st.session_state["students"]:
-                _student_ops_shell(
-                    "2",
-                    "Painel por turma",
-                    "Selecione a turma, escolha o aluno e opere a ficha acadêmica e financeira sem sair da listagem.",
-                    tone="green",
-                )
-                turma_admin_opts = ["Todas"] + sorted({str(s.get("turma", "Sem Turma")).strip() or "Sem Turma" for s in st.session_state["students"]})
-                pa1, pa2 = st.columns([1.2, 2.2])
-                with pa1:
-                    turma_admin_sel = st.selectbox("Turma para análise", turma_admin_opts, key="students_admin_turma")
-                alunos_da_turma = [
-                    s for s in st.session_state["students"]
-                    if turma_admin_sel == "Todas" or (str(s.get("turma", "Sem Turma")).strip() or "Sem Turma") == turma_admin_sel
-                ]
-                alunos_da_turma = sorted(alunos_da_turma, key=lambda s: str(s.get("nome", "")).strip().lower())
-                with pa2:
-                    aluno_admin_nome = st.selectbox(
-                        "Aluno",
-                        [""] + [str(s.get("nome", "")).strip() for s in alunos_da_turma],
-                        key="students_admin_student",
-                        format_func=lambda n: "Selecione um aluno" if not str(n).strip() else str(n).strip(),
-                    )
-
-                aluno_admin_obj = next(
-                    (s for s in alunos_da_turma if str(s.get("nome", "")).strip() == str(aluno_admin_nome).strip()),
-                    {},
-                )
-                if aluno_admin_obj:
-                    turma_obj_admin = next(
-                        (c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == str(aluno_admin_obj.get("turma", "")).strip()),
-                        {},
-                    )
-                    finance_summary = _student_receivables_summary(aluno_admin_nome)
-                    pd1, pd2, pd3, pd4 = st.columns(4)
-                    with pd1:
-                        st.metric("Receber em aberto", format_money(finance_summary.get("total_open", 0.0)))
-                    with pd2:
-                        st.metric("Pagamentos realizados", format_money(finance_summary.get("total_paid", 0.0)))
-                    with pd3:
-                        st.metric("Lançamentos abertos", len(finance_summary.get("open", [])))
-                    with pd4:
-                        st.metric("Turma", str(aluno_admin_obj.get("turma", "")).strip() or "Sem Turma")
-
-                    _student_summary_card(
-                        "Ficha consolidada do aluno",
-                        [
-                            ("Aluno", str(aluno_admin_obj.get("nome", "")).strip() or "-"),
-                            ("Matrícula", str(aluno_admin_obj.get("matricula", "")).strip() or "-"),
-                            ("Livro / Nível", student_book_level(aluno_admin_obj) or "-"),
-                            ("Professor", str(turma_obj_admin.get("professor", "")).strip() or "-"),
-                            ("Módulo", str(aluno_admin_obj.get("modulo", "")).strip() or "-"),
-                            ("Status", str(aluno_admin_obj.get("status", "")).strip() or "-"),
-                            ("Celular", str(aluno_admin_obj.get("celular", "")).strip() or "-"),
-                            ("E-mail", str(aluno_admin_obj.get("email", "")).strip() or "-"),
-                            ("CPF", str(aluno_admin_obj.get("cpf", "")).strip() or "-"),
-                            ("Responsável", str((aluno_admin_obj.get("responsavel", {}) or {}).get("nome", "")).strip() or "-"),
-                        ],
-                        tone="green",
-                    )
-
-                    af1, af2 = st.tabs(["Financeiro do aluno", "Ficha completa"])
-                    with af1:
-                        rf1, rf2 = st.columns(2)
-                        with rf1:
-                            with st.form("student_quick_receivable_form", clear_on_submit=False):
-                                st.markdown("#### Lançar valor rapidamente")
-                                desc_quick = st.text_input("Descrição", value="Mensalidade")
-                                val_quick = st.text_input("Valor", value="")
-                                due_quick = st.date_input("Vencimento", value=datetime.date.today(), format="DD/MM/YYYY", key="student_quick_due")
-                                charge_quick = st.selectbox("Cobrança", ["Pix", "Dinheiro", "Boleto", "Cartão", "Transferência"], key="student_quick_charge")
-                                cat_quick = st.selectbox("Categoria", ["Mensalidade", "Material", "Matrícula", "Outro"], key="student_quick_cat")
-                                if st.form_submit_button("Lançar no financeiro", type="primary"):
-                                    if not _has_permission("finance.launch"):
-                                        st.error("Sem permissão para lançar cobrança.")
-                                        st.stop()
-                                    if not str(val_quick).strip():
-                                        st.error("Informe o valor.")
-                                    else:
-                                        add_receivable(
-                                            aluno=aluno_admin_nome,
-                                            descricao=desc_quick,
-                                            valor=str(val_quick).strip(),
-                                            vencimento=due_quick,
-                                            cobranca=charge_quick,
-                                            categoria=cat_quick,
-                                        )
-                                        st.success("Valor lançado para o aluno.")
-                                        st.rerun()
-                        with rf2:
-                            st.markdown("#### Dar baixa rápida")
-                            open_labels = [
-                                f"{r.get('codigo','')} | {r.get('descricao','')} | {r.get('vencimento','')} | {format_money(parse_money(r.get('valor_parcela', r.get('valor', 0))))}"
-                                for r in finance_summary.get("open", [])
-                            ]
-                            baixa_sel = st.selectbox(
-                                "Lançamento em aberto",
-                                [""] + open_labels,
-                                key="student_quick_baixa_sel",
-                                format_func=lambda v: "Selecione um lançamento" if not str(v).strip() else str(v),
-                            )
-                            if st.button("Dar baixa neste lançamento", key="student_quick_baixa_btn", type="secondary"):
-                                if not str(baixa_sel).strip():
-                                    st.error("Selecione um lançamento.")
-                                else:
-                                    if not _has_permission("finance.edit"):
-                                        st.error("Sem permissão para dar baixa.")
-                                        st.stop()
-                                    item_baixa = finance_summary["open"][open_labels.index(baixa_sel)]
-                                    item_baixa["status"] = "Pago"
-                                    item_baixa["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-                                    item_baixa["baixa_tipo"] = "Painel do aluno"
-                                    save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                    st.success("Baixa realizada com sucesso.")
-                                    st.rerun()
-
-                        finance_rows = []
-                        for item in finance_summary.get("all", []):
-                            finance_rows.append(
-                                {
-                                    "Código": str(item.get("codigo", "")).strip(),
-                                    "Descrição": str(item.get("descricao", "")).strip(),
-                                    "Categoria": str(item.get("categoria", "")).strip(),
-                                    "Vencimento": str(item.get("vencimento", "")).strip(),
-                                    "Valor": format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))),
-                                    "Status": str(item.get("status", "")).strip() or "-",
-                                    "Baixa em": str(item.get("baixa_data", "")).strip() or "-",
-                                    "Tipo baixa": str(item.get("baixa_tipo", "")).strip() or "-",
-                                }
-                            )
-                        if finance_rows:
-                            st.dataframe(pd.DataFrame(finance_rows), use_container_width=True, hide_index=True)
-                        else:
-                            st.info("Nenhum lançamento financeiro para este aluno.")
-
-                    with af2:
-                        ficha_rows = [
-                            {"Campo": "Nome", "Valor": str(aluno_admin_obj.get("nome", "")).strip() or "-"},
-                            {"Campo": "Matrícula", "Valor": str(aluno_admin_obj.get("matricula", "")).strip() or "-"},
-                            {"Campo": "Turma", "Valor": str(aluno_admin_obj.get("turma", "")).strip() or "-"},
-                            {"Campo": "Professor", "Valor": str(turma_obj_admin.get("professor", "")).strip() or "-"},
-                            {"Campo": "Livro/Nível", "Valor": student_book_level(aluno_admin_obj) or "-"},
-                            {"Campo": "Módulo", "Valor": str(aluno_admin_obj.get("modulo", "")).strip() or "-"},
-                            {"Campo": "Status", "Valor": str(aluno_admin_obj.get("status", "")).strip() or "-"},
-                            {"Campo": "Celular", "Valor": str(aluno_admin_obj.get("celular", "")).strip() or "-"},
-                            {"Campo": "E-mail", "Valor": str(aluno_admin_obj.get("email", "")).strip() or "-"},
-                            {"Campo": "RG", "Valor": str(aluno_admin_obj.get("rg", "")).strip() or "-"},
-                            {"Campo": "CPF", "Valor": str(aluno_admin_obj.get("cpf", "")).strip() or "-"},
-                            {"Campo": "CEP", "Valor": str(aluno_admin_obj.get("cep", "")).strip() or "-"},
-                            {"Campo": "Cidade", "Valor": str(aluno_admin_obj.get("cidade", "")).strip() or "-"},
-                            {"Campo": "Bairro", "Valor": str(aluno_admin_obj.get("bairro", "")).strip() or "-"},
-                            {"Campo": "Rua", "Valor": str(aluno_admin_obj.get("rua", "")).strip() or "-"},
-                            {"Campo": "Número", "Valor": str(aluno_admin_obj.get("numero", "")).strip() or "-"},
-                            {"Campo": "Complemento", "Valor": str(aluno_admin_obj.get("complemento", "")).strip() or "-"},
-                            {"Campo": "Responsável", "Valor": str((aluno_admin_obj.get("responsavel", {}) or {}).get("nome", "")).strip() or "-"},
-                            {"Campo": "Responsável CPF", "Valor": str((aluno_admin_obj.get("responsavel", {}) or {}).get("cpf", "")).strip() or "-"},
-                            {"Campo": "Responsável Celular", "Valor": str((aluno_admin_obj.get("responsavel", {}) or {}).get("celular", "")).strip() or "-"},
-                            {"Campo": "Responsável E-mail", "Valor": str((aluno_admin_obj.get("responsavel", {}) or {}).get("email", "")).strip() or "-"},
-                        ]
-                        st.dataframe(pd.DataFrame(ficha_rows), use_container_width=True, hide_index=True)
-
-            _student_ops_shell(
-                "3",
-                "Base filtrada e exportável",
-                "Use filtros por turma e professor para reduzir a base operacional e exportar apenas o que faz sentido para a ação atual.",
-                tone="orange",
-            )
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -19075,17 +15661,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.dataframe(df_alunos, use_container_width=True)
 
         with tab2:
-            render_panel_intro(
-                "Cadastro completo do aluno",
-                "Use este bloco para manter dados academicos, pessoais e financeiros com mais contexto e menos friccao visual.",
-                [("Campos", "completos"), ("Fluxo", "cadastro")],
-            )
-            _student_ops_shell(
-                "1",
-                "Preparar cadastro ou correção",
-                "Escolha entre iniciar um novo aluno ou puxar um cadastro existente para revisão completa no mesmo formulário.",
-                tone="blue",
-            )
             modulos = [
                 "Presencial em Turma",
                 "Turma online",
@@ -19166,12 +15741,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.info(info_msg)
 
             if st.session_state.get("students"):
-                _student_ops_shell(
-                    "2",
-                    "Recuperar cadastro existente",
-                    "Carregue um aluno já cadastrado para corrigir dados sem duplicar matrícula nem perder histórico.",
-                    tone="green",
-                )
+                st.markdown("### Puxar Aluno Cadastrado")
                 alunos_pull = st.session_state.get("students", [])
                 pull_options = list(range(len(alunos_pull)))
                 selected_pull_idx = st.selectbox(
@@ -19242,23 +15812,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             edit_student_active = None
             if 0 <= edit_idx_active < len(st.session_state.get("students", [])):
                 edit_student_active = st.session_state["students"][edit_idx_active]
-                _student_summary_card(
-                    "Modo correção ativo",
-                    [
-                        ("Aluno", str(edit_student_active.get("nome", "")).strip() or "-"),
-                        ("Matrícula", str(edit_student_active.get("matricula", "")).strip() or "-"),
-                        ("Turma", str(edit_student_active.get("turma", "")).strip() or "Sem Turma"),
-                        ("Status", str(edit_student_active.get("status", "")).strip() or "-"),
-                    ],
-                    tone="orange",
+                st.info(
+                    "Modo correcao ativo para: "
+                    f"{str(edit_student_active.get('nome', '')).strip()} "
+                    f"(Matricula {str(edit_student_active.get('matricula', '')).strip() or '-'})"
                 )
 
-            _student_ops_shell(
-                "3",
-                "Preencher ficha completa",
-                "Siga o formulário por blocos: dados pessoais, endereço, turma, acesso e responsável financeiro.",
-                tone="orange",
-            )
             with st.form("add_student_full", clear_on_submit=False):
                 st.markdown("### Dados Pessoais")
                 c1, c2, c3, c4 = st.columns(4)
@@ -19557,17 +16116,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
         with tab3:
-            render_panel_intro(
-                "Gerenciar e excluir registros",
-                "Edite dados, credenciais e informacoes do aluno com um fluxo unico de manutencao.",
-                [("Controle", "individual"), ("Acao", "segura")],
-            )
-            _student_ops_shell(
-                "1",
-                "Selecionar aluno para manutenção",
-                "Abra uma ficha individual, revise os dados e execute edição ou exclusão com contexto completo do cadastro.",
-                tone="blue",
-            )
             if not st.session_state["students"]:
                 st.info("Nenhum aluno cadastrado.")
             else:
@@ -19576,18 +16124,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 aluno_obj = next((s for s in st.session_state["students"] if s["nome"] == aluno_sel), None)
 
                 if aluno_obj:
-                    _student_summary_card(
-                        "Aluno selecionado para manutenção",
-                        [
-                            ("Aluno", str(aluno_obj.get("nome", "")).strip() or "-"),
-                            ("Matrícula", str(aluno_obj.get("matricula", "")).strip() or "-"),
-                            ("Turma", str(aluno_obj.get("turma", "")).strip() or "Sem Turma"),
-                            ("Status", str(aluno_obj.get("status", "")).strip() or "-"),
-                            ("E-mail", str(aluno_obj.get("email", "")).strip() or "-"),
-                            ("Celular", str(aluno_obj.get("celular", "")).strip() or "-"),
-                        ],
-                        tone="green",
-                    )
                     turmas = ["Sem Turma"] + class_names()
                     current_turma = aluno_obj.get("turma", "Sem Turma")
                     if current_turma not in turmas:
@@ -19850,9 +16386,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR ALUNO", type="primary"):
-                                if not _has_permission("students.delete"):
-                                    st.error("Sem permissão para excluir alunos.")
-                                    st.stop()
                                 login = aluno_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
@@ -19866,267 +16399,99 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Professores":
         st.markdown('<div class="main-header">Gestão de Professores</div>', unsafe_allow_html=True)
-        _require_permission("teachers.view")
-        st.markdown(
-            """
-            <style>
-            .teacher-admin-summary {display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.94); border:1px solid rgba(148,163,184,0.18); border-radius:20px; padding:16px 18px; box-shadow:0 16px 34px rgba(15,23,42,0.06);}
-            .teacher-admin-summary-row {display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:10px 0; border-bottom:1px solid rgba(226,232,240,0.9);}
-            .teacher-admin-summary-row:last-child {border-bottom:none; padding-bottom:0;}
-            .teacher-admin-summary-row span {font-size:.84rem; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:.04em;}
-            .teacher-admin-summary-row strong {font-size:.98rem; color:#0f172a; text-align:right;}
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        tab1, tab2 = st.tabs(["Novo Professor", "Gerenciar / Excluir"])
+        with tab1:
+            with st.form("add_prof", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1: nome = st.text_input("Nome")
+                with c2: area = st.text_input("Area")
+                c_email, c_cel = st.columns(2)
+                with c_email: email_prof = st.text_input("E-mail do Professor")
+                with c_cel: celular_prof = st.text_input("Celular/WhatsApp do Professor")
 
-        teachers_all = list(st.session_state.get("teachers", []))
-        classes_all = list(st.session_state.get("classes", []))
-        students_all = list(st.session_state.get("students", []))
-        active_students = [s for s in students_all if str(s.get("status", "Ativo")).strip().lower() != "inativo"]
-        classes_without_teacher = [c for c in classes_all if str(c.get("professor", "")).strip() in ("", "Sem Professor")]
-        teachers_with_classes = {
-            str(c.get("professor", "")).strip()
-            for c in classes_all
-            if str(c.get("professor", "")).strip() and str(c.get("professor", "")).strip() != "Sem Professor"
-        }
-        students_linked_to_teacher = 0
-        for aluno in active_students:
-            turma_nome = str(aluno.get("turma", "")).strip()
-            turma_obj_tmp = next((c for c in classes_all if str(c.get("nome", "")).strip() == turma_nome), None)
-            professor_turma = str((turma_obj_tmp or {}).get("professor", "")).strip()
-            if professor_turma and professor_turma != "Sem Professor":
-                students_linked_to_teacher += 1
+                c3, c4 = st.columns(2)
+                with c3: login_prof = st.text_input("Login do Professor")
+                with c4: senha_prof = st.text_input("Senha do Professor", type="password")
 
-        render_section_hero(
-            "Equipe pedagógica em um módulo mais executivo e operacional",
-            "Cadastre, edite, acompanhe vínculos com turmas e valide a cobertura de contato dos professores em uma estrutura mais clara para a coordenação.",
-            [
-                f"{len(teachers_all)} professores cadastrados",
-                f"{len(teachers_with_classes)} com turmas ativas",
-                f"{len(classes_without_teacher)} pendências de alocação",
-            ],
-        )
+                n1, n2 = st.columns(2)
+                with n1:
+                    send_prof_email = st.checkbox(
+                        "Enviar mensagem por e-mail",
+                        value=True,
+                        key="add_prof_notify_email",
+                    )
+                with n2:
+                    send_prof_whatsapp = st.checkbox(
+                        "Enviar mensagem por WhatsApp",
+                        value=True,
+                        key="add_prof_notify_whatsapp",
+                    )
 
-        metrics_cols = st.columns(4)
-        metric_payload = [
-            ("Professores", str(len(teachers_all)), "cadastros ativos"),
-            ("Com turmas", str(len(teachers_with_classes)), "docentes alocados"),
-            ("Turmas sem professor", str(len(classes_without_teacher)), "requerem ação"),
-            ("Alunos vinculados", str(students_linked_to_teacher), "base ligada a docentes"),
-        ]
-        for col, (label, value, subtitle) in zip(metrics_cols, metric_payload):
-            with col:
-                st.markdown(
-                    f"<div class='students-kpi'><div class='k'>{html.escape(label)}</div><div class='v'>{html.escape(value)}</div><div class='s'>{html.escape(subtitle)}</div></div>",
-                    unsafe_allow_html=True,
-                )
-
-        action_col, filter_col = st.columns([1.15, 2.2], gap="large")
-        with action_col:
-            render_panel_intro(
-                "Ações rápidas",
-                "Defina o fluxo de trabalho principal antes de operar o módulo para reduzir ruído visual e acelerar a rotina administrativa.",
-                [("Cadastro", "edição"), ("Turmas", "vínculo"), ("Comunicação", "docente")],
-            )
-            workspace = st.radio(
-                "Fluxo da gestão",
-                ["Cadastro / edição", "Turmas vinculadas", "Comunicação", "Lista operacional"],
-                key="teachers_workspace",
-                label_visibility="collapsed",
-            )
-            st.caption("A área principal abaixo se adapta ao fluxo selecionado.")
-
-        with filter_col:
-            render_panel_intro(
-                "Filtros operacionais",
-                "Refine a base visível por nome, status ou turma vinculada antes de editar, revisar pendências ou consultar a lista.",
-                [("Busca", "rápida"), ("Status", "claro"), ("Turma", "associada")],
-            )
-            filter_c1, filter_c2, filter_c3 = st.columns([1.6, 1, 1], gap="medium")
-            with filter_c1:
-                prof_search = st.text_input("Buscar professor", placeholder="Nome, área, e-mail ou login", key="teachers_search")
-            with filter_c2:
-                prof_status_filter = st.selectbox(
-                    "Status operacional",
-                    ["Todos", "Com turmas", "Sem turmas", "Com login", "Sem login", "Sem contato"],
-                    key="teachers_status_filter",
-                )
-            with filter_c3:
-                turma_filter_options = ["Todas"] + sorted({
-                    str(c.get("nome", "")).strip()
-                    for c in classes_all
-                    if str(c.get("nome", "")).strip()
-                })
-                prof_turma_filter = st.selectbox("Turma vinculada", turma_filter_options, key="teachers_turma_filter")
-
-        teacher_rows = []
-        for teacher in teachers_all:
-            teacher_name = str(teacher.get("nome", "")).strip()
-            teacher_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == teacher_name]
-            teacher_students = [
-                s for s in active_students
-                if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in teacher_classes}
-            ]
-            status_parts = ["Com turmas" if teacher_classes else "Sem turmas"]
-            status_parts.append("Com login" if str(teacher.get("usuario", "")).strip() else "Sem login")
-            if not any([str(teacher.get("email", "")).strip(), str(teacher.get("celular", "")).strip()]):
-                status_parts.append("Sem contato")
-            teacher_rows.append(
-                {
-                    "Professor": teacher_name or "-",
-                    "Área": str(teacher.get("area", "")).strip() or "-",
-                    "E-mail": str(teacher.get("email", "")).strip() or "-",
-                    "WhatsApp": str(teacher.get("celular", "")).strip() or "-",
-                    "Login": str(teacher.get("usuario", "")).strip() or "-",
-                    "Turmas": len(teacher_classes),
-                    "Alunos ativos": len(teacher_students),
-                    "Turmas vinculadas": ", ".join(str(c.get("nome", "")).strip() for c in teacher_classes) or "Nenhuma",
-                    "Status": " | ".join(status_parts),
-                }
-            )
-
-        def _teacher_row_matches(row):
-            search_norm = normalize_text(prof_search)
-            search_blob = normalize_text(
-                " ".join(
-                    [
-                        str(row.get("Professor", "")),
-                        str(row.get("Área", "")),
-                        str(row.get("E-mail", "")),
-                        str(row.get("WhatsApp", "")),
-                        str(row.get("Login", "")),
-                        str(row.get("Turmas vinculadas", "")),
-                        str(row.get("Status", "")),
-                    ]
-                )
-            )
-            if search_norm and search_norm not in search_blob:
-                return False
-            status_blob = str(row.get("Status", ""))
-            if prof_status_filter == "Com turmas" and "Com turmas" not in status_blob:
-                return False
-            if prof_status_filter == "Sem turmas" and "Sem turmas" not in status_blob:
-                return False
-            if prof_status_filter == "Com login" and "Com login" not in status_blob:
-                return False
-            if prof_status_filter == "Sem login" and "Sem login" not in status_blob:
-                return False
-            if prof_status_filter == "Sem contato" and "Sem contato" not in status_blob:
-                return False
-            if prof_turma_filter != "Todas":
-                turma_names = [item.strip() for item in str(row.get("Turmas vinculadas", "")).split(",")]
-                if prof_turma_filter not in turma_names:
-                    return False
-            return True
-
-        filtered_teacher_rows = [row for row in teacher_rows if _teacher_row_matches(row)]
-        filtered_teacher_names = [row["Professor"] for row in filtered_teacher_rows if row.get("Professor") and row.get("Professor") != "-"]
-        selected_teacher_name = st.selectbox(
-            "Professor em foco",
-            filtered_teacher_names if filtered_teacher_names else [""],
-            key="teachers_focus_name",
-        )
-        prof_obj = next((t for t in teachers_all if str(t.get("nome", "")).strip() == str(selected_teacher_name).strip()), None) if selected_teacher_name else None
-
-        body_left, body_right = st.columns([1.55, 1], gap="large")
-
-        with body_left:
-            if workspace == "Cadastro / edição":
-                render_panel_intro(
-                    "Cadastro e manutenção do professor",
-                    "Registre dados básicos, contato, login e status operacional em um fluxo mais claro para o administrativo.",
-                    [("Novo", "cadastro"), ("Editar", "rapidamente"), ("Excluir", "com segurança")],
-                )
-                create_col, edit_col = st.columns([1.05, 1.2], gap="large")
-                with create_col:
-                    st.markdown("#### Novo professor")
-                    with st.form("add_prof", clear_on_submit=True):
-                        c1, c2 = st.columns(2)
-                        with c1: nome = st.text_input("Nome completo")
-                        with c2: area = st.text_input("Área / especialidade")
-                        c_email, c_cel = st.columns(2)
-                        with c_email: email_prof = st.text_input("E-mail profissional")
-                        with c_cel: celular_prof = st.text_input("Celular / WhatsApp")
-                        c3, c4 = st.columns(2)
-                        with c3: login_prof = st.text_input("Login do professor")
-                        with c4: senha_prof = st.text_input("Senha do professor", type="password")
-                        n1, n2 = st.columns(2)
-                        with n1:
-                            send_prof_email = st.checkbox("Enviar credenciais por e-mail", value=True, key="add_prof_notify_email")
-                        with n2:
-                            send_prof_whatsapp = st.checkbox("Enviar aviso por WhatsApp", value=True, key="add_prof_notify_whatsapp")
-
-                        if st.form_submit_button("Cadastrar professor", use_container_width=True):
-                            if not _has_permission("teachers.create"):
-                                st.error("Sem permissão para cadastrar professores.")
-                                st.stop()
-                            if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                                st.error("ERRO: Para criar o login, informe usuário e senha.")
-                            elif login_prof and find_user(login_prof):
-                                st.error("ERRO: Este login já existe.")
-                            else:
-                                st.session_state["teachers"].append(
-                                    {
-                                        "nome": nome,
-                                        "area": area,
-                                        "email": email_prof.strip().lower(),
-                                        "celular": celular_prof.strip(),
-                                        "usuario": login_prof.strip(),
-                                        "senha": senha_prof.strip(),
-                                    }
-                                )
-                                save_list(TEACHERS_FILE, st.session_state["teachers"])
-                                if login_prof and senha_prof:
-                                    st.session_state["users"].append(
-                                        {
-                                            "usuario": login_prof.strip(),
-                                            "senha": senha_prof.strip(),
-                                            "perfil": "Professor",
-                                            "pessoa": nome,
-                                            "email": email_prof.strip().lower(),
-                                            "celular": celular_prof.strip(),
-                                        }
-                                    )
-                                    save_users(st.session_state["users"])
-                                if wiz_event_enabled("on_teacher_created"):
-                                    _notify_direct_contacts(
-                                        nome or "Professor",
-                                        [email_prof] if bool(send_prof_email) else [],
-                                        [celular_prof] if bool(send_prof_whatsapp) else [],
-                                        "[Active] Cadastro de professor concluído",
-                                        "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
-                                        "Cadastro Professor",
-                                    )
-                                st.success("Cadastro realizado com sucesso!")
-                                st.rerun()
-
-                with edit_col:
-                    st.markdown("#### Gestão do professor selecionado")
-                    if not prof_obj:
-                        st.info("Use os filtros e selecione um professor para editar ou excluir.")
+                if st.form_submit_button("Cadastrar"):
+                    if (login_prof and not senha_prof) or (senha_prof and not login_prof):
+                        st.error("ERRO: Para criar o login, informe usuário e senha.")
+                    elif login_prof and find_user(login_prof):
+                        st.error("ERRO: Este login já existe.")
                     else:
-                        linked_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip()]
-                        st.caption(f"Turmas vinculadas: {len(linked_classes)} | Login: {str(prof_obj.get('usuario', '')).strip() or 'não configurado'}")
-                        with st.form("edit_prof"):
-                            new_nome = st.text_input("Nome", value=prof_obj["nome"])
-                            new_area = st.text_input("Área", value=prof_obj.get("area", ""))
-                            ec1, ec2 = st.columns(2)
-                            with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
-                            with ec2: new_cel = st.text_input("Celular / WhatsApp", value=prof_obj.get("celular", ""))
-                            c3, c4 = st.columns(2)
-                            with c3: new_login = st.text_input("Login do professor", value=prof_obj.get("usuario", ""))
-                            with c4: new_senha = st.text_input("Senha do professor", value=prof_obj.get("senha", ""), type="password")
-                            c_edit, c_del = st.columns([1.15, 0.85])
-                            with c_edit:
-                                save_prof = st.form_submit_button("Salvar alterações", use_container_width=True)
-                            with c_del:
-                                delete_prof = st.form_submit_button("Excluir professor", type="primary", use_container_width=True)
+                        st.session_state["teachers"].append(
+                            {
+                                "nome": nome,
+                                "area": area,
+                                "email": email_prof.strip().lower(),
+                                "celular": celular_prof.strip(),
+                                "usuario": login_prof.strip(),
+                                "senha": senha_prof.strip(),
+                            }
+                        )
+                        save_list(TEACHERS_FILE, st.session_state["teachers"])
+                        if login_prof and senha_prof:
+                            st.session_state["users"].append(
+                                {
+                                    "usuario": login_prof.strip(),
+                                    "senha": senha_prof.strip(),
+                                    "perfil": "Professor",
+                                    "pessoa": nome,
+                                    "email": email_prof.strip().lower(),
+                                    "celular": celular_prof.strip(),
+                                }
+                            )
+                            save_users(st.session_state["users"])
+                        if wiz_event_enabled("on_teacher_created"):
+                            _notify_direct_contacts(
+                                nome or "Professor",
+                                [email_prof] if bool(send_prof_email) else [],
+                                [celular_prof] if bool(send_prof_whatsapp) else [],
+                                "[Active] Cadastro de professor concluído",
+                                "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
+                                "Cadastro Professor",
+                            )
+                        st.success("Cadastro realizado com sucesso!")
+        with tab2:
+            if not st.session_state["teachers"]:
+                st.info("Nenhum professor cadastrado.")
+            else:
+                prof_nomes = [t["nome"] for t in st.session_state["teachers"]]
+                prof_sel = st.selectbox("Selecione o Professor", prof_nomes)
+                prof_obj = next((t for t in st.session_state["teachers"] if t["nome"] == prof_sel), None)
+                if prof_obj:
+                    with st.form("edit_prof"):
+                        new_nome = st.text_input("Nome", value=prof_obj["nome"])
+                        new_area = st.text_input("Area", value=prof_obj.get("area", ""))
+                        ec1, ec2 = st.columns(2)
+                        with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
+                        with ec2: new_cel = st.text_input("Celular/WhatsApp", value=prof_obj.get("celular", ""))
 
-                            if save_prof:
+                        c3, c4 = st.columns(2)
+                        with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
+                        with c4: new_senha = st.text_input("Senha do Professor", value=prof_obj.get("senha", ""), type="password")
+
+                        c_edit, c_del = st.columns([1, 1])
+                        with c_edit:
+                            if st.form_submit_button("Salvar Alterações"):
                                 old_login = prof_obj.get("usuario", "").strip()
                                 login = new_login.strip() or old_login
                                 senha = new_senha.strip() or prof_obj.get("senha", "")
+
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
                                     st.error("ERRO: Este login já existe.")
                                 else:
@@ -20137,8 +16502,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                             user_obj["senha"] = senha
                                             user_obj["perfil"] = "Professor"
                                             user_obj["pessoa"] = new_nome
-                                            user_obj["email"] = new_email.strip().lower()
-                                            user_obj["celular"] = new_cel.strip()
                                         else:
                                             st.session_state["users"].append(
                                                 {
@@ -20146,16 +16509,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                     "senha": senha,
                                                     "perfil": "Professor",
                                                     "pessoa": new_nome,
-                                                    "email": new_email.strip().lower(),
-                                                    "celular": new_cel.strip(),
                                                 }
                                             )
                                         save_users(st.session_state["users"])
+
                                     old_nome = prof_obj["nome"]
                                     for turma in st.session_state["classes"]:
                                         if str(turma.get("professor", "")).strip() == str(old_nome).strip():
                                             turma["professor"] = new_nome
                                     save_list(CLASSES_FILE, st.session_state["classes"])
+
                                     prof_obj["nome"] = new_nome
                                     prof_obj["area"] = new_area
                                     prof_obj["email"] = new_email.strip().lower()
@@ -20165,192 +16528,30 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     save_list(TEACHERS_FILE, st.session_state["teachers"])
                                     st.success("Professor atualizado!")
                                     st.rerun()
-
-                            if delete_prof:
-                                if not _has_permission("teachers.delete"):
-                                    st.error("Sem permissão para excluir professores.")
-                                    st.stop()
+                        with c_del:
+                            if st.form_submit_button("EXCLUIR PROFESSOR", type="primary"):
                                 login = prof_obj.get("usuario", "").strip()
                                 if login:
                                     user_obj = find_user(login)
                                     if user_obj and user_obj.get("perfil") == "Professor":
                                         st.session_state["users"].remove(user_obj)
                                         save_users(st.session_state["users"])
+
                                 for turma in st.session_state["classes"]:
                                     if str(turma.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip():
                                         turma["professor"] = "Sem Professor"
                                 save_list(CLASSES_FILE, st.session_state["classes"])
+
                                 st.session_state["teachers"].remove(prof_obj)
                                 save_list(TEACHERS_FILE, st.session_state["teachers"])
                                 st.error("Professor excluído.")
                                 st.rerun()
 
-            elif workspace == "Turmas vinculadas":
-                render_panel_intro(
-                    "Vínculo com turmas",
-                    "Visualize alocação por docente, pendências de turma sem responsável e o impacto operacional em alunos ativos.",
-                    [("Turmas", "claras"), ("Pendências", "visíveis"), ("Alocação", "rápida")],
-                )
-                teacher_assignment_rows = []
-                for teacher in teachers_all:
-                    teacher_name = str(teacher.get("nome", "")).strip()
-                    linked_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == teacher_name]
-                    linked_students = [s for s in active_students if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in linked_classes}]
-                    teacher_assignment_rows.append(
-                        {
-                            "Professor": teacher_name or "-",
-                            "Área": str(teacher.get("area", "")).strip() or "-",
-                            "Turmas": len(linked_classes),
-                            "Lista de turmas": ", ".join(str(c.get("nome", "")).strip() for c in linked_classes) or "Nenhuma",
-                            "Alunos ativos": len(linked_students),
-                            "Status": "Alocado" if linked_classes else "Sem turma",
-                        }
-                    )
-                st.dataframe(pd.DataFrame(teacher_assignment_rows), use_container_width=True, hide_index=True)
-                if classes_without_teacher:
-                    st.warning("Existem turmas sem professor definido. Use Gestão de Turmas para concluir a alocação.")
-                    pending_rows = [{"Turma": str(c.get("nome", "")).strip() or "-", "Módulo": str(c.get("modulo", "")).strip() or "-", "Livro": str(c.get("livro", "")).strip() or "-", "Dias": str(c.get("dias", "")).strip() or "-"} for c in classes_without_teacher]
-                    st.dataframe(pd.DataFrame(pending_rows), use_container_width=True, hide_index=True)
-                else:
-                    st.success("Todas as turmas cadastradas já possuem professor responsável.")
-
-            elif workspace == "Comunicação":
-                render_panel_intro(
-                    "Comunicação e avisos",
-                    "Acompanhe cobertura de contato do corpo docente e a prontidão para automações sem deixar essa área solta no layout.",
-                    [("E-mail", "cobertura"), ("WhatsApp", "prontidão"), ("Login", "acesso")],
-                )
-                teachers_with_email = sum(1 for t in teachers_all if str(t.get("email", "")).strip())
-                teachers_with_whatsapp = sum(1 for t in teachers_all if str(t.get("celular", "")).strip())
-                teachers_with_login = sum(1 for t in teachers_all if str(t.get("usuario", "")).strip())
-                comm_cols = st.columns(3)
-                for col, (label, value, subtitle) in zip(
-                    comm_cols,
-                    [
-                        ("Com e-mail", str(teachers_with_email), "aptos para notificações"),
-                        ("Com WhatsApp", str(teachers_with_whatsapp), "contato operacional"),
-                        ("Com login", str(teachers_with_login), "acesso configurado"),
-                    ],
-                ):
-                    with col:
-                        st.markdown(
-                            f"<div class='students-kpi'><div class='k'>{html.escape(label)}</div><div class='v'>{html.escape(value)}</div><div class='s'>{html.escape(subtitle)}</div></div>",
-                            unsafe_allow_html=True,
-                        )
-                communication_rows = [
-                    {
-                        "Professor": str(t.get("nome", "")).strip() or "-",
-                        "E-mail": str(t.get("email", "")).strip() or "-",
-                        "WhatsApp": str(t.get("celular", "")).strip() or "-",
-                        "Login": "Configurado" if str(t.get("usuario", "")).strip() else "Pendente",
-                        "Aviso automático no cadastro": "Ativo" if wiz_event_enabled("on_teacher_created") else "Desligado",
-                    }
-                    for t in teachers_all
-                ]
-                st.dataframe(pd.DataFrame(communication_rows), use_container_width=True, hide_index=True)
-                st.info("Os avisos automáticos são enviados no cadastro quando a automação correspondente está ativa. Para disparos adicionais, use o módulo de Mensagens.")
-
-            else:
-                render_panel_intro(
-                    "Lista operacional de professores",
-                    "Consulte a equipe docente com leitura rápida, melhor espaçamento e status mais claros para a rotina do administrativo.",
-                    [("Tabela", "premium"), ("Filtros", "ativos"), ("Leitura", "rápida")],
-                )
-                if filtered_teacher_rows:
-                    st.dataframe(pd.DataFrame(filtered_teacher_rows), use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhum professor encontrado com os filtros atuais.")
-
-        with body_right:
-            render_panel_intro(
-                "Resumo executivo do professor",
-                "Valide rapidamente cadastro, vínculo com turmas e cobertura de contato antes de editar ou tomar uma decisão operacional.",
-                [("Resumo", "instantâneo"), ("Vínculo", "visível"), ("Pendências", "claras")],
-            )
-            if prof_obj:
-                selected_teacher_classes = [c for c in classes_all if str(c.get("professor", "")).strip() == str(prof_obj.get("nome", "")).strip()]
-                selected_teacher_students = [s for s in active_students if str(s.get("turma", "")).strip() in {str(c.get("nome", "")).strip() for c in selected_teacher_classes}]
-                summary_rows = [
-                    ("Professor", str(prof_obj.get("nome", "")).strip() or "-"),
-                    ("Área", str(prof_obj.get("area", "")).strip() or "-"),
-                    ("E-mail", str(prof_obj.get("email", "")).strip() or "-"),
-                    ("WhatsApp", str(prof_obj.get("celular", "")).strip() or "-"),
-                    ("Login", str(prof_obj.get("usuario", "")).strip() or "Não configurado"),
-                    ("Turmas vinculadas", str(len(selected_teacher_classes))),
-                    ("Alunos ativos", str(len(selected_teacher_students))),
-                    ("Status", "Com turmas" if selected_teacher_classes else "Sem turmas"),
-                ]
-                st.markdown(
-                    "<div class='teacher-admin-summary'>"
-                    + "".join(
-                        f"<div class='teacher-admin-summary-row'><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
-                        for label, value in summary_rows
-                    )
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
-                if selected_teacher_classes:
-                    st.markdown("#### Turmas vinculadas")
-                    turma_summary_rows = [
-                        {
-                            "Turma": str(c.get("nome", "")).strip() or "-",
-                            "Módulo": str(c.get("modulo", "")).strip() or "-",
-                            "Livro": str(c.get("livro", "")).strip() or "-",
-                        }
-                        for c in selected_teacher_classes
-                    ]
-                    st.dataframe(pd.DataFrame(turma_summary_rows), use_container_width=True, hide_index=True)
-                else:
-                    st.warning("Professor sem turma vinculada no momento.")
-            else:
-                st.info("Selecione um professor para abrir o resumo executivo, status e turmas associadas.")
-
-            st.markdown("#### Pendências do módulo")
-            st.markdown(
-                "<div class='teacher-admin-summary'>"
-                + f"<div class='teacher-admin-summary-row'><span>Turmas sem professor</span><strong>{len(classes_without_teacher)}</strong></div>"
-                + f"<div class='teacher-admin-summary-row'><span>Professores sem login</span><strong>{sum(1 for t in teachers_all if not str(t.get('usuario','')).strip())}</strong></div>"
-                + f"<div class='teacher-admin-summary-row'><span>Professores sem contato</span><strong>{sum(1 for t in teachers_all if not any([str(t.get('email','')).strip(), str(t.get('celular','')).strip()]))}</strong></div>"
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-
     elif menu_coord == "Turmas":
-
         st.markdown('<div class="main-header">Gestão de Turmas</div>', unsafe_allow_html=True)
-        _require_permission("classes.view")
-        render_section_hero(
-            "Estrutura academica das turmas",
-            "Organize modulo, livro, horario, professor e alunos da turma em um painel mais enxuto e mais premium.",
-            [
-                f"{len(st.session_state.get('classes', []))} turmas",
-                f"{len(st.session_state.get('teachers', []))} professores",
-            ],
-        )
-        turma_cards = st.columns(3)
-        with turma_cards[0]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Turmas</div><div class='v'>{len(st.session_state.get('classes', []))}</div><div class='s'>ativas</div></div>",
-                unsafe_allow_html=True,
-            )
-        with turma_cards[1]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Alunos vinculados</div><div class='v'>{len([s for s in st.session_state.get('students', []) if str(s.get('turma','')).strip()])}</div><div class='s'>com turma definida</div></div>",
-                unsafe_allow_html=True,
-            )
-        with turma_cards[2]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Sem professor</div><div class='v'>{len([c for c in st.session_state.get('classes', []) if str(c.get('professor','')).strip() in ('', 'Sem Professor')])}</div><div class='s'>precisam de alocação</div></div>",
-                unsafe_allow_html=True,
-            )
         tab1, tab2 = st.tabs(["Nova Turma", "Gerenciar / Excluir"])
 
         with tab1:
-            render_panel_intro(
-                "Nova turma",
-                "Cadastre turmas com horarios, dias, professor e livro base em um formulario mais compacto.",
-                [("Agenda", "integrada"), ("Livro", "vinculado")],
-            )
             with st.form("add_class"):
                 c1, c2 = st.columns(2)
                 with c1: nome = st.text_input("Nome da Turma")
@@ -20368,9 +16569,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
                 livro = st.selectbox("Livro/Nível da Turma", book_levels())
                 if st.form_submit_button("Cadastrar"):
-                    if not _has_permission("classes.create"):
-                        st.error("Sem permissão para cadastrar turmas.")
-                        st.stop()
                     nome = nome.strip()
                     dias_semana = [dia for dia in dias_semana if dia in WEEKDAY_OPTIONS_PT]
                     hora_inicio_str = hora_inicio.strftime("%H:%M") if hora_inicio else ""
@@ -20400,11 +16598,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.success("Turma salva!")
 
         with tab2:
-            render_panel_intro(
-                "Manutencao de turmas",
-                "Atualize professor, horario, dias e lista de alunos vinculados sem perder a visao geral da turma.",
-                [("Edicao", "completa"), ("Alunos", "vinculados")],
-            )
             if not st.session_state["classes"]:
                 st.info("Nenhuma turma cadastrada.")
             else:
@@ -20503,9 +16696,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
                             with c_del:
                                 if st.form_submit_button("EXCLUIR TURMA", type="primary"):
-                                    if not _has_permission("classes.delete"):
-                                        st.error("Sem permissão para excluir turmas.")
-                                        st.stop()
                                     nome_turma = turma_obj.get("nome", "")
                                     if nome_turma:
                                         for aluno in st.session_state["students"]:
@@ -20542,35 +16732,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         st.caption("Versao Financeiro: FIN-URGENTE-2026-03-11-REV5")
-        if not (_has_permission("finance.view") or _has_permission("finance.view_basic")):
-            st.error("Acesso negado ao financeiro.")
-            st.stop()
-        total_rec_exec = sum(
-            parse_money(i.get("valor_parcela", i.get("valor", 0)))
-            for i in st.session_state.get("receivables", [])
-            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
-        )
-        total_pag_exec = sum(
-            parse_money(i.get("valor_parcela", i.get("valor", 0)))
-            for i in st.session_state.get("payables", [])
-            if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
-        )
-        render_section_hero(
-            "Controle financeiro e operacional",
-            "Acompanhe recebimentos, pagamentos, vencimentos e acoes rapidas em um painel financeiro mais claro e mais executivo.",
-            [
-                f"A receber {format_money(total_rec_exec)}",
-                f"A pagar {format_money(total_pag_exec)}",
-            ],
-        )
-        render_panel_intro(
-            "Areas financeiras",
-            "Use os blocos abaixo para lancamentos, aprovacoes, recibos e acompanhamento de saldos sem perder o contexto do mes.",
-            [
-                ("Receber", format_money(total_rec_exec)),
-                ("Pagar", format_money(total_pag_exec)),
-            ],
-        )
         finance_focus = str(st.session_state.get("finance_overdue_focus", "")).strip().lower()
 
         def _parse_parcela_info(parcela_txt):
@@ -20680,324 +16841,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             safe_day = min(due_day_int, month_end.day)
             return ref_date.replace(day=safe_day)
 
-        st.markdown(
-            """
-            <style>
-            .finance-shell {
-                background: linear-gradient(180deg, rgba(255,255,255,0.74), rgba(255,255,255,0.58));
-                border: 1px solid rgba(120, 148, 186, 0.20);
-                border-radius: 24px;
-                padding: 18px 20px;
-                box-shadow: 0 16px 34px rgba(27, 57, 105, 0.08);
-                margin: 0.25rem 0 1rem 0;
-            }
-            .finance-shell h4 {
-                margin: 0 0 0.2rem 0;
-                color: #173866;
-                font-family: 'Sora', sans-serif !important;
-                font-weight: 700;
-                font-size: 1.02rem;
-                letter-spacing: -0.01em;
-            }
-            .finance-shell p {
-                margin: 0;
-                color: #647998;
-                font-size: 0.92rem;
-                line-height: 1.55;
-            }
-            .finance-step {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 28px;
-                height: 28px;
-                border-radius: 999px;
-                background: linear-gradient(135deg, #2449c4, #1e9e82);
-                color: #ffffff;
-                font-weight: 700;
-                font-size: 0.9rem;
-                margin-right: 10px;
-                box-shadow: 0 10px 22px rgba(36, 73, 196, 0.20);
-            }
-            .finance-nav-note {
-                margin-top: 0.65rem;
-                padding: 0.8rem 0.95rem;
-                border-radius: 16px;
-                background: rgba(255,255,255,0.72);
-                border: 1px solid rgba(126, 154, 196, 0.18);
-                color: #57708f;
-                font-size: 0.9rem;
-            }
-            .finance-kpi {
-                border-radius: 22px;
-                padding: 18px 18px 16px;
-                border: 1px solid rgba(255,255,255,0.46);
-                box-shadow: 0 14px 28px rgba(29, 52, 92, 0.10);
-                background: linear-gradient(160deg, rgba(255,255,255,0.92), rgba(240,247,255,0.80));
-                margin-bottom: 0.35rem;
-            }
-            .finance-kpi[data-tone="blue"] { border-top: 3px solid #2455d0; }
-            .finance-kpi[data-tone="green"] { border-top: 3px solid #1d9e72; }
-            .finance-kpi[data-tone="orange"] { border-top: 3px solid #ed7b22; }
-            .finance-kpi[data-tone="red"] { border-top: 3px solid #d94f45; }
-            .finance-kpi-label {
-                color: #6b7f99;
-                font-size: 0.76rem;
-                font-weight: 700;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                margin-bottom: 0.45rem;
-            }
-            .finance-kpi-value {
-                color: #173866;
-                font-size: 1.45rem;
-                font-weight: 800;
-                line-height: 1.05;
-                letter-spacing: -0.03em;
-                font-family: 'Sora', sans-serif !important;
-            }
-            .finance-kpi-sub {
-                color: #647998;
-                font-size: 0.88rem;
-                margin-top: 0.4rem;
-            }
-            .finance-summary-card {
-                border-radius: 22px;
-                padding: 18px 18px 14px;
-                border: 1px solid rgba(122, 151, 190, 0.18);
-                background: linear-gradient(160deg, rgba(255,255,255,0.94), rgba(242,247,255,0.88));
-                box-shadow: 0 16px 28px rgba(20, 44, 82, 0.09);
-                margin-top: 0.4rem;
-            }
-            .finance-summary-card[data-tone="green"] { border-left: 4px solid #1d9e72; }
-            .finance-summary-card[data-tone="blue"] { border-left: 4px solid #2455d0; }
-            .finance-summary-card[data-tone="orange"] { border-left: 4px solid #ed7b22; }
-            .finance-summary-title {
-                color: #173866;
-                font-size: 1rem;
-                font-weight: 800;
-                margin-bottom: 0.7rem;
-                font-family: 'Sora', sans-serif !important;
-            }
-            .finance-summary-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                gap: 0.65rem 1rem;
-            }
-            .finance-summary-item-label {
-                color: #7387a3;
-                font-size: 0.74rem;
-                text-transform: uppercase;
-                letter-spacing: 0.07em;
-                font-weight: 700;
-                margin-bottom: 0.15rem;
-            }
-            .finance-summary-item-value {
-                color: #20395c;
-                font-size: 0.95rem;
-                font-weight: 600;
-                line-height: 1.45;
-                word-break: break-word;
-            }
-            .finance-action-note {
-                margin-top: 0.75rem;
-                padding: 0.8rem 0.95rem;
-                border-radius: 16px;
-                background: rgba(35, 84, 208, 0.07);
-                border: 1px solid rgba(35, 84, 208, 0.14);
-                color: #476687;
-                font-size: 0.9rem;
-            }
-            @media (max-width: 980px) {
-                .finance-shell { padding: 16px 14px; border-radius: 18px; }
-                .finance-kpi { padding: 16px 14px 14px; border-radius: 18px; }
-                .finance-summary-card { padding: 16px 14px 12px; border-radius: 18px; }
-                .finance-summary-grid { grid-template-columns: 1fr; }
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        def _render_finance_kpis(items, key_prefix):
-            if not items:
-                return
-            cols = st.columns(len(items))
-            for idx, item in enumerate(items):
-                tone = str(item.get("tone", "blue")).strip() or "blue"
-                cols[idx].markdown(
-                    f"""
-                    <div class="finance-kpi" data-tone="{html.escape(tone)}">
-                        <div class="finance-kpi-label">{html.escape(str(item.get("label", "")))}</div>
-                        <div class="finance-kpi-value">{html.escape(str(item.get("value", "")))}</div>
-                        <div class="finance-kpi-sub">{html.escape(str(item.get("subtitle", "")))}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-        def _render_finance_summary_card(title, rows, tone="blue"):
-            rendered_rows = []
-            for label, value in rows:
-                rendered_rows.append(
-                    f'<div><div class="finance-summary-item-label">{html.escape(str(label))}</div>'
-                    f'<div class="finance-summary-item-value">{html.escape(str(value))}</div></div>'
-                )
-            st.markdown(
-                f'<div class="finance-summary-card" data-tone="{html.escape(str(tone))}">'
-                f'<div class="finance-summary-title">{html.escape(str(title))}</div>'
-                f'<div class="finance-summary-grid">{"".join(rendered_rows)}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        def _finance_overdue_reference(item):
-            categoria = str(item.get("categoria", "")).strip() or "Cobranca"
-            descricao = str(item.get("descricao", "")).strip() or categoria
-            parcela = str(item.get("parcela", "")).strip()
-            vencimento = str(item.get("vencimento", "")).strip()
-            data_venc = parse_date(vencimento)
-            if categoria == "Mensalidade":
-                if data_venc:
-                    return f"Mensalidade {data_venc.strftime('%m/%Y')}"
-                return descricao
-            if categoria == "Material":
-                ano = data_venc.year if data_venc else datetime.date.today().year
-                return f"Material Didatico {ano}"
-            if parcela and "/" in parcela:
-                parte_atual, total = parcela.split("/", 1)
-                return f"Parcela {parte_atual.strip()} de {total.strip()}"
-            if data_venc:
-                return f"Boleto vencido em {data_venc.strftime('%d/%m/%Y')}"
-            return descricao
-
-        def _finance_overdue_charge_status(item):
-            canais = str(item.get("cobranca_canais", "")).strip()
-            ultima = str(item.get("cobranca_enviada_em", "")).strip()
-            if canais and ultima:
-                return f"Enviado via {canais} em {ultima}"
-            if canais:
-                return f"Tentativa via {canais}"
-            return "Sem cobranca registrada"
-
-        def _finance_overdue_message_payload(item):
-            aluno_nome = str(item.get("aluno", "")).strip() or "Responsavel"
-            referencia = _finance_overdue_reference(item)
-            valor = format_money(parse_money(item.get("valor_parcela", item.get("valor", 0))))
-            vencimento = str(item.get("vencimento", "")).strip() or "-"
-            descricao = str(item.get("descricao", "")).strip() or "-"
-            parcela = str(item.get("parcela", "")).strip()
-            assunto = f"[Active] Pendencia financeira - {referencia}"
-            corpo = (
-                f"Olá, {aluno_nome}.\n\n"
-                f"Identificamos uma pendencia financeira referente a {referencia}.\n"
-                f"Descricao: {descricao}\n"
-                f"Valor: {valor}\n"
-                f"Vencimento original: {vencimento}\n"
-            )
-            if parcela:
-                corpo += f"Parcela/serie: {parcela}\n"
-            corpo += (
-                "Pedimos, por gentileza, a regularizacao deste titulo.\n"
-                "Em caso de duvida, entre em contato com a equipe da escola.\n\n"
-                "Active Sistema Educacional"
-            )
-            whatsapp = (
-                f"Olá, {aluno_nome}. Identificamos uma pendencia financeira referente a {referencia}. "
-                f"Valor: {valor}. Vencimento original: {vencimento}. "
-            )
-            if parcela:
-                whatsapp += f"Parcela/serie: {parcela}. "
-            whatsapp += (
-                "Pedimos, por gentileza, a regularizacao. Em caso de duvida, entre em contato com a equipe da escola. "
-                "Active Sistema Educacional."
-            )
-            return {
-                "referencia": referencia,
-                "assunto": assunto,
-                "email_body": corpo,
-                "whatsapp_body": whatsapp,
-            }
-
-        def _finance_send_receivable_charge(item, send_email=False, send_whatsapp=False):
-            aluno_nome = str(item.get("aluno", "")).strip()
-            student = next(
-                (s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == aluno_nome),
-                None,
-            )
-            if not student:
-                return False, "Aluno nao localizado para envio de cobranca."
-            payload = _finance_overdue_message_payload(item)
-            mensagem = payload["email_body"] if bool(send_email) else payload["whatsapp_body"]
-            stats = _notify_direct_contacts(
-                student.get("nome", aluno_nome),
-                _message_recipients_for_student(student) if bool(send_email) else [],
-                _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
-                payload["assunto"],
-                mensagem,
-                "Cobranca Financeira",
-            )
-            canais = []
-            if bool(send_email):
-                canais.append("e-mail")
-            if bool(send_whatsapp):
-                canais.append("WhatsApp")
-            item["cobranca_referencia"] = payload["referencia"]
-            item["cobranca_canais"] = " / ".join(canais)
-            item["cobranca_enviada_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-            item["cobranca_status"] = (
-                f"E-mail {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
-                f"WhatsApp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}"
-            )
-            save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
-            return True, item["cobranca_status"]
-
-        def _finance_mark_receivable_paid(item, payment_type="Automática"):
-            item["status"] = "Pago"
-            item["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-            item["baixa_tipo"] = payment_type
-            item["baixa_forma"] = payment_type
-            save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
-
-        def _finance_mark_payable_paid(item, payment_type="Automática"):
-            item["status"] = "Pago"
-            item["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-            item["baixa_tipo"] = payment_type
-            item["baixa_forma"] = payment_type
-            save_list(PAYABLES_FILE, st.session_state.get("payables", []))
-
-        def _render_finance_nav(title, description, options, session_key, key_prefix, descriptions=None, columns_per_row=4):
-            if st.session_state.get(session_key) not in options:
-                st.session_state[session_key] = options[0]
-            st.markdown(
-                f"""
-                <div class="finance-shell">
-                    <h4>{html.escape(str(title))}</h4>
-                    <p>{html.escape(str(description))}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            per_row = max(1, int(columns_per_row or 1))
-            for start in range(0, len(options), per_row):
-                row = options[start:start + per_row]
-                cols = st.columns(len(row))
-                for idx, option in enumerate(row):
-                    selected = str(st.session_state.get(session_key, "")) == option
-                    if cols[idx].button(
-                        option,
-                        key=f"{key_prefix}_{start + idx}",
-                        use_container_width=True,
-                        type="primary" if selected else "secondary",
-                    ):
-                        st.session_state[session_key] = option
-                        st.rerun()
-            active = st.session_state.get(session_key, options[0])
-            active_desc = (descriptions or {}).get(active)
-            if active_desc:
-                st.markdown(f'<div class="finance-nav-note">{html.escape(str(active_desc))}</div>', unsafe_allow_html=True)
-            return active
-
         def _render_overdue_receivables_panel():
             overdue_receivables = [
                 r for r in _financial_overdue_items(st.session_state.get("receivables", []), date_field="vencimento")
@@ -21006,73 +16849,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if not overdue_receivables:
                 st.info("Nenhum recebimento vencido para alunos.")
                 return
-            st.markdown(
-                """
-                <div class="finance-shell">
-                    <h4>Central de cobranca de vencidos</h4>
-                    <p>Revise alunos com pendencias, gere cobrancas automaticas e execute baixa sem sair da carteira de vencimentos.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            today = datetime.date.today()
-            filter_a, filter_b, filter_c = st.columns([1.2, 1, 1])
-            with filter_a:
-                student_filter = st.selectbox(
-                    "Filtrar aluno",
-                    ["Todos"] + sorted({str(r.get("aluno", "")).strip() for r in overdue_receivables if str(r.get("aluno", "")).strip()}),
-                    key="finance_overdue_receivable_student_filter",
-                )
-            with filter_b:
-                age_filter = st.selectbox(
-                    "Antiguidade minima",
-                    ["Todos", "7 dias", "15 dias", "30 dias"],
-                    key="finance_overdue_receivable_age_filter",
-                )
-            with filter_c:
-                charge_filter = st.selectbox(
-                    "Status da cobranca",
-                    ["Todos", "Sem cobranca registrada", "Cobranca enviada"],
-                    key="finance_overdue_receivable_charge_filter",
-                )
-            age_threshold = {"7 dias": 7, "15 dias": 15, "30 dias": 30}.get(age_filter)
-            filtered_receivables = []
-            for item in overdue_receivables:
-                if student_filter != "Todos" and str(item.get("aluno", "")).strip() != student_filter:
-                    continue
-                venc_dt = parse_date(item.get("vencimento", ""))
-                days_overdue = (today - venc_dt).days if venc_dt else 0
-                if age_threshold and days_overdue < age_threshold:
-                    continue
-                has_charge = bool(str(item.get("cobranca_enviada_em", "")).strip() or str(item.get("cobranca_canais", "")).strip())
-                if charge_filter == "Sem cobranca registrada" and has_charge:
-                    continue
-                if charge_filter == "Cobranca enviada" and not has_charge:
-                    continue
-                filtered_receivables.append(item)
-            total_aberto = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in filtered_receivables)
-            oldest_dt = min((parse_date(r.get("vencimento", "")) for r in filtered_receivables if parse_date(r.get("vencimento", ""))), default=None)
-            _render_finance_kpis(
-                [
-                    {"label": "Titulos vencidos", "value": str(len(filtered_receivables)), "subtitle": "carteira vencida filtrada", "tone": "red"},
-                    {"label": "Total em aberto", "value": format_money(total_aberto), "subtitle": "valor pendente a receber", "tone": "orange"},
-                    {"label": "Mais antigo", "value": oldest_dt.strftime("%d/%m/%Y") if oldest_dt else "-", "subtitle": "prioridade de cobranca", "tone": "blue"},
-                ],
-                "finance_overdue_receive_exec",
-            )
             summary_map = {}
-            for item in filtered_receivables:
+            for item in overdue_receivables:
                 aluno_nome = str(item.get("aluno", "")).strip()
                 row = summary_map.setdefault(
                     aluno_nome,
-                    {
-                        "aluno": aluno_nome,
-                        "qtd_vencidos": 0,
-                        "total_vencido": 0.0,
-                        "ultimo_vencimento": "",
-                        "referencia_principal": "",
-                        "status_cobranca": "",
-                    },
+                    {"aluno": aluno_nome, "qtd_vencidos": 0, "total_vencido": 0.0, "ultimo_vencimento": ""},
                 )
                 row["qtd_vencidos"] += 1
                 row["total_vencido"] += parse_money(item.get("valor_parcela", item.get("valor", 0)))
@@ -21081,225 +16863,62 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 last_dt = parse_date(row.get("ultimo_vencimento", ""))
                 if venc_dt and (not last_dt or venc_dt > last_dt):
                     row["ultimo_vencimento"] = venc_txt
-                if not row["referencia_principal"]:
-                    row["referencia_principal"] = _finance_overdue_reference(item)
-                row["status_cobranca"] = _finance_overdue_charge_status(item)
             summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["aluno"].lower()))
-            st.markdown("#### Visao consolidada por aluno")
+            st.markdown("#### Alunos com recebimentos vencidos")
             summary_df = pd.DataFrame(
                 [
                     {
-                        "Aluno": row["aluno"],
-                        "Qtd. vencidos": row["qtd_vencidos"],
-                        "Total vencido": format_money(row["total_vencido"]),
-                        "Ultimo vencimento": row["ultimo_vencimento"],
-                        "Referencia principal": row["referencia_principal"] or "-",
-                        "Status da cobranca": row["status_cobranca"] or "-",
+                        "aluno": row["aluno"],
+                        "qtd_vencidos": row["qtd_vencidos"],
+                        "total_vencido": format_money(row["total_vencido"]),
+                        "ultimo_vencimento": row["ultimo_vencimento"],
                     }
                     for row in summary_rows
                 ]
             )
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            st.markdown("#### Acoes em massa")
-            overdue_codes = [str(item.get("codigo", "")).strip() for item in filtered_receivables if str(item.get("codigo", "")).strip()]
-            selected_codes = st.multiselect(
-                "Selecionar titulos vencidos",
-                overdue_codes,
-                key="finance_overdue_receivable_codes",
-                format_func=lambda code: next(
-                    (
-                        f"{str(r.get('aluno', '')).strip()} | {str(r.get('descricao', '')).strip()} | "
-                        f"{format_money(parse_money(r.get('valor_parcela', r.get('valor', 0))))} | {str(r.get('vencimento', '')).strip()}"
-                        for r in filtered_receivables
-                        if str(r.get('codigo', '')).strip() == code
-                    ),
-                    code,
-                ),
-            )
-            bulk1, bulk2, bulk3, bulk4 = st.columns([1, 1, 1, 1.3])
-            with bulk1:
-                bulk_email = st.button("Cobrar por e-mail", key="finance_overdue_bulk_email", use_container_width=True, disabled=not bool(selected_codes))
-            with bulk2:
-                bulk_whats = st.button("Cobrar por WhatsApp", key="finance_overdue_bulk_whats", use_container_width=True, disabled=not bool(selected_codes))
-            with bulk3:
-                bulk_mark = st.button("Dar baixa em massa", key="finance_overdue_bulk_mark", type="primary", use_container_width=True, disabled=not bool(selected_codes))
-            with bulk4:
-                bulk_confirm = st.checkbox("Confirmo a acao em massa", key="finance_overdue_bulk_confirm")
-            if bulk_email:
-                if not bulk_confirm:
-                    st.error("Marque a confirmacao antes de enviar cobrancas em massa.")
-                else:
-                    ok_count = 0
-                    for item in filtered_receivables:
-                        if str(item.get("codigo", "")).strip() in selected_codes:
-                            ok, _ = _finance_send_receivable_charge(item, send_email=True, send_whatsapp=False)
-                            ok_count += 1 if ok else 0
-                    st.success(f"Cobranca por e-mail executada para {ok_count} titulo(s).")
-                    st.rerun()
-            if bulk_whats:
-                if not bulk_confirm:
-                    st.error("Marque a confirmacao antes de enviar cobrancas em massa.")
-                else:
-                    ok_count = 0
-                    for item in filtered_receivables:
-                        if str(item.get("codigo", "")).strip() in selected_codes:
-                            ok, _ = _finance_send_receivable_charge(item, send_email=False, send_whatsapp=True)
-                            ok_count += 1 if ok else 0
-                    st.success(f"Cobranca por WhatsApp executada para {ok_count} titulo(s).")
-                    st.rerun()
-            if bulk_mark:
-                if not bulk_confirm:
-                    st.error("Marque a confirmacao antes de executar baixa em massa.")
-                else:
-                    changed = 0
-                    for item in filtered_receivables:
-                        if str(item.get("codigo", "")).strip() in selected_codes:
-                            _finance_mark_receivable_paid(item)
-                            changed += 1
-                    st.success(f"Baixa automatica aplicada em {changed} titulo(s).")
-                    st.rerun()
+            st.dataframe(summary_df, use_container_width=True)
+            st.markdown("#### Selecionar aluno")
             selected_student = str(st.session_state.get("finance_overdue_selected_student", "")).strip()
+            for row in summary_rows:
+                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
+                with c1:
+                    st.markdown(f"**{row['aluno']}**")
+                with c2:
+                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
+                with c3:
+                    st.caption(format_money(row["total_vencido"]))
+                with c4:
+                    if st.button("Ver", key=f"finance_overdue_student_btn_{row['aluno']}"):
+                        st.session_state["finance_overdue_selected_student"] = row["aluno"]
+                        selected_student = row["aluno"]
+                        st.rerun()
             if not selected_student and summary_rows:
                 selected_student = summary_rows[0]["aluno"]
-            selected_student = st.selectbox(
-                "Aluno para detalhar",
-                [row["aluno"] for row in summary_rows],
-                index=max(0, [row["aluno"] for row in summary_rows].index(selected_student)) if selected_student in [row["aluno"] for row in summary_rows] else 0,
-                key="finance_overdue_selected_student_box",
-            )
-            st.session_state["finance_overdue_selected_student"] = selected_student
             if selected_student:
-                st.markdown(f"#### Titulos vencidos de {selected_student}")
-                student_items = [item for item in filtered_receivables if str(item.get("aluno", "")).strip() == selected_student]
-                for idx, item in enumerate(sorted(student_items, key=lambda x: parse_date(x.get("vencimento", "")) or today)):
-                    code = str(item.get("codigo", "")).strip() or f"{selected_student}_{idx}"
-                    referencia = _finance_overdue_reference(item)
-                    venc_dt = parse_date(item.get("vencimento", ""))
-                    dias_venc = (today - venc_dt).days if venc_dt else 0
-                    tone = "red" if dias_venc >= 30 else "orange" if dias_venc >= 15 else "blue"
-                    with st.container(border=True):
-                        hdr1, hdr2, hdr3, hdr4 = st.columns([1.8, 1, 1, 1.3])
-                        with hdr1:
-                            st.markdown(f"**{str(item.get('descricao', '')).strip() or 'Titulo financeiro'}**")
-                            st.caption(referencia)
-                        with hdr2:
-                            st.metric("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))))
-                        with hdr3:
-                            st.metric("Vencido ha", f"{max(0, dias_venc)} dia(s)")
-                        with hdr4:
-                            st.caption(_finance_overdue_charge_status(item))
-                        _render_finance_summary_card(
-                            "Resumo do titulo",
-                            [
-                                ("Aluno", selected_student),
-                                ("Referencia", referencia),
-                                ("Codigo", code or "-"),
-                                ("Parcela", str(item.get("parcela", "")).strip() or "-"),
-                                ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
-                                ("Forma de cobranca", str(item.get("cobranca", "")).strip() or "-"),
-                                ("Status", str(item.get("status", "")).strip() or "-"),
-                            ],
-                            tone=tone,
-                        )
-                        payload = _finance_overdue_message_payload(item)
-                        st.caption(payload["whatsapp_body"])
-                        act1, act2, act3, act4 = st.columns([1.05, 1.05, 1.05, 1])
-                        with act1:
-                            if st.button("Dar baixa automatica", key=f"finance_due_mark_{code}", type="primary", use_container_width=True):
-                                st.session_state["finance_due_confirm_code"] = code
-                                st.rerun()
-                        with act2:
-                            if st.button("Cobrar por e-mail", key=f"finance_due_email_{code}", use_container_width=True):
-                                ok, msg = _finance_send_receivable_charge(item, send_email=True, send_whatsapp=False)
-                                if ok:
-                                    st.success("Cobranca enviada por e-mail.")
-                                    st.rerun()
-                                st.error(msg)
-                        with act3:
-                            if st.button("Cobrar por WhatsApp", key=f"finance_due_whats_{code}", use_container_width=True):
-                                ok, msg = _finance_send_receivable_charge(item, send_email=False, send_whatsapp=True)
-                                if ok:
-                                    st.success("Cobranca enviada por WhatsApp.")
-                                    st.rerun()
-                                st.error(msg)
-                        with act4:
-                            with st.expander("Ver detalhes"):
-                                st.write(payload["email_body"])
-                        if st.session_state.get("finance_due_confirm_code") == code:
-                            _render_finance_summary_card(
-                                "Confirmacao de baixa automatica",
-                                [
-                                    ("Aluno", selected_student),
-                                    ("Descricao", str(item.get("descricao", "")).strip() or "-"),
-                                    ("Referencia", referencia),
-                                    ("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0))))),
-                                    ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
-                                    ("Forma de cobranca", str(item.get("cobranca", "")).strip() or "-"),
-                                ],
-                                tone="green",
-                            )
-                            conf1, conf2 = st.columns(2)
-                            with conf1:
-                                if st.button("Confirmar baixa", key=f"finance_due_confirm_yes_{code}", type="primary", use_container_width=True):
-                                    _finance_mark_receivable_paid(item)
-                                    st.session_state.pop("finance_due_confirm_code", None)
-                                    st.success("Titulo baixado com sucesso.")
-                                    st.rerun()
-                            with conf2:
-                                if st.button("Cancelar", key=f"finance_due_confirm_no_{code}", use_container_width=True):
-                                    st.session_state.pop("finance_due_confirm_code", None)
-                                    st.rerun()
+                st.markdown(f"#### Pagamentos vencidos de {selected_student}")
+                student_items = [
+                    {
+                        "codigo": str(item.get("codigo", "")).strip(),
+                        "descricao": str(item.get("descricao", "")).strip(),
+                        "categoria": str(item.get("categoria", "")).strip(),
+                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
+                        "parcela": str(item.get("parcela", "")).strip(),
+                        "vencimento": str(item.get("vencimento", "")).strip(),
+                        "cobranca": str(item.get("cobranca", "")).strip(),
+                        "status": str(item.get("status", "")).strip(),
+                    }
+                    for item in overdue_receivables
+                    if str(item.get("aluno", "")).strip() == selected_student
+                ]
+                st.dataframe(pd.DataFrame(student_items), use_container_width=True)
 
         def _render_overdue_payables_panel():
             overdue_payables = _financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento")
             if not overdue_payables:
                 st.info("Nenhuma conta a pagar vencida.")
                 return
-            st.markdown(
-                """
-                <div class="finance-shell">
-                    <h4>Central de vencimentos a pagar</h4>
-                    <p>Priorize contas vencidas, visualize fornecedores com saldo pendente e execute baixa direta com confirmacao.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            today = datetime.date.today()
-            pf1, pf2 = st.columns([1.3, 1])
-            with pf1:
-                supplier_filter = st.selectbox(
-                    "Filtrar fornecedor",
-                    ["Todos"] + sorted({(str(r.get("fornecedor", "")).strip() or "Sem fornecedor") for r in overdue_payables}),
-                    key="finance_overdue_payable_supplier_filter",
-                )
-            with pf2:
-                age_filter = st.selectbox(
-                    "Antiguidade minima",
-                    ["Todos", "7 dias", "15 dias", "30 dias"],
-                    key="finance_overdue_payable_age_filter",
-                )
-            age_threshold = {"7 dias": 7, "15 dias": 15, "30 dias": 30}.get(age_filter)
-            filtered_payables = []
-            for item in overdue_payables:
-                fornecedor = str(item.get("fornecedor", "")).strip() or "Sem fornecedor"
-                if supplier_filter != "Todos" and fornecedor != supplier_filter:
-                    continue
-                venc_dt = parse_date(item.get("vencimento", ""))
-                days_overdue = (today - venc_dt).days if venc_dt else 0
-                if age_threshold and days_overdue < age_threshold:
-                    continue
-                filtered_payables.append(item)
-            total_vencido = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in filtered_payables)
-            _render_finance_kpis(
-                [
-                    {"label": "Contas vencidas", "value": str(len(filtered_payables)), "subtitle": "carteira vencida filtrada", "tone": "red"},
-                    {"label": "Total vencido", "value": format_money(total_vencido), "subtitle": "saldo a pagar em atraso", "tone": "orange"},
-                    {"label": "Fornecedores", "value": str(len({str(r.get('fornecedor', '')).strip() or 'Sem fornecedor' for r in filtered_payables})), "subtitle": "frentes com pendencia", "tone": "blue"},
-                ],
-                "finance_overdue_pay_exec",
-            )
             summary_map = {}
-            for item in filtered_payables:
+            for item in overdue_payables:
                 fornecedor = str(item.get("fornecedor", "")).strip() or "Sem fornecedor"
                 row = summary_map.setdefault(
                     fornecedor,
@@ -21313,111 +16932,52 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if venc_dt and (not last_dt or venc_dt > last_dt):
                     row["ultimo_vencimento"] = venc_txt
             summary_rows = sorted(summary_map.values(), key=lambda r: (-r["total_vencido"], r["fornecedor"].lower()))
-            st.markdown("#### Visao consolidada por fornecedor")
+            st.markdown("#### Contas a pagar vencidas")
             summary_df = pd.DataFrame(
                 [
                     {
-                        "Fornecedor": row["fornecedor"],
-                        "Qtd. vencidos": row["qtd_vencidos"],
-                        "Total vencido": format_money(row["total_vencido"]),
-                        "Ultimo vencimento": row["ultimo_vencimento"],
+                        "fornecedor": row["fornecedor"],
+                        "qtd_vencidos": row["qtd_vencidos"],
+                        "total_vencido": format_money(row["total_vencido"]),
+                        "ultimo_vencimento": row["ultimo_vencimento"],
                     }
                     for row in summary_rows
                 ]
             )
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            st.dataframe(summary_df, use_container_width=True)
             selected_supplier = str(st.session_state.get("finance_overdue_selected_supplier", "")).strip()
+            for row in summary_rows:
+                c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
+                with c1:
+                    st.markdown(f"**{row['fornecedor']}**")
+                with c2:
+                    st.caption(f"{row['qtd_vencidos']} vencido(s)")
+                with c3:
+                    st.caption(format_money(row["total_vencido"]))
+                with c4:
+                    if st.button("Ver", key=f"finance_overdue_supplier_btn_{row['fornecedor']}"):
+                        st.session_state["finance_overdue_selected_supplier"] = row["fornecedor"]
+                        selected_supplier = row["fornecedor"]
+                        st.rerun()
             if not selected_supplier and summary_rows:
                 selected_supplier = summary_rows[0]["fornecedor"]
-            selected_supplier = st.selectbox(
-                "Fornecedor para detalhar",
-                [row["fornecedor"] for row in summary_rows],
-                index=max(0, [row["fornecedor"] for row in summary_rows].index(selected_supplier)) if selected_supplier in [row["fornecedor"] for row in summary_rows] else 0,
-                key="finance_overdue_selected_supplier_box",
-            )
-            st.session_state["finance_overdue_selected_supplier"] = selected_supplier
             if selected_supplier:
                 st.markdown(f"#### Contas vencidas de {selected_supplier}")
                 supplier_items = [
-                    item
-                    for item in filtered_payables
+                    {
+                        "codigo": str(item.get("codigo", "")).strip(),
+                        "descricao": str(item.get("descricao", "")).strip(),
+                        "categoria_lancamento": str(item.get("categoria_lancamento", "")).strip(),
+                        "valor_parcela": str(item.get("valor_parcela", item.get("valor", ""))).strip(),
+                        "parcela": str(item.get("parcela", "")).strip(),
+                        "vencimento": str(item.get("vencimento", "")).strip(),
+                        "cobranca": str(item.get("cobranca", "")).strip(),
+                        "status": str(item.get("status", "")).strip(),
+                    }
+                    for item in overdue_payables
                     if (str(item.get("fornecedor", "")).strip() or "Sem fornecedor") == selected_supplier
                 ]
-                selected_pay_codes = st.multiselect(
-                    "Selecionar contas vencidas",
-                    [str(item.get("codigo", "")).strip() for item in supplier_items if str(item.get("codigo", "")).strip()],
-                    key="finance_overdue_payable_codes",
-                    format_func=lambda code: next(
-                        (
-                            f"{str(p.get('descricao', '')).strip()} | {format_money(parse_money(p.get('valor_parcela', p.get('valor', 0))))} | {str(p.get('vencimento', '')).strip()}"
-                            for p in supplier_items
-                            if str(p.get("codigo", "")).strip() == code
-                        ),
-                        code,
-                    ),
-                )
-                pb1, pb2 = st.columns([1, 1.4])
-                with pb1:
-                    bulk_pay = st.button("Dar baixa em massa", key="finance_overdue_pay_bulk_mark", type="primary", use_container_width=True, disabled=not bool(selected_pay_codes))
-                with pb2:
-                    bulk_pay_confirm = st.checkbox("Confirmo a baixa em massa", key="finance_overdue_pay_bulk_confirm")
-                if bulk_pay:
-                    if not bulk_pay_confirm:
-                        st.error("Marque a confirmacao antes de executar baixa em massa.")
-                    else:
-                        changed = 0
-                        for item in supplier_items:
-                            if str(item.get("codigo", "")).strip() in selected_pay_codes:
-                                _finance_mark_payable_paid(item)
-                                changed += 1
-                        st.success(f"Baixa aplicada em {changed} conta(s) a pagar.")
-                        st.rerun()
-                for idx, item in enumerate(sorted(supplier_items, key=lambda x: parse_date(x.get("vencimento", "")) or today)):
-                    code = str(item.get("codigo", "")).strip() or f"{selected_supplier}_{idx}"
-                    venc_dt = parse_date(item.get("vencimento", ""))
-                    dias_venc = (today - venc_dt).days if venc_dt else 0
-                    tone = "red" if dias_venc >= 30 else "orange" if dias_venc >= 15 else "blue"
-                    with st.container(border=True):
-                        ph1, ph2, ph3 = st.columns([1.8, 1, 1])
-                        with ph1:
-                            st.markdown(f"**{str(item.get('descricao', '')).strip() or 'Conta a pagar'}**")
-                            st.caption(str(item.get("categoria_lancamento", "")).strip() or "Sem categoria")
-                        with ph2:
-                            st.metric("Valor", format_money(parse_money(item.get("valor_parcela", item.get("valor", 0)))))
-                        with ph3:
-                            st.metric("Vencido ha", f"{max(0, dias_venc)} dia(s)")
-                        _render_finance_summary_card(
-                            "Resumo da conta vencida",
-                            [
-                                ("Fornecedor", selected_supplier),
-                                ("Codigo", code or "-"),
-                                ("Parcela", str(item.get("parcela", "")).strip() or "-"),
-                                ("Vencimento", str(item.get("vencimento", "")).strip() or "-"),
-                                ("Forma de pagamento", str(item.get("cobranca", "")).strip() or "-"),
-                                ("Status", str(item.get("status", "")).strip() or "-"),
-                            ],
-                            tone=tone,
-                        )
-                        pa1, pa2 = st.columns([1.1, 1])
-                        with pa1:
-                            if st.button("Dar baixa automatica", key=f"finance_due_pay_mark_{code}", type="primary", use_container_width=True):
-                                st.session_state["finance_due_pay_confirm_code"] = code
-                                st.rerun()
-                        with pa2:
-                            with st.expander("Ver detalhes"):
-                                st.write(item)
-                        if st.session_state.get("finance_due_pay_confirm_code") == code:
-                            conf1, conf2 = st.columns(2)
-                            with conf1:
-                                if st.button("Confirmar baixa", key=f"finance_due_pay_yes_{code}", type="primary", use_container_width=True):
-                                    _finance_mark_payable_paid(item)
-                                    st.session_state.pop("finance_due_pay_confirm_code", None)
-                                    st.success("Conta baixada com sucesso.")
-                                    st.rerun()
-                            with conf2:
-                                if st.button("Cancelar", key=f"finance_due_pay_no_{code}", use_container_width=True):
-                                    st.session_state.pop("finance_due_pay_confirm_code", None)
-                                    st.rerun()
+                st.dataframe(pd.DataFrame(supplier_items), use_container_width=True)
 
         if finance_focus in ("receber", "pagar"):
             with st.container(border=True):
@@ -21434,20 +16994,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         finance_main_options = ["Contas a Receber", "Contas a Pagar", "Aprovacoes Comercial", "Vencimentos"]
         if finance_focus in ("receber", "pagar"):
             st.session_state["finance_main_menu"] = "Vencimentos"
-        finance_main = _render_finance_nav(
-            "Navegacao do modulo financeiro",
-            "Escolha a frente operacional principal antes de abrir os fluxos de recebimento, pagamento, aprovacao ou vencimentos.",
-            finance_main_options,
-            "finance_main_menu",
-            "finance_main_box",
-            descriptions={
-                "Contas a Receber": "Lancamentos, boletos, baixas e controle de entradas dos alunos e demais cobrancas.",
-                "Contas a Pagar": "Pagamentos de professores, despesas operacionais e controle de saida de caixa.",
-                "Aprovacoes Comercial": "Analise de propostas, negociacoes e liberacoes comerciais pendentes.",
-                "Vencimentos": "Visao rapida do que venceu ou esta prestes a vencer, com foco em acao imediata.",
-            },
-            columns_per_row=4,
-        )
+        if st.session_state.get("finance_main_menu") not in finance_main_options:
+            st.session_state["finance_main_menu"] = finance_main_options[0]
+        st.markdown("### Areas do Financeiro")
+        fm_cols = st.columns(len(finance_main_options))
+        for i, option in enumerate(finance_main_options):
+            selected = str(st.session_state.get("finance_main_menu", "")) == option
+            if fm_cols[i].button(
+                option,
+                key=f"finance_main_box_{i}",
+                use_container_width=True,
+                type="primary" if selected else "secondary",
+            ):
+                st.session_state["finance_main_menu"] = option
+                st.rerun()
+        finance_main = st.session_state.get("finance_main_menu", finance_main_options[0])
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
@@ -21459,23 +17020,31 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Baixa de Recebimentos",
                 "Configuracao automatica de e-mail e boleto",
             ]
-            finance_receber_menu = _render_finance_nav(
-                "Fluxos de contas a receber",
-                "Organize cobrancas, acompanhe a carteira em aberto e execute baixas em um fluxo operacional mais claro.",
-                finance_receber_options,
-                "finance_receber_menu",
-                "finance_receber_box",
-                descriptions={
-                    "Lancar Recebimento": "Cadastre novos titulos financeiros com parcelamento, categoria e notificacoes automaticas.",
-                    "Recebimentos": "Consulte a carteira de titulos e acompanhe status, vencimentos e filtros financeiros.",
-                    "Acoes em massa (Recebimentos)": "Execute exclusoes em lote sobre cobrancas filtradas com controle administrativo.",
-                    "Gerenciamento de Recebimentos": "Edite titulos, boletos, parcelas e dados de cobranca de forma centralizada.",
-                    "Lancar Material do Estoque": "Converta materiais do estoque em cobrancas para alunos ou turmas.",
-                    "Baixa de Recebimentos": "Fluxo guiado para localizar o titulo, revisar dados e confirmar a baixa com menor risco de erro.",
-                    "Configuracao automatica de e-mail e boleto": "Ajuste envio automatico, boleto e comunicacao financeira em um unico painel.",
-                },
-                columns_per_row=3,
-            )
+            if st.session_state.get("finance_receber_menu") not in finance_receber_options:
+                st.session_state["finance_receber_menu"] = finance_receber_options[0]
+            st.markdown("### Opcoes de Contas a Receber")
+            fr_cols_top = st.columns(4)
+            fr_cols_bottom = st.columns(3)
+            fr_layout = [
+                (fr_cols_top[0], finance_receber_options[0], 0),
+                (fr_cols_top[1], finance_receber_options[1], 1),
+                (fr_cols_top[2], finance_receber_options[2], 2),
+                (fr_cols_top[3], finance_receber_options[3], 3),
+                (fr_cols_bottom[0], finance_receber_options[4], 4),
+                (fr_cols_bottom[1], finance_receber_options[5], 5),
+                (fr_cols_bottom[2], finance_receber_options[6], 6),
+            ]
+            for col_ref, option, idx_option in fr_layout:
+                selected = str(st.session_state.get("finance_receber_menu", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_receber_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_receber_menu"] = option
+                    st.rerun()
+            finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             if finance_receber_menu == "Configuracao automatica de e-mail e boleto":
                 with st.expander("Configuracao automatica de e-mail e boleto", expanded=True):
                     smtp_diag = _smtp_config_diagnostics()
@@ -21572,168 +17141,69 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
             if finance_receber_menu == "Lancar Recebimento":
-                st.markdown(
-                    """
-                    <div class="finance-shell">
-                        <h4>Novo lancamento financeiro</h4>
-                        <p>Registre recebimentos com um fluxo mais seguro: identifique o destinatario, configure o titulo, revise o resumo e confirme a operacao.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                _render_finance_kpis(
-                    [
-                        {"label": "Categorias ativas", "value": "5", "subtitle": "alunos, fornecedores, professores, internos e outros", "tone": "blue"},
-                        {"label": "Parcelamento maximo", "value": "24x", "subtitle": "ou 6x para material", "tone": "green"},
-                        {"label": "Canais de envio", "value": "2", "subtitle": "e-mail e WhatsApp para lancamentos de alunos", "tone": "orange"},
-                    ],
-                    "finance_lancar_recebimento_exec",
-                )
                 with st.form("add_rec"):
-                    st.markdown(
-                        '<div class="finance-shell"><h4><span class="finance-step">1</span>Identificacao do lancamento</h4><p>Defina primeiro o tipo do destinatario, a categoria principal e a descricao do que sera cobrado.</p></div>',
-                        unsafe_allow_html=True,
-                    )
-                    c_id1, c_id2 = st.columns([1.1, 1.4])
-                    with c_id1:
+                    st.markdown("### Lançar Recebimento")
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
+                    with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
+                    with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
+                    with c4:
                         categoria_lancamento = st.selectbox(
-                            "Tipo de destinatario *",
+                            "Categoria do lancamento",
                             ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
-                            help="Esse campo define para quem o titulo sera lancado.",
                         )
-                    with c_id2:
-                        categoria = st.selectbox(
-                            "Categoria principal *",
-                            ["Mensalidade", "Material", "Taxa de Matricula"],
-                            help="Use a categoria que melhor representa a natureza do recebimento.",
-                        )
-
                     alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
-                    c_id3, c_id4 = st.columns([1.4, 1.6])
-                    with c_id3:
-                        desc = st.text_input(
-                            "Descricao do lancamento *",
-                            placeholder="Ex.: Mensalidade de abril, material didatico, taxa complementar",
-                        )
-                    with c_id4:
-                        if categoria_lancamento == "Aluno":
-                            if alunos_opts:
-                                aluno = st.selectbox(
-                                    "Aluno *",
-                                    alunos_opts,
-                                    help="Somente alunos cadastrados aparecem aqui.",
-                                )
-                            else:
-                                aluno = ""
-                                st.info("Nenhum aluno cadastrado para lancar recebimento.")
+                    if categoria_lancamento == "Aluno":
+                        if alunos_opts:
+                            aluno = st.selectbox("Aluno", alunos_opts)
                         else:
-                            ref_label = {
-                                "Fornecedor": "Fornecedor *",
-                                "Professor": "Professor *",
-                                "Interno": "Setor interno *",
-                                "Outro": "Referencia *",
-                            }.get(categoria_lancamento, "Referencia *")
-                            aluno = st.text_input(
-                                ref_label,
-                                placeholder="Informe a referencia principal do lancamento",
-                            )
-
-                    st.markdown(
-                        '<div class="finance-shell"><h4><span class="finance-step">2</span>Dados financeiros</h4><p>Configure valor, parcelamento e cobranca. O total sera recalculado automaticamente para conferncia antes do lancamento.</p></div>',
-                        unsafe_allow_html=True,
-                    )
-                    fin1, fin2, fin3 = st.columns([1.05, 0.9, 1.05])
-                    with fin1:
-                        val_parcela_input = st.text_input(
-                            "Valor da parcela *",
-                            placeholder="Ex.: 150,00",
-                            help="Use o valor unitario da parcela. O total sera calculado abaixo.",
-                        )
-                    is_material = categoria == "Material"
-                    material_payment = "A vista"
-                    material_parcelado = False
-                    with fin2:
-                        parcela_inicial = st.number_input(
-                            "Parcela inicial",
-                            min_value=1,
-                            step=1,
-                            value=1,
-                            disabled=is_material,
-                            help="Para mensalidades e taxas, defina o numero inicial da serie.",
-                        )
-                    with fin3:
-                        if categoria == "Mensalidade":
-                            qtd_meses = st.number_input("Quantidade de parcelas *", min_value=1, max_value=24, value=12)
-                        elif categoria == "Material":
-                            qtd_meses = 1
-                        else:
-                            qtd_meses = st.number_input("Quantidade de parcelas *", min_value=1, max_value=24, value=1)
-
-                    fin4, fin5, fin6 = st.columns([1.1, 1, 1])
-                    if categoria == "Material":
-                        with fin4:
-                            material_payment = st.selectbox(
-                                "Forma de cobranca do material *",
-                                material_payment_options(),
-                                help="Escolha se o material sera a vista ou parcelado.",
-                            )
-                        material_parcelado = material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
-                        with fin5:
-                            qtd_meses = st.number_input(
-                                "Quantidade de parcelas *",
-                                min_value=1,
-                                max_value=6,
-                                value=2 if material_parcelado else 1,
-                                disabled=not material_parcelado,
-                            )
-                        with fin6:
-                            cobranca = material_payment
-                            st.text_input("Cobranca aplicada", value=cobranca, disabled=True)
+                            aluno = ""
+                            st.info("Nenhum aluno cadastrado para lancar recebimento.")
                     else:
-                        with fin4:
-                            cobranca = st.selectbox(
-                                "Forma de cobranca *",
-                                ["Boleto", "Pix", "Cartao", "Dinheiro"],
-                                help="Use a forma de cobranca que orienta a operacao administrativa.",
-                            )
-                        with fin5:
-                            st.text_input(
-                                "Tipo de destinatario",
-                                value=categoria_lancamento,
-                                disabled=True,
-                            )
-                        with fin6:
-                            st.text_input(
-                                "Categoria aplicada",
-                                value=categoria,
-                                disabled=True,
-                            )
-
-                    st.markdown(
-                        '<div class="finance-shell"><h4><span class="finance-step">3</span>Datas e vencimento</h4><p>Defina quando o lancamento entra na carteira e qual sera a referencia do primeiro vencimento.</p></div>',
-                        unsafe_allow_html=True,
-                    )
-                    data1, data2, data3 = st.columns([1, 1, 0.9])
-                    with data1:
-                        data_lanc = st.date_input(
-                            "Data do lancamento *",
-                            value=datetime.date.today(),
-                            format="DD/MM/YYYY",
-                        )
-                    with data2:
-                        venc = st.date_input(
-                            "Primeiro vencimento *",
-                            value=datetime.date.today(),
-                            format="DD/MM/YYYY",
-                        )
-                    with data3:
+                        ref_label = {
+                            "Fornecedor": "Fornecedor",
+                            "Professor": "Professor",
+                            "Interno": "Setor interno",
+                            "Outro": "Referencia",
+                        }.get(categoria_lancamento, "Referencia")
+                        aluno = st.text_input(f"{ref_label} *")
+                    c4, c5, c6, c6b = st.columns(4)
+                    with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c6b:
                         rec_due_day = st.selectbox(
                             "Dia do vencimento",
                             list(range(1, 31)),
                             index=max(0, min(29, datetime.date.today().day - 1)),
                             format_func=lambda d: f"Dia {d}",
-                            help="O sistema usa esse dia para gerar os demais vencimentos.",
                         )
+                    material_payment = "A vista"
+                    if categoria == "Material":
+                        with c6:
+                            material_payment = st.selectbox(
+                                "Pagamento do Material",
+                                material_payment_options(),
+                            )
+                        cobranca = material_payment
+                    else:
+                        with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
+                    c7, c8, c9 = st.columns(3)
+                    is_material = categoria == "Material"
+                    with c7:
+                        parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
+                    material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
+                    if categoria == "Mensalidade":
+                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
+                    elif categoria == "Material":
+                        qtd_meses = st.number_input(
+                            "Parcelas *",
+                            min_value=1,
+                            max_value=6,
+                            value=2 if material_parcelado else 1,
+                            disabled=not material_parcelado,
+                        )
+                    else:
+                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
 
                     if categoria == "Material" and not material_parcelado:
                         qtd_parcelas_calc = 1
@@ -21744,43 +17214,17 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
                     valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
                     valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
-
-                    val1, val2, val3 = st.columns([1, 1, 1.1])
-                    with val1:
-                        st.text_input(
-                            "Valor total estimado",
-                            value=valor_total_auto,
-                            disabled=True,
-                            key="rec_valor_total_auto",
-                        )
-                    with val2:
-                        st.text_input(
-                            "Parcelas previstas",
-                            value=str(qtd_parcelas_calc),
-                            disabled=True,
-                            key="rec_qtd_parcelas_auto",
-                        )
-                    with val3:
-                        st.text_input(
-                            "Serie inicial",
-                            value=str(parcela_inicial),
-                            disabled=True,
-                            key="rec_parcela_inicial_preview",
-                        )
-
-                    st.markdown(
-                        '<div class="finance-shell"><h4><span class="finance-step">4</span>Comunicacao e acoes</h4><p>Defina os disparos automaticos quando o lancamento for de aluno e confirme somente apos revisar o resumo da operacao.</p></div>',
-                        unsafe_allow_html=True,
-                    )
-                    notify_a, notify_b = st.columns([1, 1])
-                    with notify_a:
+                    with c9:
+                        st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
+                    d1, d2 = st.columns(2)
+                    with d1:
                         enviar_fin_email = st.checkbox(
                             "Enviar comunicado por e-mail",
                             value=True,
                             key="rec_notify_email",
                             disabled=(categoria_lancamento != "Aluno"),
                         )
-                    with notify_b:
+                    with d2:
                         enviar_fin_whatsapp = st.checkbox(
                             "Enviar comunicado por WhatsApp",
                             value=True,
@@ -21788,43 +17232,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             disabled=(categoria_lancamento != "Aluno"),
                         )
                     if categoria_lancamento != "Aluno":
-                        st.caption("Os canais automaticos ficam disponiveis apenas para lancamentos vinculados a alunos.")
+                        st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
 
-                    st.markdown(
-                        '<div class="finance-shell"><h4><span class="finance-step">5</span>Resumo da operacao</h4><p>Confira os dados abaixo antes de gerar o titulo financeiro. Essa etapa reduz erros de categoria, valor e destinatario.</p></div>',
-                        unsafe_allow_html=True,
-                    )
-                    _render_finance_summary_card(
-                        "Conferencia do novo lancamento",
-                        [
-                            ("Destinatario", str(aluno).strip() or "-"),
-                            ("Tipo", categoria_lancamento),
-                            ("Categoria", categoria),
-                            ("Descricao", str(desc).strip() or "-"),
-                            ("Forma de cobranca", cobranca),
-                            ("Quantidade de parcelas", str(qtd_parcelas_calc)),
-                            ("Valor unitario", valor_parcela_txt),
-                            ("Valor total", valor_total_auto),
-                            ("Data do lancamento", data_lanc.strftime("%d/%m/%Y") if isinstance(data_lanc, datetime.date) else "-"),
-                            ("Primeiro vencimento", venc.strftime("%d/%m/%Y") if isinstance(venc, datetime.date) else "-"),
-                        ],
-                        tone="blue",
-                    )
-                    st.markdown(
-                        '<div class="finance-action-note">Revise destinatario, categoria, parcelamento, vencimento inicial e forma de cobranca. A acao principal so deve ser usada quando o resumo estiver coerente.</div>',
-                        unsafe_allow_html=True,
-                    )
-                    submit_cols = st.columns([1.3, 1.1])
-                    with submit_cols[0]:
-                        submit_lancar = st.form_submit_button(
-                            "Lancar recebimento",
-                            type="primary",
-                            use_container_width=True,
-                        )
-                    with submit_cols[1]:
-                        st.caption("Os dados acima serao aplicados conforme a regra de parcelamento selecionada.")
-
-                    if submit_lancar:
+                    if st.form_submit_button("Lancar"):
                         if not str(aluno).strip() or valor_parcela_num <= 0:
                             st.error("Informe referencia e valor da parcela valido.")
                         elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
@@ -22056,15 +17466,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
             if finance_receber_menu == "Gerenciamento de Recebimentos":
-                st.markdown(
-                    """
-                    <div class="finance-shell">
-                        <h4>Gerenciamento de recebimentos</h4>
-                        <p>Edite cobrancas, boletos e parcelas em um painel mais claro, com resumo do titulo e acoes administrativas separadas.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                st.markdown("### Gerenciamento de Recebimentos (Editar/Excluir Cobranca)")
                 if not recebimentos:
                     st.info("Nenhum recebimento para gerenciar.")
                 else:
@@ -22079,20 +17481,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         key="manage_rec_idx",
                     )
                     rec_obj = recebimentos[idx_rec]
-                    _render_finance_summary_card(
-                        "Resumo da cobranca selecionada",
-                        [
-                            ("Codigo", str(rec_obj.get("codigo", "")).strip() or "-"),
-                            ("Referencia", str(rec_obj.get("aluno", "")).strip() or "-"),
-                            ("Descricao", str(rec_obj.get("descricao", "")).strip() or "-"),
-                            ("Valor", format_money(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", 0))))),
-                            ("Vencimento", str(rec_obj.get("vencimento", "")).strip() or "-"),
-                            ("Status", str(rec_obj.get("status", "")).strip() or "-"),
-                            ("Cobranca", str(rec_obj.get("cobranca", "")).strip() or "-"),
-                            ("Categoria do lancamento", str(rec_obj.get("categoria_lancamento", "")).strip() or "-"),
-                        ],
-                        tone="orange",
-                    )
                     rec_obj.setdefault("boleto_url", "")
                     rec_obj.setdefault("boleto_linha_digitavel", "")
                     rec_obj.setdefault("boleto_status", "Nao Gerado")
@@ -22159,17 +17547,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 index=cat_lanc_opts_rec.index(cat_lanc_rec) if cat_lanc_rec in cat_lanc_opts_rec else 0,
                             )
 
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">1</span>Atualizar dados da cobranca</h4><p>Revise os campos principais, vencimento, status e dados de boleto antes de salvar a edicao em lote.</p></div>', unsafe_allow_html=True)
-                    mr7, mr8, mr9 = st.columns(3)
-                    with mr7:
-                        new_venc_rec = st.date_input("Vencimento", value=venc_atual_rec, format="DD/MM/YYYY")
-                    with mr8:
-                        cob_rec = str(rec_obj.get("cobranca", "Boleto"))
-                        new_cobranca_rec = st.selectbox(
-                            "Cobranca",
-                            cobranca_opts_rec,
-                            index=cobranca_opts_rec.index(cob_rec) if cob_rec in cobranca_opts_rec else 0,
-                        )
+                        mr7, mr8, mr9 = st.columns(3)
+                        with mr7:
+                            new_venc_rec = st.date_input("Vencimento", value=venc_atual_rec, format="DD/MM/YYYY")
+                        with mr8:
+                            cob_rec = str(rec_obj.get("cobranca", "Boleto"))
+                            new_cobranca_rec = st.selectbox(
+                                "Cobranca",
+                                cobranca_opts_rec,
+                                index=cobranca_opts_rec.index(cob_rec) if cob_rec in cobranca_opts_rec else 0,
+                            )
                         with mr9:
                             stat_rec = str(rec_obj.get("status", "Aberto"))
                             new_status_rec = st.selectbox(
@@ -22184,18 +17571,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         new_valor_parcela_rec = f"{new_val_parcela_num:.2f}".replace(".", ",") if new_val_parcela_num > 0 else "0,00"
                         new_val_total_rec_auto = f"{new_val_total_num:.2f}".replace(".", ",") if new_val_total_num > 0 else "0,00"
                         st.text_input("Valor total (automatico)", value=new_val_total_rec_auto, disabled=True)
-                        _render_finance_summary_card(
-                            "Resumo apos a edicao",
-                            [
-                                ("Referencia", new_ref_rec.strip() or "-"),
-                                ("Descricao", new_desc_rec.strip() or "-"),
-                                ("Parcelas", str(new_qtd_rec_int)),
-                                ("Valor da parcela", new_valor_parcela_rec),
-                                ("Valor total", new_val_total_rec_auto),
-                                ("Status novo", new_status_rec),
-                            ],
-                            tone="green",
-                        )
 
                         mb1, mb2 = st.columns(2)
                         with mb1:
@@ -22446,196 +17821,44 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
             if finance_receber_menu == "Baixa de Recebimentos":
                 with st.container(border=True):
-                    st.markdown(
-                        """
-                        <div class="finance-shell">
-                            <h4>Baixa Financeira</h4>
-                            <p>Localize o aluno ou cliente, escolha o tipo de baixa, revise os dados do titulo e confirme a operacao com mais seguranca.</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown("### Baixa de Recebimentos")
                     abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
                     if not abertos:
                         st.info("Nenhum recebimento em aberto.")
                     else:
-                        total_abertos_baixa = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in abertos)
-                        vencidos_baixa = [
-                            r for r in abertos
-                            if (parse_date(r.get("vencimento", "")) or datetime.date.max) <= datetime.date.today()
-                        ]
-                        _render_finance_kpis(
-                            [
-                                {"label": "Titulos em aberto", "value": str(len(abertos)), "subtitle": "carteira pronta para baixa", "tone": "blue"},
-                                {"label": "Vencidos", "value": str(len(vencidos_baixa)), "subtitle": "titulos ja vencidos", "tone": "red"},
-                                {"label": "Valor em aberto", "value": format_money(total_abertos_baixa), "subtitle": "saldo ainda nao baixado", "tone": "orange"},
-                            ],
-                            "finance_baixa_exec",
-                        )
-                        alunos = ["Todos"] + sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
-                        step1_a, step1_b = st.columns([1.25, 1])
-                        with step1_a:
-                            st.markdown('<div class="finance-shell"><h4><span class="finance-step">1</span>Localizar aluno ou cliente</h4><p>Selecione a referencia principal para reduzir a chance de baixa errada.</p></div>', unsafe_allow_html=True)
-                            aluno_baixa = st.selectbox(
-                                "Aluno ou cliente",
-                                alunos,
-                                key="finance_baixa_aluno",
-                                help="A lista abaixo sera filtrada conforme a referencia escolhida.",
-                            )
-                        with step1_b:
-                            st.markdown('<div class="finance-shell"><h4><span class="finance-step">2</span>Escolher tipo de baixa</h4><p>Use baixa manual para um titulo especifico ou automatica para liquidar vencidos do aluno selecionado.</p></div>', unsafe_allow_html=True)
-                            modo_baixa = st.radio(
-                                "Tipo de baixa",
-                                ["Manual", "Automática"],
-                                key="finance_baixa_mode",
-                                horizontal=True,
-                            )
-
-                        abertos_filtrados = [
-                            r for r in abertos
-                            if aluno_baixa == "Todos" or str(r.get("aluno", "")).strip() == str(aluno_baixa).strip()
-                        ]
+                        cba1, cba2 = st.columns(2)
+                        with cba1:
+                            alunos = sorted({r.get("aluno", "") for r in abertos if r.get("aluno")})
+                            aluno_baixa = st.selectbox("Aluno (baixa automática)", alunos)
+                        with cba2:
+                            modo_baixa = st.selectbox("Tipo de baixa", ["Manual", "Automática"])
 
                         if modo_baixa == "Manual":
-                            st.markdown('<div class="finance-shell"><h4><span class="finance-step">3</span>Selecionar lançamento</h4><p>Escolha o titulo exato e revise as informacoes antes de confirmar a baixa.</p></div>', unsafe_allow_html=True)
-                            if not abertos_filtrados:
-                                st.info("Nenhum lancamento aberto para o filtro selecionado.")
-                            else:
-                                manual_labels = [
-                                    (
-                                        f"{r.get('codigo','')} · {r.get('descricao','')} · "
-                                        f"{str(r.get('aluno','')).strip() or 'Sem referencia'} · "
-                                        f"Venc. {r.get('vencimento','-')} · {format_money(parse_money(r.get('valor_parcela', r.get('valor', 0))))}"
-                                    )
-                                    for r in abertos_filtrados
-                                ]
-                                selected_manual_label = st.selectbox(
-                                    "Lançamento para baixa",
-                                    manual_labels,
-                                    key="finance_baixa_manual_item",
-                                    help="A interface abaixo mostra todos os dados principais do titulo selecionado.",
-                                )
-                                item_obj = abertos_filtrados[manual_labels.index(selected_manual_label)]
-                                baixa_data_manual = st.date_input(
-                                    "Data da baixa",
-                                    value=datetime.date.today(),
-                                    format="DD/MM/YYYY",
-                                    key="finance_baixa_manual_date",
-                                )
-                                manual_cols = st.columns([1, 1, 1.4])
-                                with manual_cols[0]:
-                                    baixa_forma_manual = st.selectbox(
-                                        "Forma da baixa",
-                                        ["Manual", "Pix", "Boleto", "Transferencia", "Cartao", "Dinheiro", "Outro"],
-                                        key="finance_baixa_manual_forma",
-                                    )
-                                with manual_cols[1]:
-                                    status_preview = "Vencido" if (parse_date(item_obj.get("vencimento", "")) or datetime.date.max) < datetime.date.today() else "Em aberto"
-                                    st.text_input("Status atual", value=status_preview, disabled=True, key="finance_baixa_status_preview")
-                                with manual_cols[2]:
-                                    baixa_obs_manual = st.text_input(
-                                        "Observação da operação",
-                                        key="finance_baixa_manual_obs",
-                                        placeholder="Opcional: observacao interna da baixa",
-                                    )
-
-                                _render_finance_summary_card(
-                                    "Resumo do titulo selecionado",
-                                    [
-                                        ("Aluno/cliente", str(item_obj.get("aluno", "")).strip() or "-"),
-                                        ("Descricao", str(item_obj.get("descricao", "")).strip() or "-"),
-                                        ("Valor", format_money(parse_money(item_obj.get("valor_parcela", item_obj.get("valor", 0))))),
-                                        ("Vencimento", str(item_obj.get("vencimento", "")).strip() or "-"),
-                                        ("Status", str(item_obj.get("status", "Aberto")).strip() or "Aberto"),
-                                        ("Cobranca", str(item_obj.get("cobranca", "")).strip() or "-"),
-                                        ("Categoria", str(item_obj.get("categoria", "")).strip() or "-"),
-                                        ("Linha digitavel", str(item_obj.get("boleto_linha_digitavel", "")).strip() or "-"),
-                                    ],
-                                    tone="green",
-                                )
-                                st.markdown(
-                                    '<div class="finance-action-note">Revise valor, vencimento, cobranca e referencia antes de confirmar. A acao principal so deve ser usada quando os dados estiverem conferidos.</div>',
-                                    unsafe_allow_html=True,
-                                )
-                                act_manual_a, act_manual_b = st.columns([1.2, 1])
-                                if act_manual_a.button(
-                                    "Confirmar baixa manual",
-                                    key="finance_baixa_manual_confirm",
-                                    type="primary",
-                                    use_container_width=True,
-                                ):
-                                    item_obj["status"] = "Pago"
-                                    item_obj["baixa_data"] = baixa_data_manual.strftime("%d/%m/%Y")
-                                    item_obj["baixa_tipo"] = "Manual"
-                                    item_obj["baixa_forma"] = baixa_forma_manual
-                                    if str(baixa_obs_manual).strip():
-                                        item_obj["baixa_obs"] = str(baixa_obs_manual).strip()
-                                    save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                    st.success("Baixa manual realizada com sucesso.")
-                                    st.rerun()
-                                with act_manual_b:
-                                    if item_obj.get("boleto_url"):
-                                        st.link_button("Abrir boleto do titulo", str(item_obj.get("boleto_url")), use_container_width=True)
-                                    else:
-                                        st.button("Sem boleto vinculado", disabled=True, use_container_width=True, key="finance_baixa_manual_no_boleto")
+                            opcoes = [f"{r.get('codigo','')} | {r.get('aluno','')} | {r.get('descricao','')} | Venc: {r.get('vencimento','')}" for r in abertos]
+                            item_sel = st.selectbox("Selecione o lançamento", opcoes)
+                            if st.button("Dar baixa manual"):
+                                item_obj = abertos[opcoes.index(item_sel)]
+                                item_obj["status"] = "Pago"
+                                item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
+                                item_obj["baixa_tipo"] = "Manual"
+                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                st.success("Baixa realizada!")
+                                st.rerun()
                         else:
-                            st.markdown('<div class="finance-shell"><h4><span class="finance-step">3</span>Revisar títulos vencidos</h4><p>A baixa automatica atua somente nos lancamentos ja vencidos da referencia selecionada.</p></div>', unsafe_allow_html=True)
-                            hoje = datetime.date.today()
-                            automatic_candidates = []
-                            for r in abertos_filtrados:
-                                vencimento = parse_date(r.get("vencimento", ""))
-                                if vencimento and vencimento <= hoje:
-                                    automatic_candidates.append(r)
-                            total_auto = sum(parse_money(r.get("valor_parcela", r.get("valor", 0))) for r in automatic_candidates)
-                            _render_finance_summary_card(
-                                "Resumo da baixa automatica",
-                                [
-                                    ("Referencia", aluno_baixa if aluno_baixa != "Todos" else "Todas as referencias em aberto"),
-                                    ("Titulos vencidos aptos", str(len(automatic_candidates))),
-                                    ("Valor total previsto", format_money(total_auto)),
-                                    ("Data da baixa", hoje.strftime("%d/%m/%Y")),
-                                    ("Tipo", "Automática"),
-                                ],
-                                tone="orange",
-                            )
-                            if automatic_candidates:
-                                preview_df = pd.DataFrame(
-                                    [
-                                        {
-                                            "Codigo": str(r.get("codigo", "")).strip(),
-                                            "Aluno": str(r.get("aluno", "")).strip(),
-                                            "Descricao": str(r.get("descricao", "")).strip(),
-                                            "Vencimento": str(r.get("vencimento", "")).strip(),
-                                            "Valor": format_money(parse_money(r.get("valor_parcela", r.get("valor", 0)))),
-                                        }
-                                        for r in automatic_candidates
-                                    ]
-                                )
-                                st.dataframe(preview_df, use_container_width=True, hide_index=True, height=min(320, 70 + len(preview_df) * 35))
-                                if st.button(
-                                    "Confirmar baixa automática dos vencidos",
-                                    key="finance_baixa_auto_confirm",
-                                    type="primary",
-                                    use_container_width=True,
-                                ):
-                                    count = 0
-                                    for r in st.session_state["receivables"]:
-                                        if (
-                                            (aluno_baixa == "Todos" or str(r.get("aluno", "")).strip() == str(aluno_baixa).strip())
-                                            and r.get("status") != "Pago"
-                                        ):
-                                            vencimento = parse_date(r.get("vencimento", ""))
-                                            if vencimento and vencimento <= hoje:
-                                                r["status"] = "Pago"
-                                                r["baixa_data"] = hoje.strftime("%d/%m/%Y")
-                                                r["baixa_tipo"] = "Automática"
-                                                r["baixa_forma"] = "Automática"
-                                                count += 1
-                                    save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                    st.success(f"Baixa automática realizada: {count} lançamento(s).")
-                                    st.rerun()
-                            else:
-                                st.info("Nao ha titulos vencidos para baixar automaticamente com o filtro atual.")
+                            if st.button("Baixar automaticamente vencidos (Aluno)"):
+                                hoje = datetime.date.today()
+                                count = 0
+                                for r in st.session_state["receivables"]:
+                                    if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
+                                        vencimento = parse_date(r.get("vencimento", ""))
+                                        if vencimento and vencimento <= hoje:
+                                            r["status"] = "Pago"
+                                            r["baixa_data"] = hoje.strftime("%d/%m/%Y")
+                                            r["baixa_tipo"] = "Automática"
+                                            count += 1
+                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                st.success(f"Baixa automática realizada: {count} lançamento(s).")
+                                st.rerun()
         if finance_main == "Contas a Pagar":
             finance_pagar_options = [
                 "Pagamento de Aulas do Professor",
@@ -22644,21 +17867,29 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Acoes em massa (Despesas)",
                 "Gerenciamento de Despesas",
             ]
-            finance_pagar_menu = _render_finance_nav(
-                "Fluxos de contas a pagar",
-                "Centralize pagamentos do professor e despesas em uma navegacao secundaria mais direta e menos poluida.",
-                finance_pagar_options,
-                "finance_pagar_menu",
-                "finance_pagar_box",
-                descriptions={
-                    "Pagamento de Aulas do Professor": "Revise aulas elegiveis, confira totais e lance pagamentos com recibo integrado.",
-                    "Lancar Despesa": "Cadastre uma nova despesa com vencimento, categoria e forma de pagamento.",
-                    "Despesas": "Consulte a carteira de contas a pagar com filtros e leitura mais executiva.",
-                    "Acoes em massa (Despesas)": "Elimine varios lancamentos filtrados em lote com controle administrativo.",
-                    "Gerenciamento de Despesas": "Edite parcelas, status e metadados das despesas em um fluxo unico.",
-                },
-                columns_per_row=3,
-            )
+            if st.session_state.get("finance_pagar_menu") not in finance_pagar_options:
+                st.session_state["finance_pagar_menu"] = finance_pagar_options[0]
+            st.markdown("### Opcoes de Contas a Pagar")
+            fp_cols_top = st.columns(3)
+            fp_cols_bottom = st.columns(2)
+            fp_layout = [
+                (fp_cols_top[0], finance_pagar_options[0], 0),
+                (fp_cols_top[1], finance_pagar_options[1], 1),
+                (fp_cols_top[2], finance_pagar_options[2], 2),
+                (fp_cols_bottom[0], finance_pagar_options[3], 3),
+                (fp_cols_bottom[1], finance_pagar_options[4], 4),
+            ]
+            for col_ref, option, idx_option in fp_layout:
+                selected = str(st.session_state.get("finance_pagar_menu", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_pagar_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_pagar_menu"] = option
+                    st.rerun()
+            finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
             if finance_pagar_menu != "Pagamento de Aulas do Professor":
                 st.caption("Recibo de pagamento do professor fica em: Pagamento de Aulas do Professor.")
                 if st.button("Abrir Gerador de Recibo (Professor)", key="finance_open_teacher_receipt_shortcut"):
@@ -22667,16 +17898,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
             if finance_pagar_menu == "Pagamento de Aulas do Professor":
-                st.markdown(
-                    """
-                    <div class="finance-shell">
-                        <h4>Pagamento de aulas do professor</h4>
-                        <p>Filtre as aulas elegiveis, confira o total a pagar, selecione os lancamentos e finalize o pagamento com recibo integrado.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown('<div class="finance-action-note">Tabela automatica: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.</div>', unsafe_allow_html=True)
+                st.markdown("### Lancar Pagamento de Aulas do Professor")
+                st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
                 tp1, tp2, tp3 = st.columns(3)
                 with tp1:
                     teacher_pay_month_ref = st.date_input(
@@ -22698,6 +17921,121 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 with tp3:
                     teacher_pay_turma = st.selectbox("Turma", turma_options_pay, key="fin_teacher_pay_turma")
 
+                # Gerador rapido no topo (visivel sem rolagem longa)
+                st.markdown("### Gerador de Recibo de Pagamento (PDF/HTML)")
+                rt1, rt2, rt3 = st.columns(3)
+                month_start_top, month_end_top = _current_month_bounds(teacher_pay_month_ref)
+                with rt1:
+                    receipt_start_top = st.date_input(
+                        "Periodo inicial (recibo)",
+                        value=month_start_top,
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_start_top",
+                    )
+                with rt2:
+                    receipt_end_top = st.date_input(
+                        "Periodo final (recibo)",
+                        value=month_end_top,
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_end_top",
+                    )
+                with rt3:
+                    receipt_prof_top = st.selectbox(
+                        "Professor do recibo",
+                        teacher_options,
+                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
+                        key="fin_teacher_receipt_prof_top",
+                    )
+                teacher_obj_top = next(
+                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == str(receipt_prof_top).strip()),
+                    {},
+                )
+                rt4, rt5, rt6 = st.columns(3)
+                with rt4:
+                    receipt_whatsapp_top = st.text_input(
+                        "WhatsApp (recibo)",
+                        value=str(teacher_obj_top.get("celular", "")).strip(),
+                        key="fin_teacher_receipt_whatsapp_top",
+                    )
+                with rt5:
+                    receipt_pay_date_top = st.date_input(
+                        "Data do pagamento",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_receipt_date_top",
+                    )
+                with rt6:
+                    receipt_pay_method_top = st.selectbox(
+                        "Forma de pagamento",
+                        ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
+                        key="fin_teacher_receipt_method_top",
+                    )
+                receipt_responsavel_top = st.text_input(
+                    "Responsavel",
+                    value=str(st.session_state.get("user_name", "")).strip(),
+                    key="fin_teacher_receipt_responsavel_top",
+                )
+                bth, btp = st.columns(2)
+                gerar_html_top = bth.button("Gerar recibo HTML (Topo)", key="fin_teacher_receipt_btn_top_html", type="secondary")
+                gerar_pdf_top = btp.button("Gerar recibo PDF (Topo)", key="fin_teacher_receipt_btn_top_pdf", type="primary")
+                if gerar_html_top or gerar_pdf_top:
+                    if str(receipt_prof_top).strip() in ("", "Todos"):
+                        st.error("Selecione um professor especifico para gerar o recibo.")
+                    elif receipt_end_top < receipt_start_top:
+                        st.error("Periodo final nao pode ser menor que o inicial.")
+                    else:
+                        receipt_sessions_top = _teacher_payment_sessions_for_receipt(
+                            receipt_start_top,
+                            receipt_end_top,
+                            professor_name=receipt_prof_top,
+                        )
+                        if not receipt_sessions_top:
+                            st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                        else:
+                            file_name_top = (
+                                f"Relatorio_Pagamento_Professor_{str(receipt_prof_top).strip().replace(' ', '_')}_"
+                                f"{receipt_start_top.strftime('%Y%m%d')}_{receipt_end_top.strftime('%Y%m%d')}"
+                            )
+                            if gerar_html_top:
+                                receipt_html_top = _teacher_payment_receipt_html(
+                                    receipt_prof_top,
+                                    receipt_start_top,
+                                    receipt_end_top,
+                                    receipt_sessions_top,
+                                    contato_whatsapp=receipt_whatsapp_top,
+                                    data_pagamento=receipt_pay_date_top,
+                                    forma_pagamento=receipt_pay_method_top,
+                                    responsavel=receipt_responsavel_top,
+                                )
+                                st.download_button(
+                                    "Baixar recibo HTML (Topo)",
+                                    data=receipt_html_top,
+                                    file_name=f"{file_name_top}.html",
+                                    mime="text/html",
+                                    key=f"fin_teacher_receipt_download_top_html_{file_name_top}",
+                                )
+                            if gerar_pdf_top:
+                                receipt_pdf_top = _teacher_payment_receipt_pdf_bytes(
+                                    receipt_prof_top,
+                                    receipt_start_top,
+                                    receipt_end_top,
+                                    receipt_sessions_top,
+                                    contato_whatsapp=receipt_whatsapp_top,
+                                    data_pagamento=receipt_pay_date_top,
+                                    forma_pagamento=receipt_pay_method_top,
+                                    responsavel=receipt_responsavel_top,
+                                )
+                                if receipt_pdf_top:
+                                    st.download_button(
+                                        "Baixar recibo PDF (Topo)",
+                                        data=receipt_pdf_top,
+                                        file_name=f"{file_name_top}.pdf",
+                                        mime="application/pdf",
+                                        key=f"fin_teacher_receipt_download_top_pdf_{file_name_top}",
+                                    )
+                                else:
+                                    st.error("Nao foi possivel gerar PDF neste ambiente.")
+
                 teacher_candidates = _teacher_payment_candidates(
                     month_ref=teacher_pay_month_ref,
                     professor_name=teacher_pay_prof,
@@ -22712,15 +18050,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     for item in teacher_candidates
                 }
                 teacher_total = sum(float(item.get("valor", 0) or 0) for item in teacher_candidates)
-                _render_finance_kpis(
-                    [
-                        {"label": "Aulas elegiveis", "value": str(len(teacher_candidates)), "subtitle": "aulas finalizadas disponiveis", "tone": "blue"},
-                        {"label": "Total potencial", "value": format_money(teacher_total), "subtitle": "valor bruto pronto para lancamento", "tone": "orange"},
-                        {"label": "Professor filtrado", "value": teacher_pay_prof if teacher_pay_prof != "Todos" else "Todos", "subtitle": teacher_pay_turma if teacher_pay_turma != "Todas" else "Todas as turmas", "tone": "green"},
-                    ],
-                    "finance_teacher_pay_exec",
+                st.caption(
+                    f"Aulas finalizadas disponiveis: {len(teacher_candidates)} | "
+                    f"Total potencial: {format_money(teacher_total)}"
                 )
-                st.markdown('<div class="finance-shell"><h4><span class="finance-step">1</span>Selecionar aulas elegiveis</h4><p>Marque apenas as aulas que devem entrar no pagamento atual. O total abaixo e recalculado automaticamente.</p></div>', unsafe_allow_html=True)
                 selected_teacher_refs = st.multiselect(
                     "Aulas finalizadas para lancar pagamento",
                     [item["ref"] for item in teacher_candidates],
@@ -22729,17 +18062,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 )
                 selected_teacher_items = [item for item in teacher_candidates if item.get("ref") in set(selected_teacher_refs)]
                 selected_teacher_total = sum(float(item.get("valor", 0) or 0) for item in selected_teacher_items)
-                _render_finance_summary_card(
-                    "Resumo da seleção atual",
-                    [
-                        ("Professor", teacher_pay_prof if teacher_pay_prof != "Todos" else "Todos"),
-                        ("Turma", teacher_pay_turma if teacher_pay_turma != "Todas" else "Todas"),
-                        ("Aulas selecionadas", str(len(selected_teacher_items))),
-                        ("Total a lancar", format_money(selected_teacher_total)),
-                    ],
-                    tone="blue",
+                st.caption(
+                    f"Selecionadas: {len(selected_teacher_items)} aula(s) | "
+                    f"Total a lancar: {format_money(selected_teacher_total)}"
                 )
-                st.markdown('<div class="finance-shell"><h4><span class="finance-step">2</span>Confirmar lancamento financeiro</h4><p>Defina data, vencimento, status e forma de pagamento antes de registrar o contas a pagar.</p></div>', unsafe_allow_html=True)
                 tp4, tp5, tp6 = st.columns(3)
                 with tp4:
                     teacher_pay_data = st.date_input(
@@ -22820,122 +18146,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.success(f"Pagamento de {launched} aula(s) lancado com sucesso.")
                         st.rerun()
 
-                st.markdown('<div class="finance-shell"><h4><span class="finance-step">3</span>Gerar recibo do professor</h4><p>Quando precisar documentar o pagamento, gere o recibo em HTML ou PDF sem sair do fluxo.</p></div>', unsafe_allow_html=True)
-                rt1, rt2, rt3 = st.columns(3)
-                month_start_top, month_end_top = _current_month_bounds(teacher_pay_month_ref)
-                with rt1:
-                    receipt_start_top = st.date_input(
-                        "Periodo inicial (recibo)",
-                        value=month_start_top,
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_start_top",
-                    )
-                with rt2:
-                    receipt_end_top = st.date_input(
-                        "Periodo final (recibo)",
-                        value=month_end_top,
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_end_top",
-                    )
-                with rt3:
-                    receipt_prof_top = st.selectbox(
-                        "Professor do recibo",
-                        teacher_options,
-                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
-                        key="fin_teacher_receipt_prof_top",
-                    )
-                teacher_obj_top = next(
-                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == str(receipt_prof_top).strip()),
-                    {},
-                )
-                rt4, rt5, rt6 = st.columns(3)
-                with rt4:
-                    receipt_whatsapp_top = st.text_input(
-                        "WhatsApp (recibo)",
-                        value=str(teacher_obj_top.get("celular", "")).strip(),
-                        key="fin_teacher_receipt_whatsapp_top",
-                    )
-                with rt5:
-                    receipt_pay_date_top = st.date_input(
-                        "Data do pagamento",
-                        value=datetime.date.today(),
-                        format="DD/MM/YYYY",
-                        key="fin_teacher_receipt_date_top",
-                    )
-                with rt6:
-                    receipt_pay_method_top = st.selectbox(
-                        "Forma de pagamento",
-                        ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
-                        key="fin_teacher_receipt_method_top",
-                    )
-                receipt_responsavel_top = st.text_input(
-                    "Responsavel",
-                    value=str(st.session_state.get("user_name", "")).strip(),
-                    key="fin_teacher_receipt_responsavel_top",
-                )
-                bth, btp = st.columns(2)
-                gerar_html_top = bth.button("Gerar recibo HTML", key="fin_teacher_receipt_btn_top_html", type="secondary")
-                gerar_pdf_top = btp.button("Gerar recibo PDF", key="fin_teacher_receipt_btn_top_pdf", type="primary")
-                if gerar_html_top or gerar_pdf_top:
-                    if str(receipt_prof_top).strip() in ("", "Todos"):
-                        st.error("Selecione um professor especifico para gerar o recibo.")
-                    elif receipt_end_top < receipt_start_top:
-                        st.error("Periodo final nao pode ser menor que o inicial.")
-                    else:
-                        receipt_sessions_top = _teacher_payment_sessions_for_receipt(
-                            receipt_start_top,
-                            receipt_end_top,
-                            professor_name=receipt_prof_top,
-                        )
-                        if not receipt_sessions_top:
-                            st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
-                        else:
-                            file_name_top = (
-                                f"Relatorio_Pagamento_Professor_{str(receipt_prof_top).strip().replace(' ', '_')}_"
-                                f"{receipt_start_top.strftime('%Y%m%d')}_{receipt_end_top.strftime('%Y%m%d')}"
-                            )
-                            if gerar_html_top:
-                                receipt_html_top = _teacher_payment_receipt_html(
-                                    receipt_prof_top,
-                                    receipt_start_top,
-                                    receipt_end_top,
-                                    receipt_sessions_top,
-                                    contato_whatsapp=receipt_whatsapp_top,
-                                    data_pagamento=receipt_pay_date_top,
-                                    forma_pagamento=receipt_pay_method_top,
-                                    responsavel=receipt_responsavel_top,
-                                )
-                                st.download_button(
-                                    "Baixar recibo HTML",
-                                    data=receipt_html_top,
-                                    file_name=f"{file_name_top}.html",
-                                    mime="text/html",
-                                    key=f"fin_teacher_receipt_download_top_html_{file_name_top}",
-                                )
-                            if gerar_pdf_top:
-                                receipt_pdf_top = _teacher_payment_receipt_pdf_bytes(
-                                    receipt_prof_top,
-                                    receipt_start_top,
-                                    receipt_end_top,
-                                    receipt_sessions_top,
-                                    contato_whatsapp=receipt_whatsapp_top,
-                                    data_pagamento=receipt_pay_date_top,
-                                    forma_pagamento=receipt_pay_method_top,
-                                    responsavel=receipt_responsavel_top,
-                                )
-                                if receipt_pdf_top:
-                                    st.download_button(
-                                        "Baixar recibo PDF",
-                                        data=receipt_pdf_top,
-                                        file_name=f"{file_name_top}.pdf",
-                                        mime="application/pdf",
-                                        key=f"fin_teacher_receipt_download_top_pdf_{file_name_top}",
-                                    )
-                                else:
-                                    st.error("Nao foi possivel gerar PDF neste ambiente.")
-
                 st.divider()
-                st.markdown('<div class="finance-shell"><h4><span class="finance-step">4</span>Lancamento manual de pagamento</h4><p>Use este bloco apenas quando precisar registrar manualmente aulas fora do fluxo automatico.</p></div>', unsafe_allow_html=True)
+                st.markdown("### Lancamento manual de pagamento")
                 manual_turma_options = class_names()
                 if not manual_turma_options:
                     st.info("Nenhuma turma cadastrada para lancamento manual.")
@@ -23055,17 +18267,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
             despesas = st.session_state["payables"]
             if finance_pagar_menu == "Lancar Despesa":
-                st.markdown(
-                    """
-                    <div class="finance-shell">
-                        <h4>Lancar despesa</h4>
-                        <p>Cadastre a conta a pagar com referencia, valor, parcelamento e vencimento em um formulario mais limpo e orientado.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
                 with st.form("add_pag"):
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">1</span>Informacoes basicas da despesa</h4><p>Descreva a despesa, informe valor por parcela e defina a categoria da obrigacao.</p></div>', unsafe_allow_html=True)
+                    st.markdown("### Lancar Despesa")
                     c1, c2, c3 = st.columns(3)
                     with c1:
                         desc = st.text_input("Descricao")
@@ -23083,7 +18286,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         "Aluno": "Aluno",
                         "Outro": "Referencia",
                     }.get(categoria_lancamento_pag, "Referencia")
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">2</span>Referencia e vencimento</h4><p>Indique o responsavel/fornecedor, a data do lancamento e o calendario de vencimento.</p></div>', unsafe_allow_html=True)
                     c4, c5, c6, c6b = st.columns(4)
                     with c4:
                         forn = st.text_input(f"{ref_pag}")
@@ -23098,7 +18300,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             index=max(0, min(29, datetime.date.today().day - 1)),
                             format_func=lambda d: f"Dia {d}",
                         )
-                    st.markdown('<div class="finance-shell"><h4><span class="finance-step">3</span>Parcelamento e fechamento</h4><p>Defina parcelas, pedido, forma de pagamento e confirme o valor total antes de lancar.</p></div>', unsafe_allow_html=True)
+    
                     c7, c8, c9 = st.columns(3)
                     with c7:
                         qtd_pag = st.number_input("Parcelas *", min_value=1, max_value=24, value=1, step=1)
@@ -23111,26 +18313,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.text_input("Valor Total * (automatico)", value=valor_total_pag_txt, disabled=True, key="pag_valor_total_auto")
                     with c9:
                         numero_pedido_pag = st.text_input("Numero do pedido")
-
+    
                     c10, c11 = st.columns(2)
                     with c10:
                         cobranca_pag = st.selectbox("Forma de pagamento", ["Boleto", "Pix", "Cartao", "Dinheiro", "Transferencia"])
                     with c11:
                         status_pag = st.selectbox("Status", ["Aberto", "Pago"])
-                    _render_finance_summary_card(
-                        "Resumo da nova despesa",
-                        [
-                            ("Referencia", forn.strip() or "-"),
-                            ("Descricao", desc.strip() or "-"),
-                            ("Categoria do lancamento", categoria_lancamento_pag),
-                            ("Parcelas", str(qtd_pag_int)),
-                            ("Valor da parcela", valor_parcela_pag),
-                            ("Valor total", valor_total_pag_txt),
-                            ("Forma de pagamento", cobranca_pag),
-                            ("Status", status_pag),
-                        ],
-                        tone="orange",
-                    )
     
                     if st.form_submit_button("Lancar"):
                         if not desc.strip() or not forn.strip() or val_parcela_pag_num <= 0:
@@ -23162,32 +18350,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
 
             if finance_pagar_menu == "Despesas":
-                st.markdown(
-                    """
-                    <div class="finance-shell">
-                        <h4>Carteira de despesas</h4>
-                        <p>Visualize as contas a pagar em uma leitura mais executiva, com indicadores de volume, status e valor total.</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                st.markdown("### Despesas")
                 despesas = st.session_state["payables"]
                 if despesas:
-                    total_despesas = sum(parse_money(item.get("valor_parcela", item.get("valor", 0))) for item in despesas)
-                    total_pagas = sum(
-                        parse_money(item.get("valor_parcela", item.get("valor", 0)))
-                        for item in despesas
-                        if str(item.get("status", "")).strip().lower() == "pago"
-                    )
-                    total_abertas = total_despesas - total_pagas
-                    _render_finance_kpis(
-                        [
-                            {"label": "Despesas cadastradas", "value": str(len(despesas)), "subtitle": "total de titulos na carteira", "tone": "blue"},
-                            {"label": "Valor em aberto", "value": format_money(total_abertas), "subtitle": "saldo ainda nao quitado", "tone": "orange"},
-                            {"label": "Valor pago", "value": format_money(total_pagas), "subtitle": "titulos ja liquidados", "tone": "green"},
-                        ],
-                        "finance_payables_exec",
-                    )
                     df_pag = pd.DataFrame(despesas)
                     col_order_pag = [
                         "codigo",
@@ -23695,15 +18860,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
             if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
                 st.session_state["finance_overdue_mode"] = finance_venc_options[0]
-            st.markdown(
-                """
-                <div class="finance-shell">
-                    <h4>Central de vencimentos</h4>
-                    <p>Organize cobrancas e pagamentos vencidos em um painel operacional unico, com filtros, resumos e acoes executivas por registro.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.markdown("### Opcoes de Vencimentos")
             fv1, fv2 = st.columns(2)
             venc_layout = [(fv1, finance_venc_options[0], 0), (fv2, finance_venc_options[1], 1)]
             for col_ref, option, idx_option in venc_layout:
@@ -23724,6 +18881,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Notas</div>', unsafe_allow_html=True)
+        is_admin_panel = bool(
+            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            or _has_permission("permissions.manage")
+        )
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
         integradas = [
             g for g in st.session_state.get("grades", [])
@@ -23738,7 +18899,62 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 ("Alunos com nota", len({str(g.get("aluno", "")).strip() for g in st.session_state.get("grades", []) if str(g.get("aluno", "")).strip()})),
             ],
         )
-        tab_pend, tab_hw, tab_des = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios"])
+        grades_changed = False
+        for grade in st.session_state.get("grades", []):
+            if not str(grade.get("id", "")).strip():
+                _ensure_grade_record_id(grade)
+                grades_changed = True
+        if grades_changed:
+            save_list(GRADES_FILE, st.session_state.get("grades", []))
+        if is_admin_panel:
+            grade_rows_all = list(st.session_state.get("grades", []) or [])
+            if grade_rows_all:
+                st.markdown("### Gestão rápida de notas")
+                gm1, gm2 = st.columns([1.3, 1.7])
+                origin_filter = gm1.selectbox(
+                    "Mostrar",
+                    ["Todas", "Manuais", "Integradas"],
+                    key="admin_visible_grade_origin_filter",
+                )
+                filtered_visible_rows = []
+                for grade in grade_rows_all:
+                    origem_tipo = str(grade.get("origem_tipo", "")).strip().lower()
+                    if origin_filter == "Manuais" and origem_tipo in {"atividade", "desafio"}:
+                        continue
+                    if origin_filter == "Integradas" and origem_tipo not in {"atividade", "desafio"}:
+                        continue
+                    filtered_visible_rows.append(grade)
+                filtered_visible_rows.sort(
+                    key=lambda item: (
+                        _parse_record_date(item.get("data", "")) or datetime.date(1900, 1, 1),
+                        str(item.get("aluno", "")).strip().lower(),
+                        str(item.get("avaliacao", "")).strip().lower(),
+                    ),
+                    reverse=True,
+                )
+                option_map = {
+                    (
+                        f"{str(g.get('data', '')).strip() or '-'} | "
+                        f"{str(g.get('aluno', '')).strip() or 'Aluno'} | "
+                        f"{str(g.get('avaliacao', '')).strip() or 'Avaliacao'} | "
+                        f"{str(g.get('nota', '')).strip() or '-'}"
+                    ): g
+                    for g in filtered_visible_rows
+                }
+                selected_grade_label = gm2.selectbox(
+                    "Selecionar nota para editar ou excluir",
+                    list(option_map.keys()) if option_map else ["Nenhuma nota disponível"],
+                    key="admin_visible_grade_selector",
+                )
+                selected_grade = option_map.get(selected_grade_label)
+                if selected_grade:
+                    _render_grade_management_actions([selected_grade], "admin_top_grade_action")
+            else:
+                st.info("Nenhuma nota registrada para gerenciar.")
+        if is_admin_panel:
+            tab_pend, tab_hw, tab_des, tab_manage = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios", "Gerenciar notas"])
+        else:
+            tab_pend, tab_hw, tab_des = st.tabs(["Pendentes", "Licoes/Atividades", "Desafios"])
         with tab_pend:
             if pendentes:
                 st.dataframe(pd.DataFrame(pendentes), use_container_width=True)
@@ -23776,6 +18992,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.info(f"Assistente Wiz notificou {sent_students} aluno(s) sobre aprovação de notas.")
                     st.success("Notas aprovadas!")
                     st.rerun()
+                if is_admin_panel:
+                    _render_grade_management_actions(pendentes, "coord_quick_pending_grade")
             else:
                 st.info("Nenhuma nota pendente.")
         with tab_hw:
@@ -23789,6 +19007,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if cols_hw:
                     df_hw = df_hw[cols_hw]
                 st.dataframe(df_hw, use_container_width=True)
+                if is_admin_panel:
+                    _render_grade_management_actions(hw_rows, "coord_quick_hw_grade")
             else:
                 st.info("Nenhuma licao de casa ou atividade corrigida ainda.")
         with tab_des:
@@ -23832,58 +19052,91 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         if feedback_txt:
                             st.markdown("**Feedback / avaliacao**")
                             st.write(feedback_txt)
+                if is_admin_panel:
+                    _render_grade_management_actions(des_rows, "coord_quick_ch_grade")
             else:
                 st.info("Nenhum desafio concluido ainda.")
+        if is_admin_panel:
+            with tab_manage:
+                grade_rows_all = list(st.session_state.get("grades", []) or [])
+                if not grade_rows_all:
+                    st.info("Nenhuma nota registrada para gerenciar.")
+                else:
+                    origem_manage = st.selectbox(
+                        "Tipo de nota",
+                        ["Todas", "Manuais", "Integradas"],
+                        key="coord_manage_grade_origin_filter",
+                    )
+                    turma_opts_manage = ["Todas"] + sorted({
+                        str(g.get("turma", "")).strip()
+                        for g in grade_rows_all
+                        if str(g.get("turma", "")).strip()
+                    })
+                    aluno_opts_manage = ["Todos"] + sorted({
+                        str(g.get("aluno", "")).strip()
+                        for g in grade_rows_all
+                        if str(g.get("aluno", "")).strip()
+                    })
+                    mf1, mf2 = st.columns(2)
+                    turma_manage = mf1.selectbox("Turma", turma_opts_manage, key="coord_manage_grade_turma")
+                    aluno_manage = mf2.selectbox("Aluno", aluno_opts_manage, key="coord_manage_grade_aluno")
+
+                    managed_rows = []
+                    for grade in grade_rows_all:
+                        origem_tipo = str(grade.get("origem_tipo", "")).strip().lower()
+                        if origem_manage == "Manuais" and origem_tipo in {"atividade", "desafio"}:
+                            continue
+                        if origem_manage == "Integradas" and origem_tipo not in {"atividade", "desafio"}:
+                            continue
+                        if turma_manage != "Todas" and str(grade.get("turma", "")).strip() != turma_manage:
+                            continue
+                        if aluno_manage != "Todos" and str(grade.get("aluno", "")).strip() != aluno_manage:
+                            continue
+                        managed_rows.append(grade)
+
+                    managed_rows.sort(
+                        key=lambda item: (
+                            _parse_record_date(item.get("data", "")) or datetime.date(1900, 1, 1),
+                            str(item.get("aluno", "")).strip().lower(),
+                            str(item.get("avaliacao", "")).strip().lower(),
+                        ),
+                        reverse=True,
+                    )
+                    if not managed_rows:
+                        st.info("Nenhuma nota encontrada com os filtros selecionados.")
+                    else:
+                        df_manage = pd.DataFrame(
+                            [
+                                {
+                                    "data": str(g.get("data", "")).strip(),
+                                    "aluno": str(g.get("aluno", "")).strip(),
+                                    "turma": str(g.get("turma", "")).strip(),
+                                    "avaliacao": str(g.get("avaliacao", "")).strip(),
+                                    "nota": str(g.get("nota", "")).strip(),
+                                    "status": str(g.get("status", "")).strip(),
+                                    "origem": str(g.get("origem", "")).strip(),
+                                    "autor": str(g.get("autor", "")).strip(),
+                                }
+                                for g in managed_rows
+                            ]
+                        )
+                        st.dataframe(df_manage, use_container_width=True, hide_index=True)
+                        _render_grade_management_actions(managed_rows, "coord_manage_grade")
 
     elif menu_coord == "Usuarios":
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
-        _require_permission("users.view")
-        render_section_hero(
-            "Controle de acessos com visão executiva",
-            "Gerencie logins por perfil e mantenha histórico de acessos com clareza.",
-            [
-                f"{len(st.session_state.get('users', []))} logins",
-                f"{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Admin'])} admins",
-            ],
-        )
-        user_cards = st.columns(3)
-        with user_cards[0]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Total de acessos</div><div class='v'>{len(st.session_state.get('users', []))}</div><div class='s'>usuarios cadastrados</div></div>",
-                unsafe_allow_html=True,
-            )
-        with user_cards[1]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Coordenadores</div><div class='v'>{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Coordenador'])}</div><div class='s'>gestão ativa</div></div>",
-                unsafe_allow_html=True,
-            )
-        with user_cards[2]:
-            st.markdown(
-                f"<div class='students-kpi'><div class='k'>Professores</div><div class='v'>{len([u for u in st.session_state.get('users', []) if str(u.get('perfil','')).strip() == 'Professor'])}</div><div class='s'>com login</div></div>",
-                unsafe_allow_html=True,
-            )
         tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
-            render_panel_intro(
-                "Criar novo acesso",
-                "Cadastre logins por perfil e envie comunicado automaticamente.",
-                [("Segurança", "centralizada"), ("WhatsApp", "integrado")],
-            )
             with st.form("new_user", clear_on_submit=True):
-                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin", "Atendimento"]
+                role_create_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
                 c1, c2, c3 = st.columns(3)
                 with c1: u_user = st.text_input("Usuário")
                 with c2: u_pass = st.text_input("Senha", type="password")
                 with c3: u_role = st.selectbox("Perfil", role_create_opts)
                 d1, d2, d3 = st.columns(3)
-                with d1: u_pessoa = st.text_input("Nome completo")
-                with d2: u_email = st.text_input("E-mail")
-                with d3: u_cel = st.text_input("Celular/WhatsApp")
-                e1, e2, e3 = st.columns(3)
-                with e1: u_cpf = st.text_input("CPF (opcional)")
-                with e2: u_status = st.selectbox("Status", ["Ativo", "Inativo"])
-                with e3: u_unidade = st.text_input("Unidade (opcional)")
-                u_obs = st.text_area("Observações internas", height=80)
+                with d1: u_pessoa = st.text_input("Nome da pessoa (opcional)")
+                with d2: u_email = st.text_input("E-mail (opcional)")
+                with d3: u_cel = st.text_input("Celular/WhatsApp (opcional)")
                 n1, n2 = st.columns(2)
                 with n1:
                     send_user_email = st.checkbox(
@@ -23898,12 +19151,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         key="new_user_notify_whatsapp",
                     )
                 if st.form_submit_button("Criar Acesso"):
-                    if not _has_permission("users.create"):
-                        st.error("Sem permissão para criar usuários.")
-                        st.stop()
-                    default_perms = []
-                    if str(u_role).strip() == "Atendimento":
-                        default_perms = sorted(_default_permissions_for_role("Atendimento"))
                     st.session_state["users"].append(
                         {
                             "usuario": u_user,
@@ -23912,11 +19159,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "pessoa": u_pessoa.strip(),
                             "email": u_email.strip().lower(),
                             "celular": u_cel.strip(),
-                            "cpf": u_cpf.strip(),
-                            "status": u_status,
-                            "unidade": u_unidade.strip(),
-                            "observacoes": u_obs.strip(),
-                            "permissoes": default_perms,
                         }
                     )
                     save_users(st.session_state["users"])
@@ -23933,172 +19175,43 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         with tab2:
             if not st.session_state["users"]: st.info("Nenhum usuário cadastrado.")
             else:
-                role_tabs = st.tabs(["Alunos", "Professores", "Coordenadores", "Atendimento", "Comercial", "Admins"])
-                role_map = {
-                    "Alunos": ["Aluno"],
-                    "Professores": ["Professor"],
-                    "Coordenadores": ["Coordenador"],
-                    "Atendimento": ["Atendimento"],
-                    "Comercial": ["Comercial"],
-                    "Admins": ["Admin"],
-                }
-                for role_tab, role_label in zip(role_tabs, list(role_map.keys())):
-                    with role_tab:
-                        role_values = role_map[role_label]
-                        users_filtered = [
-                            u for u in st.session_state["users"]
-                            if str(u.get("perfil", "")).strip() in role_values
-                        ]
-                        if not users_filtered:
-                            st.info(f"Nenhum usuário em {role_label.lower()}.")
-                            continue
-                        user_list = [str(u.get("usuario", "")).strip() for u in users_filtered if str(u.get("usuario", "")).strip()]
-                        user_sel = st.selectbox(
-                            f"Selecione o usuário - {role_label}",
-                            user_list,
-                            key=f"user_manage_select_{role_label}",
-                        )
-                        user_obj = next((u for u in st.session_state["users"] if str(u.get("usuario", "")).strip() == user_sel), None)
-                        if user_obj:
-                            with st.form(f"edit_user_{role_label}"):
-                                new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
-                                new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
-                                role_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
-                                new_role = st.selectbox(
-                                    "Perfil",
-                                    role_opts,
-                                    index=role_opts.index(user_obj["perfil"]) if user_obj["perfil"] in role_opts else 0,
-                                )
-                                e1, e2, e3 = st.columns(3)
-                                with e1: new_person = st.text_input("Pessoa", value=user_obj.get("pessoa", ""))
-                                with e2: new_email = st.text_input("E-mail", value=user_obj.get("email", ""))
-                                with e3: new_cel = st.text_input("Celular", value=user_obj.get("celular", ""))
-                                c_edit, c_del = st.columns([1, 1])
-                                with c_edit:
-                                    if st.form_submit_button("Salvar Alterações"):
-                                        user_obj["usuario"] = new_user
-                                        user_obj["senha"] = new_pass
-                                        user_obj["perfil"] = new_role
-                                        user_obj["pessoa"] = new_person.strip()
-                                        user_obj["email"] = new_email.strip().lower()
-                                        user_obj["celular"] = new_cel.strip()
-                                        save_users(st.session_state["users"])
-                                        st.success("Usuário atualizado!")
-                                        st.rerun()
-                                with c_del:
-                                    if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
-                                        if not _has_permission("users.inactivate"):
-                                            st.error("Sem permissão para excluir usuários.")
-                                            st.stop()
-                                        if user_obj["usuario"] == "admin":
-                                            st.error("Não é possível excluir o Admin principal.")
-                                        else:
-                                            st.session_state["users"].remove(user_obj)
-                                            save_users(st.session_state["users"])
-                                            st.success("Usuário excluído.")
-                                            st.rerun()
-
-    elif menu_coord == "Permissoes":
-        st.markdown('<div class="main-header">Gerenciamento de Acessos</div>', unsafe_allow_html=True)
-        if not _is_admin_account():
-            st.error("Acesso exclusivo do Admin.")
-            st.stop()
-        render_section_hero(
-            "Controle de permissões por usuário",
-            "Gerencie acessos de forma visual, segura e com rastreabilidade.",
-            [
-                f"{len(st.session_state.get('users', []))} usuários",
-                f"{len(_all_permission_keys())} permissões disponíveis",
-            ],
-        )
-        users_list = st.session_state.get("users", [])
-        if not users_list:
-            st.info("Nenhum usuário cadastrado.")
-        else:
-            df_users = pd.DataFrame(
-                [
-                    {
-                        "Usuário": str(u.get("usuario", "")).strip(),
-                        "Nome": str(u.get("pessoa", "")).strip(),
-                        "Perfil": str(u.get("perfil", "")).strip(),
-                        "Email": str(u.get("email", "")).strip(),
-                        "Status": str(u.get("status", "Ativo")).strip() or "Ativo",
-                    }
-                    for u in users_list
-                ]
-            )
-            st.dataframe(df_users, use_container_width=True, hide_index=True)
-            selected_user = st.selectbox(
-                "Selecionar usuário para configurar",
-                [""] + [str(u.get("usuario", "")).strip() for u in users_list],
-                key="perm_user_select",
-                format_func=lambda v: "Selecione um usuário" if not str(v).strip() else str(v),
-            )
-            if selected_user:
-                user_obj = next(
-                    (u for u in users_list if str(u.get("usuario", "")).strip() == str(selected_user).strip()),
-                    None,
-                )
+                user_list = [u["usuario"] for u in st.session_state["users"]]
+                user_sel = st.selectbox("Selecione o Usuário", user_list)
+                user_obj = next((u for u in st.session_state["users"] if u["usuario"] == user_sel), None)
                 if user_obj:
-                    profile = str(user_obj.get("perfil", "")).strip() or "-"
-                    status = str(user_obj.get("status", "Ativo")).strip() or "Ativo"
-                    current_perms = _user_permissions(profile=profile, user_obj=user_obj)
-                    total_perms = len(_all_permission_keys())
-                    st.markdown(
-                        f"""
-                        <div class="students-detail-card">
-                            <h4>Usuário: {html.escape(str(selected_user))}</h4>
-                            <p>Perfil: <strong>{html.escape(profile)}</strong> | Status: <strong>{html.escape(status)}</strong></p>
-                            <p>Permissões liberadas: <strong>{len(current_perms)}</strong> de {total_perms}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    if profile == "Admin":
-                        st.info("Admin possui acesso total fixo. Permissões não podem ser removidas.")
-                    else:
-                        group_keys = {}
-                        for group, items in _permissions_registry():
-                            group_keys[group] = [key for key, _ in items]
-                        selected_permissions = set(current_perms)
-                        search = st.text_input("Buscar permissão", key="perm_search")
-                        for group, items in _permissions_registry():
-                            filtered_items = items
-                            if search:
-                                filtered_items = [
-                                    (k, n) for k, n in items
-                                    if search.lower() in k.lower() or search.lower() in n.lower()
-                                ]
-                                if not filtered_items:
-                                    continue
-                            st.markdown(f"#### {group}")
-                            g1, g2 = st.columns([1, 1])
-                            if g1.button(f"Marcar tudo ({group})", key=f"perm_all_{group}"):
-                                selected_permissions.update(group_keys[group])
-                                st.session_state["perm_temp_selected"] = list(selected_permissions)
+                    with st.form("edit_user"):
+                        new_user = st.text_input("Usuário (Login)", value=user_obj["usuario"])
+                        new_pass = st.text_input("Nova Senha (deixe igual para manter)", value=user_obj["senha"])
+                        role_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
+                        new_role = st.selectbox(
+                            "Perfil",
+                            role_opts,
+                            index=role_opts.index(user_obj["perfil"]) if user_obj["perfil"] in role_opts else 0,
+                        )
+                        e1, e2, e3 = st.columns(3)
+                        with e1: new_person = st.text_input("Pessoa", value=user_obj.get("pessoa", ""))
+                        with e2: new_email = st.text_input("E-mail", value=user_obj.get("email", ""))
+                        with e3: new_cel = st.text_input("Celular", value=user_obj.get("celular", ""))
+                        c_edit, c_del = st.columns([1, 1])
+                        with c_edit:
+                            if st.form_submit_button("Salvar Alterações"):
+                                user_obj["usuario"] = new_user
+                                user_obj["senha"] = new_pass
+                                user_obj["perfil"] = new_role
+                                user_obj["pessoa"] = new_person.strip()
+                                user_obj["email"] = new_email.strip().lower()
+                                user_obj["celular"] = new_cel.strip()
+                                save_users(st.session_state["users"])
+                                st.success("Usuário atualizado!")
                                 st.rerun()
-                            if g2.button(f"Desmarcar tudo ({group})", key=f"perm_none_{group}"):
-                                selected_permissions.difference_update(group_keys[group])
-                                st.session_state["perm_temp_selected"] = list(selected_permissions)
-                                st.rerun()
-                            for key, label in filtered_items:
-                                checked = key in selected_permissions
-                                new_val = st.checkbox(label, value=checked, key=f"perm_{selected_user}_{key}")
-                                if new_val and not checked:
-                                    selected_permissions.add(key)
-                                if not new_val and checked:
-                                    selected_permissions.discard(key)
-                        if st.button("Salvar permissões", type="primary"):
-                            before = set(user_obj.get("permissoes", []) or [])
-                            user_obj["permissoes"] = sorted(selected_permissions)
-                            save_users(st.session_state.get("users", []))
-                            changes = {
-                                "adicionadas": sorted(selected_permissions - before),
-                                "removidas": sorted(before - selected_permissions),
-                            }
-                            _append_permissions_audit(selected_user, changes)
-                            st.success("Permissões atualizadas.")
-                            st.rerun()
+                        with c_del:
+                            if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
+                                if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")
+                                else:
+                                    st.session_state["users"].remove(user_obj)
+                                    save_users(st.session_state["users"])
+                                    st.success("Usuário excluído.")
+                                    st.rerun()
 
     elif menu_coord == "Licoes de Casa":
         run_weekly_homework_panel(
@@ -24314,6 +19427,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
     elif menu_coord == "Desafios":
         st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        is_admin_panel = bool(
+            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            or _has_permission("permissions.manage")
+        )
         auto_enabled = str(os.getenv("ACTIVE_AUTO_CHALLENGES", "")).strip().lower() in ("1", "true", "yes", "on")
         if auto_enabled:
             api_key = get_groq_api_key()
@@ -24345,38 +19462,13 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.info(f"Auto-geracao: {created} desafio(s) criados para {week_now}.")
             else:
                 st.warning("Auto-geracao ativa (ACTIVE_AUTO_CHALLENGES=1), mas GROQ_API_KEY nao esta configurado.")
-        challenge_rows_all = list(st.session_state.get("challenges", []) or [])
-        completion_rows_all = list(st.session_state.get("challenge_completions", []) or [])
-        current_week_label = current_week_key(datetime.date.today())
-        render_challenges_top_banner(
-            "Desafios",
-            "Crie, revise, publique e acompanhe desafios com uma leitura mais clara entre edição e operação.",
-            week_label=current_week_label,
-            metrics=[
-                {"label": "Desafios publicados", "value": len(challenge_rows_all), "sub": "ativos no sistema", "tone": "blue"},
-                {"label": "Respostas registradas", "value": len([c for c in completion_rows_all if _challenge_completion_has_real_response(c)]), "sub": "histórico consolidado", "tone": "green"},
-                {"label": "Concluídos na semana", "value": len([c for c in completion_rows_all if _challenge_completion_has_real_response(c) and str(c.get('semana', '')).strip() == current_week_label]), "sub": "respostas do período atual", "tone": "orange"},
-                {"label": "Turmas impactadas", "value": len({str(ch.get('target_turma', '')).strip() or ','.join(_challenge_send_turmas(ch)) or str(ch.get('nivel', '')).strip() for ch in challenge_rows_all if isinstance(ch, dict)}), "sub": "alcance dos desafios ativos", "tone": "slate"},
-            ],
-        )
-
-        c_pub, c_stats = st.columns([1.55, 0.95], gap="large")
+        c_pub, c_stats = st.columns([1, 1])
 
         with c_pub:
-            render_panel_intro(
-                "Criação e edição do desafio",
-                "Organize contexto, conteúdo, opções e revisão final em blocos distintos para reduzir ruído operacional.",
-                stats=[
-                    ("Semana", current_week_label),
-                    ("Publicados", len(challenge_rows_all)),
-                    ("Concluídos", len(completion_rows_all)),
-                ],
-            )
+            st.markdown("### Publicar / editar")
             target_options = ["Por livro", "Turma", "Aluno VIP"]
             if st.session_state.get("coord_ch_target_type") not in target_options:
                 st.session_state["coord_ch_target_type"] = target_options[0]
-            st.markdown("#### 1. Destino e contexto")
-            st.caption("Defina primeiro para quem o desafio será criado, em qual semana e com qual base pedagógica.")
             target_choice = st.selectbox("Diretorio do desafio", target_options, key="coord_ch_target_type")
             target_type = _challenge_target_type(target_choice)
             target_turma = ""
@@ -24459,7 +19551,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             title_color_key = f"{key_prefix}_title_color"
             desc_bold_key = f"{key_prefix}_desc_bold"
             desc_color_key = f"{key_prefix}_desc_color"
-            delete_confirm_key = f"{key_prefix}_delete_confirm"
 
             pending_draft_patch = st.session_state.pop(draft_patch_key, None)
             if isinstance(pending_draft_patch, dict):
@@ -24524,13 +19615,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state[draft_error_key] = ""
             if creation_mode_key not in st.session_state:
                 st.session_state[creation_mode_key] = "Manual (sem IA)"
-            if delete_confirm_key not in st.session_state:
-                st.session_state[delete_confirm_key] = False
             pending_draft_action = str(st.session_state.pop(draft_action_key, "")).strip()
             if pending_draft_action == "gen_ai":
                 api_key = get_groq_api_key()
                 if not api_key:
-                    st.session_state[draft_error_key] = "Configure GROQ_API_KEY ou ACTIVE_GROQ_API_KEY para gerar desafios com IA."
+                    st.session_state[draft_error_key] = "Configure GROQ_API_KEY para gerar desafios com IA."
                 elif target_type == "turma" and not target_turma:
                     st.session_state[draft_error_key] = "Selecione a turma de destino antes de gerar o desafio."
                 elif target_type == "aluno_vip" and not target_aluno:
@@ -24615,21 +19704,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             st.markdown("#### Referencia do desafio (automatica)")
             st.caption(f"Livro/Nivel: {reference_book or '-'}")
             st.caption(f"Conteudo atual: {reference_subject or 'Nao informado'}")
-            render_challenge_collection_card(
-                "Base automática do desafio",
-                "Resumo do contexto pedagógico que será usado na criação e na leitura do item.",
-                items=[
-                    {
-                        "title": reference_book or "-",
-                        "meta": f"Conteúdo atual: {reference_subject or 'Nao informado'} | Linha: {reference_theme}",
-                        "badge": target_choice,
-                    }
-                ],
-                tone="blue",
-            )
 
             autor = st.session_state.get("user_name", "Coordenacao")
-            st.markdown("#### 2. Modo de criação")
             creation_mode = st.radio(
                 "Modo de criacao do desafio",
                 ["Manual (sem IA)", "Gerar com IA"],
@@ -24648,9 +19724,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 if st.button("Gerar rascunho com IA", key=f"{key_prefix}_gen_ai"):
                     st.session_state[draft_action_key] = "gen_ai"
                     st.rerun()
-            st.markdown("#### 3. Ações principais")
-            st.caption("Salvar é a ação principal. As demais ações ficam como apoio ao mesmo fluxo de edição.")
-            manual_col1, manual_col2, manual_col3 = st.columns([1.2, 1, 1])
+            manual_col1, manual_col2, manual_col3 = st.columns([1, 1, 1])
             if manual_col1.button("Limpar rascunho", key=f"{key_prefix}_clear"):
                 st.session_state[draft_patch_key] = {
                     titulo_key: "",
@@ -24663,7 +19737,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     desc_bold_key: False,
                     desc_color_key: "#111827",
                     draft_info_key: "Formulario limpo para criacao manual.",
-                    delete_confirm_key: False,
                 }
                 st.rerun()
             if manual_col2.button("Carregar desafio salvo", key=f"{key_prefix}_load_existing"):
@@ -24689,36 +19762,26 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     raw_send_turmas = [part.strip() for part in raw_send_turmas.split(",") if part.strip()]
                 load_patch[send_turmas_key] = [str(x).strip() for x in raw_send_turmas if str(x).strip()]
                 load_patch[draft_info_key] = "Desafio salvo carregado no formulario." if existing else "Nao existe desafio salvo para esse destino/semana."
-                load_patch[delete_confirm_key] = False
                 st.session_state[draft_patch_key] = load_patch
                 st.rerun()
             if manual_col3.button("Excluir desafio salvo", key=f"{key_prefix}_delete_existing"):
-                st.session_state[delete_confirm_key] = True
-            if st.session_state.get(delete_confirm_key, False):
-                st.warning("Confirme a exclusao do desafio salvo para este destino e semana.")
-                dc1, dc2 = st.columns(2)
-                if dc1.button("Confirmar exclusao", key=f"{key_prefix}_delete_yes", type="primary"):
-                    if not existing:
-                        st.info("Nao existe desafio salvo para esse destino/semana.")
-                    else:
-                        deleted = delete_weekly_challenge_for_target(
-                            nivel,
-                            semana,
-                            target_type=target_type,
-                            target_turma=target_turma,
-                            target_aluno=target_aluno,
-                        )
-                        st.session_state[delete_confirm_key] = False
-                        if deleted:
-                            st.success("Desafio excluido com sucesso.")
-                            st.rerun()
-                        st.error("Nao foi possivel excluir o desafio selecionado.")
-                if dc2.button("Cancelar exclusao", key=f"{key_prefix}_delete_no"):
-                    st.session_state[delete_confirm_key] = False
-                    st.rerun()
+                if not existing:
+                    st.info("Nao existe desafio salvo para esse destino/semana.")
+                else:
+                    deleted = delete_weekly_challenge_for_target(
+                        nivel,
+                        semana,
+                        target_type=target_type,
+                        target_turma=target_turma,
+                        target_aluno=target_aluno,
+                    )
+                    if deleted:
+                        st.success("Desafio excluido com sucesso.")
+                        st.rerun()
+                    st.error("Nao foi possivel excluir o desafio selecionado.")
 
-            st.markdown("#### 4. Conteúdo do desafio")
-            st.caption("Refine título, descrição, rubrica, dica e pontos antes de revisar o preview.")
+            st.markdown("#### Ajuste final antes de salvar")
+            st.caption("Edite o desafio aqui antes de publicar. A caixa abaixo tambem aceita edicao direta.")
 
             titulo = st.text_input("Titulo", key=titulo_key)
             descricao = st.text_area(
@@ -24726,8 +19789,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 height=160,
                 key=descricao_key,
             )
-            st.markdown("#### 5. Formatação e opções")
-            st.caption("Organize o acabamento visual e as opções de publicação sem misturar com o conteúdo principal.")
+            st.markdown("##### Formatacao visual")
             fmt_col1, fmt_col2 = st.columns(2)
             with fmt_col1:
                 st.checkbox("Titulo em negrito", key=title_bold_key)
@@ -24760,25 +19822,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 key=notify_key,
             )
 
-            render_challenge_preview_card(
-                titulo,
-                descricao,
-                rubrica,
-                dica,
-                meta_rows=[
-                    ("Semana", semana),
-                    ("Destino", _challenge_target_label({"target_type": target_type, "target_turma": target_turma, "target_aluno": target_aluno, "nivel": nivel, "target_turmas_envio": target_turmas_envio})),
-                    ("Nível", nivel),
-                    ("Pontos", int(pontos)),
-                    ("Prazo", "Sem prazo" if sem_prazo else (due_date.strftime("%d/%m/%Y") if isinstance(due_date, datetime.date) else "-")),
-                    ("Turmas", ", ".join(target_turmas_envio) if target_turmas_envio else "Todas do livro"),
-                ],
-                title_color=_challenge_color(st.session_state.get(title_color_key, "#1e3a8a"), "#1e3a8a"),
-                description_color=_challenge_color(st.session_state.get(desc_color_key, "#111827"), "#111827"),
-                title_bold=bool(st.session_state.get(title_bold_key, False)),
-                description_bold=bool(st.session_state.get(desc_bold_key, False)),
-            )
-
             preview_text = (
                 f"Destino: {_challenge_target_label({'target_type': target_type, 'target_turma': target_turma, 'target_aluno': target_aluno, 'nivel': nivel, 'target_turmas_envio': target_turmas_envio})}\n"
                 f"Turmas de envio: {', '.join(target_turmas_envio) if target_turmas_envio else 'Todas do livro'}\n"
@@ -24804,18 +19847,17 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if preview_key not in st.session_state or current_preview.strip() == previous_seed.strip():
                 st.session_state[preview_key] = preview_text
             st.session_state[preview_seed_key] = preview_text
-            with st.expander("Modo avançado: pré-visualização técnica", expanded=False):
-                st.text_area(
-                    "Pre-visualizacao e edicao antes de postar",
-                    height=240,
-                    key=preview_key,
-                    help="Voce pode ajustar o texto aqui. Para salvar usando esta caixa, marque a opcao abaixo.",
-                )
-                st.checkbox(
-                    "Salvar usando o texto da pre-visualizacao (opcional)",
-                    key=use_preview_on_save_key,
-                    help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
-                )
+            st.text_area(
+                "Pre-visualizacao e edicao antes de postar",
+                height=240,
+                key=preview_key,
+                help="Voce pode ajustar o texto aqui. Para salvar usando esta caixa, marque a opcao abaixo.",
+            )
+            st.checkbox(
+                "Salvar usando o texto da pre-visualizacao (opcional)",
+                key=use_preview_on_save_key,
+                help="Desmarcado: salva exatamente os campos manuais (Titulo, Descricao, Rubrica e Dica).",
+            )
 
             save_clicked = st.button("Salvar desafio", type="primary", key=f"{key_prefix}_salvar")
 
@@ -24899,170 +19941,73 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.caption(f"Criado em: {existing.get('created_at','')} | Atualizado em: {existing.get('updated_at','')}")
 
         with c_stats:
-            pending_review_items = [
-                comp for comp in completion_rows_all
-                if _challenge_completion_pending_review(comp)
-            ]
-            render_panel_intro(
-                "Painel de acompanhamento",
-                "Ranking, concluídos e respostas aparecem em leitura mais rápida, sem competir com a criação do desafio.",
-                stats=[
-                    ("Ranking", len([c for c in completion_rows_all if _challenge_completion_has_real_response(c)])),
-                    ("Semana atual", current_week_label),
-                    ("Fila", len(pending_review_items)),
-                ],
-            )
+            st.markdown("### Acompanhamento")
             comps = st.session_state.get("challenge_completions", []) or []
             if not comps:
                 st.info("Sem desafios concluidos ainda.")
             else:
-                dfc = pd.DataFrame([c for c in comps if _challenge_completion_has_real_response(c)])
+                dfc = pd.DataFrame(comps)
                 if dfc.empty:
                     st.info("Sem desafios concluidos ainda.")
                 else:
+                    st.markdown("#### Ranking (pontos)")
                     rank = dfc.groupby("aluno", as_index=False)["pontos"].sum().sort_values("pontos", ascending=False)
+                    st.dataframe(rank, use_container_width=True)
+                    st.markdown("#### Concluidos (recentes)")
                     recent = dfc.sort_values("done_at", ascending=False).head(50)
-                    render_challenge_collection_card(
-                        "Classificação",
-                        "Resumo dos alunos com maior pontuação acumulada.",
-                        items=[
-                            {
-                                "title": str(row.get("aluno", "")).strip() or "Aluno",
-                                "meta": f"Posição {idx + 1}",
-                                "badge": f"{int(row.get('pontos', 0) or 0)} pts",
-                            }
-                            for idx, row in enumerate(rank.head(5).to_dict("records"))
-                        ],
-                        empty_text="Ainda nao ha ranking de desafios.",
-                        tone="green",
-                    )
-                    render_challenge_collection_card(
-                        "Concluídos recentes",
-                        "Últimas respostas registradas no sistema.",
-                        items=[
-                            {
-                                "title": str(comp.get("challenge_title", "")).strip() or "Desafio",
-                                "meta": f"{str(comp.get('aluno', '')).strip() or 'Aluno'} | {str(comp.get('done_at', '')).strip() or '-'}",
-                                "badge": str(comp.get("status", "")).strip() or "-",
-                            }
-                            for comp in recent.head(6).to_dict("records")
-                        ],
-                        empty_text="Nenhum desafio concluido ainda.",
-                        tone="blue",
-                    )
-                    render_challenge_collection_card(
-                        "Respostas para avaliação",
-                        "Somente respostas reais que ainda aguardam avaliação.",
-                        items=[
-                            {
-                                "title": str(comp.get("aluno", "")).strip() or "Aluno",
-                                "meta": f"{str(comp.get('challenge_title', '')).strip() or 'Desafio'} | Nota {str(comp.get('score', '')).strip() or '0'}",
-                                "badge": str(comp.get("status", "")).strip() or "-",
-                            }
-                            for comp in pending_review_items[:6]
-                        ],
-                        empty_text="Nenhuma resposta pendente de avaliação.",
-                        tone="orange",
-                    )
-                    for comp in pending_review_items:
-                        label = (
-                            f"{str(comp.get('aluno', '')).strip() or 'Aluno'} | "
-                            f"{str(comp.get('challenge_title', '')).strip() or 'Desafio'} | "
-                            f"Nota: {str(comp.get('score', '')).strip() or '0'}"
-                        )
-                        with st.expander(label):
-                            st.caption(
-                                f"Status: {str(comp.get('status', '')).strip() or '-'} | "
-                                f"Data: {str(comp.get('done_at', '')).strip() or '-'}"
-                            )
-                            st.markdown("**Resposta do aluno**")
-                            st.write(str(comp.get("resposta", "")).strip() or "Sem resposta registrada.")
-                            if str(comp.get("feedback", "")).strip():
-                                st.markdown("**Feedback / avaliacao**")
-                                st.write(str(comp.get("feedback", "")).strip())
+                    st.dataframe(recent, use_container_width=True)
 
-        render_panel_intro(
-            "Desafios publicados",
-            "Gerencie os desafios ativos com filtros básicos e uma leitura mais limpa das informações principais.",
-            stats=[
-                ("Publicados", len(challenge_rows_all)),
-                ("Com prazo", len([ch for ch in challenge_rows_all if str(ch.get("due_date", "")).strip()])),
-                ("Sem prazo", len([ch for ch in challenge_rows_all if not str(ch.get("due_date", "")).strip()])),
-            ],
-        )
+        st.markdown("### Desafios publicados")
         chs = list(st.session_state.get("challenges", []) or [])
         if not chs:
             st.info("Nenhum desafio publicado ainda.")
         else:
-            weeks_filter = ["Todas"] + sorted({str(ch.get("semana", "")).strip() for ch in chs if str(ch.get("semana", "")).strip()}, reverse=True)
-            levels_filter = ["Todos"] + sorted({_norm_book_level(ch.get("nivel", "")) for ch in chs if _norm_book_level(ch.get("nivel", ""))})
-            dest_filter = ["Todos"] + sorted({_challenge_target_label(ch) for ch in chs if isinstance(ch, dict)})
-            pf1, pf2, pf3 = st.columns([1.1, 1.1, 1.6])
-            selected_week = pf1.selectbox("Semana", weeks_filter, key="coord_ch_filter_week")
-            selected_level = pf2.selectbox("Nivel", levels_filter, key="coord_ch_filter_level")
-            search_title = pf3.text_input("Buscar desafio", key="coord_ch_filter_search", placeholder="Título, referência ou destino")
-
-            filtered_chs = []
-            for ch in chs:
-                week_txt = str(ch.get("semana", "")).strip()
-                level_txt = _norm_book_level(ch.get("nivel", ""))
-                target_txt = _challenge_target_label(ch)
-                blob = " ".join([
-                    str(ch.get("titulo", "")).strip(),
-                    str(ch.get("reference_book", "")).strip(),
-                    str(ch.get("reference_subject", "")).strip(),
-                    target_txt,
-                ]).lower()
-                if selected_week != "Todas" and week_txt != selected_week:
-                    continue
-                if selected_level != "Todos" and level_txt != selected_level:
-                    continue
-                if str(search_title).strip() and str(search_title).strip().lower() not in blob:
-                    continue
-                filtered_chs.append(ch)
-
-            render_challenge_collection_card(
-                "Visão rápida dos publicados",
-                "Use os filtros para reduzir a lista e localizar o item certo antes de carregar no editor.",
-                items=[
-                    {
-                        "title": str(ch.get("titulo", "")).strip() or "Desafio",
-                        "meta": f"{str(ch.get('semana', '')).strip()} | {_challenge_target_label(ch)} | {_norm_book_level(ch.get('nivel', ''))}",
-                        "badge": str(ch.get("due_date", "")).strip() or "Sem prazo",
-                    }
-                    for ch in filtered_chs[:4]
-                ],
-                empty_text="Nenhum desafio encontrado com os filtros atuais.",
-                tone="slate",
-            )
-
-            df = pd.DataFrame(filtered_chs)
+            df = pd.DataFrame(chs)
             if df.empty:
                 st.info("Nenhum desafio publicado ainda.")
             else:
                 df["destino"] = [
                     _challenge_target_label(ch) if isinstance(ch, dict) else "-"
-                    for ch in filtered_chs
+                    for ch in chs
                 ]
-                df["referencia"] = [
-                    " | ".join(
-                        part for part in [
-                            str(ch.get("reference_book", "")).strip(),
-                            str(ch.get("reference_subject", "")).strip(),
-                        ] if part
-                    ) or "-"
-                    for ch in filtered_chs
-                ]
-                df["status_publicacao"] = [
-                    "Com prazo" if str(ch.get("due_date", "")).strip() else "Sem prazo"
-                    for ch in filtered_chs
-                ]
-                col_order = [c for c in ["semana", "destino", "nivel", "referencia", "titulo", "pontos", "status_publicacao", "due_date", "autor", "id"] if c in df.columns]
+                col_order = [c for c in ["semana", "destino", "nivel", "target_turmas_envio", "reference_theme", "reference_book", "reference_subject", "titulo", "pontos", "rubrica", "dica", "autor", "due_date", "created_at", "updated_at", "id"] if c in df.columns]
                 if col_order:
                     df = df[col_order]
                 if "semana" in df.columns and "nivel" in df.columns:
                     df = df.sort_values(["semana", "nivel"], ascending=[False, True])
                 st.dataframe(df, use_container_width=True)
+                if is_admin_panel:
+                    st.markdown("#### Acoes rapidas dos desafios")
+                    for idx, challenge_obj in enumerate(filtered_chs, start=1):
+                        challenge_id = str(challenge_obj.get("id", "")).strip()
+                        quick_label = (
+                            f"{idx}. {str(challenge_obj.get('titulo', '')).strip() or 'Desafio'} | "
+                            f"{str(challenge_obj.get('semana', '')).strip() or '-'} | "
+                            f"{_challenge_target_label(challenge_obj)}"
+                        )
+                        with st.expander(quick_label):
+                            st.caption(
+                                f"Nivel: {_norm_book_level(challenge_obj.get('nivel', '')) or '-'} | "
+                                f"Prazo: {str(challenge_obj.get('due_date', '')).strip() or 'Sem prazo'} | "
+                                f"Autor: {str(challenge_obj.get('autor', '')).strip() or '-'}"
+                            )
+                            if str(challenge_obj.get("descricao", "")).strip():
+                                st.write(str(challenge_obj.get("descricao", "")).strip())
+                            delete_key = f"coord_delete_challenge_confirm_{challenge_id}"
+                            if st.button("Excluir desafio publicado", key=f"coord_delete_challenge_{challenge_id}"):
+                                st.session_state[delete_key] = True
+                            if st.session_state.get(delete_key, False):
+                                st.warning("Confirme a exclusao deste desafio. As respostas e notas vinculadas tambem serao removidas.")
+                                dc1, dc2 = st.columns(2)
+                                if dc1.button("Confirmar exclusao", key=f"coord_delete_challenge_yes_{challenge_id}", type="primary"):
+                                    st.session_state[delete_key] = False
+                                    if _delete_challenge_by_id(challenge_id):
+                                        st.success("Desafio excluido com sucesso.")
+                                        st.rerun()
+                                    st.error("Nao foi possivel excluir o desafio selecionado.")
+                                if dc2.button("Cancelar", key=f"coord_delete_challenge_no_{challenge_id}"):
+                                    st.session_state[delete_key] = False
+                                    st.rerun()
 
     elif menu_coord == "WhatsApp":
         st.markdown('<div class="main-header">WhatsApp (Evolution)</div>', unsafe_allow_html=True)
@@ -25486,14 +20431,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.rerun()
             else:
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
-    elif menu_coord == "Suporte":
-        run_active_chatbot(
-            title="Suporte Wiz",
-            subtitle="Suporte IA para todos os perfis, com referência do sistema e da biblioteca de documentos.",
-            force_system_context=True,
-        )
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
-
 
 
