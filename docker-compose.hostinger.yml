@@ -1,4 +1,20 @@
 services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+      - wizbot
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/hostinger/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
   app:
     build: .
     restart: unless-stopped
@@ -19,6 +35,10 @@ services:
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     volumes:
       - ./data:/app/data
+
+volumes:
+  caddy_data:
+  caddy_config:
   wizbot:
     build: .
     restart: unless-stopped
