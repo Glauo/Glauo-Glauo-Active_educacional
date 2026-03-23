@@ -18882,8 +18882,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
     elif menu_coord == "Notas":
         st.markdown('<div class="main-header">Notas</div>', unsafe_allow_html=True)
+        active_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
         is_admin_panel = bool(
-            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            active_profile == "Admin"
             or _has_permission("permissions.manage")
         )
         pendentes = [g for g in st.session_state["grades"] if g.get("status") == "Pendente"]
@@ -19428,8 +19429,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
     elif menu_coord == "Desafios":
         st.markdown('<div class="main-header">Desafios Semanais</div>', unsafe_allow_html=True)
+        active_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
         is_admin_panel = bool(
-            _is_admin_account(st.session_state.get("account_profile") or st.session_state.get("role"))
+            active_profile == "Admin"
             or _has_permission("permissions.manage")
         )
         auto_enabled = str(os.getenv("ACTIVE_AUTO_CHALLENGES", "")).strip().lower() in ("1", "true", "yes", "on")
