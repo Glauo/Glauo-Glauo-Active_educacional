@@ -97,7 +97,7 @@ def _extract_sender_candidates(obj, found=None):
     if isinstance(obj, dict):
         for key, value in obj.items():
             key_norm = _norm_text(key)
-            if isinstance(value, str) and key_norm in {"from", "sender", "phone", "number", "remotejid", "chatid", "author", "participant", "connectedphone", "connectedid"}:
+            if isinstance(value, str) and key_norm in {"from", "sender", "phone", "number", "remotejid", "chatid", "author", "participant"}:
                 num = _normalize_whatsapp_number(value)
                 if num:
                     found.append(num)
@@ -145,15 +145,15 @@ def _extract_from_me(obj):
 
 
 def _extract_incoming(payload):
-    sender = next(iter(_extract_sender_candidates(payload)), "")
+    sender = ""
     texts = [t for t in _extract_text_candidates(payload) if t and not t.startswith("http")]
     if isinstance(payload, dict):
-        if not sender:
-            sender = (
-                _normalize_whatsapp_number(payload.get("sender", ""))
-                or _normalize_whatsapp_number(payload.get("from", ""))
-                or _normalize_whatsapp_number(((payload.get("chat") or {}).get("id", "")))
-            )
+        connected_phone = _normalize_whatsapp_number(payload.get("connectedPhone", ""))
+        sender = (
+            _normalize_whatsapp_number(payload.get("sender", ""))
+            or _normalize_whatsapp_number(payload.get("from", ""))
+            or _normalize_whatsapp_number(((payload.get("chat") or {}).get("id", "")))
+        )
         sender_data = payload.get("senderData") or payload.get("sender_data") or {}
         if not sender and isinstance(sender_data, dict):
             sender = (
@@ -193,6 +193,13 @@ def _extract_incoming(payload):
                 _normalize_whatsapp_number(key_obj.get("remoteJid", ""))
                 or _normalize_whatsapp_number(key_obj.get("participant", ""))
             )
+        if not sender:
+            candidates = [
+                num
+                for num in _extract_sender_candidates(payload)
+                if num and (not connected_phone or num != connected_phone)
+            ]
+            sender = next(iter(candidates), "")
     return {
         "id": _extract_message_id(payload),
         "sender": sender,
