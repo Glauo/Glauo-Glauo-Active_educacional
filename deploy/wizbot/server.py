@@ -537,6 +537,30 @@ def _reply_mentions_values(text):
     return has_money_word and has_money_number
 
 
+def _needs_value_guidance(text):
+    norm = _norm_text(text)
+    keywords = {
+        "preco",
+        "preco?",
+        "valor",
+        "valores",
+        "mensalidade",
+        "mensalidades",
+        "matricula",
+        "rematricula",
+        "material didatico",
+        "investimento",
+        "desconto",
+        "parcela",
+        "parcelas",
+        "taxa",
+        "taxas",
+        "quanto custa",
+        "quanto fica",
+    }
+    return any(token in norm for token in keywords)
+
+
 def _extract_sector_reply(text):
     raw = str(text or "").strip()
     match = re.match(r"^\s*#?(WZ\d{8})\s*[:\-]?\s*(.+)$", raw, re.IGNORECASE | re.DOTALL)
@@ -575,6 +599,18 @@ def _generate_reply(sender, text):
             "Nao repita saudacoes de boas-vindas em mensagens seguintes.",
             "Nao repita a mesma resposta se o contato fizer perguntas diferentes ou pedir mais detalhes.",
             "Considere o contexto recente da conversa antes de responder.",
+            "A Mister Wiz e uma escola de idiomas focada em resultado real no aprendizado do ingles, com metodologia moderna, pratica e voltada para a fluencia desde as primeiras aulas.",
+            "Diferente de metodos tradicionais focados apenas em gramatica, a Mister Wiz estimula comunicacao, confianca, interpretacao e aplicacao do idioma no dia a dia.",
+            "O objetivo e que o aluno nao apenas entenda ingles, mas consiga falar, interpretar e se expressar com seguranca.",
+            "Apresente os formatos com naturalidade quando fizer sentido: Curso de Ingles em Turmas, Curso VIP Personalizado, Curso Intensivo VIP, Curso Completo Teens e Curso para Terceira Idade.",
+            "Curso em Turmas: aulas online ou presenciais, ambiente colaborativo, evolucao continua com acompanhamento e otimo custo-beneficio.",
+            "Curso VIP Personalizado: horarios e dias flexiveis, aulas individuais ou em dupla, online ou presencial, com conteudo adaptado ao objetivo do aluno.",
+            "Curso Intensivo VIP: foco em resultado acelerado, ate 4 aulas por semana, formato online ou hibrido e possibilidade de formacao e fluencia em ate 12 meses, dependendo do perfil e da dedicacao.",
+            "Curso Completo Teens: foco em fluencia, com desenvolvimento complementar em empreendedorismo e inteligencia emocional.",
+            "Curso para Terceira Idade: ritmo adaptado, aulas leves, estimulo cognitivo e ambiente acolhedor.",
+            "Todos os cursos podem acontecer online, presencialmente ou em formato hibrido, dependendo da modalidade.",
+            "Antes de falar sobre valores, faca a pessoa se interessar muito pelo curso, explicando diferenciais, beneficios, metodologia e adequacao ao perfil dela.",
+            "Antes de qualquer valor, mostre por que a Mister Wiz e diferente e por que a experiencia gera evolucao real.",
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
             "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
             "Depois do marcador [ENCAMINHAR_SETOR], escreva uma mensagem curta informando que vai verificar com o setor responsavel e responder assim que tiver retorno.",
@@ -717,7 +753,16 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             return
         try:
             if _needs_direct_handoff(text):
-                reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
+                if _needs_value_guidance(text):
+                    reply = (
+                        "Posso te passar essa informacao sim. 😊\n\n"
+                        "Antes, quero te orientar da forma certa para nao te passar algo fora do perfil ideal.\n\n"
+                        "Na Mister Wiz, a proposta nao e so estudar ingles. O foco e desenvolver comunicacao, confianca e fluencia real, com acompanhamento proximo e uma metodologia mais pratica desde as primeiras aulas.\n\n"
+                        "Temos opcao em turma, VIP personalizado, intensivo VIP, Teens e terceira idade, sempre buscando encaixar o formato mais adequado para o objetivo do aluno.\n\n"
+                        "[ENCAMINHAR_SETOR] Vou verificar os valores e condicoes com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
+                    )
+                else:
+                    reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             else:
                 reply = _generate_reply(sender, text)
             if _reply_mentions_values(reply):
@@ -726,8 +771,8 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             reply = f"Nao consegui responder agora. Erro temporario: {exc}"
             print(f"[wizbot] ai error={exc}", flush=True)
-        if str(reply).strip().startswith("[ENCAMINHAR_SETOR]"):
-            client_message = str(reply).strip().split("]", 1)[-1].strip() or (
+        if "[ENCAMINHAR_SETOR]" in str(reply):
+            client_message = str(reply).replace("[ENCAMINHAR_SETOR]", "").strip() or (
                 "Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             )
             ref_code = _register_pending_request(sender, text)
