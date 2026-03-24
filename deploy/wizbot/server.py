@@ -2,12 +2,17 @@ import datetime
 import json
 import os
 import re
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 import urllib.error
 import urllib.request
 
 from openai import OpenAI
+
+
+_STATE_LOCK = threading.Lock()
 
 
 def _norm_text(value):
@@ -39,6 +44,101 @@ def _get_groq_api_key():
 
 def _get_model_name():
     return str(os.getenv("ACTIVE_WIZ_MODEL", "")).strip() or str(os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")).strip()
+
+
+def _state_path():
+    raw = str(os.getenv("WIZ_STATE_PATH", "")).strip()
+    if raw:
+        return raw
+    return os.path.join(os.path.dirname(__file__), "wizbot_state.json")
+
+
+def _load_state():
+    path = _state_path()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+            if isinstance(data, dict):
+                return data
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return {"paused_contacts": {}, "recent_auto_replies": []}
+
+
+def _save_state(data):
+    path = _state_path()
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+
+
+def _remember_auto_reply(number, text):
+    now = time.time()
+    normalized = _normalize_whatsapp_number(number)
+    preview = str(text or "").strip()
+    if not (normalized and preview):
+        return
+    with _STATE_LOCK:
+        data = _load_state()
+        recent = [item for item in data.get("recent_auto_replies", []) if now - float(item.get("ts", 0) or 0) <= 180]
+        recent.append({"number": normalized, "text": preview, "ts": now})
+        data["recent_auto_replies"] = recent[-50:]
+        _save_state(data)
+
+
+def _is_recent_auto_reply(number, text):
+    now = time.time()
+    normalized = _normalize_whatsapp_number(number)
+    preview = str(text or "").strip()
+    with _STATE_LOCK:
+        data = _load_state()
+        recent = [item for item in data.get("recent_auto_replies", []) if now - float(item.get("ts", 0) or 0) <= 180]
+        data["recent_auto_replies"] = recent
+        _save_state(data)
+    return any(item.get("number") == normalized and str(item.get("text", "")).strip() == preview for item in recent)
+
+
+def _pause_contact(number, reason="manual"):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return
+    with _STATE_LOCK:
+        data = _load_state()
+        paused = dict(data.get("paused_contacts", {}) or {})
+        paused[normalized] = {
+            "reason": str(reason or "manual"),
+            "paused_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        data["paused_contacts"] = paused
+        _save_state(data)
+
+
+def _resume_contact(number):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return False
+    with _STATE_LOCK:
+        data = _load_state()
+        paused = dict(data.get("paused_contacts", {}) or {})
+        existed = normalized in paused
+        paused.pop(normalized, None)
+        data["paused_contacts"] = paused
+        _save_state(data)
+    return existed
+
+
+def _is_contact_paused(number):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return False
+    with _STATE_LOCK:
+        data = _load_state()
+        paused = dict(data.get("paused_contacts", {}) or {})
+    return normalized in paused
 
 
 def _wiz_control_command(text):
@@ -263,9 +363,11 @@ def _send_whatsapp_wapi(number, text):
                     flush=True,
                 )
                 if status is not None and 200 <= int(status) < 300:
+                    _remember_auto_reply(number, text)
                     return True, f"enviado HTTP {status}"
                 preview = str(body or "").lower()[:160]
                 if any(flag in preview for flag in ("success", "sucesso", "sent")):
+                    _remember_auto_reply(number, text)
                     return True, preview
     return False, "falha ao enviar via WAPI"
 
@@ -309,6 +411,15 @@ def _generate_reply(sender, text):
     )
     answer = (result.choices[0].message.content or "").strip()
     return answer or "Nao consegui responder agora. Tente novamente com mais detalhes."
+
+
+def _manual_contact_command(text):
+    norm = _norm_text(text)
+    if norm in {"!assumir", "!assumir atendimento", "!pausar bot", "!humano", "!manual"}:
+        return "pause"
+    if norm in {"!retomar", "!retomar bot", "!liberar bot", "!auto"}:
+        return "resume"
+    return ""
 
 
 def _authorized_request(handler):
@@ -365,10 +476,29 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             f"[wizbot] incoming sender={sender} from_me={incoming.get('from_me')} text={text[:200]}",
             flush=True,
         )
-        if not sender or not text or incoming.get("from_me"):
+        if incoming.get("from_me") and sender:
+            if _is_recent_auto_reply(sender, text):
+                print("[wizbot] ignored self echo from auto reply", flush=True)
+                self._write_json(200, {"ok": True, "ignored": True, "echo": True})
+                return
+            contact_cmd = _manual_contact_command(text)
+            if contact_cmd == "resume":
+                resumed = _resume_contact(sender)
+                print(f"[wizbot] manual resume contact={sender} resumed={resumed}", flush=True)
+                self._write_json(200, {"ok": True, "manual_control": "resume", "contact": sender})
+                return
+            _pause_contact(sender, "manual_operator")
+            print(f"[wizbot] manual takeover contact={sender} cmd={contact_cmd or 'message'}", flush=True)
+            self._write_json(200, {"ok": True, "manual_control": contact_cmd or "pause", "contact": sender})
+            return
+        if not sender or not text:
             print(f"[wizbot] raw payload={body.decode('utf-8', errors='replace')[:1500]}", flush=True)
             print("[wizbot] ignored incoming", flush=True)
             self._write_json(200, {"ok": True, "ignored": True})
+            return
+        if _is_contact_paused(sender):
+            print(f"[wizbot] contact paused sender={sender}", flush=True)
+            self._write_json(200, {"ok": True, "ignored": True, "paused_contact": sender})
             return
         cmd = _wiz_control_command(text)
         if sender in _admin_whatsapp_numbers() and cmd:
