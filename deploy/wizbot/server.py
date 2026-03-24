@@ -185,6 +185,24 @@ def _complete_pending_request(code):
     return item
 
 
+def _set_values_authorized(enabled, by_number=""):
+    with _STATE_LOCK:
+        data = _load_state()
+        data["values_authorized"] = {
+            "enabled": bool(enabled),
+            "by": _normalize_whatsapp_number(by_number),
+            "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        _save_state(data)
+
+
+def _values_are_authorized():
+    with _STATE_LOCK:
+        data = _load_state()
+        info = dict(data.get("values_authorized", {}) or {})
+    return bool(info.get("enabled"))
+
+
 def _was_greeted_recently(number, window_seconds=21600):
     normalized = _normalize_whatsapp_number(number)
     if not normalized:
@@ -569,6 +587,15 @@ def _extract_sector_reply(text):
     return match.group(1).upper(), match.group(2).strip()
 
 
+def _sector_control_command(text):
+    norm = _norm_text(text)
+    if norm in {"autorizado", "(autorizado)", "!autorizar valores", "autorizar valores"}:
+        return "authorize_values"
+    if norm in {"bloquear valores", "(bloquear valores)", "!bloquear valores", "desautorizar valores"}:
+        return "block_values"
+    return ""
+
+
 def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
     user_text = str(text or "").strip()
@@ -586,6 +613,18 @@ def _generate_reply(sender, text):
             "O atendimento automatico do Mister Wiz esta temporariamente indisponivel. "
             "Por favor, envie sua duvida novamente em alguns minutos."
         )
+    values_prompt = []
+    if _values_are_authorized():
+        values_prompt = [
+            "Valores oficiais atualmente autorizados para informar, somente quando a pergunta for claramente sobre valores:",
+            "Curso em Turma: presencial ou online. Mensalidade R$ 312,00. Matricula R$ 299,00. Material R$ 550,00.",
+            "Intensivo VIP: online. Mensalidade R$ 299,00. Matricula gratis neste mes. Material R$ 550,00.",
+            "VIP Particular: presencial ou online. R$ 150,00 por hora. Pacote de 10 aulas: R$ 1.300,00. Sem material padrao nesta tabela.",
+            "Kids Completo: presencial. Mensalidade R$ 380,00. Matricula R$ 299,00. Material R$ 550,00.",
+            "Terceira Idade: presencial. Mensalidade R$ 299,00. Matricula R$ 299,00. Material R$ 550,00.",
+            "Antes de informar qualquer valor, primeiro gere interesse e mostre o diferencial da escola.",
+            "Ao informar valores, deixe claro que condicoes podem depender de confirmacao final da equipe.",
+        ]
     system_prompt = "\n".join(
         [
             "Voce e o Bot Mister Wiz da escola de ingles Mister Wiz.",
@@ -615,11 +654,13 @@ def _generate_reply(sender, text):
             "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
             "Depois do marcador [ENCAMINHAR_SETOR], escreva uma mensagem curta informando que vai verificar com o setor responsavel e responder assim que tiver retorno.",
             "Nunca invente valores, precos, mensalidades, matriculas, rematriculas, descontos, parcelas ou taxas.",
-            "Se a conversa tocar em qualquer valor ou condicao comercial nao confirmada, encaminhe para o setor usando [ENCAMINHAR_SETOR].",
+            "Se os valores nao estiverem autorizados, qualquer conversa sobre valor ou condicao comercial deve ser encaminhada com [ENCAMINHAR_SETOR].",
+            "Se os valores estiverem autorizados, use apenas os valores oficiais informados neste prompt e nunca crie valores extras.",
             "Quando nao tiver dados confirmados, diga isso com clareza.",
             "Nunca invente informacoes internas.",
             f"Numero remetente identificado: {sender}.",
         ]
+        + values_prompt
     )
     client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
     messages = [{"role": "system", "content": system_prompt}]
@@ -730,6 +771,19 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         sector_number = _escalation_whatsapp_number()
         if sender == sector_number:
             ref_code, sector_reply = _extract_sector_reply(text)
+            control_cmd = _sector_control_command(text)
+            if control_cmd == "authorize_values":
+                _set_values_authorized(True, sender)
+                ok_send, status_send = _send_whatsapp_wapi(sender, "Valores autorizados para o bot.")
+                print(f"[wizbot] values authorized by sector ok={ok_send} status={status_send}", flush=True)
+                self._write_json(200, {"ok": ok_send, "message": status_send, "values_authorized": True})
+                return
+            if control_cmd == "block_values":
+                _set_values_authorized(False, sender)
+                ok_send, status_send = _send_whatsapp_wapi(sender, "Envio de valores bloqueado no bot.")
+                print(f"[wizbot] values blocked by sector ok={ok_send} status={status_send}", flush=True)
+                self._write_json(200, {"ok": ok_send, "message": status_send, "values_authorized": False})
+                return
             if ref_code and sector_reply:
                 pending = _complete_pending_request(ref_code)
                 customer_number = _normalize_whatsapp_number(pending.get("customer_number", ""))
@@ -752,7 +806,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             self._write_json(200, {"ok": ok_send, "message": status_send, "control": cmd})
             return
         try:
-            if _needs_direct_handoff(text):
+            if _needs_direct_handoff(text) and not _values_are_authorized():
                 if _needs_value_guidance(text):
                     reply = (
                         "Posso te passar essa informacao sim. 😊\n\n"
@@ -765,7 +819,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
                     reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             else:
                 reply = _generate_reply(sender, text)
-            if _reply_mentions_values(reply):
+            if _reply_mentions_values(reply) and not _values_are_authorized():
                 print("[wizbot] blocked unconfirmed value reply", flush=True)
                 reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
         except Exception as exc:
