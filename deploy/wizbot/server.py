@@ -80,6 +80,8 @@ def _extract_text_candidates(obj, found=None):
                 "documentmessagedata",
                 "quotedmessage",
                 "senderdata",
+                "msgcontent",
+                "messagecontextinfo",
             }:
                 _extract_text_candidates(value, found)
             else:
@@ -95,7 +97,7 @@ def _extract_sender_candidates(obj, found=None):
     if isinstance(obj, dict):
         for key, value in obj.items():
             key_norm = _norm_text(key)
-            if isinstance(value, str) and key_norm in {"from", "sender", "phone", "number", "remotejid", "chatid", "author", "participant"}:
+            if isinstance(value, str) and key_norm in {"from", "sender", "phone", "number", "remotejid", "chatid", "author", "participant", "connectedphone", "connectedid"}:
                 num = _normalize_whatsapp_number(value)
                 if num:
                     found.append(num)
@@ -146,6 +148,12 @@ def _extract_incoming(payload):
     sender = next(iter(_extract_sender_candidates(payload)), "")
     texts = [t for t in _extract_text_candidates(payload) if t and not t.startswith("http")]
     if isinstance(payload, dict):
+        if not sender:
+            sender = (
+                _normalize_whatsapp_number(payload.get("sender", ""))
+                or _normalize_whatsapp_number(payload.get("from", ""))
+                or _normalize_whatsapp_number(((payload.get("chat") or {}).get("id", "")))
+            )
         sender_data = payload.get("senderData") or payload.get("sender_data") or {}
         if not sender and isinstance(sender_data, dict):
             sender = (
@@ -165,6 +173,18 @@ def _extract_incoming(payload):
                 ((message_data.get("documentMessageData") or {}).get("caption", "")),
                 ((message_data.get("buttonsResponseMessage") or {}).get("selectedDisplayText", "")),
                 ((message_data.get("listResponseMessage") or {}).get("title", "")),
+            ]
+            texts = [str(x).strip() for x in direct_candidates if str(x).strip()]
+        msg_content = payload.get("msgContent") or payload.get("msgcontent") or {}
+        if isinstance(msg_content, dict) and not texts:
+            direct_candidates = [
+                msg_content.get("conversation", ""),
+                ((msg_content.get("extendedTextMessage") or {}).get("text", "")),
+                ((msg_content.get("imageMessage") or {}).get("caption", "")),
+                ((msg_content.get("videoMessage") or {}).get("caption", "")),
+                ((msg_content.get("documentMessage") or {}).get("caption", "")),
+                ((msg_content.get("buttonsResponseMessage") or {}).get("selectedDisplayText", "")),
+                ((msg_content.get("listResponseMessage") or {}).get("title", "")),
             ]
             texts = [str(x).strip() for x in direct_candidates if str(x).strip()]
         key_obj = payload.get("key") or {}
