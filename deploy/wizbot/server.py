@@ -141,6 +141,50 @@ def _is_contact_paused(number):
     return normalized in paused
 
 
+def _escalation_whatsapp_number():
+    return _normalize_whatsapp_number(
+        str(os.getenv("WIZ_ESCALATION_WHATSAPP", "")).strip() or "5516993804499"
+    )
+
+
+def _create_request_code():
+    return f"WZ{datetime.datetime.utcnow().strftime('%d%H%M%S')}"
+
+
+def _register_pending_request(customer_number, question):
+    code = _create_request_code()
+    with _STATE_LOCK:
+        data = _load_state()
+        pending = dict(data.get("pending_requests", {}) or {})
+        while code in pending:
+            code = _create_request_code()
+        pending[code] = {
+            "customer_number": _normalize_whatsapp_number(customer_number),
+            "question": str(question or "").strip(),
+            "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "status": "open",
+        }
+        data["pending_requests"] = pending
+        _save_state(data)
+    return code
+
+
+def _complete_pending_request(code):
+    ref = str(code or "").strip().upper()
+    with _STATE_LOCK:
+        data = _load_state()
+        pending = dict(data.get("pending_requests", {}) or {})
+        item = dict(pending.get(ref, {}) or {})
+        if not item:
+            return {}
+        item["status"] = "answered"
+        item["answered_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        pending[ref] = item
+        data["pending_requests"] = pending
+        _save_state(data)
+    return item
+
+
 def _wiz_control_command(text):
     norm = _norm_text(text)
     stop_cmds = {"!parar", "parar", "!pausar", "pausar", "assumir controle", "!assumir", "bot parar"}
@@ -372,6 +416,42 @@ def _send_whatsapp_wapi(number, text):
     return False, "falha ao enviar via WAPI"
 
 
+def _needs_direct_handoff(text):
+    norm = _norm_text(text)
+    keywords = {
+        "preco",
+        "preços",
+        "preco?",
+        "preço",
+        "preço?",
+        "valor",
+        "valores",
+        "mensalidade",
+        "mensalidades",
+        "matricula",
+        "matrícula",
+        "rematricula",
+        "rematrícula",
+        "material didatico",
+        "material didático",
+        "quanto custa",
+        "quanto fica",
+        "investimento",
+        "desconto",
+        "parcela",
+        "parcelas",
+    }
+    return any(token in norm for token in keywords)
+
+
+def _extract_sector_reply(text):
+    raw = str(text or "").strip()
+    match = re.match(r"^\s*#?(WZ\d{8})\s*[:\-]?\s*(.+)$", raw, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return "", ""
+    return match.group(1).upper(), match.group(2).strip()
+
+
 def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
     user_text = str(text or "").strip()
@@ -394,6 +474,8 @@ def _generate_reply(sender, text):
             "Responda de forma objetiva, educada e profissional.",
             "Quando for uma primeira saudacao, responda de forma curta, clara e acolhedora.",
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
+            "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
+            "Depois do marcador [ENCAMINHAR_SETOR], escreva uma mensagem curta informando que vai verificar com o setor responsavel e responder assim que tiver retorno.",
             "Quando nao tiver dados confirmados, diga isso com clareza.",
             "Nunca invente informacoes internas.",
             f"Numero remetente identificado: {sender}.",
@@ -500,6 +582,23 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             print(f"[wizbot] contact paused sender={sender}", flush=True)
             self._write_json(200, {"ok": True, "ignored": True, "paused_contact": sender})
             return
+        sector_number = _escalation_whatsapp_number()
+        if sender == sector_number:
+            ref_code, sector_reply = _extract_sector_reply(text)
+            if ref_code and sector_reply:
+                pending = _complete_pending_request(ref_code)
+                customer_number = _normalize_whatsapp_number(pending.get("customer_number", ""))
+                if customer_number:
+                    ok_send, status_send = _send_whatsapp_wapi(customer_number, sector_reply)
+                    print(
+                        f"[wizbot] sector reply ref={ref_code} customer={customer_number} ok={ok_send} status={status_send}",
+                        flush=True,
+                    )
+                    self._write_json(200, {"ok": ok_send, "message": status_send, "relay_ref": ref_code})
+                    return
+            print("[wizbot] sector message without valid reference", flush=True)
+            self._write_json(200, {"ok": True, "ignored": True, "sector": True})
+            return
         cmd = _wiz_control_command(text)
         if sender in _admin_whatsapp_numbers() and cmd:
             reply = "Bot Mister Wiz pausado." if cmd == "stop" else "Bot Mister Wiz retomado."
@@ -508,10 +607,37 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             self._write_json(200, {"ok": ok_send, "message": status_send, "control": cmd})
             return
         try:
-            reply = _generate_reply(sender, text)
+            if _needs_direct_handoff(text):
+                reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsável e te responder assim que eu tiver a informação confirmada."
+            else:
+                reply = _generate_reply(sender, text)
         except Exception as exc:
             reply = f"Nao consegui responder agora. Erro temporario: {exc}"
             print(f"[wizbot] ai error={exc}", flush=True)
+        if str(reply).strip().startswith("[ENCAMINHAR_SETOR]"):
+            client_message = str(reply).strip().split("]", 1)[-1].strip() or (
+                "Vou verificar isso com o setor responsável e te responder assim que eu tiver a informação confirmada."
+            )
+            ref_code = _register_pending_request(sender, text)
+            forward_message = (
+                f"Nova consulta do chatbot Mister Wiz\n"
+                f"Ref: {ref_code}\n"
+                f"Cliente: {sender}\n"
+                f"Pergunta: {text}\n\n"
+                f"Para responder ao cliente pelo bot, envie:\n"
+                f"{ref_code} sua resposta aqui"
+            )
+            ok_sector, status_sector = _send_whatsapp_wapi(sector_number, forward_message)
+            ok_send, status_send = _send_whatsapp_wapi(sender, client_message)
+            print(
+                f"[wizbot] handoff ref={ref_code} sector_ok={ok_sector} sector_status={status_sector} client_ok={ok_send} client_status={status_send}",
+                flush=True,
+            )
+            self._write_json(
+                200,
+                {"ok": ok_send, "message": status_send, "handoff": True, "ref": ref_code, "sector_status": status_sector},
+            )
+            return
         ok_send, status_send = _send_whatsapp_wapi(sender, reply)
         print(f"[wizbot] reply ok={ok_send} status={status_send} text={reply[:200]}", flush=True)
         self._write_json(200, {"ok": ok_send, "message": status_send})
