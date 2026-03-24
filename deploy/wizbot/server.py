@@ -509,6 +509,34 @@ def _needs_direct_handoff(text):
     return any(token in norm for token in keywords)
 
 
+def _reply_mentions_values(text):
+    raw = str(text or "").strip()
+    norm = _norm_text(raw)
+    if not raw:
+        return False
+    money_keywords = {
+        "preco",
+        "valor",
+        "valores",
+        "mensalidade",
+        "mensalidades",
+        "matricula",
+        "rematricula",
+        "material didatico",
+        "investimento",
+        "desconto",
+        "parcela",
+        "parcelas",
+        "taxa",
+        "taxas",
+    }
+    has_money_word = any(token in norm for token in money_keywords)
+    has_money_number = bool(
+        re.search(r"(r\\$\\s*\\d|\\d+[\\.,]\\d{2}|\\d+\\s*reais|\\d+\\s*/\\s*mes|\\d+\\s*x)", norm)
+    )
+    return has_money_word and has_money_number
+
+
 def _extract_sector_reply(text):
     raw = str(text or "").strip()
     match = re.match(r"^\s*#?(WZ\d{8})\s*[:\-]?\s*(.+)$", raw, re.IGNORECASE | re.DOTALL)
@@ -550,6 +578,8 @@ def _generate_reply(sender, text):
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
             "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
             "Depois do marcador [ENCAMINHAR_SETOR], escreva uma mensagem curta informando que vai verificar com o setor responsavel e responder assim que tiver retorno.",
+            "Nunca invente valores, precos, mensalidades, matriculas, rematriculas, descontos, parcelas ou taxas.",
+            "Se a conversa tocar em qualquer valor ou condicao comercial nao confirmada, encaminhe para o setor usando [ENCAMINHAR_SETOR].",
             "Quando nao tiver dados confirmados, diga isso com clareza.",
             "Nunca invente informacoes internas.",
             f"Numero remetente identificado: {sender}.",
@@ -690,6 +720,9 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
                 reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             else:
                 reply = _generate_reply(sender, text)
+            if _reply_mentions_values(reply):
+                print("[wizbot] blocked unconfirmed value reply", flush=True)
+                reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
         except Exception as exc:
             reply = f"Nao consegui responder agora. Erro temporario: {exc}"
             print(f"[wizbot] ai error={exc}", flush=True)
