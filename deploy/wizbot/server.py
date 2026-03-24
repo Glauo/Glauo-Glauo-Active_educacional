@@ -212,6 +212,44 @@ def _mark_greeted(number):
         _save_state(data)
 
 
+def _append_conversation_message(number, role, text, keep=12):
+    normalized = _normalize_whatsapp_number(number)
+    preview = str(text or "").strip()
+    if not (normalized and preview):
+        return
+    with _STATE_LOCK:
+        data = _load_state()
+        conversations = dict(data.get("conversations", {}) or {})
+        items = list(conversations.get(normalized, []) or [])
+        items.append(
+            {
+                "role": str(role or "user"),
+                "content": preview,
+                "ts": time.time(),
+            }
+        )
+        conversations[normalized] = items[-keep:]
+        data["conversations"] = conversations
+        _save_state(data)
+
+
+def _conversation_messages(number, keep=8):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return []
+    with _STATE_LOCK:
+        data = _load_state()
+        conversations = dict(data.get("conversations", {}) or {})
+        items = list(conversations.get(normalized, []) or [])
+    messages = []
+    for item in items[-keep:]:
+        role = str(item.get("role", "user")).strip() or "user"
+        content = str(item.get("content", "")).strip()
+        if content:
+            messages.append({"role": role, "content": content})
+    return messages
+
+
 def _wiz_control_command(text):
     norm = _norm_text(text)
     stop_cmds = {"!parar", "parar", "!pausar", "pausar", "assumir controle", "!assumir", "bot parar"}
@@ -506,6 +544,9 @@ def _generate_reply(sender, text):
             "Pode usar poucos emojis com moderacao, principalmente para acolhimento, confirmacao ou proximo passo.",
             "Evite resposta seca, mecanica ou excessivamente padrao.",
             "Quando for uma primeira saudacao, responda de forma curta, clara e acolhedora.",
+            "Nao repita saudacoes de boas-vindas em mensagens seguintes.",
+            "Nao repita a mesma resposta se o contato fizer perguntas diferentes ou pedir mais detalhes.",
+            "Considere o contexto recente da conversa antes de responder.",
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
             "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
             "Depois do marcador [ENCAMINHAR_SETOR], escreva uma mensagem curta informando que vai verificar com o setor responsavel e responder assim que tiver retorno.",
@@ -515,12 +556,12 @@ def _generate_reply(sender, text):
         ]
     )
     client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(_conversation_messages(sender, keep=8))
+    messages.append({"role": "user", "content": user_text})
     result = client.chat.completions.create(
         model=_get_model_name(),
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
+        messages=messages,
         temperature=0.2,
         max_tokens=700,
     )
@@ -619,6 +660,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             print(f"[wizbot] contact paused sender={sender}", flush=True)
             self._write_json(200, {"ok": True, "ignored": True, "paused_contact": sender})
             return
+        _append_conversation_message(sender, "user", text)
         sector_number = _escalation_whatsapp_number()
         if sender == sector_number:
             ref_code, sector_reply = _extract_sector_reply(text)
@@ -666,6 +708,8 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             )
             ok_sector, status_sector = _send_whatsapp_wapi(sector_number, forward_message)
             ok_send, status_send = _send_whatsapp_wapi(sender, client_message)
+            if ok_send:
+                _append_conversation_message(sender, "assistant", client_message)
             print(
                 f"[wizbot] handoff ref={ref_code} sector_ok={ok_sector} sector_status={status_sector} client_ok={ok_send} client_status={status_send}",
                 flush=True,
@@ -676,6 +720,8 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             )
             return
         ok_send, status_send = _send_whatsapp_wapi(sender, reply)
+        if ok_send:
+            _append_conversation_message(sender, "assistant", reply)
         print(f"[wizbot] reply ok={ok_send} status={status_send} text={reply[:200]}", flush=True)
         self._write_json(200, {"ok": ok_send, "message": status_send})
 
