@@ -458,10 +458,10 @@ def _generate_reply(sender, text):
     user_norm = _norm_text(user_text)
     if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"}:
         return (
-            "Ola! :)\n\n"
-            "Que bom falar com voce. Aqui e o atendimento da Mister Wiz.\n\n"
+            "Ola! \U0001F60A\n\n"
+            "Que bom falar com voce. Aqui e o atendimento da Mister Wiz. \U0001F4D8\n\n"
             "Posso te ajudar com curso, matricula, teste de nivel, aula experimental ou atendimento da escola.\n\n"
-            "Me fala seu nome e para quem seria o atendimento?"
+            "Me fala seu nome e para quem seria o atendimento? \U0001F449"
         )
     if not api_key:
         return (
