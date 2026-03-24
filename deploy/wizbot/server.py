@@ -420,20 +420,20 @@ def _needs_direct_handoff(text):
     norm = _norm_text(text)
     keywords = {
         "preco",
-        "preços",
+        "preÃƒÆ’Ã‚Â§os",
         "preco?",
-        "preço",
-        "preço?",
+        "preÃƒÆ’Ã‚Â§o",
+        "preÃƒÆ’Ã‚Â§o?",
         "valor",
         "valores",
         "mensalidade",
         "mensalidades",
         "matricula",
-        "matrícula",
+        "matrÃƒÆ’Ã‚Â­cula",
         "rematricula",
-        "rematrícula",
+        "rematrÃƒÆ’Ã‚Â­cula",
         "material didatico",
-        "material didático",
+        "material didÃƒÆ’Ã‚Â¡tico",
         "quanto custa",
         "quanto fica",
         "investimento",
@@ -456,22 +456,27 @@ def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
     user_text = str(text or "").strip()
     user_norm = _norm_text(user_text)
-    if user_norm in {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "menu", "inicio", "início"}:
+    if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"}:
         return (
-            "Olá! Você está falando com o atendimento da Mister Wiz.\n\n"
-            "Posso ajudar com informações sobre secretaria, financeiro, agenda, portal do aluno e dúvidas gerais da escola.\n\n"
-            "Se quiser, me diga em uma frase o que você precisa."
+            "Ola! :)\n\n"
+            "Que bom falar com voce. Aqui e o atendimento da Mister Wiz.\n\n"
+            "Posso te ajudar com curso, matricula, teste de nivel, aula experimental ou atendimento da escola.\n\n"
+            "Me fala seu nome e para quem seria o atendimento?"
         )
     if not api_key:
         return (
-            "O atendimento automático do Mister Wiz está temporariamente indisponível. "
-            "Por favor, envie sua dúvida novamente em alguns minutos."
+            "O atendimento automatico do Mister Wiz esta temporariamente indisponivel. "
+            "Por favor, envie sua duvida novamente em alguns minutos."
         )
     system_prompt = "\n".join(
         [
             "Voce e o Bot Mister Wiz da escola de ingles Mister Wiz.",
             "Atenda pelo WhatsApp em portugues do Brasil.",
             "Responda de forma objetiva, educada e profissional.",
+            "Soe como uma pessoa real da escola, nao como robo.",
+            "Use linguagem natural, calor humano e frases que passem acolhimento e seguranca.",
+            "Pode usar poucos emojis com moderacao, principalmente para acolhimento, confirmacao ou proximo passo.",
+            "Evite resposta seca, mecanica ou excessivamente padrao.",
             "Quando for uma primeira saudacao, responda de forma curta, clara e acolhedora.",
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
             "Quando a pergunta depender de confirmacao interna, valores, condicoes comerciais ou informacoes nao confirmadas, comece a resposta exatamente com [ENCAMINHAR_SETOR].",
@@ -608,7 +613,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             return
         try:
             if _needs_direct_handoff(text):
-                reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsável e te responder assim que eu tiver a informação confirmada."
+                reply = "[ENCAMINHAR_SETOR] Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             else:
                 reply = _generate_reply(sender, text)
         except Exception as exc:
@@ -616,7 +621,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             print(f"[wizbot] ai error={exc}", flush=True)
         if str(reply).strip().startswith("[ENCAMINHAR_SETOR]"):
             client_message = str(reply).strip().split("]", 1)[-1].strip() or (
-                "Vou verificar isso com o setor responsável e te responder assim que eu tiver a informação confirmada."
+                "Vou verificar isso com o setor responsavel e te responder assim que eu tiver a informacao confirmada."
             )
             ref_code = _register_pending_request(sender, text)
             forward_message = (
