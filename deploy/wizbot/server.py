@@ -185,6 +185,33 @@ def _complete_pending_request(code):
     return item
 
 
+def _was_greeted_recently(number, window_seconds=21600):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return False
+    now = time.time()
+    with _STATE_LOCK:
+        data = _load_state()
+        greeted = dict(data.get("greeted_contacts", {}) or {})
+        last_ts = float(greeted.get(normalized, 0) or 0)
+        greeted = {k: v for k, v in greeted.items() if now - float(v or 0) <= window_seconds}
+        data["greeted_contacts"] = greeted
+        _save_state(data)
+    return now - last_ts <= window_seconds
+
+
+def _mark_greeted(number):
+    normalized = _normalize_whatsapp_number(number)
+    if not normalized:
+        return
+    with _STATE_LOCK:
+        data = _load_state()
+        greeted = dict(data.get("greeted_contacts", {}) or {})
+        greeted[normalized] = time.time()
+        data["greeted_contacts"] = greeted
+        _save_state(data)
+
+
 def _wiz_control_command(text):
     norm = _norm_text(text)
     stop_cmds = {"!parar", "parar", "!pausar", "pausar", "assumir controle", "!assumir", "bot parar"}
@@ -456,7 +483,8 @@ def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
     user_text = str(text or "").strip()
     user_norm = _norm_text(user_text)
-    if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"}:
+    if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"} and not _was_greeted_recently(sender):
+        _mark_greeted(sender)
         return (
             "Ola! \U0001F60A\n\n"
             "Que bom falar com voce. Aqui e o atendimento da Mister Wiz. \U0001F4D8\n\n"
