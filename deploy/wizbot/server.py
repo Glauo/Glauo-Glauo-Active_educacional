@@ -230,7 +230,7 @@ def _mark_greeted(number):
         _save_state(data)
 
 
-def _append_conversation_message(number, role, text, keep=12):
+def _append_conversation_message(number, role, text, keep=40):
     normalized = _normalize_whatsapp_number(number)
     preview = str(text or "").strip()
     if not (normalized and preview):
@@ -266,6 +266,10 @@ def _conversation_messages(number, keep=8):
         if content:
             messages.append({"role": role, "content": content})
     return messages
+
+
+def _has_conversation_history(number):
+    return bool(_conversation_messages(number, keep=1))
 
 
 def _wiz_control_command(text):
@@ -600,7 +604,7 @@ def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
     user_text = str(text or "").strip()
     user_norm = _norm_text(user_text)
-    if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"} and not _was_greeted_recently(sender):
+    if user_norm in {"oi", "ola", "bom dia", "boa tarde", "boa noite", "menu", "inicio"} and not _has_conversation_history(sender) and not _was_greeted_recently(sender):
         _mark_greeted(sender)
         return (
             "Ola! \U0001F60A\n\n"
@@ -638,6 +642,8 @@ def _generate_reply(sender, text):
             "Nao repita saudacoes de boas-vindas em mensagens seguintes.",
             "Nao repita a mesma resposta se o contato fizer perguntas diferentes ou pedir mais detalhes.",
             "Considere o contexto recente da conversa antes de responder.",
+            "Quando ja houver historico com o contato, retome a conversa do ponto em que ela parou em vez de recomecar do zero.",
+            "Se o contato voltar depois de um tempo, reconheca o contexto anterior e continue a partir da necessidade dele.",
             "A Mister Wiz e uma escola de idiomas focada em resultado real no aprendizado do ingles, com metodologia moderna, pratica e voltada para a fluencia desde as primeiras aulas.",
             "Diferente de metodos tradicionais focados apenas em gramatica, a Mister Wiz estimula comunicacao, confianca, interpretacao e aplicacao do idioma no dia a dia.",
             "O objetivo e que o aluno nao apenas entenda ingles, mas consiga falar, interpretar e se expressar com seguranca.",
