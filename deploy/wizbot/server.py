@@ -602,9 +602,13 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
                 print(f"[wizbot] manual resume contact={sender} resumed={resumed}", flush=True)
                 self._write_json(200, {"ok": True, "manual_control": "resume", "contact": sender})
                 return
-            _pause_contact(sender, "manual_operator")
-            print(f"[wizbot] manual takeover contact={sender} cmd={contact_cmd or 'message'}", flush=True)
-            self._write_json(200, {"ok": True, "manual_control": contact_cmd or "pause", "contact": sender})
+            if contact_cmd == "pause":
+                _pause_contact(sender, "manual_operator")
+                print(f"[wizbot] manual takeover contact={sender} cmd=pause", flush=True)
+                self._write_json(200, {"ok": True, "manual_control": "pause", "contact": sender})
+                return
+            print("[wizbot] ignored outgoing operator message without control command", flush=True)
+            self._write_json(200, {"ok": True, "ignored": True, "outgoing": True})
             return
         if not sender or not text:
             print(f"[wizbot] raw payload={body.decode('utf-8', errors='replace')[:1500]}", flush=True)
