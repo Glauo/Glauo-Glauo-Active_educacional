@@ -272,6 +272,14 @@ def _send_whatsapp_wapi(number, text):
 
 def _generate_reply(sender, text):
     api_key = _get_groq_api_key()
+    user_text = str(text or "").strip()
+    user_norm = _norm_text(user_text)
+    if user_norm in {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "menu", "inicio", "início"}:
+        return (
+            "Olá! Você está falando com o atendimento da Mister Wiz.\n\n"
+            "Posso ajudar com informações sobre secretaria, financeiro, agenda, portal do aluno e dúvidas gerais da escola.\n\n"
+            "Se quiser, me diga em uma frase o que você precisa."
+        )
     if not api_key:
         return (
             "O atendimento automático do Mister Wiz está temporariamente indisponível. "
@@ -282,6 +290,7 @@ def _generate_reply(sender, text):
             "Voce e o Bot Mister Wiz da escola de ingles Mister Wiz.",
             "Atenda pelo WhatsApp em portugues do Brasil.",
             "Responda de forma objetiva, educada e profissional.",
+            "Quando for uma primeira saudacao, responda de forma curta, clara e acolhedora.",
             "Ajude com duvidas sobre escola, ingles, secretaria, agenda, financeiro e portal.",
             "Quando nao tiver dados confirmados, diga isso com clareza.",
             "Nunca invente informacoes internas.",
@@ -293,7 +302,7 @@ def _generate_reply(sender, text):
         model=_get_model_name(),
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(text or "").strip()},
+            {"role": "user", "content": user_text},
         ],
         temperature=0.2,
         max_tokens=700,
