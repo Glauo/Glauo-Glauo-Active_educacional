@@ -19,7 +19,11 @@ def _digits(value):
 
 
 def _normalize_whatsapp_number(value):
-    digits = _digits(value)
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    match = re.search(r"(\d{10,15})", raw)
+    digits = match.group(1) if match else _digits(raw)
     if not digits:
         return ""
     if digits.startswith("00"):
