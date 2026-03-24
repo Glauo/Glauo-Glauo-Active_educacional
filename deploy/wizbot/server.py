@@ -186,6 +186,10 @@ def _send_whatsapp_wapi(number, text):
         for headers in headers_list:
             for payload in payloads:
                 status, body = _http_post_json(url, headers, payload)
+                print(
+                    f"[wizbot] send attempt url={url} status={status} phone={number} preview={str(body or '')[:160]}",
+                    flush=True,
+                )
                 if status is not None and 200 <= int(status) < 300:
                     return True, f"enviado HTTP {status}"
                 preview = str(body or "").lower()[:160]
@@ -247,6 +251,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
+        print(f"[wizbot] GET path={self.path}", flush=True)
         if self.path.startswith("/health"):
             self._write_json(200, {"ok": True, "service": "wizbot-standalone"})
             return
@@ -256,10 +261,12 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         self._write_json(404, {"ok": False, "message": "Not found"})
 
     def do_POST(self):
+        print(f"[wizbot] POST path={self.path}", flush=True)
         if not self.path.startswith("/wapi/webhook"):
             self._write_json(404, {"ok": False, "message": "Not found"})
             return
         if not _authorized_request(self):
+            print("[wizbot] token invalido", flush=True)
             self._write_json(403, {"ok": False, "message": "Token invalido"})
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -267,25 +274,34 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(body.decode("utf-8", errors="replace") or "{}")
         except Exception:
+            print(f"[wizbot] json invalido body={body[:200]}", flush=True)
             self._write_json(400, {"ok": False, "message": "JSON invalido"})
             return
         incoming = _extract_incoming(payload)
         sender = incoming.get("sender", "")
         text = str(incoming.get("text", "")).strip()
+        print(
+            f"[wizbot] incoming sender={sender} from_me={incoming.get('from_me')} text={text[:200]}",
+            flush=True,
+        )
         if not sender or not text or incoming.get("from_me"):
+            print("[wizbot] ignored incoming", flush=True)
             self._write_json(200, {"ok": True, "ignored": True})
             return
         cmd = _wiz_control_command(text)
         if sender in _admin_whatsapp_numbers() and cmd:
             reply = "Bot Mister Wiz pausado." if cmd == "stop" else "Bot Mister Wiz retomado."
             ok_send, status_send = _send_whatsapp_wapi(sender, reply)
+            print(f"[wizbot] admin control cmd={cmd} ok={ok_send} status={status_send}", flush=True)
             self._write_json(200, {"ok": ok_send, "message": status_send, "control": cmd})
             return
         try:
             reply = _generate_reply(sender, text)
         except Exception as exc:
             reply = f"Nao consegui responder agora. Erro temporario: {exc}"
+            print(f"[wizbot] ai error={exc}", flush=True)
         ok_send, status_send = _send_whatsapp_wapi(sender, reply)
+        print(f"[wizbot] reply ok={ok_send} status={status_send} text={reply[:200]}", flush=True)
         self._write_json(200, {"ok": ok_send, "message": status_send})
 
     def log_message(self, fmt, *args):
