@@ -71,6 +71,17 @@ def _extract_text_candidates(obj, found=None):
                 txt = str(value).strip()
                 if txt:
                     found.append(txt)
+            elif isinstance(value, dict) and key_norm in {
+                "messagedata",
+                "textmessagedata",
+                "extendedtextmessagedata",
+                "imagemessagedata",
+                "videomessagedata",
+                "documentmessagedata",
+                "quotedmessage",
+                "senderdata",
+            }:
+                _extract_text_candidates(value, found)
             else:
                 _extract_text_candidates(value, found)
     elif isinstance(obj, list):
@@ -88,6 +99,8 @@ def _extract_sender_candidates(obj, found=None):
                 num = _normalize_whatsapp_number(value)
                 if num:
                     found.append(num)
+            elif isinstance(value, dict) and key_norm in {"senderdata", "key", "chat", "contact"}:
+                _extract_sender_candidates(value, found)
             else:
                 _extract_sender_candidates(value, found)
     elif isinstance(obj, list):
@@ -132,6 +145,34 @@ def _extract_from_me(obj):
 def _extract_incoming(payload):
     sender = next(iter(_extract_sender_candidates(payload)), "")
     texts = [t for t in _extract_text_candidates(payload) if t and not t.startswith("http")]
+    if isinstance(payload, dict):
+        sender_data = payload.get("senderData") or payload.get("sender_data") or {}
+        if not sender and isinstance(sender_data, dict):
+            sender = (
+                _normalize_whatsapp_number(sender_data.get("chatId", ""))
+                or _normalize_whatsapp_number(sender_data.get("sender", ""))
+                or _normalize_whatsapp_number(sender_data.get("remoteJid", ""))
+                or _normalize_whatsapp_number(sender_data.get("from", ""))
+            )
+        message_data = payload.get("messageData") or payload.get("message_data") or {}
+        if isinstance(message_data, dict) and not texts:
+            direct_candidates = [
+                message_data.get("conversation", ""),
+                ((message_data.get("textMessageData") or {}).get("textMessage", "")),
+                ((message_data.get("extendedTextMessageData") or {}).get("text", "")),
+                ((message_data.get("imageMessageData") or {}).get("caption", "")),
+                ((message_data.get("videoMessageData") or {}).get("caption", "")),
+                ((message_data.get("documentMessageData") or {}).get("caption", "")),
+                ((message_data.get("buttonsResponseMessage") or {}).get("selectedDisplayText", "")),
+                ((message_data.get("listResponseMessage") or {}).get("title", "")),
+            ]
+            texts = [str(x).strip() for x in direct_candidates if str(x).strip()]
+        key_obj = payload.get("key") or {}
+        if not sender and isinstance(key_obj, dict):
+            sender = (
+                _normalize_whatsapp_number(key_obj.get("remoteJid", ""))
+                or _normalize_whatsapp_number(key_obj.get("participant", ""))
+            )
     return {
         "id": _extract_message_id(payload),
         "sender": sender,
@@ -285,6 +326,7 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             flush=True,
         )
         if not sender or not text or incoming.get("from_me"):
+            print(f"[wizbot] raw payload={body.decode('utf-8', errors='replace')[:1500]}", flush=True)
             print("[wizbot] ignored incoming", flush=True)
             self._write_json(200, {"ok": True, "ignored": True})
             return
