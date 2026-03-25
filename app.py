@@ -9914,6 +9914,67 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
         st.info("Nenhuma aula encontrada com os filtros atuais.")
         return
 
+    detail_id = str(st.session_state.get(f"{prefix}_detail_id", "")).strip()
+    detail_row = next((r for r in filtered_rows if str(r.get("id", "")).strip() == detail_id), None) if detail_id else None
+    edit_id = str(st.session_state.get(f"{prefix}_edit_id", "")).strip()
+    edit_row = next((r for r in rows if str(r.get("id", "")).strip() == edit_id), None) if edit_id else None
+
+    if detail_row or edit_row:
+        st.markdown('<div class="aulas-section-label">Foco da aula</div>', unsafe_allow_html=True)
+
+    if detail_row:
+        st.markdown(
+            """
+            <div class="aulas-detail-shell">
+              <div class="aulas-filter-title">Detalhe completo da aula</div>
+              <div class="aulas-filter-subtitle">Consulte o registro integral, incluindo dados pedagógicos, operacionais, horários, vínculo com alunos e histórico de edição.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.expander("Abrir detalhe completo", expanded=True):
+            d1, d2 = st.columns(2)
+            with d1:
+                st.write(f"**Data:** {detail_row.get('data', '-')}")
+                st.write(f"**Horário:** {detail_row.get('horario', '-')}")
+                st.write(f"**Professor:** {detail_row.get('professor', '-')}")
+                st.write(f"**Turma:** {detail_row.get('turma', '-')}")
+                st.write(f"**Aluno de referência:** {detail_row.get('aluno', '-') or '-'}")
+                st.write(f"**Alunos vinculados:** {', '.join(detail_row.get('alunos', [])) or '-'}")
+                st.write(f"**Livro:** {detail_row.get('livro', '-')}")
+                st.write(f"**Nível:** {detail_row.get('nivel', '-')}")
+                st.write(f"**Status:** {detail_row.get('status', '-')}")
+                st.write(f"**Presença/Falta:** {detail_row.get('presenca', '-')}")
+            with d2:
+                st.write(f"**Lição:** {detail_row.get('licao', '-')}")
+                st.write(f"**Conteúdo:** {detail_row.get('conteudo', '-')}")
+                st.write(f"**Tarefa:** {detail_row.get('tarefa', '-')}")
+                st.write(f"**Observações:** {detail_row.get('observacoes', '-')}")
+                st.write(f"**Início registrado:** {detail_row.get('inicio_em', '-') or '-'}")
+                st.write(f"**Fim registrado:** {detail_row.get('fim_em', '-') or '-'}")
+                st.write(f"**Fuso:** {detail_row.get('timezone', ACTIVE_TIMEZONE_NAME)}")
+                st.write(f"**Última edição:** {detail_row.get('updated_at', '-') or '-'}")
+                st.write(f"**Editado por:** {detail_row.get('updated_by', '-') or '-'}")
+            dd1, dd2, dd3 = st.columns([1, 1, 4])
+            if dd1.button("Fechar detalhes", key=f"{prefix}_close_detail_top", use_container_width=True):
+                st.session_state.pop(f"{prefix}_detail_id", None)
+                st.rerun()
+            if detail_row.get("link"):
+                dd2.link_button("Abrir link", detail_row.get("link"), use_container_width=True)
+            history = detail_row.get("edit_history", [])
+            if history:
+                st.markdown("#### Histórico de alterações")
+                for item in history[-8:][::-1]:
+                    when = str(item.get("at", "")).strip() or "-"
+                    who = str(item.get("by", "")).strip() or "-"
+                    fields = ", ".join(item.get("fields", [])) if isinstance(item.get("fields", []), list) else str(item.get("fields", "")).strip()
+                    st.caption(f"{when} | {who} | Campos: {fields or '-'}")
+
+    if edit_id and not edit_row:
+        st.warning("O registro selecionado para edição não foi encontrado.")
+        st.session_state.pop(f"{prefix}_edit_id", None)
+        st.rerun()
+
     page_size = 10
     total_pages = max(1, (results_count + page_size - 1) // page_size)
     current_page = int(st.session_state.get(f"{prefix}_page", 1) or 1)
@@ -9994,60 +10055,10 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
             st.rerun()
         if ra2.button("✏️ Editar", key=f"{prefix}_edit_{row['id']}", use_container_width=True):
             st.session_state[f"{prefix}_edit_id"] = row["id"]
+            st.session_state.pop(f"{prefix}_detail_id", None)
             st.rerun()
 
-    detail_id = str(st.session_state.get(f"{prefix}_detail_id", "")).strip()
-    if detail_id:
-        detail_row = next((r for r in filtered_rows if str(r.get("id", "")).strip() == detail_id), None)
-        if detail_row:
-            st.markdown(
-                """
-                <div class="aulas-detail-shell">
-                  <div class="aulas-filter-title">Detalhe completo da aula</div>
-                  <div class="aulas-filter-subtitle">Consulte o registro integral, incluindo dados pedagógicos, operacionais, horários, vínculo com alunos e histórico de edição.</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            with st.expander("Abrir detalhe completo", expanded=True):
-                d1, d2 = st.columns(2)
-                with d1:
-                    st.write(f"**Data:** {detail_row.get('data', '-')}")
-                    st.write(f"**Horário:** {detail_row.get('horario', '-')}")
-                    st.write(f"**Professor:** {detail_row.get('professor', '-')}")
-                    st.write(f"**Turma:** {detail_row.get('turma', '-')}")
-                    st.write(f"**Aluno de referência:** {detail_row.get('aluno', '-') or '-'}")
-                    st.write(f"**Alunos vinculados:** {', '.join(detail_row.get('alunos', [])) or '-'}")
-                    st.write(f"**Livro:** {detail_row.get('livro', '-')}")
-                    st.write(f"**Nível:** {detail_row.get('nivel', '-')}")
-                    st.write(f"**Status:** {detail_row.get('status', '-')}")
-                    st.write(f"**Presença/Falta:** {detail_row.get('presenca', '-')}")
-                with d2:
-                    st.write(f"**Lição:** {detail_row.get('licao', '-')}")
-                    st.write(f"**Conteúdo:** {detail_row.get('conteudo', '-')}")
-                    st.write(f"**Tarefa:** {detail_row.get('tarefa', '-')}")
-                    st.write(f"**Observações:** {detail_row.get('observacoes', '-')}")
-                    st.write(f"**Início registrado:** {detail_row.get('inicio_em', '-') or '-'}")
-                    st.write(f"**Fim registrado:** {detail_row.get('fim_em', '-') or '-'}")
-                    st.write(f"**Fuso:** {detail_row.get('timezone', ACTIVE_TIMEZONE_NAME)}")
-                    st.write(f"**Última edição:** {detail_row.get('updated_at', '-') or '-'}")
-                    st.write(f"**Editado por:** {detail_row.get('updated_by', '-') or '-'}")
-                if detail_row.get("link"):
-                    st.link_button("Abrir link da aula", detail_row.get("link"), use_container_width=False)
-                history = detail_row.get("edit_history", [])
-                if history:
-                    st.markdown("#### Histórico de alterações")
-                    for item in history[-8:][::-1]:
-                        when = str(item.get("at", "")).strip() or "-"
-                        who = str(item.get("by", "")).strip() or "-"
-                        fields = ", ".join(item.get("fields", [])) if isinstance(item.get("fields", []), list) else str(item.get("fields", "")).strip()
-                        st.caption(f"{when} | {who} | Campos: {fields or '-'}")
-
-    edit_id = str(st.session_state.get(f"{prefix}_edit_id", "")).strip()
-    if not edit_id:
-        return
-    edit_row = next((r for r in rows if str(r.get("id", "")).strip() == edit_id), None)
-    if not edit_row:
+    if not edit_id or not edit_row:
         return
     raw = dict(edit_row.get("raw", {}))
     st.markdown(
