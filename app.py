@@ -21552,6 +21552,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
         st.markdown("### Desafios publicados")
         chs = list(st.session_state.get("challenges", []) or [])
+        filtered_chs = list(chs)
         if not chs:
             st.info("Nenhum desafio publicado ainda.")
         else:
@@ -21559,6 +21560,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if df.empty:
                 st.info("Nenhum desafio publicado ainda.")
             else:
+                if "semana" in df.columns and "nivel" in df.columns:
+                    filtered_chs = sorted(
+                        chs,
+                        key=lambda ch: (
+                            str((ch or {}).get("semana", "")).strip(),
+                            _norm_book_level((ch or {}).get("nivel", "")) or "",
+                        ),
+                        reverse=True,
+                    )
                 df["destino"] = [
                     _challenge_target_label(ch) if isinstance(ch, dict) else "-"
                     for ch in chs
