@@ -9404,6 +9404,21 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     month_ini, month_fim = _current_month_bounds(today)
     st.session_state.setdefault(f"{prefix}_data_ini", month_ini)
     st.session_state.setdefault(f"{prefix}_data_fim", month_fim)
+    input_defaults = {
+        f"{prefix}_professor_input": st.session_state[f"{prefix}_professor"],
+        f"{prefix}_aluno_input": st.session_state[f"{prefix}_aluno"],
+        f"{prefix}_turma_input": st.session_state[f"{prefix}_turma"],
+        f"{prefix}_periodo_input": st.session_state[f"{prefix}_periodo"],
+        f"{prefix}_data_ini_input": st.session_state[f"{prefix}_data_ini"],
+        f"{prefix}_data_fim_input": st.session_state[f"{prefix}_data_fim"],
+        f"{prefix}_livro_input": st.session_state[f"{prefix}_livro"],
+        f"{prefix}_nivel_input": st.session_state[f"{prefix}_nivel"],
+        f"{prefix}_status_input": st.session_state[f"{prefix}_status"],
+        f"{prefix}_licao_input": st.session_state[f"{prefix}_licao"],
+        f"{prefix}_busca_input": st.session_state[f"{prefix}_busca"],
+    }
+    for key, value in input_defaults.items():
+        st.session_state.setdefault(key, value)
 
     professor_opts = ["Todos"] + sorted({str(r.get("professor", "")).strip() for r in rows if str(r.get("professor", "")).strip()})
     turma_opts = ["Todas"] + sorted({str(r.get("turma", "")).strip() for r in rows if str(r.get("turma", "")).strip() and str(r.get("turma", "")).strip() != "-"})
@@ -9415,34 +9430,43 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     with st.form(f"{prefix}_filters"):
         f1, f2, f3, f4 = st.columns(4)
         with f1:
-            st.selectbox("Professor", professor_opts, key=f"{prefix}_professor")
+            st.selectbox("Professor", professor_opts, key=f"{prefix}_professor_input")
         with f2:
-            st.selectbox("Aluno", aluno_opts, key=f"{prefix}_aluno")
+            st.selectbox("Aluno", aluno_opts, key=f"{prefix}_aluno_input")
         with f3:
-            st.selectbox("Turma", turma_opts, key=f"{prefix}_turma")
+            st.selectbox("Turma", turma_opts, key=f"{prefix}_turma_input")
         with f4:
-            st.selectbox("Período rápido", ["Mês atual", "Hoje", "7 dias", "30 dias", "Personalizado"], key=f"{prefix}_periodo")
+            st.selectbox("Período rápido", ["Mês atual", "Hoje", "7 dias", "30 dias", "Personalizado"], key=f"{prefix}_periodo_input")
         f5, f6, f7, f8 = st.columns(4)
         with f5:
-            st.date_input("Data inicial", key=f"{prefix}_data_ini", format="DD/MM/YYYY")
+            st.date_input("Data inicial", key=f"{prefix}_data_ini_input", format="DD/MM/YYYY")
         with f6:
-            st.date_input("Data final", key=f"{prefix}_data_fim", format="DD/MM/YYYY")
+            st.date_input("Data final", key=f"{prefix}_data_fim_input", format="DD/MM/YYYY")
         with f7:
-            st.selectbox("Livro", livro_opts, key=f"{prefix}_livro")
+            st.selectbox("Livro", livro_opts, key=f"{prefix}_livro_input")
         with f8:
-            st.selectbox("Nível", nivel_opts, key=f"{prefix}_nivel")
+            st.selectbox("Nível", nivel_opts, key=f"{prefix}_nivel_input")
         f9, f10, f11 = st.columns([1, 1, 2])
         with f9:
-            st.selectbox("Status", status_opts, key=f"{prefix}_status")
+            st.selectbox("Status", status_opts, key=f"{prefix}_status_input")
         with f10:
-            st.text_input("Lição", key=f"{prefix}_licao")
+            st.text_input("Lição", key=f"{prefix}_licao_input")
         with f11:
-            st.text_input("Busca livre", key=f"{prefix}_busca", placeholder="Conteúdo, observação, tarefa, turma...")
+            st.text_input("Busca livre", key=f"{prefix}_busca_input", placeholder="Conteúdo, observação, tarefa, turma...")
         a1, a2 = st.columns([1, 1])
         apply_filters = a1.form_submit_button("Aplicar filtros", type="primary")
         clear_filters = a2.form_submit_button("Limpar filtros")
         if apply_filters:
-            periodo = st.session_state.get(f"{prefix}_periodo", "Mês atual")
+            periodo = st.session_state.get(f"{prefix}_periodo_input", "Mês atual")
+            st.session_state[f"{prefix}_professor"] = st.session_state.get(f"{prefix}_professor_input", "Todos")
+            st.session_state[f"{prefix}_aluno"] = st.session_state.get(f"{prefix}_aluno_input", "Todos")
+            st.session_state[f"{prefix}_turma"] = st.session_state.get(f"{prefix}_turma_input", "Todas")
+            st.session_state[f"{prefix}_periodo"] = periodo
+            st.session_state[f"{prefix}_livro"] = st.session_state.get(f"{prefix}_livro_input", "Todos")
+            st.session_state[f"{prefix}_nivel"] = st.session_state.get(f"{prefix}_nivel_input", "Todos")
+            st.session_state[f"{prefix}_status"] = st.session_state.get(f"{prefix}_status_input", "Todos")
+            st.session_state[f"{prefix}_licao"] = st.session_state.get(f"{prefix}_licao_input", "")
+            st.session_state[f"{prefix}_busca"] = st.session_state.get(f"{prefix}_busca_input", "")
             if periodo != "Personalizado":
                 if periodo == "Hoje":
                     st.session_state[f"{prefix}_data_ini"] = today
@@ -9456,21 +9480,37 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
                 else:
                     st.session_state[f"{prefix}_data_ini"] = month_ini
                     st.session_state[f"{prefix}_data_fim"] = month_fim
+                st.session_state[f"{prefix}_data_ini_input"] = st.session_state[f"{prefix}_data_ini"]
+                st.session_state[f"{prefix}_data_fim_input"] = st.session_state[f"{prefix}_data_fim"]
+            else:
+                st.session_state[f"{prefix}_data_ini"] = st.session_state.get(f"{prefix}_data_ini_input", month_ini)
+                st.session_state[f"{prefix}_data_fim"] = st.session_state.get(f"{prefix}_data_fim_input", month_fim)
             st.session_state[f"{prefix}_page"] = 1
             st.rerun()
         if clear_filters:
             st.session_state.update({
                 f"{prefix}_periodo": "Mês atual",
+                f"{prefix}_periodo_input": "Mês atual",
                 f"{prefix}_professor": "Todos",
+                f"{prefix}_professor_input": "Todos",
                 f"{prefix}_aluno": "Todos",
+                f"{prefix}_aluno_input": "Todos",
                 f"{prefix}_turma": "Todas",
+                f"{prefix}_turma_input": "Todas",
                 f"{prefix}_livro": "Todos",
+                f"{prefix}_livro_input": "Todos",
                 f"{prefix}_nivel": "Todos",
+                f"{prefix}_nivel_input": "Todos",
                 f"{prefix}_status": "Todos",
+                f"{prefix}_status_input": "Todos",
                 f"{prefix}_licao": "",
+                f"{prefix}_licao_input": "",
                 f"{prefix}_busca": "",
+                f"{prefix}_busca_input": "",
                 f"{prefix}_data_ini": month_ini,
+                f"{prefix}_data_ini_input": month_ini,
                 f"{prefix}_data_fim": month_fim,
+                f"{prefix}_data_fim_input": month_fim,
                 f"{prefix}_page": 1,
             })
             st.rerun()
