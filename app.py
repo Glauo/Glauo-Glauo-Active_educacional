@@ -26,6 +26,10 @@ import urllib.request
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 try:
     import psycopg2
@@ -192,6 +196,11 @@ WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
+ACTIVE_TIMEZONE_NAME = str(os.getenv("ACTIVE_TIMEZONE", "America/Sao_Paulo")).strip() or "America/Sao_Paulo"
+try:
+    ACTIVE_TIMEZONE = ZoneInfo(ACTIVE_TIMEZONE_NAME) if ZoneInfo else None
+except Exception:
+    ACTIVE_TIMEZONE = None
 AUTO_RESTORE_EMPTY_FILES = (
     USERS_FILE,
     MESSAGES_FILE,
@@ -1001,6 +1010,36 @@ def load_list(path):
 
 def save_list(path, data):
     _save_json_list(path, data)
+
+def active_now():
+    if ACTIVE_TIMEZONE is not None:
+        return datetime.datetime.now(ACTIVE_TIMEZONE)
+    return datetime.datetime.now()
+
+def _load_latest_class_sessions():
+    latest = load_list(CLASS_SESSIONS_FILE)
+    latest = latest if isinstance(latest, list) else []
+    st.session_state["class_sessions"] = latest
+    return latest
+
+def _merge_and_save_class_session(session_obj):
+    sess = dict(session_obj or {})
+    sess_id = str(sess.get("id", "")).strip() or uuid.uuid4().hex
+    sess["id"] = sess_id
+    latest = _load_latest_class_sessions()
+    merged = []
+    replaced = False
+    for item in latest:
+        if isinstance(item, dict) and str(item.get("id", "")).strip() == sess_id:
+            merged.append({**item, **sess})
+            replaced = True
+        else:
+            merged.append(item)
+    if not replaced:
+        merged.append(sess)
+    save_list(CLASS_SESSIONS_FILE, merged)
+    st.session_state["class_sessions"] = merged
+    return sess
 
 DEFAULT_WIZ_SETTINGS = {
     "enabled": True,
@@ -8635,7 +8674,7 @@ def _teacher_payment_sessions_for_receipt(period_start, period_end, professor_na
     prof_target = str(professor_name or "Todos").strip() or "Todos"
     prof_target_norm = normalize_text(prof_target)
     out = []
-    for sess in st.session_state.get("class_sessions", []):
+    for sess in _load_latest_class_sessions():
         if not _class_session_is_finalized(sess):
             continue
         sess_date = _class_session_effective_date(sess)
@@ -9127,7 +9166,7 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
     prof_target_norm = normalize_text(prof_target)
     turma_target_norm = normalize_text(turma_target)
     out = []
-    for sess in st.session_state.get("class_sessions", []):
+    for sess in _load_latest_class_sessions():
         if not _class_session_is_finalized(sess):
             continue
         turma_nome = str(sess.get("turma", "")).strip()
@@ -9150,6 +9189,505 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
         out.append(_teacher_payment_info_for_session(sess))
     out.sort(key=lambda item: (parse_date(item.get("data", "")) or month_start, item.get("professor", ""), item.get("turma", "")))
     return out
+
+def _has_permission(permission_key):
+    current = st.session_state.get("permissions", {})
+    for part in str(permission_key or "").split("."):
+        if not part:
+            continue
+        if isinstance(current, dict) and part in current:
+            current = current.get(part)
+        else:
+            return False
+    return bool(current)
+
+def _can_access_aulas_central():
+    role = str(st.session_state.get("role", "")).strip()
+    profile = str(st.session_state.get("account_profile") or role).strip()
+    if role in ("Professor", "Coordenador", "Admin"):
+        return True
+    if profile in ("Professor", "Coordenador", "Admin"):
+        return True
+    return _has_permission("permissions.manage")
+
+def _class_session_enriched_rows(viewer_profile="", viewer_name=""):
+    rows = []
+    viewer_profile = str(viewer_profile or "").strip()
+    viewer_name_norm = normalize_text(viewer_name)
+    classes_map = {
+        normalize_text(c.get("nome", "")): c
+        for c in st.session_state.get("classes", [])
+        if isinstance(c, dict) and str(c.get("nome", "")).strip()
+    }
+    students_by_turma = {}
+    for student in st.session_state.get("students", []):
+        turma_nome = str(student.get("turma", "")).strip()
+        aluno_nome = str(student.get("nome", "")).strip()
+        if not turma_nome or not aluno_nome:
+            continue
+        students_by_turma.setdefault(turma_nome, []).append(aluno_nome)
+
+    for sess in _load_latest_class_sessions():
+        if not isinstance(sess, dict):
+            continue
+        turma_nome = str(sess.get("turma", "")).strip()
+        turma_obj = classes_map.get(normalize_text(turma_nome), {})
+        professor_label = str(sess.get("professor", "")).strip() or str(turma_obj.get("professor", "")).strip()
+        if viewer_profile == "Professor" and normalize_text(professor_label) != viewer_name_norm:
+            continue
+        book_label = str(sess.get("livro", "")).strip() or str(turma_obj.get("livro", "")).strip()
+        level_label = str(sess.get("nivel", "")).strip() or (_norm_book_level(book_label) or book_label)
+        licao_label = str(sess.get("licao", "")).strip()
+        conteudo_label = (
+            str(sess.get("conteudo", "")).strip()
+            or str(sess.get("resumo_final", "")).strip()
+            or str(sess.get("resumo_inicio", "")).strip()
+            or licao_label
+        )
+        observacoes_label = (
+            str(sess.get("observacoes", "")).strip()
+            or str(sess.get("resumo_final", "")).strip()
+            or str(sess.get("resumo_inicio", "")).strip()
+        )
+        tarefa_label = str(sess.get("tarefa", "")).strip()
+        status_label = str(sess.get("status", "")).strip() or ("Finalizada" if _class_session_is_finalized(sess) else "Em andamento")
+        hora_inicio = str(sess.get("hora_inicio_real", sess.get("hora_inicio_prevista", ""))).strip()
+        hora_fim = str(sess.get("hora_fim_real", sess.get("hora_fim_prevista", ""))).strip()
+        alunos_list = list(sess.get("alunos", [])) if isinstance(sess.get("alunos", []), list) else []
+        if not alunos_list:
+            alunos_list = sorted(students_by_turma.get(turma_nome, []))
+        aluno_ref = str(sess.get("aluno_referencia", "")).strip()
+        if aluno_ref and aluno_ref not in alunos_list:
+            alunos_list.insert(0, aluno_ref)
+        alunos_label = ", ".join(alunos_list[:3])
+        if len(alunos_list) > 3:
+            alunos_label += f" +{len(alunos_list) - 3}"
+        rows.append(
+            {
+                "id": str(sess.get("id", "")).strip(),
+                "data": str(sess.get("data", "")).strip(),
+                "data_obj": _class_session_effective_date(sess) or datetime.date(1900, 1, 1),
+                "hora_inicio": hora_inicio,
+                "hora_fim": hora_fim,
+                "horario": f"{hora_inicio} - {hora_fim}".strip(" -"),
+                "professor": professor_label or "-",
+                "turma": turma_nome or "-",
+                "aluno": aluno_ref,
+                "alunos": alunos_list,
+                "alunos_label": alunos_label or "-",
+                "livro": book_label or "-",
+                "nivel": level_label or "-",
+                "licao": licao_label or "-",
+                "conteudo": conteudo_label or "-",
+                "tarefa": tarefa_label or "-",
+                "status": status_label,
+                "observacoes": observacoes_label or "-",
+                "presenca": str(sess.get("presenca", "")).strip() or "-",
+                "titulo": str(sess.get("titulo", "")).strip() or "Aula",
+                "link": str(sess.get("link", "")).strip(),
+                "resumo_inicio": str(sess.get("resumo_inicio", "")).strip(),
+                "resumo_final": str(sess.get("resumo_final", "")).strip(),
+                "inicio_em": str(sess.get("inicio_em", "")).strip(),
+                "fim_em": str(sess.get("fim_em", "")).strip(),
+                "timezone": str(sess.get("timezone", "")).strip() or ACTIVE_TIMEZONE_NAME,
+                "updated_at": str(sess.get("updated_at", "")).strip(),
+                "updated_by": str(sess.get("updated_by", "")).strip(),
+                "edit_history": list(sess.get("edit_history", [])) if isinstance(sess.get("edit_history", []), list) else [],
+                "raw": sess,
+            }
+        )
+    rows.sort(key=lambda item: (item.get("data_obj") or datetime.date(1900, 1, 1), parse_time(item.get("hora_inicio", "00:00"))), reverse=True)
+    return rows
+
+def _class_session_apply_filters(rows, prefix):
+    filtered = list(rows or [])
+    professor_filter = str(st.session_state.get(f"{prefix}_professor", "Todos")).strip() or "Todos"
+    aluno_filter = str(st.session_state.get(f"{prefix}_aluno", "Todos")).strip() or "Todos"
+    turma_filter = str(st.session_state.get(f"{prefix}_turma", "Todas")).strip() or "Todas"
+    livro_filter = str(st.session_state.get(f"{prefix}_livro", "Todos")).strip() or "Todos"
+    licao_filter = str(st.session_state.get(f"{prefix}_licao", "")).strip()
+    nivel_filter = str(st.session_state.get(f"{prefix}_nivel", "Todos")).strip() or "Todos"
+    status_filter = str(st.session_state.get(f"{prefix}_status", "Todos")).strip() or "Todos"
+    busca = normalize_text(st.session_state.get(f"{prefix}_busca", ""))
+    data_ini = st.session_state.get(f"{prefix}_data_ini")
+    data_fim = st.session_state.get(f"{prefix}_data_fim")
+
+    out = []
+    for row in filtered:
+        if professor_filter != "Todos" and str(row.get("professor", "")).strip() != professor_filter:
+            continue
+        if aluno_filter != "Todos":
+            alunos_norm = {normalize_text(x) for x in row.get("alunos", [])}
+            if normalize_text(aluno_filter) not in alunos_norm and normalize_text(row.get("aluno", "")) != normalize_text(aluno_filter):
+                continue
+        if turma_filter != "Todas" and str(row.get("turma", "")).strip() != turma_filter:
+            continue
+        if livro_filter != "Todos" and str(row.get("livro", "")).strip() != livro_filter:
+            continue
+        if nivel_filter != "Todos" and str(row.get("nivel", "")).strip() != nivel_filter:
+            continue
+        if status_filter != "Todos" and str(row.get("status", "")).strip() != status_filter:
+            continue
+        if licao_filter and licao_filter.lower() not in str(row.get("licao", "")).strip().lower():
+            continue
+        data_obj = row.get("data_obj")
+        if isinstance(data_ini, datetime.date) and isinstance(data_obj, datetime.date) and data_obj < data_ini:
+            continue
+        if isinstance(data_fim, datetime.date) and isinstance(data_obj, datetime.date) and data_obj > data_fim:
+            continue
+        if busca:
+            haystack = normalize_text(
+                " | ".join(
+                    [
+                        str(row.get("professor", "")),
+                        str(row.get("turma", "")),
+                        ", ".join(row.get("alunos", [])),
+                        str(row.get("livro", "")),
+                        str(row.get("nivel", "")),
+                        str(row.get("licao", "")),
+                        str(row.get("conteudo", "")),
+                        str(row.get("tarefa", "")),
+                        str(row.get("observacoes", "")),
+                        str(row.get("status", "")),
+                    ]
+                )
+            )
+            if busca not in haystack:
+                continue
+        out.append(row)
+    return out
+
+def _class_session_status_badge(status_label):
+    status_text = str(status_label or "-").strip() or "-"
+    status_norm = normalize_text(status_text)
+    color = "#475569"
+    bg = "#e2e8f0"
+    if "final" in status_norm or "conclu" in status_norm:
+        color = "#166534"
+        bg = "#dcfce7"
+    elif "andamento" in status_norm or "aberta" in status_norm:
+        color = "#1d4ed8"
+        bg = "#dbeafe"
+    elif "cancel" in status_norm:
+        color = "#991b1b"
+        bg = "#fee2e2"
+    return f"<span style='display:inline-block;padding:4px 10px;border-radius:999px;background:{bg};color:{color};font-weight:700;font-size:.8rem;'>{html.escape(status_text)}</span>"
+
+def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
+    if not _can_access_aulas_central():
+        st.error("Acesso restrito.")
+        return
+
+    prefix = f"{panel_key}_aulas"
+    rows = _class_session_enriched_rows(viewer_profile=viewer_profile, viewer_name=viewer_name)
+    st.markdown('<div class="main-header">Aulas</div>', unsafe_allow_html=True)
+    st.caption("Central única de histórico, consulta e gestão pedagógica das aulas registradas.")
+    if not rows:
+        st.info("Nenhuma aula registrada ainda.")
+        return
+
+    today = datetime.date.today()
+    defaults = {
+        f"{prefix}_periodo": "Mês atual",
+        f"{prefix}_professor": "Todos",
+        f"{prefix}_aluno": "Todos",
+        f"{prefix}_turma": "Todas",
+        f"{prefix}_livro": "Todos",
+        f"{prefix}_nivel": "Todos",
+        f"{prefix}_status": "Todos",
+        f"{prefix}_licao": "",
+        f"{prefix}_busca": "",
+        f"{prefix}_page": 1,
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    month_ini, month_fim = _current_month_bounds(today)
+    st.session_state.setdefault(f"{prefix}_data_ini", month_ini)
+    st.session_state.setdefault(f"{prefix}_data_fim", month_fim)
+
+    professor_opts = ["Todos"] + sorted({str(r.get("professor", "")).strip() for r in rows if str(r.get("professor", "")).strip()})
+    turma_opts = ["Todas"] + sorted({str(r.get("turma", "")).strip() for r in rows if str(r.get("turma", "")).strip() and str(r.get("turma", "")).strip() != "-"})
+    aluno_opts = ["Todos"] + sorted({str(a).strip() for r in rows for a in r.get("alunos", []) if str(a).strip()})
+    livro_opts = ["Todos"] + sorted({str(r.get("livro", "")).strip() for r in rows if str(r.get("livro", "")).strip() and str(r.get("livro", "")).strip() != "-"})
+    nivel_opts = ["Todos"] + sorted({str(r.get("nivel", "")).strip() for r in rows if str(r.get("nivel", "")).strip() and str(r.get("nivel", "")).strip() != "-"})
+    status_opts = ["Todos"] + sorted({str(r.get("status", "")).strip() for r in rows if str(r.get("status", "")).strip()})
+
+    with st.form(f"{prefix}_filters"):
+        f1, f2, f3, f4 = st.columns(4)
+        with f1:
+            st.selectbox("Professor", professor_opts, key=f"{prefix}_professor")
+        with f2:
+            st.selectbox("Aluno", aluno_opts, key=f"{prefix}_aluno")
+        with f3:
+            st.selectbox("Turma", turma_opts, key=f"{prefix}_turma")
+        with f4:
+            st.selectbox("Período rápido", ["Mês atual", "Hoje", "7 dias", "30 dias", "Personalizado"], key=f"{prefix}_periodo")
+        f5, f6, f7, f8 = st.columns(4)
+        with f5:
+            st.date_input("Data inicial", key=f"{prefix}_data_ini", format="DD/MM/YYYY")
+        with f6:
+            st.date_input("Data final", key=f"{prefix}_data_fim", format="DD/MM/YYYY")
+        with f7:
+            st.selectbox("Livro", livro_opts, key=f"{prefix}_livro")
+        with f8:
+            st.selectbox("Nível", nivel_opts, key=f"{prefix}_nivel")
+        f9, f10, f11 = st.columns([1, 1, 2])
+        with f9:
+            st.selectbox("Status", status_opts, key=f"{prefix}_status")
+        with f10:
+            st.text_input("Lição", key=f"{prefix}_licao")
+        with f11:
+            st.text_input("Busca livre", key=f"{prefix}_busca", placeholder="Conteúdo, observação, tarefa, turma...")
+        a1, a2 = st.columns([1, 1])
+        apply_filters = a1.form_submit_button("Aplicar filtros", type="primary")
+        clear_filters = a2.form_submit_button("Limpar filtros")
+        if apply_filters:
+            periodo = st.session_state.get(f"{prefix}_periodo", "Mês atual")
+            if periodo != "Personalizado":
+                if periodo == "Hoje":
+                    st.session_state[f"{prefix}_data_ini"] = today
+                    st.session_state[f"{prefix}_data_fim"] = today
+                elif periodo == "7 dias":
+                    st.session_state[f"{prefix}_data_ini"] = today - datetime.timedelta(days=7)
+                    st.session_state[f"{prefix}_data_fim"] = today
+                elif periodo == "30 dias":
+                    st.session_state[f"{prefix}_data_ini"] = today - datetime.timedelta(days=30)
+                    st.session_state[f"{prefix}_data_fim"] = today
+                else:
+                    st.session_state[f"{prefix}_data_ini"] = month_ini
+                    st.session_state[f"{prefix}_data_fim"] = month_fim
+            st.session_state[f"{prefix}_page"] = 1
+            st.rerun()
+        if clear_filters:
+            st.session_state.update({
+                f"{prefix}_periodo": "Mês atual",
+                f"{prefix}_professor": "Todos",
+                f"{prefix}_aluno": "Todos",
+                f"{prefix}_turma": "Todas",
+                f"{prefix}_livro": "Todos",
+                f"{prefix}_nivel": "Todos",
+                f"{prefix}_status": "Todos",
+                f"{prefix}_licao": "",
+                f"{prefix}_busca": "",
+                f"{prefix}_data_ini": month_ini,
+                f"{prefix}_data_fim": month_fim,
+                f"{prefix}_page": 1,
+            })
+            st.rerun()
+
+    filtered_rows = _class_session_apply_filters(rows, prefix)
+    results_count = len(filtered_rows)
+    unique_prof = len({r.get("professor") for r in filtered_rows if r.get("professor") and r.get("professor") != "-"})
+    unique_turmas = len({r.get("turma") for r in filtered_rows if r.get("turma") and r.get("turma") != "-"})
+    total_finalizadas = sum(1 for r in filtered_rows if "final" in normalize_text(r.get("status", "")) or "conclu" in normalize_text(r.get("status", "")))
+    total_obs = sum(1 for r in filtered_rows if str(r.get("observacoes", "")).strip() and str(r.get("observacoes", "")).strip() != "-")
+    total_tarefa = sum(1 for r in filtered_rows if str(r.get("tarefa", "")).strip() and str(r.get("tarefa", "")).strip() != "-")
+
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    with m1: st.metric("Aulas", results_count)
+    with m2: st.metric("Professores", unique_prof)
+    with m3: st.metric("Turmas", unique_turmas)
+    with m4: st.metric("Concluídas", total_finalizadas)
+    with m5: st.metric("Com observação", total_obs)
+    with m6: st.metric("Com tarefa", total_tarefa)
+    st.caption(f"Resultados encontrados: {results_count}")
+
+    if not filtered_rows:
+        st.info("Nenhuma aula encontrada com os filtros atuais.")
+        return
+
+    page_size = 10
+    total_pages = max(1, (results_count + page_size - 1) // page_size)
+    current_page = int(st.session_state.get(f"{prefix}_page", 1) or 1)
+    current_page = max(1, min(current_page, total_pages))
+    st.session_state[f"{prefix}_page"] = current_page
+    start_idx = (current_page - 1) * page_size
+    visible_rows = filtered_rows[start_idx:start_idx + page_size]
+
+    ph1, ph2, ph3 = st.columns([1, 2, 1])
+    if ph1.button("Página anterior", key=f"{prefix}_prev", disabled=current_page <= 1, use_container_width=True):
+        st.session_state[f"{prefix}_page"] = current_page - 1
+        st.rerun()
+    ph2.markdown(
+        f"<div style='text-align:center;padding-top:8px;font-weight:600;color:#1e3a8a;'>Página {current_page} de {total_pages}</div>",
+        unsafe_allow_html=True,
+    )
+    if ph3.button("Próxima página", key=f"{prefix}_next", disabled=current_page >= total_pages, use_container_width=True):
+        st.session_state[f"{prefix}_page"] = current_page + 1
+        st.rerun()
+
+    st.markdown("### Histórico de aulas")
+    for row in visible_rows:
+        conteudo_txt = str(row.get("conteudo", "-"))
+        conteudo_short = conteudo_txt[:180] + ("..." if len(conteudo_txt) > 180 else "")
+        st.markdown(
+            f"""
+<div style="border:1px solid rgba(59,130,246,.14);border-radius:18px;padding:16px 18px;margin:10px 0;background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.98));box-shadow:0 8px 22px rgba(15,23,42,.05);">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:1.05rem;font-weight:800;color:#0f172a;">{html.escape(str(row.get("titulo", "Aula")).strip() or "Aula")}</div>
+      <div style="margin-top:4px;color:#334155;font-size:.94rem;">{html.escape(str(row.get("data", "-")))} | {html.escape(str(row.get("horario", "-")) or "-")} | {html.escape(str(row.get("professor", "-")))} | {html.escape(str(row.get("turma", "-")))}</div>
+      <div style="margin-top:4px;color:#475569;font-size:.9rem;">Livro: {html.escape(str(row.get("livro", "-")))} | Lição: {html.escape(str(row.get("licao", "-")))} | Alunos: {html.escape(str(row.get("alunos_label", "-")))}</div>
+      <div style="margin-top:6px;color:#0f172a;font-size:.93rem;">{html.escape(conteudo_short or "-")}</div>
+    </div>
+    <div>{_class_session_status_badge(row.get("status", "-"))}</div>
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        ra1, ra2, ra3 = st.columns([1, 1, 6])
+        if ra1.button("Detalhes", key=f"{prefix}_detail_{row['id']}", use_container_width=True):
+            st.session_state[f"{prefix}_detail_id"] = row["id"]
+            st.rerun()
+        if ra2.button("Editar", key=f"{prefix}_edit_{row['id']}", use_container_width=True):
+            st.session_state[f"{prefix}_edit_id"] = row["id"]
+            st.rerun()
+
+    detail_id = str(st.session_state.get(f"{prefix}_detail_id", "")).strip()
+    if detail_id:
+        detail_row = next((r for r in filtered_rows if str(r.get("id", "")).strip() == detail_id), None)
+        if detail_row:
+            with st.expander("Detalhe completo da aula", expanded=True):
+                d1, d2 = st.columns(2)
+                with d1:
+                    st.write(f"**Data:** {detail_row.get('data', '-')}")
+                    st.write(f"**Horário:** {detail_row.get('horario', '-')}")
+                    st.write(f"**Professor:** {detail_row.get('professor', '-')}")
+                    st.write(f"**Turma:** {detail_row.get('turma', '-')}")
+                    st.write(f"**Aluno de referência:** {detail_row.get('aluno', '-') or '-'}")
+                    st.write(f"**Alunos vinculados:** {', '.join(detail_row.get('alunos', [])) or '-'}")
+                    st.write(f"**Livro:** {detail_row.get('livro', '-')}")
+                    st.write(f"**Nível:** {detail_row.get('nivel', '-')}")
+                    st.write(f"**Status:** {detail_row.get('status', '-')}")
+                    st.write(f"**Presença/Falta:** {detail_row.get('presenca', '-')}")
+                with d2:
+                    st.write(f"**Lição:** {detail_row.get('licao', '-')}")
+                    st.write(f"**Conteúdo:** {detail_row.get('conteudo', '-')}")
+                    st.write(f"**Tarefa:** {detail_row.get('tarefa', '-')}")
+                    st.write(f"**Observações:** {detail_row.get('observacoes', '-')}")
+                    st.write(f"**Início registrado:** {detail_row.get('inicio_em', '-') or '-'}")
+                    st.write(f"**Fim registrado:** {detail_row.get('fim_em', '-') or '-'}")
+                    st.write(f"**Fuso:** {detail_row.get('timezone', ACTIVE_TIMEZONE_NAME)}")
+                    st.write(f"**Última edição:** {detail_row.get('updated_at', '-') or '-'}")
+                    st.write(f"**Editado por:** {detail_row.get('updated_by', '-') or '-'}")
+                if detail_row.get("link"):
+                    st.link_button("Abrir link da aula", detail_row.get("link"), use_container_width=False)
+                history = detail_row.get("edit_history", [])
+                if history:
+                    st.markdown("#### Histórico de alterações")
+                    for item in history[-8:][::-1]:
+                        when = str(item.get("at", "")).strip() or "-"
+                        who = str(item.get("by", "")).strip() or "-"
+                        fields = ", ".join(item.get("fields", [])) if isinstance(item.get("fields", []), list) else str(item.get("fields", "")).strip()
+                        st.caption(f"{when} | {who} | Campos: {fields or '-'}")
+
+    edit_id = str(st.session_state.get(f"{prefix}_edit_id", "")).strip()
+    if not edit_id:
+        return
+    edit_row = next((r for r in rows if str(r.get("id", "")).strip() == edit_id), None)
+    if not edit_row:
+        return
+    raw = dict(edit_row.get("raw", {}))
+    st.markdown("### Editar aula")
+    with st.form(f"{prefix}_edit_form_{edit_id}"):
+        e1, e2, e3 = st.columns(3)
+        with e1:
+            edit_data = st.date_input("Data", value=parse_date(raw.get("data", "")) or today, format="DD/MM/YYYY")
+        with e2:
+            edit_hora_ini = st.time_input("Horário inicial", value=parse_time(raw.get("hora_inicio_real", raw.get("hora_inicio_prevista", ""))) or datetime.time(19, 0))
+        with e3:
+            edit_hora_fim = st.time_input("Horário final", value=parse_time(raw.get("hora_fim_real", raw.get("hora_fim_prevista", ""))) or datetime.time(20, 0))
+        turma_all = sorted({str(c.get("nome", "")).strip() for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip()})
+        current_turma = str(raw.get("turma", "")).strip()
+        if current_turma and current_turma not in turma_all:
+            turma_all.append(current_turma)
+        prof_all = sorted({str(t.get("nome", "")).strip() for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip()})
+        current_prof = str(raw.get("professor", "")).strip()
+        if current_prof and current_prof not in prof_all:
+            prof_all.append(current_prof)
+        prof_options = [current_prof or str(st.session_state.get("user_name", "")).strip()] if viewer_profile == "Professor" else (prof_all or [current_prof])
+        e4, e5, e6 = st.columns(3)
+        with e4:
+            edit_turma = st.selectbox("Turma", turma_all, index=(turma_all.index(current_turma) if current_turma in turma_all else 0))
+        with e5:
+            edit_prof = st.selectbox("Professor", prof_options, index=(prof_options.index(current_prof) if current_prof in prof_options else 0))
+        with e6:
+            status_edit_opts = ["Em andamento", "Finalizada", "Cancelada", "Pendente"]
+            current_status = str(raw.get("status", "Finalizada")).strip() or "Finalizada"
+            if current_status not in status_edit_opts:
+                status_edit_opts.append(current_status)
+            edit_status = st.selectbox("Status", status_edit_opts, index=status_edit_opts.index(current_status))
+        turma_edit_obj = next((c for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip() == str(edit_turma).strip()), {})
+        alunos_edit_opts = [""] + sorted({
+            str(s.get("nome", "")).strip()
+            for s in st.session_state.get("students", [])
+            if str(s.get("turma", "")).strip() == str(edit_turma).strip() and str(s.get("nome", "")).strip()
+        })
+        current_aluno_ref = str(raw.get("aluno_referencia", "")).strip()
+        edit_aluno_ref = st.selectbox("Aluno de referência (opcional)", alunos_edit_opts, index=(alunos_edit_opts.index(current_aluno_ref) if current_aluno_ref in alunos_edit_opts else 0))
+        e7, e8 = st.columns(2)
+        with e7:
+            edit_livro = st.text_input("Livro", value=str(raw.get("livro", "")).strip() or str(turma_edit_obj.get("livro", "")).strip())
+        with e8:
+            edit_nivel = st.text_input("Nível", value=str(raw.get("nivel", "")).strip() or (_norm_book_level(edit_livro) or ""))
+        edit_licao = st.text_input("Lição", value=str(raw.get("licao", "")).strip())
+        edit_conteudo = st.text_area("Conteúdo", value=str(raw.get("conteudo", "")).strip() or str(raw.get("resumo_final", "")).strip() or str(raw.get("resumo_inicio", "")).strip())
+        e9, e10 = st.columns(2)
+        with e9:
+            edit_tarefa = st.text_area("Tarefa / lição de casa", value=str(raw.get("tarefa", "")).strip())
+        with e10:
+            edit_presenca = st.text_input("Presença / falta", value=str(raw.get("presenca", "")).strip())
+        edit_obs = st.text_area("Observações", value=str(raw.get("observacoes", "")).strip() or str(raw.get("resumo_final", "")).strip())
+        edit_link = st.text_input("Link da aula", value=str(raw.get("link", "")).strip() or str(turma_edit_obj.get("link_zoom", "")).strip())
+        ef1, ef2 = st.columns([1, 1])
+        save_edit = ef1.form_submit_button("Salvar edição", type="primary")
+        cancel_edit = ef2.form_submit_button("Cancelar")
+        if cancel_edit:
+            st.session_state.pop(f"{prefix}_edit_id", None)
+            st.rerun()
+        if save_edit:
+            updated = dict(raw)
+            changed_fields = []
+            field_map = {
+                "data": edit_data.strftime("%d/%m/%Y"),
+                "hora_inicio_real": edit_hora_ini.strftime("%H:%M"),
+                "hora_fim_real": edit_hora_fim.strftime("%H:%M"),
+                "hora_inicio_prevista": edit_hora_ini.strftime("%H:%M"),
+                "hora_fim_prevista": edit_hora_fim.strftime("%H:%M"),
+                "turma": str(edit_turma).strip(),
+                "professor": str(edit_prof).strip(),
+                "status": str(edit_status).strip(),
+                "aluno_referencia": str(edit_aluno_ref).strip(),
+                "livro": str(edit_livro).strip(),
+                "nivel": str(edit_nivel).strip(),
+                "licao": str(edit_licao).strip(),
+                "conteudo": str(edit_conteudo).strip(),
+                "tarefa": str(edit_tarefa).strip(),
+                "presenca": str(edit_presenca).strip(),
+                "observacoes": str(edit_obs).strip(),
+                "link": str(edit_link).strip(),
+                "timezone": ACTIVE_TIMEZONE_NAME,
+            }
+            for key, value in field_map.items():
+                if str(updated.get(key, "")).strip() != str(value).strip():
+                    changed_fields.append(key)
+                updated[key] = value
+            updated["resumo_final"] = str(edit_obs).strip() or str(edit_conteudo).strip()
+            updated["resumo_inicio"] = str(updated.get("resumo_inicio", "")).strip() or str(edit_conteudo).strip()
+            updated["updated_at"] = active_now().strftime("%d/%m/%Y %H:%M")
+            updated["updated_by"] = str(st.session_state.get("user_name", "")).strip() or viewer_name or "Sistema"
+            history = list(updated.get("edit_history", [])) if isinstance(updated.get("edit_history", []), list) else []
+            history.append({"at": updated["updated_at"], "by": updated["updated_by"], "fields": changed_fields})
+            updated["edit_history"] = history[-20:]
+            if str(updated.get("status", "")).strip().lower() == "finalizada":
+                updated["fim_em"] = f"{updated['data']} {updated['hora_fim_real']}"
+            updated["inicio_em"] = str(updated.get("inicio_em", "")).strip() or f"{updated['data']} {updated['hora_inicio_real']}"
+            _apply_teacher_payment_snapshot_to_session(updated)
+            _merge_and_save_class_session(updated)
+            st.session_state.pop(f"{prefix}_edit_id", None)
+            st.success("Aula atualizada com sucesso.")
+            st.rerun()
 
 def allowed_portals(profile):
     if profile == "Aluno": return ["Aluno"]
@@ -9717,6 +10255,7 @@ def sidebar_menu(title, options, key):
         "Dashboard": "🏠",
         "Painel": "🏠",
         "Agenda": "📅",
+        "Aulas": "🎓",
         "Links Ao Vivo": "🔗",
         "Minhas Turmas": "👩‍🏫",
         "Minhas Aulas": "🧑‍🏫",
@@ -13154,7 +13693,7 @@ elif st.session_state["role"] == "Aluno":
             st.success("Sem pendencias no momento: desafios, tarefas e mensagens em dia.")
 
         sessoes_finalizadas = [
-            s for s in st.session_state.get("class_sessions", [])
+            s for s in _load_latest_class_sessions()
             if str(s.get("turma", "")).strip() == turma_aluno
             and str(s.get("status", "")).strip().lower() == "finalizada"
         ]
@@ -13323,7 +13862,7 @@ elif st.session_state["role"] == "Aluno":
 
             st.markdown("### Conteudos e materias salvos pelo professor")
             historico_aulas = [
-                s for s in st.session_state.get("class_sessions", [])
+                s for s in _load_latest_class_sessions()
                 if str(s.get("turma", "")).strip() == turma_aluno and str(s.get("status", "")).strip().lower() == "finalizada"
             ]
             historico_aulas = sorted(
@@ -13741,7 +14280,7 @@ elif st.session_state["role"] == "Professor":
         st.markdown("---")
         menu_prof_label = sidebar_menu(
             "Gestão",
-            ["Minhas Turmas", "Agenda", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz"],
+            ["Minhas Turmas", "Agenda", "Aulas", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz"],
             "menu_prof",
         )
         st.markdown("---")
@@ -13752,6 +14291,7 @@ elif st.session_state["role"] == "Professor":
     menu_prof_map = {
         "Minhas Turmas": "Minhas Turmas",
         "Agenda": "Agenda",
+        "Aulas": "Aulas",
         "Mensagens": "Mensagens",
         "Atividades": "Atividades",
         "Lições de Casa": "Licoes de Casa",
@@ -13874,12 +14414,21 @@ elif st.session_state["role"] == "Professor":
                     st.caption("Nenhum aluno VIP nesta turma.")
 
                 prof_nome_atual = str(st.session_state.get("user_name", "")).strip()
+                sessoes_base = _load_latest_class_sessions()
                 sessoes_ativas = [
-                    s for s in st.session_state.get("class_sessions", [])
+                    s for s in sessoes_base
                     if str(s.get("turma", "")).strip() == str(turma_ctrl).strip()
-                    and str(s.get("professor", "")).strip() == prof_nome_atual
-                    and str(s.get("status", "")).strip().lower() == "em andamento"
+                    and normalize_text(s.get("professor", "")) == normalize_text(prof_nome_atual)
+                    and normalize_text(s.get("status", "")) == "em andamento"
                 ]
+                sessoes_ativas = sorted(
+                    sessoes_ativas,
+                    key=lambda x: (
+                        _class_session_effective_date(x) or datetime.date(1900, 1, 1),
+                        parse_time(str(x.get("hora_inicio_real", x.get("hora_inicio_prevista", "00:00"))).strip()),
+                    ),
+                    reverse=True,
+                )
 
                 if not sessoes_ativas:
                     st.markdown("### Iniciar aula")
@@ -13907,29 +14456,28 @@ elif st.session_state["role"] == "Professor":
                                 st.error("Informe a licao/conteudo da aula antes de iniciar.")
                             else:
                                 aula_sel = aulas_turma[aula_idx] if aula_idx >= 0 and aula_idx < len(aulas_turma) else {}
-                                now_dt = datetime.datetime.now()
-                                st.session_state["class_sessions"].append(
-                                    {
-                                        "id": uuid.uuid4().hex,
-                                        "turma": turma_ctrl,
-                                        "professor": prof_nome_atual,
-                                        "titulo": str(aula_sel.get("titulo", "")).strip() or "Aula",
-                                        "data": str(aula_sel.get("data", "")).strip() or now_dt.strftime("%d/%m/%Y"),
-                                        "hora_inicio_prevista": str(aula_sel.get("hora", "")).strip() or str(turma_obj.get("hora_inicio", "")).strip(),
-                                        "hora_fim_prevista": str(turma_obj.get("hora_fim", "")).strip(),
-                                        "link": str(aula_sel.get("link", "")).strip() or str(turma_obj.get("link_zoom", "")).strip(),
-                                        "licao": licao.strip(),
-                                        "resumo_inicio": resumo_inicio.strip(),
-                                        "inicio_em": now_dt.strftime("%d/%m/%Y %H:%M"),
-                                        "hora_inicio_real": now_dt.strftime("%H:%M"),
-                                        "status": "Em andamento",
-                                        "resumo_final": "",
-                                        "hora_fim_real": "",
-                                        "fim_em": "",
-                                    }
-                                )
-                                _apply_teacher_payment_snapshot_to_session(st.session_state["class_sessions"][-1])
-                                save_list(CLASS_SESSIONS_FILE, st.session_state["class_sessions"])
+                                now_dt = active_now()
+                                nova_sessao = {
+                                    "id": uuid.uuid4().hex,
+                                    "turma": turma_ctrl,
+                                    "professor": prof_nome_atual,
+                                    "titulo": str(aula_sel.get("titulo", "")).strip() or "Aula",
+                                    "data": str(aula_sel.get("data", "")).strip() or now_dt.strftime("%d/%m/%Y"),
+                                    "hora_inicio_prevista": str(aula_sel.get("hora", "")).strip() or str(turma_obj.get("hora_inicio", "")).strip(),
+                                    "hora_fim_prevista": str(turma_obj.get("hora_fim", "")).strip(),
+                                    "link": str(aula_sel.get("link", "")).strip() or str(turma_obj.get("link_zoom", "")).strip(),
+                                    "licao": licao.strip(),
+                                    "resumo_inicio": resumo_inicio.strip(),
+                                    "inicio_em": now_dt.strftime("%d/%m/%Y %H:%M"),
+                                    "hora_inicio_real": now_dt.strftime("%H:%M"),
+                                    "status": "Em andamento",
+                                    "resumo_final": "",
+                                    "hora_fim_real": "",
+                                    "fim_em": "",
+                                    "timezone": ACTIVE_TIMEZONE_NAME,
+                                }
+                                _apply_teacher_payment_snapshot_to_session(nova_sessao)
+                                _merge_and_save_class_session(nova_sessao)
                                 st.success("Aula iniciada com sucesso.")
                                 st.rerun()
                 else:
@@ -13945,11 +14493,12 @@ elif st.session_state["role"] == "Professor":
                             value=str(sessao_ativa.get("resumo_final", "")).strip() or str(sessao_ativa.get("licao", "")).strip(),
                         )
                         if st.form_submit_button("Fechar aula", type="primary"):
-                            now_dt = datetime.datetime.now()
+                            now_dt = active_now()
                             sessao_ativa["status"] = "Finalizada"
                             sessao_ativa["resumo_final"] = resumo_final.strip()
                             sessao_ativa["fim_em"] = now_dt.strftime("%d/%m/%Y %H:%M")
                             sessao_ativa["hora_fim_real"] = now_dt.strftime("%H:%M")
+                            sessao_ativa["timezone"] = ACTIVE_TIMEZONE_NAME
                             if not sessao_ativa.get("data"):
                                 sessao_ativa["data"] = now_dt.strftime("%d/%m/%Y")
                             vip_consumidos = _consume_vip_package_for_class(sessao_ativa.get("turma", ""))
@@ -13962,7 +14511,7 @@ elif st.session_state["role"] == "Professor":
                                     for item in vip_consumidos
                                 ]
                             _apply_teacher_payment_snapshot_to_session(sessao_ativa)
-                            save_list(CLASS_SESSIONS_FILE, st.session_state["class_sessions"])
+                            _merge_and_save_class_session(sessao_ativa)
                             if vip_consumidos:
                                 resumo_vip = ", ".join(
                                     f"{item.get('nome', '')}: {int(item.get('restantes', 0))} aula(s)"
@@ -13973,27 +14522,17 @@ elif st.session_state["role"] == "Professor":
                                 st.success("Aula fechada e salva no historico dos alunos.")
                             st.rerun()
 
-                st.markdown("### Ultimas aulas finalizadas da turma")
-                historico_turma = [
-                    s for s in st.session_state.get("class_sessions", [])
-                    if str(s.get("turma", "")).strip() == str(turma_ctrl).strip()
-                    and str(s.get("status", "")).strip().lower() == "finalizada"
-                ]
-                historico_turma = sorted(
-                    historico_turma,
-                    key=lambda x: (
-                        parse_date(x.get("data", "")) or datetime.date(1900, 1, 1),
-                        parse_time(x.get("hora_inicio_real", x.get("hora_inicio_prevista", "00:00"))),
-                    ),
-                    reverse=True,
-                )
-                if historico_turma:
-                    df_hist = pd.DataFrame(historico_turma)
-                    col_order = ["data", "turma", "professor", "hora_inicio_real", "hora_fim_real", "titulo", "licao", "resumo_final"]
-                    df_hist = df_hist[[c for c in col_order if c in df_hist.columns]]
-                    st.dataframe(df_hist, use_container_width=True)
-                else:
-                    st.info("Ainda nao ha aulas finalizadas para essa turma.")
+                st.markdown("### Histórico de aulas")
+                st.caption("O histórico pedagógico e operacional das aulas foi centralizado no menu Aulas.")
+                if st.button("Abrir central de Aulas", key="prof_open_aulas_central", use_container_width=True):
+                    st.session_state["menu_prof"] = "Aulas"
+                    st.rerun()
+    elif menu_prof == "Aulas":
+        render_aulas_central(
+            "prof",
+            viewer_profile="Professor",
+            viewer_name=str(st.session_state.get("user_name", "")).strip(),
+        )
     elif menu_prof == "Mensagens":
         st.markdown('<div class="main-header">Mensagens da Turma</div>', unsafe_allow_html=True)
         prof_nome = st.session_state["user_name"].strip().lower()
@@ -14453,6 +14992,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Professores",
             "Usuários",
             "Turmas",
+            "Aulas",
             "Financeiro",
             "Estoque",
             "Certificados",
@@ -14483,6 +15023,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Professores": "Professores",
         "Usuários": "Usuarios",
         "Turmas": "Turmas",
+        "Aulas": "Aulas",
         "Financeiro": "Financeiro",
         "Estoque": "Estoque",
         "Certificados": "Certificados",
@@ -16730,6 +17271,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         else:
                             st.info("Nenhum aluno vinculado a esta turma.")
 
+    elif menu_coord == "Aulas":
+        render_aulas_central(
+            "coord",
+            viewer_profile=str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip(),
+            viewer_name=str(st.session_state.get("user_name", "")).strip(),
+        )
     elif menu_coord == "Financeiro":
         st.markdown('<div class="main-header">Financeiro</div>', unsafe_allow_html=True)
         st.caption("Versao Financeiro: FIN-URGENTE-2026-03-11-REV5")

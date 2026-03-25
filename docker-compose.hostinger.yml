@@ -1,20 +1,4 @@
 services:
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on:
-      - app
-      - wizbot
-    environment:
-      DOMAIN: ${DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/hostinger/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
   app:
     build: .
     restart: unless-stopped
@@ -35,28 +19,3 @@ services:
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     volumes:
       - ./data:/app/data
-  wizbot:
-    build: .
-    restart: unless-stopped
-    command: ["python", "whatsapp_wiz_webhook.py"]
-    environment:
-      ACTIVE_DATA_DIR: /app/data
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
-      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL}
-      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL}
-      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER}
-      WAPI_BASE_URL: ${WAPI_BASE_URL}
-      WAPI_TOKEN: ${WAPI_TOKEN}
-      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
-      ACTIVE_ADMIN_WHATSAPP: ${ACTIVE_ADMIN_WHATSAPP}
-      ACTIVE_ADMIN_WHATSAPPS: ${ACTIVE_ADMIN_WHATSAPPS}
-      ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN}
-      WIZ_WEBHOOK_HOST: 0.0.0.0
-      WIZ_WEBHOOK_PORT: 8787
-    volumes:
-      - ./data:/app/data
-
-volumes:
-  caddy_data:
-  caddy_config:
