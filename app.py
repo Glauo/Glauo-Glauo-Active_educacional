@@ -9380,8 +9380,319 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
 
     prefix = f"{panel_key}_aulas"
     rows = _class_session_enriched_rows(viewer_profile=viewer_profile, viewer_name=viewer_name)
-    st.markdown('<div class="main-header">Aulas</div>', unsafe_allow_html=True)
-    st.caption("Central única de histórico, consulta e gestão pedagógica das aulas registradas.")
+    total_rows = len(rows)
+    total_professores_base = len({str(r.get("professor", "")).strip() for r in rows if str(r.get("professor", "")).strip() and str(r.get("professor", "")).strip() != "-"})
+    total_turmas_base = len({str(r.get("turma", "")).strip() for r in rows if str(r.get("turma", "")).strip() and str(r.get("turma", "")).strip() != "-"})
+    st.markdown(
+        """
+        <style>
+        .aulas-hero {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(59,130,246,.16);
+            border-radius: 26px;
+            padding: 26px 28px;
+            background:
+                radial-gradient(circle at top right, rgba(251,146,60,.20), transparent 32%),
+                linear-gradient(135deg, rgba(30,58,138,.96), rgba(14,116,144,.90) 55%, rgba(30,64,175,.82));
+            color: white;
+            box-shadow: 0 18px 42px rgba(15,23,42,.12);
+            margin-bottom: 18px;
+        }
+        .aulas-hero-kicker {
+            text-transform: uppercase;
+            letter-spacing: .16em;
+            font-size: .75rem;
+            font-weight: 800;
+            opacity: .78;
+            margin-bottom: 8px;
+        }
+        .aulas-hero-title {
+            font-family: 'Sora', sans-serif;
+            font-size: 2.1rem;
+            font-weight: 800;
+            line-height: 1.05;
+            margin-bottom: 8px;
+        }
+        .aulas-hero-subtitle {
+            max-width: 860px;
+            font-size: 1rem;
+            line-height: 1.6;
+            opacity: .94;
+        }
+        .aulas-hero-highlights {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .aulas-hero-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 13px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.14);
+            color: rgba(255,255,255,.95);
+            font-size: .84rem;
+            font-weight: 700;
+        }
+        .aulas-section-label {
+            font-size: .78rem;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: #64748b;
+            margin: 18px 0 8px;
+        }
+        .aulas-filter-shell {
+            border: 1px solid rgba(148,163,184,.20);
+            border-radius: 24px;
+            background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.96));
+            padding: 20px 22px;
+            box-shadow: 0 10px 24px rgba(15,23,42,.05);
+            margin-bottom: 12px;
+        }
+        .aulas-filter-note {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 18px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .aulas-filter-title {
+            font-family: 'Sora', sans-serif;
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 5px;
+        }
+        .aulas-filter-subtitle {
+            color: #64748b;
+            font-size: .92rem;
+            line-height: 1.55;
+        }
+        .aulas-filter-sidehint {
+            min-width: 220px;
+            max-width: 320px;
+            border-radius: 18px;
+            padding: 12px 14px;
+            background: rgba(37,99,235,.06);
+            border: 1px solid rgba(37,99,235,.12);
+            color: #1e3a8a;
+            font-size: .84rem;
+            line-height: 1.5;
+        }
+        .aulas-results-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 12px 2px 2px;
+        }
+        .aulas-results-count {
+            color: #0f172a;
+            font-weight: 700;
+            font-size: .95rem;
+        }
+        .aulas-active-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .aulas-active-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #f8fafc;
+            border: 1px solid rgba(148,163,184,.18);
+            color: #475569;
+            font-size: .8rem;
+            font-weight: 700;
+        }
+        .aulas-metric-card {
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 22px;
+            padding: 18px 18px 16px;
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+            box-shadow: 0 10px 22px rgba(15,23,42,.05);
+            min-height: 126px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .aulas-metric-card.primary {
+            border-color: rgba(37,99,235,.22);
+            box-shadow: 0 16px 32px rgba(37,99,235,.08);
+        }
+        .aulas-metric-label {
+            font-size: .76rem;
+            font-weight: 800;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 12px;
+        }
+        .aulas-metric-value {
+            font-family: 'Sora', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1;
+            margin-bottom: 10px;
+        }
+        .aulas-metric-hint {
+            color: #475569;
+            font-size: .9rem;
+            line-height: 1.45;
+        }
+        .aulas-pagination-shell {
+            border: 1px solid rgba(148,163,184,.16);
+            border-radius: 20px;
+            padding: 14px 16px;
+            background: rgba(255,255,255,.9);
+            box-shadow: 0 8px 18px rgba(15,23,42,.04);
+            margin: 12px 0 18px;
+        }
+        .aulas-page-label {
+            text-align: center;
+            font-weight: 700;
+            color: #1e3a8a;
+            padding-top: 8px;
+            font-size: .95rem;
+        }
+        .aulas-list-intro {
+            color: #64748b;
+            font-size: .94rem;
+            margin-bottom: 8px;
+        }
+        .aulas-history-card {
+            border: 1px solid rgba(59,130,246,.14);
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 10px 0 12px;
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+            box-shadow: 0 10px 22px rgba(15,23,42,.05);
+        }
+        .aulas-history-topline {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        .aulas-history-title {
+            font-family: 'Sora', sans-serif;
+            font-size: 1.04rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 4px;
+        }
+        .aulas-history-meta {
+            color: #334155;
+            font-size: .93rem;
+            line-height: 1.55;
+        }
+        .aulas-history-headline {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            color: #475569;
+            font-size: .86rem;
+            font-weight: 700;
+        }
+        .aulas-history-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0 12px;
+        }
+        .aulas-history-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: .82rem;
+            font-weight: 700;
+        }
+        .aulas-history-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin: 12px 0;
+        }
+        .aulas-history-block {
+            border: 1px solid rgba(148,163,184,.14);
+            border-radius: 16px;
+            padding: 12px 13px;
+            background: rgba(255,255,255,.72);
+        }
+        .aulas-history-block-label {
+            font-size: .72rem;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+        .aulas-history-block-value {
+            color: #0f172a;
+            font-size: .93rem;
+            line-height: 1.55;
+        }
+        .aulas-actions-shell {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            padding-top: 4px;
+            flex-wrap: wrap;
+        }
+        .aulas-actions-note {
+            color: #64748b;
+            font-size: .83rem;
+        }
+        .aulas-detail-shell {
+            border: 1px solid rgba(59,130,246,.14);
+            border-radius: 22px;
+            padding: 18px 20px;
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+            box-shadow: 0 10px 22px rgba(15,23,42,.05);
+            margin-top: 16px;
+        }
+        @media (max-width: 900px) {
+            .aulas-hero { padding: 22px 20px; border-radius: 22px; }
+            .aulas-hero-title { font-size: 1.7rem; }
+            .aulas-metric-value { font-size: 1.55rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
+        <div class="aulas-hero">
+          <div class="aulas-hero-kicker">Central pedagógica</div>
+          <div class="aulas-hero-title">Aulas</div>
+          <div class="aulas-hero-subtitle">Acompanhe, filtre e gerencie o histórico completo de aulas registradas, com leitura rápida, contexto pedagógico e ações operacionais em um único fluxo.</div>
+          <div class="aulas-hero-highlights">
+            <span class="aulas-hero-pill">{html.escape(str(total_rows))} registros totais</span>
+            <span class="aulas-hero-pill">{html.escape(str(total_professores_base))} professores ativos</span>
+            <span class="aulas-hero-pill">{html.escape(str(total_turmas_base))} turmas vinculadas</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     if not rows:
         st.info("Nenhuma aula registrada ainda.")
         return
@@ -9404,6 +9715,18 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     month_ini, month_fim = _current_month_bounds(today)
     st.session_state.setdefault(f"{prefix}_data_ini", month_ini)
     st.session_state.setdefault(f"{prefix}_data_fim", month_fim)
+    if st.session_state.pop(f"{prefix}_sync_inputs", False):
+        st.session_state[f"{prefix}_professor_input"] = st.session_state.get(f"{prefix}_professor", "Todos")
+        st.session_state[f"{prefix}_aluno_input"] = st.session_state.get(f"{prefix}_aluno", "Todos")
+        st.session_state[f"{prefix}_turma_input"] = st.session_state.get(f"{prefix}_turma", "Todas")
+        st.session_state[f"{prefix}_periodo_input"] = st.session_state.get(f"{prefix}_periodo", "Mês atual")
+        st.session_state[f"{prefix}_data_ini_input"] = st.session_state.get(f"{prefix}_data_ini", month_ini)
+        st.session_state[f"{prefix}_data_fim_input"] = st.session_state.get(f"{prefix}_data_fim", month_fim)
+        st.session_state[f"{prefix}_livro_input"] = st.session_state.get(f"{prefix}_livro", "Todos")
+        st.session_state[f"{prefix}_nivel_input"] = st.session_state.get(f"{prefix}_nivel", "Todos")
+        st.session_state[f"{prefix}_status_input"] = st.session_state.get(f"{prefix}_status", "Todos")
+        st.session_state[f"{prefix}_licao_input"] = st.session_state.get(f"{prefix}_licao", "")
+        st.session_state[f"{prefix}_busca_input"] = st.session_state.get(f"{prefix}_busca", "")
     input_defaults = {
         f"{prefix}_professor_input": st.session_state[f"{prefix}_professor"],
         f"{prefix}_aluno_input": st.session_state[f"{prefix}_aluno"],
@@ -9427,6 +9750,21 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     nivel_opts = ["Todos"] + sorted({str(r.get("nivel", "")).strip() for r in rows if str(r.get("nivel", "")).strip() and str(r.get("nivel", "")).strip() != "-"})
     status_opts = ["Todos"] + sorted({str(r.get("status", "")).strip() for r in rows if str(r.get("status", "")).strip()})
 
+    st.markdown('<div class="aulas-section-label">Filtros</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="aulas-filter-shell">
+          <div class="aulas-filter-note">
+            <div>
+              <div class="aulas-filter-title">Consulta rápida e avançada</div>
+              <div class="aulas-filter-subtitle">Use os filtros principais para localizar aulas com rapidez e abra os filtros avançados somente quando precisar refinar por livro, nível, status, lição ou texto livre.</div>
+            </div>
+            <div class="aulas-filter-sidehint">Os filtros mais usados ficam no topo. Os refinamentos avançados entram só quando você precisa de leitura mais cirúrgica do histórico.</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     with st.form(f"{prefix}_filters"):
         f1, f2, f3, f4 = st.columns(4)
         with f1:
@@ -9442,20 +9780,26 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
             st.date_input("Data inicial", key=f"{prefix}_data_ini_input", format="DD/MM/YYYY")
         with f6:
             st.date_input("Data final", key=f"{prefix}_data_fim_input", format="DD/MM/YYYY")
-        with f7:
-            st.selectbox("Livro", livro_opts, key=f"{prefix}_livro_input")
-        with f8:
-            st.selectbox("Nível", nivel_opts, key=f"{prefix}_nivel_input")
-        f9, f10, f11 = st.columns([1, 1, 2])
-        with f9:
-            st.selectbox("Status", status_opts, key=f"{prefix}_status_input")
-        with f10:
-            st.text_input("Lição", key=f"{prefix}_licao_input")
-        with f11:
-            st.text_input("Busca livre", key=f"{prefix}_busca_input", placeholder="Conteúdo, observação, tarefa, turma...")
-        a1, a2 = st.columns([1, 1])
+        with st.expander("Filtros avançados", expanded=False):
+            f7, f8, f9 = st.columns(3)
+            with f7:
+                st.selectbox("Livro", livro_opts, key=f"{prefix}_livro_input")
+            with f8:
+                st.selectbox("Nível", nivel_opts, key=f"{prefix}_nivel_input")
+            with f9:
+                st.selectbox("Status", status_opts, key=f"{prefix}_status_input")
+            f10, f11 = st.columns([1, 2])
+            with f10:
+                st.text_input("Lição", key=f"{prefix}_licao_input")
+            with f11:
+                st.text_input("Busca livre", key=f"{prefix}_busca_input", placeholder="Conteúdo, observação, tarefa, turma...")
+        a1, a2, a3 = st.columns([1.25, 1, 2.2])
         apply_filters = a1.form_submit_button("Aplicar filtros", type="primary")
         clear_filters = a2.form_submit_button("Limpar filtros")
+        a3.markdown(
+            "<div style='padding-top:10px;color:#64748b;font-size:.9rem;'>Prioridade para professor, aluno, turma e período. Os demais filtros ajudam a refinar a consulta sem poluir a tela.</div>",
+            unsafe_allow_html=True,
+        )
         if apply_filters:
             periodo = st.session_state.get(f"{prefix}_periodo_input", "Mês atual")
             st.session_state[f"{prefix}_professor"] = st.session_state.get(f"{prefix}_professor_input", "Todos")
@@ -9480,38 +9824,27 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
                 else:
                     st.session_state[f"{prefix}_data_ini"] = month_ini
                     st.session_state[f"{prefix}_data_fim"] = month_fim
-                st.session_state[f"{prefix}_data_ini_input"] = st.session_state[f"{prefix}_data_ini"]
-                st.session_state[f"{prefix}_data_fim_input"] = st.session_state[f"{prefix}_data_fim"]
             else:
                 st.session_state[f"{prefix}_data_ini"] = st.session_state.get(f"{prefix}_data_ini_input", month_ini)
                 st.session_state[f"{prefix}_data_fim"] = st.session_state.get(f"{prefix}_data_fim_input", month_fim)
             st.session_state[f"{prefix}_page"] = 1
+            st.session_state[f"{prefix}_sync_inputs"] = True
             st.rerun()
         if clear_filters:
             st.session_state.update({
                 f"{prefix}_periodo": "Mês atual",
-                f"{prefix}_periodo_input": "Mês atual",
                 f"{prefix}_professor": "Todos",
-                f"{prefix}_professor_input": "Todos",
                 f"{prefix}_aluno": "Todos",
-                f"{prefix}_aluno_input": "Todos",
                 f"{prefix}_turma": "Todas",
-                f"{prefix}_turma_input": "Todas",
                 f"{prefix}_livro": "Todos",
-                f"{prefix}_livro_input": "Todos",
                 f"{prefix}_nivel": "Todos",
-                f"{prefix}_nivel_input": "Todos",
                 f"{prefix}_status": "Todos",
-                f"{prefix}_status_input": "Todos",
                 f"{prefix}_licao": "",
-                f"{prefix}_licao_input": "",
                 f"{prefix}_busca": "",
-                f"{prefix}_busca_input": "",
                 f"{prefix}_data_ini": month_ini,
-                f"{prefix}_data_ini_input": month_ini,
                 f"{prefix}_data_fim": month_fim,
-                f"{prefix}_data_fim_input": month_fim,
                 f"{prefix}_page": 1,
+                f"{prefix}_sync_inputs": True,
             })
             st.rerun()
 
@@ -9522,16 +9855,61 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     total_finalizadas = sum(1 for r in filtered_rows if "final" in normalize_text(r.get("status", "")) or "conclu" in normalize_text(r.get("status", "")))
     total_obs = sum(1 for r in filtered_rows if str(r.get("observacoes", "")).strip() and str(r.get("observacoes", "")).strip() != "-")
     total_tarefa = sum(1 for r in filtered_rows if str(r.get("tarefa", "")).strip() and str(r.get("tarefa", "")).strip() != "-")
+    active_filter_chips = []
+    if st.session_state.get(f"{prefix}_professor", "Todos") != "Todos":
+        active_filter_chips.append(f"Professor: {st.session_state.get(f'{prefix}_professor')}")
+    if st.session_state.get(f"{prefix}_aluno", "Todos") != "Todos":
+        active_filter_chips.append(f"Aluno: {st.session_state.get(f'{prefix}_aluno')}")
+    if st.session_state.get(f"{prefix}_turma", "Todas") != "Todas":
+        active_filter_chips.append(f"Turma: {st.session_state.get(f'{prefix}_turma')}")
+    if st.session_state.get(f"{prefix}_livro", "Todos") != "Todos":
+        active_filter_chips.append(f"Livro: {st.session_state.get(f'{prefix}_livro')}")
+    if st.session_state.get(f"{prefix}_nivel", "Todos") != "Todos":
+        active_filter_chips.append(f"Nível: {st.session_state.get(f'{prefix}_nivel')}")
+    if st.session_state.get(f"{prefix}_status", "Todos") != "Todos":
+        active_filter_chips.append(f"Status: {st.session_state.get(f'{prefix}_status')}")
+    if str(st.session_state.get(f"{prefix}_licao", "")).strip():
+        active_filter_chips.append(f"Lição: {str(st.session_state.get(f'{prefix}_licao', '')).strip()}")
+    if str(st.session_state.get(f"{prefix}_busca", "")).strip():
+        active_filter_chips.append(f"Busca: {str(st.session_state.get(f'{prefix}_busca', '')).strip()}")
+    active_filter_chips.append(
+        f"Período: {st.session_state.get(f'{prefix}_data_ini').strftime('%d/%m/%Y')} até {st.session_state.get(f'{prefix}_data_fim').strftime('%d/%m/%Y')}"
+    )
+    chips_html = "".join(f"<span class='aulas-active-chip'>{html.escape(item)}</span>" for item in active_filter_chips)
+    st.markdown(
+        f"""
+        <div class="aulas-results-bar">
+          <div class="aulas-results-count">{results_count} aulas encontradas no recorte atual.</div>
+          <div class="aulas-active-filters">{chips_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    with m1: st.metric("Aulas", results_count)
-    with m2: st.metric("Professores", unique_prof)
-    with m3: st.metric("Turmas", unique_turmas)
-    with m4: st.metric("Concluídas", total_finalizadas)
-    with m5: st.metric("Com observação", total_obs)
-    with m6: st.metric("Com tarefa", total_tarefa)
-    st.caption(f"Resultados encontrados: {results_count}")
-
+    st.markdown('<div class="aulas-section-label">Resumo</div>', unsafe_allow_html=True)
+    metric_cards = [
+        ("Aulas", results_count, "Base filtrada para leitura e gestão do período.", True),
+        ("Professores", unique_prof, "Docentes com registros no recorte atual.", False),
+        ("Turmas", unique_turmas, "Turmas impactadas pelos filtros aplicados.", False),
+        ("Concluídas", total_finalizadas, "Aulas encerradas e registradas corretamente.", False),
+        ("Com observação", total_obs, "Registros com apontamento pedagógico salvo.", False),
+        ("Com tarefa", total_tarefa, "Aulas que geraram tarefa ou lição vinculada.", False),
+    ]
+    metric_cols = st.columns(3)
+    for idx, (label, value, hint, primary) in enumerate(metric_cards):
+        with metric_cols[idx % 3]:
+            st.markdown(
+                f"""
+                <div class="aulas-metric-card {'primary' if primary else ''}">
+                  <div>
+                    <div class="aulas-metric-label">{html.escape(label)}</div>
+                    <div class="aulas-metric-value">{html.escape(str(value))}</div>
+                  </div>
+                  <div class="aulas-metric-hint">{html.escape(hint)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     if not filtered_rows:
         st.info("Nenhuma aula encontrada com os filtros atuais.")
         return
@@ -9544,43 +9922,77 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     start_idx = (current_page - 1) * page_size
     visible_rows = filtered_rows[start_idx:start_idx + page_size]
 
+    st.markdown('<div class="aulas-section-label">Paginação</div>', unsafe_allow_html=True)
+    st.markdown('<div class="aulas-pagination-shell">', unsafe_allow_html=True)
     ph1, ph2, ph3 = st.columns([1, 2, 1])
-    if ph1.button("Página anterior", key=f"{prefix}_prev", disabled=current_page <= 1, use_container_width=True):
+    if ph1.button("◀ Página anterior", key=f"{prefix}_prev", disabled=current_page <= 1, use_container_width=True):
         st.session_state[f"{prefix}_page"] = current_page - 1
         st.rerun()
     ph2.markdown(
-        f"<div style='text-align:center;padding-top:8px;font-weight:600;color:#1e3a8a;'>Página {current_page} de {total_pages}</div>",
+        f"<div class='aulas-page-label'>Página {current_page} de {total_pages}</div>",
         unsafe_allow_html=True,
     )
-    if ph3.button("Próxima página", key=f"{prefix}_next", disabled=current_page >= total_pages, use_container_width=True):
+    if ph3.button("Próxima página ▶", key=f"{prefix}_next", disabled=current_page >= total_pages, use_container_width=True):
         st.session_state[f"{prefix}_page"] = current_page + 1
         st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### Histórico de aulas")
+    st.markdown('<div class="aulas-section-label">Histórico</div>', unsafe_allow_html=True)
+    st.markdown('<div class="aulas-list-intro">Cada registro foi reorganizado para destacar rapidamente data, horário, professor, turma, conteúdo, tarefa, observações e ações principais.</div>', unsafe_allow_html=True)
     for row in visible_rows:
         conteudo_txt = str(row.get("conteudo", "-"))
         conteudo_short = conteudo_txt[:180] + ("..." if len(conteudo_txt) > 180 else "")
+        tarefa_txt = str(row.get("tarefa", "")).strip()
+        obs_txt = str(row.get("observacoes", "")).strip()
+        licao_txt = str(row.get("licao", "")).strip()
+        chips = []
+        if str(row.get("livro", "")).strip() and str(row.get("livro", "")).strip() != "-":
+            chips.append(f"<span class='aulas-history-chip'>Livro {html.escape(str(row.get('livro', '')).strip())}</span>")
+        if licao_txt and licao_txt != "-":
+            chips.append(f"<span class='aulas-history-chip'>Lição {html.escape(licao_txt)}</span>")
+        if tarefa_txt and tarefa_txt != "-":
+            chips.append("<span class='aulas-history-chip'>Tarefa aplicada</span>")
+        if obs_txt and obs_txt != "-":
+            chips.append("<span class='aulas-history-chip'>Com observação</span>")
         st.markdown(
             f"""
-<div style="border:1px solid rgba(59,130,246,.14);border-radius:18px;padding:16px 18px;margin:10px 0;background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.98));box-shadow:0 8px 22px rgba(15,23,42,.05);">
-  <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+<div class="aulas-history-card">
+  <div class="aulas-history-topline">
     <div>
-      <div style="font-size:1.05rem;font-weight:800;color:#0f172a;">{html.escape(str(row.get("titulo", "Aula")).strip() or "Aula")}</div>
-      <div style="margin-top:4px;color:#334155;font-size:.94rem;">{html.escape(str(row.get("data", "-")))} | {html.escape(str(row.get("horario", "-")) or "-")} | {html.escape(str(row.get("professor", "-")))} | {html.escape(str(row.get("turma", "-")))}</div>
-      <div style="margin-top:4px;color:#475569;font-size:.9rem;">Livro: {html.escape(str(row.get("livro", "-")))} | Lição: {html.escape(str(row.get("licao", "-")))} | Alunos: {html.escape(str(row.get("alunos_label", "-")))}</div>
-      <div style="margin-top:6px;color:#0f172a;font-size:.93rem;">{html.escape(conteudo_short or "-")}</div>
+      <div class="aulas-history-title">{html.escape(str(row.get("titulo", "Aula")).strip() or "Aula")}</div>
+      <div class="aulas-history-meta">{html.escape(str(row.get("data", "-")))} | {html.escape(str(row.get("horario", "-")) or "-")} | {html.escape(str(row.get("professor", "-")))} | {html.escape(str(row.get("turma", "-")))}</div>
+      <div class="aulas-history-headline">
+        <span>Alunos: {html.escape(str(row.get("alunos_label", "-")))}</span>
+        <span>Livro/Nível: {html.escape(str(row.get("livro", "-")))} / {html.escape(str(row.get("nivel", "-")))}</span>
+      </div>
     </div>
     <div>{_class_session_status_badge(row.get("status", "-"))}</div>
+  </div>
+  <div class="aulas-history-tags">{''.join(chips) or "<span class='aulas-history-chip'>Registro pedagógico</span>"}</div>
+  <div class="aulas-history-grid">
+    <div class="aulas-history-block">
+      <div class="aulas-history-block-label">Conteúdo</div>
+      <div class="aulas-history-block-value">{html.escape(conteudo_short or "-")}</div>
+    </div>
+    <div class="aulas-history-block">
+      <div class="aulas-history-block-label">Tarefa</div>
+      <div class="aulas-history-block-value">{html.escape((tarefa_txt[:140] + ('...' if len(tarefa_txt) > 140 else '')) if tarefa_txt else '-')}</div>
+    </div>
+    <div class="aulas-history-block">
+      <div class="aulas-history-block-label">Observação</div>
+      <div class="aulas-history-block-value">{html.escape((obs_txt[:140] + ('...' if len(obs_txt) > 140 else '')) if obs_txt else '-')}</div>
+    </div>
   </div>
 </div>
             """,
             unsafe_allow_html=True,
         )
-        ra1, ra2, ra3 = st.columns([1, 1, 6])
-        if ra1.button("Detalhes", key=f"{prefix}_detail_{row['id']}", use_container_width=True):
+        st.markdown('<div class="aulas-actions-shell"><div class="aulas-actions-note">Ações rápidas para leitura detalhada ou correção do registro.</div></div>', unsafe_allow_html=True)
+        ra1, ra2, ra3 = st.columns([1.15, 1.05, 4.8])
+        if ra1.button("🔎 Detalhes", key=f"{prefix}_detail_{row['id']}", use_container_width=True):
             st.session_state[f"{prefix}_detail_id"] = row["id"]
             st.rerun()
-        if ra2.button("Editar", key=f"{prefix}_edit_{row['id']}", use_container_width=True):
+        if ra2.button("✏️ Editar", key=f"{prefix}_edit_{row['id']}", use_container_width=True):
             st.session_state[f"{prefix}_edit_id"] = row["id"]
             st.rerun()
 
@@ -9588,7 +10000,16 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     if detail_id:
         detail_row = next((r for r in filtered_rows if str(r.get("id", "")).strip() == detail_id), None)
         if detail_row:
-            with st.expander("Detalhe completo da aula", expanded=True):
+            st.markdown(
+                """
+                <div class="aulas-detail-shell">
+                  <div class="aulas-filter-title">Detalhe completo da aula</div>
+                  <div class="aulas-filter-subtitle">Consulte o registro integral, incluindo dados pedagógicos, operacionais, horários, vínculo com alunos e histórico de edição.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.expander("Abrir detalhe completo", expanded=True):
                 d1, d2 = st.columns(2)
                 with d1:
                     st.write(f"**Data:** {detail_row.get('data', '-')}")
@@ -9629,7 +10050,15 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
     if not edit_row:
         return
     raw = dict(edit_row.get("raw", {}))
-    st.markdown("### Editar aula")
+    st.markdown(
+        """
+        <div class="aulas-detail-shell">
+          <div class="aulas-filter-title">Editar aula</div>
+          <div class="aulas-filter-subtitle">Atualize campos operacionais e pedagógicos sem sair da central. O histórico básico de edição é preservado no próprio registro.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     with st.form(f"{prefix}_edit_form_{edit_id}"):
         e1, e2, e3 = st.columns(3)
         with e1:
