@@ -12263,7 +12263,6 @@ def render_sales_leads_manage(vendedor_atual):
                 st.link_button(
                     "WhatsApp",
                     f"https://wa.me/{quick_phone_digits}",
-                    key=f"sales_quick_wa_{quick_lead_id}",
                 )
             else:
                 st.caption("Sem celular")

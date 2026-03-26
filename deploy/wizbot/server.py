@@ -684,11 +684,61 @@ def _generate_reply(sender, text):
 
 def _manual_contact_command(text):
     norm = _norm_text(text)
-    if norm in {"!assumir", "!assumir atendimento", "!pausar bot", "!humano", "!manual"}:
+    if norm in {
+        "!assumir",
+        "!assumir atendimento",
+        "assumir",
+        "assumir atendimento",
+        "assumir conversa",
+        "atendimento humano",
+        "!pausar bot",
+        "pausar bot",
+        "!humano",
+        "humano",
+        "!manual",
+        "manual",
+    }:
         return "pause"
-    if norm in {"!retomar", "!retomar bot", "!liberar bot", "!auto"}:
+    if norm in {
+        "!retomar",
+        "!retomar bot",
+        "retomar",
+        "retomar bot",
+        "!liberar bot",
+        "liberar bot",
+        "!auto",
+        "auto",
+    }:
         return "resume"
     return ""
+
+
+def _contact_number_for_payload(payload, incoming):
+    connected_phone = ""
+    if isinstance(payload, dict):
+        connected_phone = _normalize_whatsapp_number(payload.get("connectedPhone", ""))
+    sender = _normalize_whatsapp_number((incoming or {}).get("sender", ""))
+    if sender and (not connected_phone or sender != connected_phone):
+        return sender
+    if isinstance(payload, dict):
+        chat_obj = payload.get("chat") or {}
+        if isinstance(chat_obj, dict):
+            chat_id = _normalize_whatsapp_number(chat_obj.get("id", ""))
+            if chat_id and (not connected_phone or chat_id != connected_phone):
+                return chat_id
+        sender_data = payload.get("senderData") or payload.get("sender_data") or {}
+        if isinstance(sender_data, dict):
+            for key in ("chatId", "remoteJid", "from", "sender"):
+                candidate = _normalize_whatsapp_number(sender_data.get(key, ""))
+                if candidate and (not connected_phone or candidate != connected_phone):
+                    return candidate
+        key_obj = payload.get("key") or {}
+        if isinstance(key_obj, dict):
+            for key in ("remoteJid", "participant"):
+                candidate = _normalize_whatsapp_number(key_obj.get(key, ""))
+                if candidate and (not connected_phone or candidate != connected_phone):
+                    return candidate
+    return sender
 
 
 def _authorized_request(handler):
@@ -741,25 +791,26 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
         incoming = _extract_incoming(payload)
         sender = incoming.get("sender", "")
         text = str(incoming.get("text", "")).strip()
+        contact_number = _contact_number_for_payload(payload, incoming)
         print(
-            f"[wizbot] incoming sender={sender} from_me={incoming.get('from_me')} text={text[:200]}",
+            f"[wizbot] incoming sender={sender} contact={contact_number} from_me={incoming.get('from_me')} text={text[:200]}",
             flush=True,
         )
-        if incoming.get("from_me") and sender:
-            if _is_recent_auto_reply(sender, text):
+        if incoming.get("from_me") and contact_number:
+            if _is_recent_auto_reply(contact_number, text):
                 print("[wizbot] ignored self echo from auto reply", flush=True)
                 self._write_json(200, {"ok": True, "ignored": True, "echo": True})
                 return
             contact_cmd = _manual_contact_command(text)
             if contact_cmd == "resume":
-                resumed = _resume_contact(sender)
-                print(f"[wizbot] manual resume contact={sender} resumed={resumed}", flush=True)
-                self._write_json(200, {"ok": True, "manual_control": "resume", "contact": sender})
+                resumed = _resume_contact(contact_number)
+                print(f"[wizbot] manual resume contact={contact_number} resumed={resumed}", flush=True)
+                self._write_json(200, {"ok": True, "manual_control": "resume", "contact": contact_number})
                 return
             if contact_cmd == "pause":
-                _pause_contact(sender, "manual_operator")
-                print(f"[wizbot] manual takeover contact={sender} cmd=pause", flush=True)
-                self._write_json(200, {"ok": True, "manual_control": "pause", "contact": sender})
+                _pause_contact(contact_number, "manual_operator")
+                print(f"[wizbot] manual takeover contact={contact_number} cmd=pause", flush=True)
+                self._write_json(200, {"ok": True, "manual_control": "pause", "contact": contact_number})
                 return
             print("[wizbot] ignored outgoing operator message without control command", flush=True)
             self._write_json(200, {"ok": True, "ignored": True, "outgoing": True})
