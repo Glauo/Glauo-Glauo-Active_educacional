@@ -11041,31 +11041,32 @@ def render_panel_intro(title, subtitle="", stats=None):
             """
         )
     stats_html = "".join(stat_cards)
-    st.markdown(
-        f"""
-        <div style="
-            border:1px solid rgba(148,163,184,.18);
-            border-radius:26px;
-            padding:24px 22px;
-            margin:10px 0 18px;
-            background:
-                radial-gradient(circle at top right, rgba(251,146,60,.12), transparent 28%),
-                linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
-            box-shadow:0 14px 32px rgba(15,23,42,.06);
-        ">
-          <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;">
-            <div style="max-width:760px;">
-              <div style="font-family:'Sora',sans-serif;font-size:1.15rem;font-weight:800;color:#0f172a;margin-bottom:6px;">{html.escape(str(title))}</div>
-              <div style="color:#64748b;font-size:.96rem;line-height:1.6;">{html.escape(str(subtitle))}</div>
-            </div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
-              {stats_html}
-            </div>
-          </div>
+    panel_html = f"""
+    <div style="
+        border:1px solid rgba(148,163,184,.18);
+        border-radius:26px;
+        padding:24px 22px;
+        margin:10px 0 18px;
+        background:
+            radial-gradient(circle at top right, rgba(251,146,60,.12), transparent 28%),
+            linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+        box-shadow:0 14px 32px rgba(15,23,42,.06);
+    ">
+      <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="max-width:760px;">
+          <div style="font-family:'Sora',sans-serif;font-size:1.15rem;font-weight:800;color:#0f172a;margin-bottom:6px;">{html.escape(str(title))}</div>
+          <div style="color:#64748b;font-size:.96rem;line-height:1.6;">{html.escape(str(subtitle))}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
+          {stats_html}
+        </div>
+      </div>
+    </div>
+    """
+    try:
+        st.components.v1.html(panel_html, height=170, scrolling=False)
+    except Exception:
+        st.markdown(panel_html, unsafe_allow_html=True)
 
 def _normalize_turma(value):
     return str(value or "").strip()
