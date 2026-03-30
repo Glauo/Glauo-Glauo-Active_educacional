@@ -5,6 +5,9 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+ARG GIT_SHA=unknown
+RUN echo "build=${GIT_SHA}" > /app/.buildstamp
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
