@@ -11140,7 +11140,9 @@ def render_panel_intro(title, subtitle="", stats=None):
     </div>
     """
     try:
-        st.components.v1.html(panel_html, height=170, scrolling=False)
+        rows = max(1, (len(stats) + 2) // 3)
+        panel_height = 120 + (rows * 90)
+        st.components.v1.html(panel_html, height=panel_height, scrolling=False)
     except Exception:
         st.markdown(panel_html, unsafe_allow_html=True)
 
