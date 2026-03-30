@@ -649,9 +649,37 @@ def get_logo_path():
 def render_sidebar_logo(logo_path):
     if not logo_path:
         return
-    col_left, col_logo, col_right = st.columns([1, 5, 1])
-    with col_logo:
-        st.image(str(logo_path), width=190)
+    try:
+        logo_path = Path(logo_path)
+    except Exception:
+        logo_path = None
+    data_uri = None
+    if isinstance(logo_path, Path) and logo_path.exists():
+        try:
+            suffix = logo_path.suffix.lower()
+            mime = "image/png"
+            if suffix in {".jpg", ".jpeg"}:
+                mime = "image/jpeg"
+            elif suffix == ".svg":
+                mime = "image/svg+xml"
+            raw = logo_path.read_bytes()
+            data_uri = f"data:{mime};base64,{base64.b64encode(raw).decode('utf-8')}"
+        except Exception:
+            data_uri = None
+    if data_uri:
+        st.markdown(
+            f"""
+            <div class="sidebar-brand-shell">
+              <img src="{data_uri}" class="sidebar-brand-img" />
+              <div class="sidebar-brand-sub">Sistema Educacional</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        col_left, col_logo, col_right = st.columns([1, 5, 1])
+        with col_logo:
+            st.image(str(logo_path), width=190)
 
 def get_mister_wiz_logo_path():
     candidates = [
@@ -10774,6 +10802,53 @@ def sidebar_menu(title, options, key):
             st.rerun()
     return st.session_state[key]
 
+def sidebar_menu_grouped(title, sections, key):
+    st.markdown(f"<h3 style='color:#1e3a8a; font-family:Sora; margin-top:0;'>{title}</h3>", unsafe_allow_html=True)
+    flat = [opt for _, items in sections for opt in items]
+    if key not in st.session_state or st.session_state.get(key) not in flat:
+        st.session_state[key] = flat[0] if flat else ""
+    for section_label, items in sections:
+        if section_label:
+            st.markdown(f"<div class='sidebar-section-label'>{section_label}</div>", unsafe_allow_html=True)
+        for option in items:
+            active = st.session_state[key] == option
+            icon = {
+                "Dashboard": "🏠",
+                "Painel": "🏠",
+                "Agenda": "📅",
+                "Aulas": "🎓",
+                "Links Ao Vivo": "🔗",
+                "Minhas Turmas": "👩‍🏫",
+                "Minhas Aulas": "🧑‍🏫",
+                "Alunos": "🎓",
+                "Professores": "👨‍🏫",
+                "Usuários": "👥",
+                "Usuarios": "👥",
+                "Turmas": "🏫",
+                "Financeiro": "💸",
+                "Estoque": "📦",
+                "Certificados": "📜",
+                "Biblioteca": "📚",
+                "Livros": "📚",
+                "Aprovação Notas": "✅",
+                "Caixa de Entrada": "📨",
+                "Conteúdos": "🗂️",
+                "Desafios": "🧩",
+                "Atividades": "📝",
+                "Mensagens": "💬",
+                "Aulas Gravadas": "🎬",
+                "Materiais de Estudo": "🧠",
+                "WhatsApp (Evolution)": "🟢",
+                "Backup": "🛟",
+                "ASSISTENTE WIZ": "🤖",
+                "Professor Wiz": "✨",
+            }.get(str(option).strip(), "•")
+            option_label = f"{icon}  {option}"
+            if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
+                st.session_state[key] = option
+                st.rerun()
+    return st.session_state[key]
+
 STUDENT_IMPORT_COLUMNS = [
     "nome",
     "matricula",
@@ -13479,25 +13554,29 @@ else:
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
-        .stApp { background: #eef5ff; font-family: 'Manrope', sans-serif; }
-        :root { --sidebar-width: 336px; --sidebar-menu-btn-width: 300px; }
-        section[data-testid="stAppViewContainer"] { background: #eef5ff; }
-        .main-header { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 20px; }
-        section[data-testid="stSidebar"] { background-color: #f3f8ff; border-right: 1px solid #dbe7f6; box-shadow: 2px 0 10px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
+        .stApp { background: #f4f7fb; font-family: 'Manrope', sans-serif; }
+        :root { --sidebar-width: 338px; --sidebar-menu-btn-width: 302px; }
+        section[data-testid="stAppViewContainer"] { background: #f4f7fb; }
+        .main-header { font-family: 'Sora', sans-serif; font-size: 1.85rem; font-weight: 700; color: #1e3a8a; margin-bottom: 18px; }
+        section[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 12px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
-        section[data-testid="stSidebar"] .stButton > button { background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(16,185,129,0.08) 100%); border: 1px solid #d3e0f3; color: #334155; text-align: left; font-weight: 700; padding: 0 0.9rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 13px; transition: all 0.2s ease; margin-bottom: 7px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05); height: 48px !important; min-height: 48px !important; max-height: 48px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: visible; text-overflow: clip; }
+        section[data-testid="stSidebar"] .stButton > button { background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; text-align: left; font-weight: 600; padding: 0 0.95rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 6px; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04); height: 46px !important; min-height: 46px !important; max-height: 46px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         section[data-testid="stSidebar"] .stButton > button p { margin: 0 !important; line-height: 1 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; }
         section[data-testid="stSidebar"] .stButton > button:active { transform: none !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 48px !important; }
-        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 48px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-secondary"] { height: 46px !important; }
+        section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"] { height: 46px !important; }
         .logout-btn .stButton > button { background: #fef2f2 !important; border-color: #fecaca !important; color: #991b1b !important; }
         .logout-btn .stButton > button:hover { background: #fee2e2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
         .logout-btn .stButton > button:active { background: #fecaca !important; border-color: #f87171 !important; color: #7f1d1d !important; }
         div[data-testid="stButton"] > button:hover,
         div[data-testid="stFormSubmitButton"] > button:hover,
         div[data-testid="stDownloadButton"] > button:hover,
-        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25) !important; }
-        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #16a34a 52%, #ea580c 100%); color: #ffffff; border: none; box-shadow: 0 10px 24px rgba(30, 58, 138, 0.28); }
+        section[data-testid="stSidebar"] .stButton > button:hover { color: #ffffff !important; background: linear-gradient(90deg, #1e3a8a 0%, #0f766e 60%, #f97316 100%) !important; border-color: #1e3a8a !important; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(30, 58, 138, 0.22) !important; }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] { background: linear-gradient(90deg, #1e3a8a 0%, #0f766e 60%, #f97316 100%); color: #ffffff; border: none; box-shadow: 0 10px 22px rgba(30, 58, 138, 0.25); }
+        .sidebar-brand-shell { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px 16px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06); margin: 4px 0 14px; text-align: center; }
+        .sidebar-brand-img { width: 180px; max-width: 85%; height: auto; }
+        .sidebar-brand-sub { margin-top: 8px; font-size: .75rem; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+        .sidebar-section-label { margin: 12px 4px 6px; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #94a3b8; font-weight: 800; }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
@@ -15510,32 +15589,18 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        coord_menu_options = [
-            "Dashboard",
-            "Agenda",
-            "Links Ao Vivo",
-            "Alunos",
-            "Professores",
-            "Usuários",
-            "Turmas",
-            "Aulas",
-            "Financeiro",
-            "Estoque",
-            "Certificados",
-            "Biblioteca",
-            "Aprovação Notas",
-            "Lições de Casa",
-            "Caixa de Entrada",
-            "Desafios",
-            "WhatsApp (Evolution)",
-            "Backup",
-            "Professor Wiz",
-        ]
         coord_profile = str(st.session_state.get("account_profile") or st.session_state.get("role") or "")
+        base_sections = [
+            ("Visão geral", ["Dashboard", "Agenda", "Links Ao Vivo"]),
+            ("Acadêmico", ["Alunos", "Professores", "Turmas", "Aulas", "Biblioteca", "Certificados"]),
+            ("Avaliações", ["Aprovação Notas", "Lições de Casa", "Desafios"]),
+            ("Operacional", ["Financeiro", "Estoque", "Caixa de Entrada"]),
+            ("Sistema", ["Usuários", "Backup"]),
+            ("Integrações", ["WhatsApp (Evolution)", "Professor Wiz"]),
+        ]
         if coord_profile in ("Admin", "Coordenador"):
-            insert_at = coord_menu_options.index("Backup")
-            coord_menu_options.insert(insert_at, "ASSISTENTE WIZ")
-        menu_coord_label = sidebar_menu("Administração", coord_menu_options, "menu_coord")
+            base_sections.append(("Assistente", ["ASSISTENTE WIZ"]))
+        menu_coord_label = sidebar_menu_grouped("Administração", base_sections, "menu_coord")
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
