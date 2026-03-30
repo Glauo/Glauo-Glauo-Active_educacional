@@ -12819,15 +12819,12 @@ def run_commercial_panel():
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_sales_label = sidebar_menu(
+        menu_sales_label = sidebar_menu_grouped(
             "Comercial",
             [
-                "Leads",
-                "Agenda Comercial",
-                "Financeiro Matricula",
-                "Alunos Matriculados",
-                "WhatsApp Leads",
-                "Professor Wiz",
+                ("Pipeline", ["Leads", "Agenda Comercial"]),
+                ("Matrículas", ["Financeiro Matricula", "Alunos Matriculados"]),
+                ("Comunicação", ["WhatsApp Leads", "Professor Wiz"]),
             ],
             "menu_sales",
         )
@@ -13508,35 +13505,35 @@ if not st.session_state.get("logged_in", False):
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700&family=Inter:wght@400;600&display=swap');
         html, body { background: transparent !important; }
-        .stApp { background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.25), transparent 60%), linear-gradient(135deg, #0b1020 0%, #1e3a8a 45%, #2f6fe6 100%); font-family: 'Inter', sans-serif; }
+        .stApp { background: radial-gradient(1200px 600px at 12% 8%, rgba(59,130,246,0.22), transparent 62%), linear-gradient(140deg, #0b1225 0%, #1b3c7c 48%, #2a67d4 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
         section[data-testid="stMain"], div[data-testid="stAppViewContainer"], div[data-testid="stAppViewContainer"] > section, div[data-testid="stMainBlockContainer"], div[data-testid="stMainBlockContainer"] > div, section.main, div.main { background: transparent !important; box-shadow: none !important; border-radius: 0 !important; }
         .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; background: transparent !important; box-shadow: none !important; }
-        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 30px; padding: 34px; min-height: 520px; width: 100%; box-shadow: 0 26px 70px rgba(0,0,0,0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
-        .hero-logo-img { width: 70%; max-width: 420px; height: auto; }
-        .hero-title { font-family: 'Sora', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1.1; }
-        .hero-subtitle { font-size: 1rem; color: #64748b; }
+        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 28px; padding: 36px 34px; min-height: 520px; width: 100%; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 28px 70px rgba(15, 23, 42, 0.2); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; backdrop-filter: blur(6px); }
+        .hero-logo-img { width: 72%; max-width: 420px; height: auto; }
+        .hero-title { font-family: 'Sora', sans-serif; font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+        .hero-subtitle { font-size: 1rem; color: #475569; }
         .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
-        .hero-meta { font-size: 0.92rem; color: #1e3a8a; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
-        .feature-block { margin-top: 28px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,246,255,0.94) 45%, rgba(255,247,237,0.9) 100%); border-radius: 28px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 26px 60px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
-        .feature-block::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 380px; height: 380px; background: radial-gradient(circle, rgba(59,130,246,0.18), transparent 60%); pointer-events: none; }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; text-shadow: 0 2px 10px rgba(15,23,42,0.35); }
+        .hero-meta { font-size: 0.9rem; color: #1d4ed8; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+        .feature-block { margin-top: 28px; background: rgba(255, 255, 255, 0.94); border-radius: 26px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 22px 50px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
+        .feature-block::before { content: ""; position: absolute; inset: auto -10% -40% auto; width: 320px; height: 320px; background: radial-gradient(circle, rgba(59,130,246,0.12), transparent 60%); pointer-events: none; }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.2rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
         .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { border-radius: 20px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(15, 23, 42, 0.3) !important; }
-        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(37,99,235,0.34), rgba(30,58,138,0.28)) !important; border-color: rgba(37,99,235,0.55); }
-        .feature-card.feature-green { background: linear-gradient(135deg, rgba(34,197,94,0.3), rgba(22,163,74,0.24)) !important; border-color: rgba(22,163,74,0.55); }
-        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(251,146,60,0.34), rgba(234,88,12,0.25)) !important; border-color: rgba(234,88,12,0.55); }
+        .feature-card { border-radius: 18px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.28); background: #ffffff; box-shadow: 0 10px 20px rgba(15, 23, 42, 0.1) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(15, 23, 42, 0.16) !important; }
+        .feature-card.feature-blue { background: linear-gradient(135deg, rgba(239,246,255,0.92), rgba(219,234,254,0.9)) !important; border-color: rgba(37,99,235,0.24); }
+        .feature-card.feature-green { background: linear-gradient(135deg, rgba(236,253,245,0.92), rgba(209,250,229,0.9)) !important; border-color: rgba(22,163,74,0.24); }
+        .feature-card.feature-orange { background: linear-gradient(135deg, rgba(255,247,237,0.92), rgba(254,215,170,0.88)) !important; border-color: rgba(234,88,12,0.24); }
         .feature-icon { font-size: 1.2rem; width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #eff6ff; color: #1d4ed8; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.15); }
         .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
         .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
         .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
-        .feature-text { font-weight: 700; color: #f8fafc; font-size: 0.98rem; }
-        .feature-sub { font-size: 0.84rem; color: #cbd5e1; margin-top: 4px; }
+        .feature-text { font-weight: 700; color: #0f172a; font-size: 0.98rem; }
+        .feature-sub { font-size: 0.84rem; color: #64748b; margin-top: 4px; }
         .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
         .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 26px; padding: 22px 26px 26px; width: 100%; min-height: 520px; box-shadow: 0 26px 70px rgba(0,0,0,0.18); box-sizing: border-box; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 24px; padding: 22px 26px 26px; width: 100%; min-height: 520px; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 24px 60px rgba(15,23,42,0.18); box-sizing: border-box; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
@@ -14877,9 +14874,13 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu(
+        menu_prof_label = sidebar_menu_grouped(
             "Gestão",
-            ["Minhas Turmas", "Agenda", "Aulas", "Mensagens", "Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca", "Professor Wiz"],
+            [
+                ("Visão geral", ["Minhas Turmas", "Agenda", "Aulas"]),
+                ("Acadêmico", ["Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca"]),
+                ("Comunicação", ["Mensagens", "Professor Wiz"]),
+            ],
             "menu_prof",
         )
         st.markdown("---")
