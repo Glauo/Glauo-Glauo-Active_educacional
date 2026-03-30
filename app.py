@@ -13550,11 +13550,15 @@ if not st.session_state.get("logged_in", False):
 else:
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Manrope:wght@400;600;700&family=Sora:wght@500;700&display=swap');
-        .stApp { background: #f4f7fb; font-family: 'Manrope', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Inter:wght@400;500;600;700&family=Sora:wght@500;700&display=swap');
+        .stApp { background: #f4f7fb; font-family: 'Inter', sans-serif; }
         :root { --sidebar-width: 338px; --sidebar-menu-btn-width: 302px; }
         section[data-testid="stAppViewContainer"] { background: #f4f7fb; }
-        .main-header { font-family: 'Sora', sans-serif; font-size: 1.85rem; font-weight: 700; color: #1e3a8a; margin-bottom: 18px; }
+        .block-container { padding-top: 1.8rem; max-width: 1480px; }
+        .main-header { font-family: 'Sora', sans-serif; font-size: 1.95rem; font-weight: 700; color: #1e3a8a; margin-bottom: 18px; }
+        .section-card { background: #ffffff; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06); padding: 22px; }
+        .section-title { font-family: 'Sora', sans-serif; font-size: 1.15rem; font-weight: 700; color: #0f172a; margin-bottom: 10px; }
+        .section-sub { font-size: 0.9rem; color: #64748b; margin-bottom: 6px; }
         section[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 12px rgba(15,23,42,0.04); min-width: var(--sidebar-width) !important; max-width: var(--sidebar-width) !important; }
         section[data-testid="stSidebar"] .stButton { width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; margin-right: auto; }
         section[data-testid="stSidebar"] .stButton > button { background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; text-align: left; font-weight: 600; padding: 0 0.95rem; width: var(--sidebar-menu-btn-width) !important; min-width: var(--sidebar-menu-btn-width) !important; max-width: var(--sidebar-menu-btn-width) !important; border-radius: 14px; transition: all 0.2s ease; margin-bottom: 6px; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04); height: 46px !important; min-height: 46px !important; max-height: 46px !important; display: flex; align-items: center; justify-content: flex-start; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -13578,8 +13582,8 @@ else:
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
-        .dash-card { background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
-        .dash-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.06); border-color: #cbd5e1; }
+        .dash-card { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 24px; border-radius: 18px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 12px 30px rgba(15,23,42,0.08); transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
+        .dash-card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(15,23,42,0.12); border-color: #c7d2fe; }
         .card-title { font-size: 0.9rem; color: #64748b; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
         .card-value { font-family: 'Sora', sans-serif; font-size: 2rem; font-weight: 700; color: #0f172a; }
         .card-sub { font-size: 0.85rem; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
@@ -13614,8 +13618,35 @@ else:
             color: #ffffff !important;
             font-weight: 700;
         }
-        div[data-testid="stDataFrame"] { background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); margin-bottom: 16px; }
-        div[data-testid="stForm"] { background: white; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        div[data-testid="stDataFrame"] { background: white; padding: 16px; border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 8px 20px rgba(15,23,42,0.05); margin-bottom: 16px; }
+        div[data-testid="stForm"] { background: rgba(255,255,255,0.98); padding: 28px; border-radius: 18px; border: 1px solid #e2e8f0; box-shadow: 0 10px 24px rgba(15,23,42,0.07); margin-bottom: 20px; }
+        div[data-testid="stExpander"] { border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; background: #ffffff; box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06); }
+        div[data-testid="stExpander"] > div[role="button"] { background: #f8fafc; font-weight: 700; color: #1e293b; }
+        div[data-testid="stTabs"] [role="tablist"] { gap: 8px; padding: 6px; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06); }
+        div[data-testid="stTabs"] [role="tab"] { border-radius: 999px; padding: 8px 16px; background: transparent; font-weight: 700; color: #64748b; }
+        div[data-testid="stTabs"] [role="tab"][aria-selected="true"] { background: linear-gradient(90deg, #1e3a8a 0%, #0f766e 60%, #f97316 100%); color: #ffffff; box-shadow: 0 8px 18px rgba(30, 58, 138, 0.25); }
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stDateInput"] input,
+        div[data-testid="stTimeInput"] input,
+        div[data-testid="stTextArea"] textarea {
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 12px !important;
+        }
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+        div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 12px !important;
+        }
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
+        div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
+        div[data-testid="stTextInput"] input:hover,
+        div[data-testid="stNumberInput"] input:hover,
+        div[data-testid="stDateInput"] input:hover,
+        div[data-testid="stTimeInput"] input:hover,
+        div[data-testid="stTextArea"] textarea:hover { border-color: #c7d2fe !important; }
         div[data-baseweb="tag"] {
             background: #e8f1ff !important;
             border: 1px solid #bfd7ff !important;
@@ -22153,5 +22184,3 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.warning("Nenhum backup local encontrado para Alunos/Turmas.")
     elif menu_coord == "Chatbot IA":
         run_active_chatbot()
-
-
