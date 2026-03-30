@@ -672,6 +672,7 @@ def render_sidebar_logo(logo_path):
             <div class="sidebar-brand-shell">
               <img src="{data_uri}" class="sidebar-brand-img" />
               <div class="sidebar-brand-sub">Sistema Educacional</div>
+              <div class="sidebar-version">UI Premium v2026.03.30</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -13577,6 +13578,7 @@ else:
         .sidebar-brand-shell { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px 16px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06); margin: 4px 0 14px; text-align: center; }
         .sidebar-brand-img { width: 180px; max-width: 85%; height: auto; }
         .sidebar-brand-sub { margin-top: 8px; font-size: .75rem; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+        .sidebar-version { margin-top: 6px; font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
         .sidebar-section-label { margin: 12px 4px 6px; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #94a3b8; font-weight: 800; }
         .sidebar-level-chip { background: #eef2ff; border: 1px solid #c7d2fe; color: #1e3a8a; font-weight: 700; font-size: .82rem; padding: 8px 12px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
