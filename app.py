@@ -13577,6 +13577,7 @@ else:
         .sidebar-brand-img { width: 180px; max-width: 85%; height: auto; }
         .sidebar-brand-sub { margin-top: 8px; font-size: .75rem; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 700; }
         .sidebar-section-label { margin: 12px 4px 6px; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #94a3b8; font-weight: 800; }
+        .sidebar-level-chip { background: #eef2ff; border: 1px solid #c7d2fe; color: #1e3a8a; font-weight: 700; font-size: .82rem; padding: 8px 12px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; }
         .profile-card { background: linear-gradient(135deg, rgba(30,58,138,0.12), rgba(255,255,255,0.9)); border: 1px solid rgba(30,58,138,0.15); border-radius: 16px; padding: 12px 14px; margin: 10px 0 12px; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); font-family: 'Baloo 2', cursive; color: #0f172a; }
         .profile-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; margin-bottom: 2px; }
         .profile-value { font-size: 1.02rem; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
@@ -14201,23 +14202,16 @@ elif st.session_state["role"] == "Aluno":
             {},
         )
         nivel_aluno_sidebar = student_book_level(aluno_sidebar_obj) or "Sem nivel definido"
-        st.info(f"Nível: {nivel_aluno_sidebar}")
+        st.markdown(f"<div class='sidebar-level-chip'>Nível: {nivel_aluno_sidebar}</div>", unsafe_allow_html=True)
         st.markdown("---")
-        menu_aluno_label = sidebar_menu(
+        menu_aluno_label = sidebar_menu_grouped(
             "Navegacao",
             [
-                "Painel",
-                "Agenda",
-                "Minhas Aulas",
-                "Boletim e Frequencia",
-                "Mensagens",
-                "Atividades",
-                "Lições de Casa",
-                "Desafios",
-                "Aulas Gravadas",
-                "Financeiro",
-                "Materiais de Estudo",
-                "Professor Wiz",
+                ("Visão geral", ["Painel", "Agenda", "Minhas Aulas"]),
+                ("Acadêmico", ["Boletim e Frequencia", "Atividades", "Lições de Casa", "Desafios"]),
+                ("Conteúdos", ["Aulas Gravadas", "Materiais de Estudo"]),
+                ("Comunicação", ["Mensagens", "Professor Wiz"]),
+                ("Financeiro", ["Financeiro"]),
             ],
             "menu_aluno",
         )
