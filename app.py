@@ -2679,8 +2679,17 @@ def _wiz_execute_actions(actions):
                 nome = str(data.get("nome", "")).strip()
                 email = str(data.get("email", "")).strip().lower()
                 celular = str(data.get("celular", data.get("telefone", ""))).strip()
+                data_nascimento_txt = str(data.get("data_nascimento", "")).strip()
+                cpf_txt = str(data.get("cpf", "")).strip()
+                login_auto, senha_auto = _auto_panel_credentials(data_nascimento_txt, cpf_txt)
                 if not nome:
                     reports.append({"type": kind, "ok": False, "message": "nome e obrigatorio"})
+                    continue
+                if not login_auto or not senha_auto:
+                    reports.append({"type": kind, "ok": False, "message": "data_nascimento e cpf valido sao obrigatorios para gerar login e senha"})
+                    continue
+                if find_user(login_auto):
+                    reports.append({"type": kind, "ok": False, "message": "login automatico ja existe para outro usuario"})
                     continue
                 if not email and celular:
                     email = ""
@@ -2689,11 +2698,11 @@ def _wiz_execute_actions(actions):
                     "matricula": _next_student_matricula(st.session_state.get("students", [])),
                     "idade": int(data.get("idade") or 18),
                     "genero": str(data.get("genero", data.get("sexo", ""))).strip(),
-                    "data_nascimento": str(data.get("data_nascimento", "")),
+                    "data_nascimento": data_nascimento_txt,
                     "celular": celular,
                     "email": email,
                     "rg": str(data.get("rg", "")),
-                    "cpf": str(data.get("cpf", "")),
+                    "cpf": cpf_txt,
                     "cidade_natal": str(data.get("cidade_natal", "")),
                     "pais": str(data.get("pais", "Brasil")),
                     "cep": str(data.get("cep", "")),
@@ -2705,8 +2714,8 @@ def _wiz_execute_actions(actions):
                     "turma": str(data.get("turma", "Sem Turma")),
                     "modulo": str(data.get("modulo", "Presencial em Turma")),
                     "livro": str(data.get("livro", "")),
-                    "usuario": str(data.get("usuario", "")),
-                    "senha": str(data.get("senha", "")),
+                    "usuario": login_auto,
+                    "senha": senha_auto,
                     "responsavel": {
                         "nome": str(data.get("responsavel_nome", "")),
                         "cpf": str(data.get("responsavel_cpf", "")),
@@ -2716,6 +2725,17 @@ def _wiz_execute_actions(actions):
                 }
                 st.session_state["students"].append(novo)
                 save_list(STUDENTS_FILE, st.session_state["students"])
+                st.session_state["users"].append(
+                    {
+                        "usuario": login_auto,
+                        "senha": senha_auto,
+                        "perfil": "Aluno",
+                        "pessoa": nome,
+                        "email": email,
+                        "celular": celular,
+                    }
+                )
+                save_users(st.session_state["users"])
                 reports.append({"type": kind, "ok": True, "message": f"aluno {nome} cadastrado"})
             elif kind == "atualizar_aluno":
                 idx_list = _find_student_indices(data)
@@ -2838,19 +2858,41 @@ def _wiz_execute_actions(actions):
                 reports.append({"type": kind, "ok": True, "message": f"{len(set(idx_list))} aluno(s) excluido(s)"})
             elif kind == "cadastrar_professor":
                 nome = str(data.get("nome", "")).strip()
+                data_nascimento_txt = str(data.get("data_nascimento", "")).strip()
+                cpf_txt = str(data.get("cpf", "")).strip()
+                login_auto, senha_auto = _auto_panel_credentials(data_nascimento_txt, cpf_txt)
                 if not nome:
                     reports.append({"type": kind, "ok": False, "message": "nome e obrigatorio"})
+                    continue
+                if not login_auto or not senha_auto:
+                    reports.append({"type": kind, "ok": False, "message": "data_nascimento e cpf valido sao obrigatorios para gerar login e senha"})
+                    continue
+                if find_user(login_auto):
+                    reports.append({"type": kind, "ok": False, "message": "login automatico ja existe para outro usuario"})
                     continue
                 prof = {
                     "nome": nome,
                     "area": str(data.get("area", "")),
                     "email": str(data.get("email", "")).strip().lower(),
                     "celular": str(data.get("celular", "")),
-                    "usuario": str(data.get("usuario", "")).strip(),
-                    "senha": str(data.get("senha", "")).strip(),
+                    "data_nascimento": data_nascimento_txt,
+                    "cpf": cpf_txt,
+                    "usuario": login_auto,
+                    "senha": senha_auto,
                 }
                 st.session_state["teachers"].append(prof)
                 save_list(TEACHERS_FILE, st.session_state["teachers"])
+                st.session_state["users"].append(
+                    {
+                        "usuario": login_auto,
+                        "senha": senha_auto,
+                        "perfil": "Professor",
+                        "pessoa": nome,
+                        "email": str(data.get("email", "")).strip().lower(),
+                        "celular": str(data.get("celular", "")),
+                    }
+                )
+                save_users(st.session_state["users"])
                 reports.append({"type": kind, "ok": True, "message": f"professor {nome} cadastrado"})
             elif kind == "atualizar_professor":
                 idx_list = _find_teacher_indices(data)
@@ -4561,6 +4603,24 @@ def parse_date(value):
         return datetime.datetime.strptime(value, "%d/%m/%Y").date()
     except Exception:
         return None
+
+def _auto_login_from_birthdate(value):
+    if isinstance(value, datetime.date):
+        return value.strftime("%d%m%Y")
+    parsed = parse_date(str(value or "").strip())
+    if parsed:
+        return parsed.strftime("%d%m%Y")
+    digits = _wiz_digits(value)
+    if len(digits) == 8:
+        return digits
+    return ""
+
+def _auto_password_from_cpf(value):
+    digits = _wiz_digits(value)
+    return digits[:5] if len(digits) >= 5 else ""
+
+def _auto_panel_credentials(birthdate_value, cpf_value):
+    return _auto_login_from_birthdate(birthdate_value), _auto_password_from_cpf(cpf_value)
 
 def add_months(date_value, months):
     if not date_value:
@@ -9218,6 +9278,31 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
         out.append(_teacher_payment_info_for_session(sess))
     out.sort(key=lambda item: (parse_date(item.get("data", "")) or month_start, item.get("professor", ""), item.get("turma", "")))
     return out
+
+def _teacher_payment_pending_report(month_ref=None):
+    candidates = _teacher_payment_candidates(month_ref=month_ref, professor_name="Todos", turma_name="Todas")
+    grouped = {}
+    for item in candidates:
+        professor_label = str(item.get("professor", "")).strip() or "Sem Professor"
+        group = grouped.setdefault(
+            professor_label,
+            {
+                "Professor": professor_label,
+                "Aulas pendentes": 0,
+                "Horas": 0.0,
+                "Total pendente": 0.0,
+            },
+        )
+        minutos = int(item.get("minutos", 0) or 0)
+        valor = float(item.get("valor", 0) or 0)
+        group["Aulas pendentes"] += 1
+        group["Horas"] += minutos / 60.0
+        group["Total pendente"] += valor
+    rows = sorted(grouped.values(), key=lambda row: normalize_text(row.get("Professor", "")))
+    total_valor = sum(float(row.get("Total pendente", 0) or 0) for row in rows)
+    total_aulas = sum(int(row.get("Aulas pendentes", 0) or 0) for row in rows)
+    total_horas = sum(float(row.get("Horas", 0) or 0) for row in rows)
+    return rows, candidates, total_valor, total_aulas, total_horas
 
 def _build_manual_makeup_session(
     professor_name,
@@ -17235,11 +17320,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
                     vip_aulas_total = max(int(vip_aulas_total), int(vip_aulas_restantes))
 
+                auto_login_aluno, auto_senha_aluno = _auto_panel_credentials(data_nascimento, cpf)
                 st.divider()
-                st.markdown("### Acesso do Aluno (opcional)")
+                st.markdown("### Acesso do Aluno (automatico)")
+                st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
                 ca1, ca2 = st.columns(2)
-                with ca1: login_aluno = st.text_input("Login do Aluno", key=_sfk("add_student_login"))
-                with ca2: senha_aluno = st.text_input("Senha do Aluno", type="password", key=_sfk("add_student_senha"))
+                with ca1:
+                    st.text_input("Login do Aluno", value=auto_login_aluno, disabled=True, key=_sfk("add_student_login_preview"))
+                with ca2:
+                    st.text_input("Senha do Aluno", value=auto_senha_aluno, disabled=True, key=_sfk("add_student_senha_preview"))
 
                 st.divider()
                 st.markdown("### Responsavel Legal / Financeiro")
@@ -17291,22 +17380,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
                     nome = nome.strip()
                     email = email.strip()
-                    login_aluno = login_aluno.strip()
-                    senha_aluno = senha_aluno.strip()
+                    cpf_digits = _wiz_digits(cpf)
                     resp_nome = resp_nome.strip()
                     resp_cpf = resp_cpf.strip()
                     resp_email = resp_email.strip()
                     old_login = str((edit_obj_submit or {}).get("usuario", "")).strip()
-                    old_senha = str((edit_obj_submit or {}).get("senha", "")).strip()
-                    login_final = login_aluno or old_login
-                    senha_final = senha_aluno or old_senha
+                    login_final, senha_final = _auto_panel_credentials(data_nascimento, cpf_digits)
 
                     if idade_final < 18 and (not resp_nome or not resp_cpf):
                         st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
                     elif not nome or not email:
                         st.error("ERRO: Nome e E-mail sao obrigatorios.")
-                    elif not edit_obj_submit and ((login_final and not senha_final) or (senha_final and not login_final)):
-                        st.error("ERRO: Para criar o login, informe usuario e senha.")
+                    elif len(cpf_digits) < 5:
+                        st.error("ERRO: CPF do aluno precisa ter pelo menos 5 digitos para gerar a senha automaticamente.")
+                    elif not login_final or not senha_final:
+                        st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
                     else:
                         login_conflict = find_user(login_final) if login_final else None
                         if login_conflict and (not old_login or str(login_final).strip().lower() != str(old_login).strip().lower()):
@@ -17607,13 +17695,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             )
                             new_vip_total = max(int(new_vip_total), int(new_vip_restantes))
 
+                        auto_login_edit, auto_senha_edit = _auto_panel_credentials(new_dn, new_cpf)
                         st.divider()
-                        st.markdown("### Acesso do Aluno (opcional)")
+                        st.markdown("### Acesso do Aluno (automatico)")
+                        st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
                         ca1, ca2 = st.columns(2)
                         with ca1:
-                            new_login = st.text_input("Login do Aluno", value=aluno_obj.get("usuario", ""))
+                            st.text_input("Login do Aluno", value=auto_login_edit, disabled=True, key=f"edit_student_login_preview_{matricula_atual}")
                         with ca2:
-                            new_senha = st.text_input("Senha do Aluno", value=aluno_obj.get("senha", ""), type="password")
+                            st.text_input("Senha do Aluno", value=auto_senha_edit, disabled=True, key=f"edit_student_senha_preview_{matricula_atual}")
 
                         st.divider()
                         st.markdown("### Responsavel Legal / Financeiro")
@@ -17637,8 +17727,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             save_student_notify = st.form_submit_button("Salvar + Notificar (E-mail/WhatsApp)")
                             if save_student or save_student_notify:
                                 old_login = aluno_obj.get("usuario", "").strip()
-                                login = new_login.strip() or old_login
-                                senha = new_senha.strip() or aluno_obj.get("senha", "")
+                                new_cpf_digits = _wiz_digits(new_cpf)
+                                login, senha = _auto_panel_credentials(new_dn, new_cpf_digits)
 
                                 if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
                                     st.error("ERRO: Este login já existe.")
@@ -17648,6 +17738,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
                                     elif not str(new_nome).strip() or not str(new_email).strip():
                                         st.error("ERRO: Nome e E-mail sao obrigatorios.")
+                                    elif len(new_cpf_digits) < 5:
+                                        st.error("ERRO: CPF do aluno precisa ter pelo menos 5 digitos para gerar a senha automaticamente.")
+                                    elif not login or not senha:
+                                        st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
                                     else:
                                         if login:
                                             user_obj = find_user(old_login) if old_login else None
@@ -17749,9 +17843,25 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 with c_email: email_prof = st.text_input("E-mail do Professor")
                 with c_cel: celular_prof = st.text_input("Celular/WhatsApp do Professor")
 
+                cp1, cp2 = st.columns(2)
+                with cp1:
+                    data_nascimento_prof = st.date_input(
+                        "Data de Nascimento *",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        min_value=datetime.date(1900, 1, 1),
+                        max_value=datetime.date(2036, 12, 31),
+                    )
+                with cp2:
+                    cpf_prof = st.text_input("CPF *")
+
+                login_prof_auto, senha_prof_auto = _auto_panel_credentials(data_nascimento_prof, cpf_prof)
                 c3, c4 = st.columns(2)
-                with c3: login_prof = st.text_input("Login do Professor")
-                with c4: senha_prof = st.text_input("Senha do Professor", type="password")
+                with c3:
+                    st.text_input("Login do Professor", value=login_prof_auto, disabled=True)
+                with c4:
+                    st.text_input("Senha do Professor", value=senha_prof_auto, disabled=True)
+                st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
 
                 n1, n2 = st.columns(2)
                 with n1:
@@ -17768,9 +17878,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     )
 
                 if st.form_submit_button("Cadastrar"):
-                    if (login_prof and not senha_prof) or (senha_prof and not login_prof):
-                        st.error("ERRO: Para criar o login, informe usuário e senha.")
-                    elif login_prof and find_user(login_prof):
+                    cpf_prof_digits = _wiz_digits(cpf_prof)
+                    if len(cpf_prof_digits) < 5:
+                        st.error("ERRO: CPF do professor precisa ter pelo menos 5 digitos para gerar a senha automaticamente.")
+                    elif not login_prof_auto or not senha_prof_auto:
+                        st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
+                    elif find_user(login_prof_auto):
                         st.error("ERRO: Este login já existe.")
                     else:
                         st.session_state["teachers"].append(
@@ -17779,30 +17892,36 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 "area": area,
                                 "email": email_prof.strip().lower(),
                                 "celular": celular_prof.strip(),
-                                "usuario": login_prof.strip(),
-                                "senha": senha_prof.strip(),
+                                "data_nascimento": data_nascimento_prof.strftime("%d/%m/%Y"),
+                                "cpf": cpf_prof.strip(),
+                                "usuario": login_prof_auto,
+                                "senha": senha_prof_auto,
                             }
                         )
                         save_list(TEACHERS_FILE, st.session_state["teachers"])
-                        if login_prof and senha_prof:
-                            st.session_state["users"].append(
-                                {
-                                    "usuario": login_prof.strip(),
-                                    "senha": senha_prof.strip(),
-                                    "perfil": "Professor",
-                                    "pessoa": nome,
-                                    "email": email_prof.strip().lower(),
-                                    "celular": celular_prof.strip(),
-                                }
-                            )
-                            save_users(st.session_state["users"])
+                        st.session_state["users"].append(
+                            {
+                                "usuario": login_prof_auto,
+                                "senha": senha_prof_auto,
+                                "perfil": "Professor",
+                                "pessoa": nome,
+                                "email": email_prof.strip().lower(),
+                                "celular": celular_prof.strip(),
+                            }
+                        )
+                        save_users(st.session_state["users"])
                         if wiz_event_enabled("on_teacher_created"):
                             _notify_direct_contacts(
                                 nome or "Professor",
                                 [email_prof] if bool(send_prof_email) else [],
                                 [celular_prof] if bool(send_prof_whatsapp) else [],
                                 "[Active] Cadastro de professor concluído",
-                                "Seu acesso de professor foi cadastrado no Active. Em caso de dúvidas, procure a coordenação.",
+                                (
+                                    "Seu acesso de professor foi cadastrado no Active.\n"
+                                    f"Login: {login_prof_auto}\n"
+                                    f"Senha: {senha_prof_auto}\n"
+                                    "Em caso de duvidas, procure a coordenacao."
+                                ),
                                 "Cadastro Professor",
                             )
                         st.success("Cadastro realizado com sucesso!")
@@ -17821,18 +17940,40 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         with ec1: new_email = st.text_input("E-mail", value=prof_obj.get("email", ""))
                         with ec2: new_cel = st.text_input("Celular/WhatsApp", value=prof_obj.get("celular", ""))
 
+                        teacher_birth_current = parse_date(prof_obj.get("data_nascimento", "")) or datetime.date.today()
+                        tc1, tc2 = st.columns(2)
+                        with tc1:
+                            new_data_nascimento = st.date_input(
+                                "Data de Nascimento *",
+                                value=teacher_birth_current,
+                                format="DD/MM/YYYY",
+                                min_value=datetime.date(1900, 1, 1),
+                                max_value=datetime.date(2036, 12, 31),
+                            )
+                        with tc2:
+                            new_cpf_prof = st.text_input("CPF *", value=prof_obj.get("cpf", ""))
+
+                        new_login_auto, new_senha_auto = _auto_panel_credentials(new_data_nascimento, new_cpf_prof)
                         c3, c4 = st.columns(2)
-                        with c3: new_login = st.text_input("Login do Professor", value=prof_obj.get("usuario", ""))
-                        with c4: new_senha = st.text_input("Senha do Professor", value=prof_obj.get("senha", ""), type="password")
+                        with c3:
+                            st.text_input("Login do Professor", value=new_login_auto, disabled=True, key=f"edit_prof_login_{prof_sel}")
+                        with c4:
+                            st.text_input("Senha do Professor", value=new_senha_auto, disabled=True, key=f"edit_prof_senha_{prof_sel}")
+                        st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("Salvar Alterações"):
                                 old_login = prof_obj.get("usuario", "").strip()
-                                login = new_login.strip() or old_login
-                                senha = new_senha.strip() or prof_obj.get("senha", "")
+                                new_cpf_prof_digits = _wiz_digits(new_cpf_prof)
+                                login = new_login_auto
+                                senha = new_senha_auto
 
-                                if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
+                                if len(new_cpf_prof_digits) < 5:
+                                    st.error("ERRO: CPF do professor precisa ter pelo menos 5 digitos para gerar a senha automaticamente.")
+                                elif not login or not senha:
+                                    st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
+                                elif login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
                                     st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
@@ -17863,6 +18004,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     prof_obj["area"] = new_area
                                     prof_obj["email"] = new_email.strip().lower()
                                     prof_obj["celular"] = new_cel.strip()
+                                    prof_obj["data_nascimento"] = new_data_nascimento.strftime("%d/%m/%Y")
+                                    prof_obj["cpf"] = str(new_cpf_prof or "").strip()
                                     prof_obj["usuario"] = login
                                     prof_obj["senha"] = senha
                                     save_list(TEACHERS_FILE, st.session_state["teachers"])
@@ -18559,6 +18702,28 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             with tab_all:
                 _render_student_receivable_cards(student_receivables, "all")
 
+        def _finance_submenu_buttons(state_key, label_map, columns_count=4):
+            labels = list(label_map.keys())
+            values = list(label_map.values())
+            if not labels:
+                return ""
+            if st.session_state.get(state_key) not in values:
+                st.session_state[state_key] = values[0]
+            current_value = st.session_state.get(state_key)
+            cols = st.columns(columns_count)
+            for idx_label, label in enumerate(labels):
+                selected = current_value == label_map[label]
+                if cols[idx_label % columns_count].button(
+                    label,
+                    key=f"{state_key}_btn_{idx_label}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    if not selected:
+                        st.session_state[state_key] = label_map[label]
+                        st.rerun()
+            return st.session_state.get(state_key, values[0])
+
         open_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
         paid_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() == "pago"]
         overdue_receivables_all = _financial_overdue_items(receivables_all, date_field="vencimento")
@@ -18764,7 +18929,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_main = "Contas a Pagar"
         elif finance_workspace == "Recibos":
             finance_main = "Contas a Pagar"
-            st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
         elif finance_workspace == "Cobrança e Inadimplência":
             finance_main = "Vencimentos"
         elif finance_workspace == "Configurações":
@@ -18858,23 +19022,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 (label for label, value in fr_map.items() if value == current_receber),
                 "Lançar cobrança",
             )
-            receive_nav_col, receive_hint_col = st.columns([1.4, 1])
-            with receive_nav_col:
-                finance_receber_label = st.selectbox(
-                    "Área de trabalho",
-                    list(fr_map.keys()),
-                    index=list(fr_map.keys()).index(selected_receber_label),
-                    key="finance_receber_menu_select",
-                )
-            with receive_hint_col:
-                st.caption("Ação principal")
-                st.markdown(
-                    f"**{finance_receber_label}**  \nUse este atalho para navegar sem abrir vários blocos ao mesmo tempo."
-                )
-            finance_receber_target = fr_map[finance_receber_label]
-            if finance_receber_target != current_receber:
-                st.session_state["finance_receber_menu"] = finance_receber_target
-                st.rerun()
+            st.markdown("### Ações de Recebimentos")
+            finance_receber_menu = _finance_submenu_buttons(
+                "finance_receber_menu",
+                fr_map,
+                columns_count=4,
+            )
+            st.caption(
+                f"Ação atual: {selected_receber_label if finance_receber_menu == current_receber else next((label for label, value in fr_map.items() if value == finance_receber_menu), 'Lançar cobrança')}"
+            )
             with st.container(border=True):
                 _student_financial_account_panel()
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
@@ -19693,66 +19849,64 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.success(f"Baixa automática realizada: {count} lançamento(s).")
                                 st.rerun()
         if finance_main == "Contas a Pagar":
-            finance_pagar_options = [
+            finance_teacher_options = [
+                "Resumo dos Professores",
                 "Pagamento de Aulas do Professor",
+                "Lancamento Manual do Professor",
                 "Lancar Despesa",
                 "Despesas",
                 "Acoes em massa (Despesas)",
                 "Gerenciamento de Despesas",
             ]
-            if st.session_state.get("finance_pagar_menu") not in finance_pagar_options:
-                st.session_state["finance_pagar_menu"] = finance_pagar_options[0]
-            pagar_chip = "Professores" if finance_workspace != "Recibos" else "Recibos"
-            pagar_title = "Professores e pagamentos"
-            pagar_desc = "Separe despesas da escola, histórico financeiro e pagamento de professores em um fluxo mais objetivo."
+            finance_receipt_options = [
+                "Recibos de Professor",
+                "Historico de Recibos",
+            ]
             if finance_workspace == "Recibos":
-                pagar_title = "Recibos"
-                pagar_desc = "Consulte comprovantes e acesse rapidamente a emissão de recibos de pagamentos confirmados."
-            _finance_section_intro(
-                pagar_title,
-                pagar_desc,
-                chip=pagar_chip,
-            )
-            fp_map = {
-                "Pagamento de professor": finance_pagar_options[0],
-                "Lançar despesa": finance_pagar_options[1],
-                "Histórico de despesas": finance_pagar_options[2],
-                "Ações em massa": finance_pagar_options[3],
-                "Gerenciar despesas": finance_pagar_options[4],
-            }
-            current_pagar = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
-            selected_pagar_label = next(
-                (label for label, value in fp_map.items() if value == current_pagar),
-                "Pagamento de professor",
-            )
-            pay_nav_col, pay_hint_col = st.columns([1.4, 1])
-            with pay_nav_col:
-                finance_pagar_label = st.selectbox(
-                    "Área de trabalho",
-                    list(fp_map.keys()),
-                    index=list(fp_map.keys()).index(selected_pagar_label),
-                    key="finance_pagar_menu_select",
+                if st.session_state.get("finance_receipt_menu") not in finance_receipt_options:
+                    st.session_state["finance_receipt_menu"] = finance_receipt_options[0]
+                _finance_section_intro(
+                    "Recibos",
+                    "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
+                    chip="Recibos",
                 )
-            with pay_hint_col:
-                if finance_workspace == "Recibos":
-                    recibos_emitidos = len([r for r in paid_receivables if str(r.get("data_pagamento", "")).strip()]) + len(
-                        [p for p in sales_payments_all if str(p.get("recibo_numero", "")).strip()]
-                    )
-                    _finance_metric_card("Recibos disponíveis", recibos_emitidos, "Histórico de pagamentos pagos e comprovados", tone="green")
-                else:
-                    st.caption("Controle rápido")
-                    st.markdown("**Professor** e **despesa** ficam separados do contas a receber, com histórico mais limpo.")
-            finance_pagar_target = fp_map[finance_pagar_label]
-            if finance_pagar_target != current_pagar:
-                st.session_state["finance_pagar_menu"] = finance_pagar_target
-                st.rerun()
-            finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_pagar_options[0])
-            if finance_pagar_menu != "Pagamento de Aulas do Professor":
-                st.caption("Recibo de pagamento do professor fica em: Pagamento de Aulas do Professor.")
-                if st.button("Abrir Gerador de Recibo (Professor)", key="finance_open_teacher_receipt_shortcut"):
-                    st.session_state["finance_pagar_menu"] = "Pagamento de Aulas do Professor"
-                    st.rerun()
-            if finance_workspace == "Recibos":
+                receipt_map = {
+                    "Recibo do professor": finance_receipt_options[0],
+                    "Histórico de recibos": finance_receipt_options[1],
+                }
+                finance_receipt_menu = _finance_submenu_buttons(
+                    "finance_receipt_menu",
+                    receipt_map,
+                    columns_count=2,
+                )
+                recibos_emitidos = len([r for r in paid_receivables if str(r.get("data_pagamento", "")).strip()]) + len(
+                    [p for p in sales_payments_all if str(p.get("recibo_numero", "")).strip()]
+                )
+                _finance_metric_card("Recibos disponíveis", recibos_emitidos, "Histórico de pagamentos pagos e comprovados", tone="green")
+            else:
+                if st.session_state.get("finance_pagar_menu") not in finance_teacher_options:
+                    st.session_state["finance_pagar_menu"] = finance_teacher_options[0]
+                _finance_section_intro(
+                    "Professores e pagamentos",
+                    "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
+                    chip="Professores",
+                )
+                fp_map = {
+                    "Resumo": finance_teacher_options[0],
+                    "Pagamento por aulas": finance_teacher_options[1],
+                    "Lançamento manual": finance_teacher_options[2],
+                    "Lançar despesa": finance_teacher_options[3],
+                    "Despesas": finance_teacher_options[4],
+                    "Ações em massa": finance_teacher_options[5],
+                    "Gerenciar despesas": finance_teacher_options[6],
+                }
+                finance_pagar_menu = _finance_submenu_buttons(
+                    "finance_pagar_menu",
+                    fp_map,
+                    columns_count=4,
+                )
+                st.caption("Cada botão abre somente o fluxo selecionado.")
+            if finance_workspace == "Recibos" and finance_receipt_menu == "Historico de Recibos":
                 st.markdown("### Histórico rápido de recibos")
                 paid_receipt_rows = [
                     {
@@ -19786,17 +19940,81 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.info("Nenhum recibo disponível ainda. Os recibos aparecem aqui após pagamentos confirmados.")
             if st.session_state.pop("fin_teacher_pay_reset_pending", False):
                 st.session_state.pop("fin_teacher_pay_selected_refs", None)
-            if finance_pagar_menu == "Pagamento de Aulas do Professor":
-                st.markdown("### Lancar Pagamento de Aulas do Professor")
-                st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
-                tp1, tp2, tp3 = st.columns(3)
-                with tp1:
-                    teacher_pay_month_ref = st.date_input(
-                        "Mes de referencia",
+            finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_teacher_options[0])
+            finance_receipt_menu = st.session_state.get("finance_receipt_menu", finance_receipt_options[0])
+            if finance_workspace == "Professores" and finance_pagar_menu == "Resumo dos Professores":
+                st.markdown("### Resumo de professores")
+                rp1, rp2 = st.columns(2)
+                with rp1:
+                    teacher_report_month_ref = st.date_input(
+                        "Mes de referencia do resumo",
                         value=datetime.date.today(),
                         format="DD/MM/YYYY",
-                        key="fin_teacher_pay_month_ref",
+                        key="fin_teacher_report_month_ref",
                     )
+                summary_rows, summary_candidates, summary_total_valor, summary_total_aulas, summary_total_horas = _teacher_payment_pending_report(
+                    month_ref=teacher_report_month_ref,
+                )
+                rp3, rp4, rp5 = st.columns(3)
+                with rp3:
+                    _finance_metric_card("Total geral", format_money(summary_total_valor), f"{summary_total_aulas} aula(s) pendente(s)", tone="blue")
+                with rp4:
+                    _finance_metric_card("Horas pendentes", f"{summary_total_horas:.1f}h".replace(".", ","), "Carga estimada a pagar", tone="green")
+                with rp5:
+                    _finance_metric_card("Professores", len(summary_rows), "Docentes com aulas pendentes no período", tone="slate")
+                if summary_rows:
+                    df_summary = pd.DataFrame(summary_rows)
+                    df_summary["Horas"] = df_summary["Horas"].map(lambda value: f"{float(value):.1f}".replace(".", ","))
+                    df_summary["Total pendente"] = df_summary["Total pendente"].map(format_money)
+                    st.markdown("#### Relatório geral de todos os professores")
+                    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "Baixar relatório geral (CSV)",
+                        data=pd.DataFrame(summary_rows).to_csv(index=False).encode("utf-8-sig"),
+                        file_name=f"relatorio_professores_{teacher_report_month_ref.strftime('%Y%m')}.csv",
+                        mime="text/csv",
+                        key="fin_teacher_report_download_all",
+                    )
+                    detail_teacher_options = ["Todos"] + [str(row.get("Professor", "")).strip() for row in summary_rows]
+                    selected_detail_teacher = st.selectbox(
+                        "Professor para detalhar",
+                        detail_teacher_options,
+                        key="fin_teacher_report_detail_professor",
+                    )
+                    detail_rows = [
+                        {
+                            "Data": str(item.get("data", "")).strip(),
+                            "Professor": str(item.get("professor", "")).strip(),
+                            "Turma": str(item.get("turma", "")).strip(),
+                            "Modulo": str(item.get("modulo", "")).strip(),
+                            "Minutos": int(item.get("minutos", 0) or 0),
+                            "Valor": format_money(item.get("valor", 0)),
+                        }
+                        for item in summary_candidates
+                        if selected_detail_teacher == "Todos" or str(item.get("professor", "")).strip() == selected_detail_teacher
+                    ]
+                    st.markdown(
+                        "#### Relatório detalhado"
+                        + (f" - {selected_detail_teacher}" if selected_detail_teacher != "Todos" else " - todos os professores")
+                    )
+                    if detail_rows:
+                        st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+                        st.download_button(
+                            "Baixar relatório detalhado (CSV)",
+                            data=pd.DataFrame(detail_rows).to_csv(index=False).encode("utf-8-sig"),
+                            file_name=(
+                                f"relatorio_professor_{selected_detail_teacher.replace(' ', '_') if selected_detail_teacher != 'Todos' else 'todos'}_"
+                                f"{teacher_report_month_ref.strftime('%Y%m')}.csv"
+                            ),
+                            mime="text/csv",
+                            key="fin_teacher_report_download_detail",
+                        )
+                    else:
+                        st.info("Nenhuma aula pendente encontrada para este recorte.")
+                else:
+                    st.info("Nao ha aulas pendentes de pagamento para os professores no periodo informado.")
+            if finance_workspace == "Recibos" and finance_receipt_menu == "Recibos de Professor":
+                st.markdown("### Recibo de pagamento do professor")
                 teacher_options = ["Todos"] + sorted(
                     {
                         str(t.get("nome", "")).strip()
@@ -19804,16 +20022,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         if str(t.get("nome", "")).strip()
                     }
                 )
-                turma_options_pay = ["Todas"] + class_names()
-                with tp2:
-                    teacher_pay_prof = st.selectbox("Professor", teacher_options, key="fin_teacher_pay_prof")
-                with tp3:
-                    teacher_pay_turma = st.selectbox("Turma", turma_options_pay, key="fin_teacher_pay_turma")
-
-                # Gerador rapido no topo (visivel sem rolagem longa)
-                st.markdown("### Gerador de Recibo de Pagamento (PDF/HTML)")
+                receipt_month_ref = st.date_input(
+                    "Mes de referencia",
+                    value=datetime.date.today(),
+                    format="DD/MM/YYYY",
+                    key="fin_teacher_receipt_month_ref_only",
+                )
+                month_start_top, month_end_top = _current_month_bounds(receipt_month_ref)
                 rt1, rt2, rt3 = st.columns(3)
-                month_start_top, month_end_top = _current_month_bounds(teacher_pay_month_ref)
                 with rt1:
                     receipt_start_top = st.date_input(
                         "Periodo inicial (recibo)",
@@ -19832,7 +20048,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     receipt_prof_top = st.selectbox(
                         "Professor do recibo",
                         teacher_options,
-                        index=(teacher_options.index(teacher_pay_prof) if teacher_pay_prof in teacher_options else 0),
                         key="fin_teacher_receipt_prof_top",
                     )
                 teacher_obj_top = next(
@@ -19865,8 +20080,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     key="fin_teacher_receipt_responsavel_top",
                 )
                 bth, btp = st.columns(2)
-                gerar_html_top = bth.button("Gerar recibo HTML (Topo)", key="fin_teacher_receipt_btn_top_html", type="secondary")
-                gerar_pdf_top = btp.button("Gerar recibo PDF (Topo)", key="fin_teacher_receipt_btn_top_pdf", type="primary")
+                gerar_html_top = bth.button("Gerar recibo HTML", key="fin_teacher_receipt_btn_top_html", type="secondary")
+                gerar_pdf_top = btp.button("Gerar recibo PDF", key="fin_teacher_receipt_btn_top_pdf", type="primary")
                 if gerar_html_top or gerar_pdf_top:
                     if str(receipt_prof_top).strip() in ("", "Todos"):
                         st.error("Selecione um professor especifico para gerar o recibo.")
@@ -19897,7 +20112,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     responsavel=receipt_responsavel_top,
                                 )
                                 st.download_button(
-                                    "Baixar recibo HTML (Topo)",
+                                    "Baixar recibo HTML",
                                     data=receipt_html_top,
                                     file_name=f"{file_name_top}.html",
                                     mime="text/html",
@@ -19916,7 +20131,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                                 if receipt_pdf_top:
                                     st.download_button(
-                                        "Baixar recibo PDF (Topo)",
+                                        "Baixar recibo PDF",
                                         data=receipt_pdf_top,
                                         file_name=f"{file_name_top}.pdf",
                                         mime="application/pdf",
@@ -19924,6 +20139,29 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     )
                                 else:
                                     st.error("Nao foi possivel gerar PDF neste ambiente.")
+            if finance_workspace == "Professores" and finance_pagar_menu == "Pagamento de Aulas do Professor":
+                st.markdown("### Lancar Pagamento de Aulas do Professor")
+                st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
+                tp1, tp2, tp3 = st.columns(3)
+                with tp1:
+                    teacher_pay_month_ref = st.date_input(
+                        "Mes de referencia",
+                        value=datetime.date.today(),
+                        format="DD/MM/YYYY",
+                        key="fin_teacher_pay_month_ref",
+                    )
+                teacher_options = ["Todos"] + sorted(
+                    {
+                        str(t.get("nome", "")).strip()
+                        for t in st.session_state.get("teachers", [])
+                        if str(t.get("nome", "")).strip()
+                    }
+                )
+                turma_options_pay = ["Todas"] + class_names()
+                with tp2:
+                    teacher_pay_prof = st.selectbox("Professor", teacher_options, key="fin_teacher_pay_prof")
+                with tp3:
+                    teacher_pay_turma = st.selectbox("Turma", turma_options_pay, key="fin_teacher_pay_turma")
 
                 teacher_candidates = _teacher_payment_candidates(
                     month_ref=teacher_pay_month_ref,
@@ -20035,7 +20273,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.success(f"Pagamento de {launched} aula(s) lancado com sucesso.")
                         st.rerun()
 
-                st.divider()
+            if finance_workspace == "Professores" and finance_pagar_menu == "Lancamento Manual do Professor":
                 st.markdown("### Lancamento manual de pagamento")
                 manual_turma_options = class_names()
                 if not manual_turma_options:
@@ -20087,15 +20325,37 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             format="DD/MM/YYYY",
                             key="fin_teacher_manual_data_pag",
                         )
-                    mp6, mp7 = st.columns(2)
+                    mp6, mp7, mp8 = st.columns(3)
                     with mp6:
+                        teacher_manual_status = st.selectbox(
+                            "Status",
+                            ["Aberto", "Pago"],
+                            key="fin_teacher_manual_status",
+                        )
+                    with mp7:
+                        teacher_manual_due_day = st.selectbox(
+                            "Dia do vencimento",
+                            list(range(1, 31)),
+                            index=max(0, min(29, datetime.date.today().day - 1)),
+                            format_func=lambda d: f"Dia {d}",
+                            key="fin_teacher_manual_due_day",
+                        )
+                    with mp8:
+                        teacher_manual_cobranca = st.selectbox(
+                            "Forma de pagamento",
+                            ["Transferencia", "Pix", "Dinheiro", "Boleto", "Cartao"],
+                            index=0,
+                            key="fin_teacher_manual_cobranca",
+                        )
+                    mp9, mp10 = st.columns(2)
+                    with mp9:
                         livro_manual_default = str(turma_manual_obj.get("livro", "")).strip() or ""
                         teacher_manual_livro = st.text_input(
                             "Livro (manual)",
                             value=livro_manual_default,
                             key="fin_teacher_manual_livro",
                         )
-                    with mp7:
+                    with mp10:
                         teacher_manual_licao = st.text_input(
                             "Licao (manual)",
                             value="",
@@ -20110,7 +20370,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.caption(f"Total manual a lancar: {format_money(teacher_manual_total)}")
                     if st.button(
                         "Lancar pagamento manual do professor",
-                        type="secondary",
+                        type="primary",
                         key="fin_teacher_manual_launch_btn",
                     ):
                         if not professor_manual or not modulo_manual:
@@ -20144,9 +20404,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     "quantidade_aulas": int(teacher_manual_qtd),
                                     "valor_unitario_aula": f"{float(valor_unitario_manual):.2f}".replace(".", ","),
                                     "data": data_pag_manual_txt,
-                                    "vencimento": _month_due_date(teacher_pay_venc, teacher_pay_due_day).strftime("%d/%m/%Y"),
-                                    "cobranca": teacher_pay_cobranca,
-                                    "status": teacher_pay_status,
+                                    "vencimento": _month_due_date(teacher_manual_data_pag, teacher_manual_due_day).strftime("%d/%m/%Y"),
+                                    "cobranca": teacher_manual_cobranca,
+                                    "status": teacher_manual_status,
                                     "lote_id": f"PAG-LOT-{uuid.uuid4().hex[:10].upper()}",
                                 }
                             )
@@ -20155,7 +20415,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
             despesas = st.session_state["payables"]
-            if finance_pagar_menu == "Lancar Despesa":
+            if finance_workspace == "Professores" and finance_pagar_menu == "Lancar Despesa":
                 with st.form("add_pag"):
                     st.markdown("### Lancar Despesa")
                     c1, c2, c3 = st.columns(3)
@@ -20238,7 +20498,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             save_list(PAYABLES_FILE, st.session_state["payables"])
                             st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
 
-            if finance_pagar_menu == "Despesas":
+            if finance_workspace == "Professores" and finance_pagar_menu == "Despesas":
                 st.markdown("### Despesas")
                 despesas = st.session_state["payables"]
                 if despesas:
@@ -20268,7 +20528,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 else:
                     st.info("Nenhuma conta a pagar cadastrada.")
     
-            if finance_pagar_menu == "Acoes em massa (Despesas)":
+            if finance_workspace == "Professores" and finance_pagar_menu == "Acoes em massa (Despesas)":
                 st.markdown("### Acoes em massa (Despesas)")
                 if st.session_state.pop("fin_pag_bulk_reset_pending", False):
                     st.session_state.pop("fin_pag_bulk_codes", None)
@@ -20340,7 +20600,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success(f"{removed_pag} despesa(s) excluida(s).")
                             st.rerun()
     
-            if finance_pagar_menu == "Gerenciamento de Despesas":
+            if finance_workspace == "Professores" and finance_pagar_menu == "Gerenciamento de Despesas":
                 st.markdown("### Gerenciamento de Despesas")
                 if not despesas:
                     st.info("Nenhuma despesa para gerenciar.")
@@ -20358,102 +20618,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     pag_obj = despesas[idx_pag]
                     cat_pag_obj = str(pag_obj.get("categoria_lancamento", "")).strip().lower()
                     professor_pag_obj = str(pag_obj.get("fornecedor", "")).strip()
-                    if cat_pag_obj == "professor" and professor_pag_obj:
-                        st.markdown("#### Recibo rapido do professor selecionado")
-                        base_data_recibo = (
-                            parse_date(pag_obj.get("data_aula", ""))
-                            or parse_date(pag_obj.get("data", ""))
-                            or datetime.date.today()
-                        )
-                        mes_ini, mes_fim = _current_month_bounds(base_data_recibo)
-                        rr1, rr2 = st.columns(2)
-                        with rr1:
-                            recibo_ini = st.date_input(
-                                "Periodo inicial (recibo rapido)",
-                                value=mes_ini,
-                                format="DD/MM/YYYY",
-                                key=f"fin_fast_receipt_start_{idx_pag}",
-                            )
-                        with rr2:
-                            recibo_fim = st.date_input(
-                                "Periodo final (recibo rapido)",
-                                value=mes_fim,
-                                format="DD/MM/YYYY",
-                                key=f"fin_fast_receipt_end_{idx_pag}",
-                            )
-                        rb_html, rb_pdf = st.columns(2)
-                        fast_html = rb_html.button(
-                            f"Gerar recibo HTML - {professor_pag_obj}",
-                            key=f"fin_fast_receipt_btn_html_{idx_pag}",
-                        )
-                        fast_pdf = rb_pdf.button(
-                            f"Gerar recibo PDF - {professor_pag_obj}",
-                            key=f"fin_fast_receipt_btn_pdf_{idx_pag}",
-                        )
-                        if fast_html or fast_pdf:
-                            if recibo_fim < recibo_ini:
-                                st.error("Periodo final nao pode ser menor que o inicial.")
-                            else:
-                                receipt_sessions = _teacher_payment_sessions_for_receipt(
-                                    recibo_ini,
-                                    recibo_fim,
-                                    professor_name=professor_pag_obj,
-                                )
-                                if not receipt_sessions:
-                                    st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
-                                else:
-                                    teacher_obj_fast = next(
-                                        (
-                                            t for t in st.session_state.get("teachers", [])
-                                            if str(t.get("nome", "")).strip() == professor_pag_obj
-                                        ),
-                                        {},
-                                    )
-                                    whatsapp_fast = str(teacher_obj_fast.get("celular", "")).strip()
-                                    responsavel_fast = str(st.session_state.get("user_name", "")).strip()
-                                    html_fast = _teacher_payment_receipt_html(
-                                        professor_pag_obj,
-                                        recibo_ini,
-                                        recibo_fim,
-                                        receipt_sessions,
-                                        contato_whatsapp=whatsapp_fast,
-                                        data_pagamento=datetime.date.today(),
-                                        forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
-                                        responsavel=responsavel_fast,
-                                    )
-                                    file_fast = (
-                                        f"Relatorio_Pagamento_Professor_{professor_pag_obj.replace(' ', '_')}_"
-                                        f"{recibo_ini.strftime('%Y%m%d')}_{recibo_fim.strftime('%Y%m%d')}"
-                                    )
-                                    st.success(f"Recibo gerado com {len(receipt_sessions)} aula(s).")
-                                    if fast_html:
-                                        st.download_button(
-                                            "Baixar recibo rapido (HTML)",
-                                            data=html_fast,
-                                            file_name=f"{file_fast}.html",
-                                            mime="text/html",
-                                            key=f"fin_fast_receipt_html_{idx_pag}",
-                                        )
-                                    pdf_fast = _teacher_payment_receipt_pdf_bytes(
-                                        professor_pag_obj,
-                                        recibo_ini,
-                                        recibo_fim,
-                                        receipt_sessions,
-                                        contato_whatsapp=whatsapp_fast,
-                                        data_pagamento=datetime.date.today(),
-                                        forma_pagamento=str(pag_obj.get("cobranca", "")).strip(),
-                                        responsavel=responsavel_fast,
-                                    )
-                                    if pdf_fast and fast_pdf:
-                                        st.download_button(
-                                            "Baixar recibo rapido (PDF)",
-                                            data=pdf_fast,
-                                            file_name=f"{file_fast}.pdf",
-                                            mime="application/pdf",
-                                            key=f"fin_fast_receipt_pdf_{idx_pag}",
-                                        )
-                                    elif fast_pdf:
-                                        st.info("PDF indisponivel neste ambiente. Use o HTML e imprima como PDF.")
                     parcela_atual_pag, qtd_atual_pag = _parse_parcela_info(pag_obj.get("parcela", "1/1"))
                     data_atual_pag = parse_date(pag_obj.get("data", "")) or datetime.date.today()
                     venc_atual_pag = parse_date(pag_obj.get("vencimento", "")) or datetime.date.today()
