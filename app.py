@@ -2373,7 +2373,12 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
         4.5,
         _safe("Use a linha digitavel ou abra o link do boleto no navegador. Este PDF resume os dados da cobranca do aluno."),
     )
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    pdf_output = pdf.output(dest="S")
+    if isinstance(pdf_output, bytearray):
+        return bytes(pdf_output)
+    if isinstance(pdf_output, bytes):
+        return pdf_output
+    return str(pdf_output).encode("latin-1", "ignore")
 
 def _extract_first_json(text):
     raw = str(text or "").strip()
@@ -19081,6 +19086,58 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.rerun()
             return st.session_state.get(state_key, values[0])
 
+        def _open_receivable_from_overview(rec_obj, workspace="Recebimentos", menu="Gerenciamento de Recebimentos", overdue_focus=None):
+            selected_idx = next(
+                (
+                    idx_ref for idx_ref, obj_ref in enumerate(st.session_state.get("receivables", []))
+                    if obj_ref is rec_obj
+                ),
+                None,
+            )
+            st.session_state["finance_workspace_menu"] = workspace
+            if menu:
+                st.session_state["finance_receber_menu"] = menu
+            if selected_idx is not None:
+                st.session_state["manage_rec_idx"] = selected_idx
+            if overdue_focus:
+                st.session_state["finance_overdue_focus"] = overdue_focus
+            st.rerun()
+
+        def _interactive_finance_overview_table(rows, source_items, key, workspace="Recebimentos", menu="Gerenciamento de Recebimentos", overdue_focus=None):
+            if not rows:
+                return False
+            df = pd.DataFrame(rows)
+            try:
+                event = st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key=key,
+                )
+                selected_rows = []
+                try:
+                    selected_rows = list((event.selection or {}).get("rows", []))
+                except Exception:
+                    try:
+                        selected_rows = list(event.get("selection", {}).get("rows", []))
+                    except Exception:
+                        selected_rows = []
+                if selected_rows:
+                    selected_idx = int(selected_rows[0])
+                    if 0 <= selected_idx < len(source_items):
+                        _open_receivable_from_overview(
+                            source_items[selected_idx],
+                            workspace=workspace,
+                            menu=menu,
+                            overdue_focus=overdue_focus,
+                        )
+                return True
+            except TypeError:
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                return False
+
         open_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
         paid_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() == "pago"]
         overdue_receivables_all = _financial_overdue_items(receivables_all, date_field="vencimento")
@@ -19238,7 +19295,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             with g1:
                 st.markdown("### Próximos vencimentos")
                 if next_due_rows:
-                    st.dataframe(pd.DataFrame([
+                    next_due_table_rows = [
                         {
                             "aluno": str(r.get("aluno", "")).strip(),
                             "tipo": str(r.get("categoria", "")).strip(),
@@ -19246,13 +19303,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
                             "status": str(r.get("status", "")).strip(),
                         } for r in next_due_rows
-                    ]), use_container_width=True, hide_index=True)
+                    ]
+                    _interactive_finance_overview_table(
+                        next_due_table_rows,
+                        next_due_rows,
+                        key="finance_overview_next_due_table",
+                        workspace="Recebimentos",
+                        menu="Gerenciamento de Recebimentos",
+                    )
+                    st.caption("Clique em uma linha para abrir a cobrança.")
                 else:
                     st.info("Sem vencimentos próximos.")
             with g2:
                 st.markdown("### Últimos recebimentos")
                 if last_paid_rows:
-                    st.dataframe(pd.DataFrame([
+                    last_paid_table_rows = [
                         {
                             "aluno": str(r.get("aluno", "")).strip(),
                             "tipo": str(r.get("categoria", "")).strip(),
@@ -19260,12 +19325,20 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
                             "forma": str(r.get("cobranca", "")).strip(),
                         } for r in last_paid_rows
-                    ]), use_container_width=True, hide_index=True)
+                    ]
+                    _interactive_finance_overview_table(
+                        last_paid_table_rows,
+                        last_paid_rows,
+                        key="finance_overview_last_paid_table",
+                        workspace="Recebimentos",
+                        menu="Gerenciamento de Recebimentos",
+                    )
+                    st.caption("Clique em uma linha para abrir a cobrança.")
                 else:
                     st.info("Nenhum recebimento recente.")
             st.markdown("### Inadimplentes recentes")
             if overdue_recent_rows:
-                st.dataframe(pd.DataFrame([
+                overdue_recent_table_rows = [
                     {
                         "aluno": str(r.get("aluno", "")).strip(),
                         "responsavel": str(((next((s for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip() == str(r.get("aluno", "")).strip()), {}) or {}).get("responsavel", {}) or {}).get("nome", "")).strip(),
@@ -19275,7 +19348,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
                         "status": str(r.get("status", "")).strip(),
                     } for r in overdue_recent_rows
-                ]), use_container_width=True, hide_index=True)
+                ]
+                _interactive_finance_overview_table(
+                    overdue_recent_table_rows,
+                    overdue_recent_rows,
+                    key="finance_overview_overdue_recent_table",
+                    workspace="Cobrança e Inadimplência",
+                    menu="Gerenciamento de Recebimentos",
+                    overdue_focus="receber",
+                )
+                st.caption("Clique em uma linha para abrir a área de inadimplência.")
             else:
                 st.info("Nenhum inadimplente recente.")
 
