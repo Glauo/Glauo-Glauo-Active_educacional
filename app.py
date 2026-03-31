@@ -9219,6 +9219,79 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
     out.sort(key=lambda item: (parse_date(item.get("data", "")) or month_start, item.get("professor", ""), item.get("turma", "")))
     return out
 
+def _build_manual_makeup_session(
+    professor_name,
+    student_name,
+    student_turma="",
+    session_date=None,
+    session_start=None,
+    lesson="",
+    notes="",
+    created_by="",
+):
+    professor_txt = str(professor_name or "").strip()
+    student_txt = str(student_name or "").strip()
+    student_turma_txt = str(student_turma or "").strip()
+    lesson_txt = str(lesson or "").strip()
+    notes_txt = str(notes or "").strip()
+    author_txt = str(created_by or "").strip() or "Coordenacao/Admin"
+    date_obj = session_date if isinstance(session_date, datetime.date) else datetime.date.today()
+    start_time = session_start if isinstance(session_start, datetime.time) else datetime.time(19, 0)
+    start_dt = datetime.datetime.combine(date_obj, start_time)
+    end_dt = start_dt + datetime.timedelta(hours=1)
+    data_txt = date_obj.strftime("%d/%m/%Y")
+    hora_inicio_txt = start_dt.strftime("%H:%M")
+    hora_fim_txt = end_dt.strftime("%H:%M")
+    turma_ref = next(
+        (
+            c for c in st.session_state.get("classes", [])
+            if normalize_text(c.get("nome", "")) == normalize_text(student_turma_txt)
+        ),
+        {},
+    )
+    livro_txt = str(turma_ref.get("livro", "")).strip()
+    nivel_txt = _norm_book_level(livro_txt) or livro_txt
+    observacoes_parts = [
+        "Reposicao manual lancada pela coordenacao/admin.",
+        f"Aluno de referencia: {student_txt}" if student_txt else "",
+        f"Turma de origem do aluno: {student_turma_txt}" if student_turma_txt else "",
+        notes_txt,
+    ]
+    observacoes_txt = " | ".join(part for part in observacoes_parts if str(part).strip())
+    session_obj = {
+        "id": uuid.uuid4().hex,
+        "titulo": "Reposicao Manual",
+        "tipo_registro": "Reposicao Manual",
+        "origem_registro": "Coordenacao/Admin",
+        "turma": "Reposicao Manual",
+        "professor": professor_txt,
+        "aluno_referencia": student_txt,
+        "alunos": [student_txt] if student_txt else [],
+        "data": data_txt,
+        "hora_inicio_prevista": hora_inicio_txt,
+        "hora_fim_prevista": hora_fim_txt,
+        "hora_inicio_real": hora_inicio_txt,
+        "hora_fim_real": hora_fim_txt,
+        "inicio_em": f"{data_txt} {hora_inicio_txt}",
+        "fim_em": f"{data_txt} {hora_fim_txt}",
+        "status": "Finalizada",
+        "licao": lesson_txt,
+        "conteudo": lesson_txt,
+        "resumo_inicio": lesson_txt,
+        "resumo_final": lesson_txt,
+        "observacoes": observacoes_txt,
+        "livro": livro_txt,
+        "nivel": nivel_txt,
+        "timezone": ACTIVE_TIMEZONE_NAME,
+        "updated_at": active_now().strftime("%d/%m/%Y %H:%M"),
+        "updated_by": author_txt,
+        "edit_history": [],
+        "pagamento_tipo_aula": "Reposicao Manual (1 hora)",
+        "pagamento_minutos": 60,
+        "pagamento_valor_aula": 50.0,
+    }
+    return _apply_teacher_payment_snapshot_to_session(session_obj)
+
 def _has_permission(permission_key):
     current = st.session_state.get("permissions", {})
     for part in str(permission_key or "").split("."):
@@ -9722,11 +9795,112 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
         """,
         unsafe_allow_html=True,
     )
+    today = datetime.date.today()
+    can_launch_manual_makeup = str(viewer_profile or "").strip() in ("Coordenador", "Admin")
+    if can_launch_manual_makeup:
+        teacher_options_manual = sorted(
+            {
+                str(t.get("nome", "")).strip()
+                for t in st.session_state.get("teachers", [])
+                if str(t.get("nome", "")).strip()
+            }
+        )
+        student_entries_manual = sorted(
+            [
+                {
+                    "nome": str(student.get("nome", "")).strip(),
+                    "turma": str(student.get("turma", "")).strip(),
+                }
+                for student in st.session_state.get("students", [])
+                if str(student.get("nome", "")).strip()
+            ],
+            key=lambda item: (normalize_text(item.get("nome", "")), normalize_text(item.get("turma", ""))),
+        )
+        st.markdown('<div class="aulas-section-label">Reposicao Manual</div>', unsafe_allow_html=True)
+        with st.expander("Lancar reposicao manual para professor", expanded=False):
+            st.caption("Use este lancamento quando o gestor precisar creditar uma reposicao manual ao professor, inclusive para aluno de outra turma. O professor sempre recebe 1 hora.")
+            if not teacher_options_manual:
+                st.info("Cadastre ao menos um professor para liberar o lancamento.")
+            elif not student_entries_manual:
+                st.info("Cadastre ao menos um aluno para registrar a reposicao manual.")
+            else:
+                with st.form(f"{prefix}_manual_makeup_form"):
+                    rm1, rm2 = st.columns(2)
+                    with rm1:
+                        manual_professor = st.selectbox(
+                            "Professor que recebe a reposicao",
+                            teacher_options_manual,
+                            key=f"{prefix}_manual_makeup_professor",
+                        )
+                    with rm2:
+                        manual_student_idx = st.selectbox(
+                            "Aluno de referencia",
+                            list(range(len(student_entries_manual))),
+                            format_func=lambda idx: (
+                                f"{student_entries_manual[idx]['nome']} | "
+                                f"{student_entries_manual[idx]['turma'] or 'Sem turma'}"
+                            ),
+                            key=f"{prefix}_manual_makeup_student",
+                        )
+                    selected_student_manual = student_entries_manual[int(manual_student_idx)]
+                    rm3, rm4 = st.columns(2)
+                    with rm3:
+                        manual_date = st.date_input(
+                            "Data da reposicao",
+                            value=today,
+                            format="DD/MM/YYYY",
+                            key=f"{prefix}_manual_makeup_date",
+                        )
+                    with rm4:
+                        manual_start = st.time_input(
+                            "Horario inicial",
+                            value=datetime.time(19, 0),
+                            key=f"{prefix}_manual_makeup_start",
+                        )
+                    st.caption(
+                        f"Aluno selecionado: {selected_student_manual.get('nome', '-')} | "
+                        f"Turma de origem: {selected_student_manual.get('turma', '-') or '-'} | "
+                        "Carga para pagamento: 1 hora (R$ 50,00)."
+                    )
+                    manual_lesson = st.text_input(
+                        "Licao / conteudo",
+                        placeholder="Ex: Reforco Unit 4 + speaking",
+                        key=f"{prefix}_manual_makeup_lesson",
+                    )
+                    manual_notes = st.text_area(
+                        "Observacoes",
+                        placeholder="Opcional: motivo da reposicao, contexto do aluno, autorizacao, etc.",
+                        key=f"{prefix}_manual_makeup_notes",
+                    )
+                    launch_manual_makeup = st.form_submit_button(
+                        "Salvar reposicao manual",
+                        type="primary",
+                    )
+                    if launch_manual_makeup:
+                        if not str(manual_professor).strip():
+                            st.error("Selecione o professor que recebera a reposicao.")
+                        elif not str(selected_student_manual.get("nome", "")).strip():
+                            st.error("Selecione o aluno de referencia.")
+                        elif not str(manual_lesson).strip():
+                            st.error("Informe a licao ou conteudo da reposicao.")
+                        else:
+                            manual_session = _build_manual_makeup_session(
+                                professor_name=manual_professor,
+                                student_name=selected_student_manual.get("nome", ""),
+                                student_turma=selected_student_manual.get("turma", ""),
+                                session_date=manual_date,
+                                session_start=manual_start,
+                                lesson=manual_lesson,
+                                notes=manual_notes,
+                                created_by=str(st.session_state.get("user_name", "")).strip(),
+                            )
+                            _merge_and_save_class_session(manual_session)
+                            st.success("Reposicao manual registrada com sucesso.")
+                            st.rerun()
     if not rows:
         st.info("Nenhuma aula registrada ainda.")
         return
 
-    today = datetime.date.today()
     defaults = {
         f"{prefix}_periodo": "Mês atual",
         f"{prefix}_professor": "Todos",
@@ -10035,7 +10209,10 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
         tarefa_txt = str(row.get("tarefa", "")).strip()
         obs_txt = str(row.get("observacoes", "")).strip()
         licao_txt = str(row.get("licao", "")).strip()
+        tipo_registro_txt = str(row.get("raw", {}).get("tipo_registro", "")).strip() if isinstance(row.get("raw", {}), dict) else ""
         chips = []
+        if tipo_registro_txt:
+            chips.append(f"<span class='aulas-history-chip'>{html.escape(tipo_registro_txt)}</span>")
         if str(row.get("livro", "")).strip() and str(row.get("livro", "")).strip() != "-":
             chips.append(f"<span class='aulas-history-chip'>Livro {html.escape(str(row.get('livro', '')).strip())}</span>")
         if licao_txt and licao_txt != "-":
