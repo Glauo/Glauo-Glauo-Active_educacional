@@ -585,6 +585,25 @@ def _extract_qr_candidate(value):
         return s if len(s) > 50 else ""
     return ""
 
+def _extract_first_value_by_keys(value, keys):
+    key_set = {str(k).strip() for k in (keys or []) if str(k).strip()}
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if str(k).strip() in key_set and isinstance(v, str) and v.strip():
+                return v.strip()
+        for item in value.values():
+            found = _extract_first_value_by_keys(item, key_set)
+            if found:
+                return found
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            found = _extract_first_value_by_keys(item, key_set)
+            if found:
+                return found
+        return ""
+    return ""
+
 def _extract_pairing_code(value):
     if isinstance(value, dict):
         for k in ("pairingCode", "pairing_code", "pairingcode"):
@@ -1878,6 +1897,63 @@ def _build_boleto_link_from_template(template, rec_obj, student):
 
     return re.sub(r"\{([A-Za-z0-9_]+)\}", _replace, str(template or "")).strip()
 
+def _receivable_payment_mode(rec_obj):
+    cobranca = normalize_text((rec_obj or {}).get("cobranca", ""))
+    if cobranca == "pix":
+        return "pix"
+    return "boleto"
+
+def _receivable_payment_label(rec_obj):
+    return "Pix" if _receivable_payment_mode(rec_obj) == "pix" else "Boleto"
+
+def _receivable_payment_generated(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return bool(
+            str((rec_obj or {}).get("pix_qr_code", "")).strip()
+            or str((rec_obj or {}).get("pix_url", "")).strip()
+            or str((rec_obj or {}).get("pix_qr_image_b64", "")).strip()
+        )
+    return bool(
+        str((rec_obj or {}).get("boleto_url", "")).strip()
+        or str((rec_obj or {}).get("boleto_linha_digitavel", "")).strip()
+    )
+
+def _receivable_payment_status(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return str((rec_obj or {}).get("pix_status", "")).strip() or "Nao Gerado"
+    return str((rec_obj or {}).get("boleto_status", "")).strip() or "Nao Gerado"
+
+def _receivable_payment_url(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return str((rec_obj or {}).get("pix_url", "")).strip()
+    return str((rec_obj or {}).get("boleto_url", "")).strip()
+
+def _receivable_payment_generated_at(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return str((rec_obj or {}).get("pix_gerado_em", "")).strip()
+    return str((rec_obj or {}).get("boleto_gerado_em", "")).strip()
+
+def _receivable_payment_sent_at(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return str((rec_obj or {}).get("pix_enviado_em", "")).strip()
+    return str((rec_obj or {}).get("boleto_enviado_em", "")).strip()
+
+def _receivable_payment_sent_channels(rec_obj):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return str((rec_obj or {}).get("pix_enviado_canais", "")).strip()
+    return str((rec_obj or {}).get("boleto_enviado_canais", "")).strip()
+
+def _receivable_pix_qr_png_bytes(rec_obj):
+    img_b64 = str((rec_obj or {}).get("pix_qr_image_b64", "")).strip()
+    if img_b64:
+        raw = _maybe_decode_qr_image_bytes(img_b64)
+        if raw is not None:
+            return raw
+    qr_code = str((rec_obj or {}).get("pix_qr_code", "")).strip()
+    if qr_code:
+        return _qr_content_to_png_bytes(qr_code)
+    return None
+
 def _split_person_name(name):
     parts = [part for part in str(name or "").strip().split() if part]
     if not parts:
@@ -1900,7 +1976,7 @@ def _is_mercado_pago_boleto_provider(provider="", api_key=""):
     api_key_txt = str(api_key or "").strip()
     return provider_txt in ("mercado_pago", "mercadopago", "mp") or api_key_txt.startswith("APP_USR-")
 
-def _mercado_pago_missing_fields(rec_obj, student):
+def _mercado_pago_missing_fields(rec_obj, student, payment_mode="boleto"):
     student = student if isinstance(student, dict) else {}
     valor = float(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) or 0)
     cpf = _wiz_digits(student.get("cpf", ""))
@@ -1919,18 +1995,19 @@ def _mercado_pago_missing_fields(rec_obj, student):
         missing.append("CPF do aluno")
     if not email:
         missing.append("e-mail do aluno")
-    if len(zip_code) < 8:
-        missing.append("CEP do aluno")
-    if not street_name:
-        missing.append("rua do aluno")
-    if not street_number:
-        missing.append("numero do aluno")
-    if not neighborhood:
-        missing.append("bairro do aluno")
-    if not city:
-        missing.append("cidade do aluno")
-    if len(federal_unit) != 2:
-        missing.append("UF do aluno ou UF padrao do boleto")
+    if payment_mode != "pix":
+        if len(zip_code) < 8:
+            missing.append("CEP do aluno")
+        if not street_name:
+            missing.append("rua do aluno")
+        if not street_number:
+            missing.append("numero do aluno")
+        if not neighborhood:
+            missing.append("bairro do aluno")
+        if not city:
+            missing.append("cidade do aluno")
+        if len(federal_unit) != 2:
+            missing.append("UF do aluno ou UF padrao do boleto")
     if not first_name or not last_name:
         missing.append("nome completo do aluno")
     return missing
@@ -1941,6 +2018,7 @@ def _boleto_generation_requirements(rec_obj):
     student = _find_student_by_name(rec_obj.get("aluno", ""))
     provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
     api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
+    payment_mode = _receivable_payment_mode(rec_obj)
     use_mercado_pago = _is_mercado_pago_boleto_provider(provider, api_key)
     missing = []
     if use_mercado_pago:
@@ -1949,7 +2027,7 @@ def _boleto_generation_requirements(rec_obj):
         if not student:
             missing.append("cadastro do aluno vinculado ao lancamento")
         else:
-            missing.extend(_mercado_pago_missing_fields(rec_obj, student))
+            missing.extend(_mercado_pago_missing_fields(rec_obj, student, payment_mode=payment_mode))
     return {
         "use_mercado_pago": use_mercado_pago,
         "missing": missing,
@@ -1999,9 +2077,9 @@ def test_mercado_pago_connection():
         "methods_total": len(methods),
     }
 
-def _mercado_pago_payment_payload(rec_obj, student):
+def _mercado_pago_payment_payload(rec_obj, student, payment_mode="boleto"):
     student = student if isinstance(student, dict) else {}
-    missing = _mercado_pago_missing_fields(rec_obj, student)
+    missing = _mercado_pago_missing_fields(rec_obj, student, payment_mode=payment_mode)
     if missing:
         return None, "dados obrigatorios para Mercado Pago ausentes: " + ", ".join(missing)
     valor = float(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) or 0)
@@ -2022,7 +2100,7 @@ def _mercado_pago_payment_payload(rec_obj, student):
     payload = {
         "transaction_amount": valor,
         "description": str(rec_obj.get("descricao", "")).strip() or "Mensalidade",
-        "payment_method_id": "bolbradesco",
+        "payment_method_id": "pix" if payment_mode == "pix" else "bolbradesco",
         "external_reference": str(rec_obj.get("codigo", "")).strip(),
         "payer": {
             "email": email,
@@ -2032,16 +2110,17 @@ def _mercado_pago_payment_payload(rec_obj, student):
                 "type": "CPF",
                 "number": cpf,
             },
-            "address": {
-                "zip_code": zip_code,
-                "street_name": street_name,
-                "street_number": street_number,
-                "neighborhood": neighborhood,
-                "city": city,
-                "federal_unit": federal_unit,
-            },
         },
     }
+    if payment_mode != "pix":
+        payload["payer"]["address"] = {
+            "zip_code": zip_code,
+            "street_name": street_name,
+            "street_number": street_number,
+            "neighborhood": neighborhood,
+            "city": city,
+            "federal_unit": federal_unit,
+        }
     if expiration_txt:
         payload["date_of_expiration"] = expiration_txt
     return payload, ""
@@ -2094,11 +2173,54 @@ def _extract_boleto_info_from_json(payload):
                 break
     return boleto_url, linha
 
+def _extract_pix_info_from_json(payload):
+    if not isinstance(payload, dict):
+        return "", "", ""
+    pix_url = str(_extract_first_value_by_keys(
+        payload,
+        (
+            "ticket_url",
+            "external_resource_url",
+            "payment_url",
+            "invoice_url",
+            "url",
+            "link",
+        ),
+    )).strip()
+    qr_code = str(_extract_first_value_by_keys(
+        payload,
+        (
+            "qr_code",
+            "qrCode",
+            "pix_code",
+            "pixCode",
+            "copy_paste",
+            "copyPaste",
+            "copiaecola",
+            "copia_e_cola",
+        ),
+    )).strip()
+    qr_candidate = _extract_qr_candidate(payload)
+    qr_image_b64 = ""
+    if qr_candidate:
+        raw_img = _maybe_decode_qr_image_bytes(qr_candidate)
+        if raw_img is not None:
+            qr_image_b64 = base64.b64encode(raw_img).decode("ascii")
+        elif not qr_code:
+            qr_code = str(qr_candidate).strip()
+    if qr_code and not qr_image_b64:
+        generated_png = _qr_content_to_png_bytes(qr_code)
+        if generated_png:
+            qr_image_b64 = base64.b64encode(generated_png).decode("ascii")
+    return pix_url, qr_code, qr_image_b64
+
 def generate_boleto_for_receivable(rec_obj, force=False):
     if not isinstance(rec_obj, dict):
         return False, "recebimento invalido"
-    if rec_obj.get("boleto_url") and not force:
-        return True, "boleto ja gerado"
+    payment_mode = _receivable_payment_mode(rec_obj)
+    payment_label = _receivable_payment_label(rec_obj)
+    if _receivable_payment_generated(rec_obj) and not force:
+        return True, f"{payment_label.lower()} ja gerado"
 
     provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
     api_url = str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()
@@ -2107,6 +2229,9 @@ def generate_boleto_for_receivable(rec_obj, force=False):
     student = requirements.get("student", {})
     boleto_url = ""
     linha = ""
+    pix_url = ""
+    pix_qr_code = ""
+    pix_qr_image_b64 = ""
     erro_api = ""
 
     use_mercado_pago = _is_mercado_pago_boleto_provider(provider, api_key)
@@ -2117,7 +2242,7 @@ def generate_boleto_for_receivable(rec_obj, force=False):
         mp_url = api_url.rstrip("/") if api_url else "https://api.mercadopago.com"
         if not mp_url.lower().endswith("/v1/payments"):
             mp_url = f"{mp_url}/v1/payments"
-        payload, payload_err = _mercado_pago_payment_payload(rec_obj, student)
+        payload, payload_err = _mercado_pago_payment_payload(rec_obj, student, payment_mode=payment_mode)
         if not payload:
             return False, payload_err
         headers = {
@@ -2140,8 +2265,12 @@ def generate_boleto_for_receivable(rec_obj, force=False):
         ok_http = status is not None and 200 <= int(status) < 300
         if ok_http and isinstance(parsed, dict):
             boleto_url, linha = _extract_boleto_info_from_json(parsed)
+            pix_url, pix_qr_code, pix_qr_image_b64 = _extract_pix_info_from_json(parsed)
             if parsed.get("id"):
-                rec_obj["boleto_payment_id"] = str(parsed.get("id", "")).strip()
+                if payment_mode == "pix":
+                    rec_obj["pix_payment_id"] = str(parsed.get("id", "")).strip()
+                else:
+                    rec_obj["boleto_payment_id"] = str(parsed.get("id", "")).strip()
         if not ok_http:
             erro_api = f"falha Mercado Pago (HTTP {status})"
             if err:
@@ -2149,6 +2278,8 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             elif preview:
                 erro_api += f" {preview[:120]}"
     elif api_url:
+        if payment_mode == "pix":
+            return False, "Pix automatico disponivel somente via API compatível com QR Code"
         payload = {
             "codigo": str(rec_obj.get("codigo", "")).strip(),
             "aluno": str(rec_obj.get("aluno", "")).strip(),
@@ -2191,7 +2322,7 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             elif preview:
                 erro_api += f" {preview[:120]}"
 
-    if not boleto_url and not use_mercado_pago:
+    if payment_mode != "pix" and not boleto_url and not use_mercado_pago:
         template = str(_finance_config_value("ACTIVE_BOLETO_LINK_TEMPLATE", "boleto_link_template", "")).strip()
         base_url = str(_finance_config_value("ACTIVE_BOLETO_BASE_URL", "boleto_base_url", "")).strip()
         if template:
@@ -2207,8 +2338,22 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             sep = "&" if "?" in base_url else "?"
             boleto_url = f"{base_url}{sep}{urlencode(params)}"
 
-    if not linha:
+    if payment_mode != "pix" and not linha:
         linha = _default_boleto_linha(rec_obj)
+
+    if payment_mode == "pix":
+        if not pix_qr_code and not pix_qr_image_b64 and not pix_url:
+            msg = "nao foi possivel gerar Pix no Mercado Pago"
+            if erro_api:
+                msg = f"{msg} ({erro_api})"
+            return False, msg
+        rec_obj["pix_url"] = str(pix_url or boleto_url).strip()
+        rec_obj["pix_qr_code"] = str(pix_qr_code).strip()
+        rec_obj["pix_qr_image_b64"] = str(pix_qr_image_b64).strip()
+        rec_obj["pix_status"] = "Gerado"
+        rec_obj["pix_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+        return True, "pix gerado"
 
     if not boleto_url and not linha:
         msg = "configure ACTIVE_BOLETO_LINK_TEMPLATE ou ACTIVE_BOLETO_BASE_URL para gerar boleto"
@@ -2240,20 +2385,27 @@ def send_receivable_boleto_to_student(rec_obj):
     if not ok_gen:
         return False, status_gen, {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
 
+    payment_label = _receivable_payment_label(rec_obj)
+    payment_mode = _receivable_payment_mode(rec_obj)
     valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
-    assunto = f"[Active] Boleto {rec_obj.get('descricao', 'Mensalidade')} - {rec_obj.get('vencimento', '')}"
+    assunto = f"[Active] {payment_label} {rec_obj.get('descricao', 'Mensalidade')} - {rec_obj.get('vencimento', '')}"
     corpo = (
         f"Ola, {student.get('nome', 'Aluno')}.\n\n"
-        f"Seu boleto esta disponivel.\n"
+        f"Seu {payment_label.lower()} esta disponivel.\n"
         f"Descricao: {rec_obj.get('descricao', '')}\n"
         f"Valor: {valor}\n"
         f"Vencimento: {rec_obj.get('vencimento', '')}\n"
         f"Parcela: {rec_obj.get('parcela', '')}\n"
         f"Codigo: {rec_obj.get('codigo', '')}\n"
     )
-    if rec_obj.get("boleto_linha_digitavel"):
+    if payment_mode == "pix":
+        if rec_obj.get("pix_qr_code"):
+            corpo += f"Pix copia e cola: {rec_obj.get('pix_qr_code')}\n"
+        if rec_obj.get("pix_url"):
+            corpo += f"Link de pagamento: {rec_obj.get('pix_url')}\n"
+    elif rec_obj.get("boleto_linha_digitavel"):
         corpo += f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}\n"
-    if rec_obj.get("boleto_url"):
+    if payment_mode != "pix" and rec_obj.get("boleto_url"):
         corpo += f"Boleto: {rec_obj.get('boleto_url')}\n"
 
     stats = _notify_direct_contacts(
@@ -2262,17 +2414,23 @@ def send_receivable_boleto_to_student(rec_obj):
         _student_whatsapp_recipients(student),
         assunto,
         corpo,
-        "Financeiro Boleto",
+        f"Financeiro {payment_label}",
     )
 
-    rec_obj["boleto_enviado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    rec_obj["boleto_enviado_canais"] = (
+    sent_at_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    sent_channels_txt = (
         f"email {stats.get('email_ok', 0)}/{stats.get('email_total', 0)} | "
         f"whatsapp {stats.get('whatsapp_ok', 0)}/{stats.get('whatsapp_total', 0)}"
     )
+    if payment_mode == "pix":
+        rec_obj["pix_enviado_em"] = sent_at_txt
+        rec_obj["pix_enviado_canais"] = sent_channels_txt
+    else:
+        rec_obj["boleto_enviado_em"] = sent_at_txt
+        rec_obj["boleto_enviado_canais"] = sent_channels_txt
     save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
 
-    return True, "boleto enviado", stats
+    return True, f"{payment_label.lower()} enviado", stats
 
 def _student_boleto_pdf_bytes(rec_obj, student=None):
     try:
@@ -2294,6 +2452,8 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
             return raw
         return "\n".join(raw[i:i + chunk_size] for i in range(0, len(raw), chunk_size))
 
+    payment_mode = _receivable_payment_mode(rec_obj)
+    payment_label = _receivable_payment_label(rec_obj)
     aluno = str(rec_obj.get("aluno", "")).strip() or str(student.get("nome", "")).strip() or "Aluno"
     responsavel = str(((student.get("responsavel", {}) or {}).get("nome", ""))).strip() if isinstance(student, dict) else ""
     turma = str(student.get("turma", "")).strip() if isinstance(student, dict) else ""
@@ -2306,8 +2466,10 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     status = str(rec_obj.get("status", "")).strip() or "Aberto"
     valor = format_money(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", 0))))
     linha = _format_boleto_linha(str(rec_obj.get("boleto_linha_digitavel", "")).strip()) or "Nao gerada"
-    url = str(rec_obj.get("boleto_url", "")).strip() or "Nao gerado"
-    gerado_em = str(rec_obj.get("boleto_gerado_em", "")).strip() or "-"
+    pix_code = str(rec_obj.get("pix_qr_code", "")).strip() or "Nao gerado"
+    url = _receivable_payment_url(rec_obj) or "Nao gerado"
+    gerado_em = _receivable_payment_generated_at(rec_obj) or "-"
+    pix_qr_png = _receivable_pix_qr_png_bytes(rec_obj) if payment_mode == "pix" else None
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
@@ -2319,7 +2481,7 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
 
     pdf.set_font("Helvetica", "B", 17)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 9, _safe("Boleto do Aluno"), ln=1)
+    pdf.cell(0, 9, _safe(f"{payment_label} do Aluno"), ln=1)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(71, 85, 105)
     pdf.cell(0, 6, _safe(f"Gerado pelo financeiro em {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}"), ln=1)
@@ -2346,24 +2508,45 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     pdf.cell(60, 6, _safe(f"Codigo: {codigo}"), ln=0)
     pdf.cell(60, 6, _safe(f"Cobranca: {cobranca}"), ln=0)
     pdf.cell(0, 6, _safe(f"Status: {status}"), ln=1)
-    pdf.cell(0, 6, _safe(f"Boleto gerado em: {gerado_em}"), ln=1)
+    pdf.cell(0, 6, _safe(f"{payment_label} gerado em: {gerado_em}"), ln=1)
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 7, _safe("Pagamento"), ln=1, fill=True)
     pdf.set_font("Helvetica", "", 10)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(186, 6, _safe("Linha digitavel:"))
-    pdf.set_font("Courier", "", 10)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(186, 6, _safe(_chunk_text(linha, 54)))
-    pdf.set_font("Helvetica", "", 10)
-    pdf.ln(1)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(186, 6, _safe("Link do boleto:"))
-    pdf.set_font("Courier", "", 9)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(186, 5, _safe(_chunk_text(url, 62)))
+    if payment_mode == "pix":
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 6, _safe("Pix copia e cola:"))
+        pdf.set_font("Courier", "", 9)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 5, _safe(_chunk_text(pix_code, 62)))
+        pdf.set_font("Helvetica", "", 10)
+        if pix_qr_png:
+            try:
+                qr_y = pdf.get_y() + 2
+                pdf.image(io.BytesIO(pix_qr_png), x=72, y=qr_y, w=60)
+                pdf.set_y(qr_y + 64)
+            except Exception:
+                pass
+        pdf.ln(1)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 6, _safe("Link do pagamento:"))
+        pdf.set_font("Courier", "", 9)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 5, _safe(_chunk_text(url, 62)))
+    else:
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 6, _safe("Linha digitavel:"))
+        pdf.set_font("Courier", "", 10)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 6, _safe(_chunk_text(linha, 54)))
+        pdf.set_font("Helvetica", "", 10)
+        pdf.ln(1)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 6, _safe("Link do boleto:"))
+        pdf.set_font("Courier", "", 9)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(186, 5, _safe(_chunk_text(url, 62)))
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "I", 8)
@@ -2371,7 +2554,11 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     pdf.multi_cell(
         0,
         4.5,
-        _safe("Use a linha digitavel ou abra o link do boleto no navegador. Este PDF resume os dados da cobranca do aluno."),
+        _safe(
+            "Use o QR Code, o codigo copia e cola ou abra o link de pagamento no navegador."
+            if payment_mode == "pix"
+            else "Use a linha digitavel ou abra o link do boleto no navegador. Este PDF resume os dados da cobranca do aluno."
+        ),
     )
     pdf_output = pdf.output(dest="S")
     if isinstance(pdf_output, bytearray):
@@ -2379,6 +2566,34 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     if isinstance(pdf_output, bytes):
         return pdf_output
     return str(pdf_output).encode("latin-1", "ignore")
+
+def _render_receivable_payment_output(rec_obj, key_prefix=""):
+    payment_mode = _receivable_payment_mode(rec_obj)
+    payment_label = _receivable_payment_label(rec_obj)
+    if payment_mode == "pix":
+        pix_png = _receivable_pix_qr_png_bytes(rec_obj)
+        if pix_png:
+            st.image(pix_png, caption="QR Code Pix", width=220)
+        pix_code = str((rec_obj or {}).get("pix_qr_code", "")).strip()
+        if pix_code:
+            st.caption("Pix copia e cola")
+            st.code(pix_code, language="text")
+        pix_url = str((rec_obj or {}).get("pix_url", "")).strip()
+        if pix_url:
+            st.link_button("Abrir pagamento", pix_url, use_container_width=False)
+    else:
+        boleto_url = str((rec_obj or {}).get("boleto_url", "")).strip()
+        if boleto_url:
+            st.markdown(f"[Abrir boleto]({boleto_url})")
+        linha = str((rec_obj or {}).get("boleto_linha_digitavel", "")).strip()
+        if linha:
+            st.code(linha, language="text")
+    sent_at = _receivable_payment_sent_at(rec_obj)
+    if sent_at:
+        st.caption(
+            f"{payment_label} enviado em {sent_at} "
+            f"({_receivable_payment_sent_channels(rec_obj)})"
+        )
 
 def _extract_first_json(text):
     raw = str(text or "").strip()
@@ -8903,6 +9118,13 @@ def add_receivable(
         "boleto_gerado_em": "",
         "boleto_enviado_em": "",
         "boleto_enviado_canais": "",
+        "pix_url": "",
+        "pix_qr_code": "",
+        "pix_qr_image_b64": "",
+        "pix_status": "Nao Gerado",
+        "pix_gerado_em": "",
+        "pix_enviado_em": "",
+        "pix_enviado_canais": "",
     })
     save_list(RECEIVABLES_FILE, st.session_state["receivables"])
     return codigo
@@ -18947,21 +19169,22 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         f"{desc_txt} | Venc. {due_txt or '-'} | R$ {amount_txt or '0,00'} | {status_txt}",
                         expanded=False,
                     ):
+                        payment_label = _receivable_payment_label(rec_obj)
                         info1, info2, info3, info4 = st.columns(4)
                         info1.metric("Tipo", str(rec_obj.get("categoria", "")).strip() or "-")
                         info2.metric("Parcela", str(rec_obj.get("parcela", "")).strip() or "-")
                         info3.metric("Cobrança", str(rec_obj.get("cobranca", "")).strip() or "-")
                         info4.metric("Código", code_txt or "-")
                         st.caption(
-                            f"Boleto: {str(rec_obj.get('boleto_status', '')).strip() or 'Nao gerado'}"
+                            f"{payment_label}: {_receivable_payment_status(rec_obj)}"
                         )
                         boleto_requirements = _boleto_generation_requirements(rec_obj)
                         mp_missing_fields = boleto_requirements.get("missing", []) if boleto_requirements.get("use_mercado_pago") else []
                         boleto_pdf_bytes = None
-                        if str(rec_obj.get("boleto_url", "")).strip() or str(rec_obj.get("boleto_linha_digitavel", "")).strip():
+                        if _receivable_payment_generated(rec_obj):
                             boleto_pdf_bytes = _student_boleto_pdf_bytes(rec_obj, student_obj)
                         if mp_missing_fields:
-                            st.warning("Preencha antes de gerar o boleto: " + ", ".join(mp_missing_fields) + ".")
+                            st.warning(f"Preencha antes de gerar o {payment_label.lower()}: " + ", ".join(mp_missing_fields) + ".")
                         action1, action2, action3, action4, action5 = st.columns(5)
                         if action1.button(
                             "Dar baixa",
@@ -18978,19 +19201,19 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success("Baixa realizada.")
                             st.rerun()
                         if action2.button(
-                            "Gerar boleto",
+                            f"Gerar {payment_label}",
                             key=f"student_fin_generate_{scope_key}_{idx_item}_{code_txt}",
                             use_container_width=True,
                             disabled=bool(mp_missing_fields),
                         ):
                             ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
                             if ok_bol:
-                                st.success(f"Boleto gerado: {status_bol}.")
+                                st.success(f"{payment_label} gerado: {status_bol}.")
                             else:
-                                st.error(f"Falha ao gerar boleto: {status_bol}.")
+                                st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
                             st.rerun()
                         if action3.button(
-                            "Gerar e enviar",
+                            f"Gerar e enviar {payment_label}",
                             key=f"student_fin_send_{scope_key}_{idx_item}_{code_txt}",
                             use_container_width=True,
                             disabled=bool(mp_missing_fields),
@@ -18998,11 +19221,11 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
                             if ok_send:
                                 st.success(
-                                    f"Cobrança enviada. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                    f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
                                     f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
                                 )
                             else:
-                                st.error(f"Falha ao enviar cobrança: {status_send}.")
+                                st.error(f"Falha ao enviar {payment_label.lower()}: {status_send}.")
                         if action4.button(
                             "Editar cobrança",
                             key=f"student_fin_edit_{scope_key}_{idx_item}_{code_txt}",
@@ -19025,16 +19248,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(selected_student or "aluno")).strip("_") or "aluno"
                                 code_base = re.sub(r"[^A-Za-z0-9]+", "_", code_txt) or "boleto"
                                 st.download_button(
-                                    "Baixar boleto PDF",
+                                    f"Baixar {payment_label} PDF",
                                     data=boleto_pdf_bytes,
-                                    file_name=f"boleto_{student_base}_{code_base}.pdf",
+                                    file_name=f"{payment_label.lower()}_{student_base}_{code_base}.pdf",
                                     mime="application/pdf",
                                     key=f"student_fin_pdf_{scope_key}_{idx_item}_{code_base}",
                                     use_container_width=True,
                                 )
                             else:
                                 st.button(
-                                    "Baixar boleto PDF",
+                                    f"Baixar {payment_label} PDF",
                                     key=f"student_fin_pdf_disabled_{scope_key}_{idx_item}_{code_txt}",
                                     use_container_width=True,
                                     disabled=True,
@@ -19052,10 +19275,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.success("Cobrança excluída.")
                                 st.rerun()
                             st.error("Não foi possível localizar a cobrança para excluir.")
-                        if rec_obj.get("boleto_url"):
-                            st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
-                        if rec_obj.get("boleto_linha_digitavel"):
-                            st.code(str(rec_obj.get("boleto_linha_digitavel")).strip(), language="text")
+                        _render_receivable_payment_output(rec_obj, key_prefix=f"student_fin_{scope_key}_{idx_item}_{code_txt}")
 
             with tab_open:
                 _render_student_receivable_cards(open_student_items, "open")
@@ -20095,6 +20315,13 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     rec_obj.setdefault("boleto_gerado_em", "")
                     rec_obj.setdefault("boleto_enviado_em", "")
                     rec_obj.setdefault("boleto_enviado_canais", "")
+                    rec_obj.setdefault("pix_url", "")
+                    rec_obj.setdefault("pix_qr_code", "")
+                    rec_obj.setdefault("pix_qr_image_b64", "")
+                    rec_obj.setdefault("pix_status", "Nao Gerado")
+                    rec_obj.setdefault("pix_gerado_em", "")
+                    rec_obj.setdefault("pix_enviado_em", "")
+                    rec_obj.setdefault("pix_enviado_canais", "")
                     parcela_atual_rec, qtd_atual_rec = _parse_parcela_info(rec_obj.get("parcela", "1/1"))
                     venc_atual_rec = parse_date(rec_obj.get("vencimento", "")) or datetime.date.today()
                     qtd_base_rec = max(1, int(qtd_atual_rec))
