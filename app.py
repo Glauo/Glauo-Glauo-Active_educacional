@@ -2286,6 +2286,14 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     def _safe(text):
         return str(text or "").encode("latin-1", "ignore").decode("latin-1")
 
+    def _chunk_text(text, chunk_size=48):
+        raw = str(text or "").strip()
+        if not raw:
+            return "-"
+        if " " in raw:
+            return raw
+        return "\n".join(raw[i:i + chunk_size] for i in range(0, len(raw), chunk_size))
+
     aluno = str(rec_obj.get("aluno", "")).strip() or str(student.get("nome", "")).strip() or "Aluno"
     responsavel = str(((student.get("responsavel", {}) or {}).get("nome", ""))).strip() if isinstance(student, dict) else ""
     turma = str(student.get("turma", "")).strip() if isinstance(student, dict) else ""
@@ -2297,7 +2305,7 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     cobranca = str(rec_obj.get("cobranca", "")).strip() or "-"
     status = str(rec_obj.get("status", "")).strip() or "Aberto"
     valor = format_money(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", 0))))
-    linha = str(rec_obj.get("boleto_linha_digitavel", "")).strip() or "Nao gerada"
+    linha = _format_boleto_linha(str(rec_obj.get("boleto_linha_digitavel", "")).strip()) or "Nao gerada"
     url = str(rec_obj.get("boleto_url", "")).strip() or "Nao gerado"
     gerado_em = str(rec_obj.get("boleto_gerado_em", "")).strip() or "-"
 
@@ -2344,14 +2352,18 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 7, _safe("Pagamento"), ln=1, fill=True)
     pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, _safe("Linha digitavel:"))
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(186, 6, _safe("Linha digitavel:"))
     pdf.set_font("Courier", "", 10)
-    pdf.multi_cell(0, 6, _safe(linha))
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(186, 6, _safe(_chunk_text(linha, 54)))
     pdf.set_font("Helvetica", "", 10)
     pdf.ln(1)
-    pdf.multi_cell(0, 6, _safe("Link do boleto:"))
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(186, 6, _safe("Link do boleto:"))
     pdf.set_font("Courier", "", 9)
-    pdf.multi_cell(0, 5, _safe(url))
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(186, 5, _safe(_chunk_text(url, 62)))
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "I", 8)
