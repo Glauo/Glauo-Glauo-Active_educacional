@@ -556,7 +556,17 @@ def _maybe_decode_qr_image_bytes(value):
 def _extract_qr_candidate(value):
     if isinstance(value, dict):
         # Common keys used by different Evolution API versions.
-        for k in ("qrcode", "qrCode", "qr_code", "qrcodeBase64", "base64", "qr", "code"):
+        for k in (
+            "qrcode",
+            "qrCode",
+            "qr_code",
+            "qrcodeBase64",
+            "qr_code_base64",
+            "qrCodeBase64",
+            "base64",
+            "qr",
+            "code",
+        ):
             v = value.get(k)
             if isinstance(v, str) and v.strip():
                 return v.strip()
@@ -2633,6 +2643,7 @@ def _render_receivable_payment_output(rec_obj, key_prefix=""):
             st.markdown(f"[Abrir boleto]({boleto_url})")
         linha = str((rec_obj or {}).get("boleto_linha_digitavel", "")).strip()
         if linha:
+            st.caption("Codigo de barras / linha digitavel")
             st.code(linha, language="text")
     sent_at = _receivable_payment_sent_at(rec_obj)
     if sent_at:
@@ -19910,7 +19921,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         with bls2:
                             boleto_filter = st.selectbox(
                                 "Filtro",
-                                ["Em aberto", "Todos", "Com boleto", "Sem boleto"],
+                                ["Em aberto", "Todos", "Com cobranca", "Sem cobranca"],
                                 key="finance_boleto_filter",
                             )
                         boleto_student_obj = _student_profile_by_name(boleto_student_name)
@@ -19921,10 +19932,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         ]
                         if boleto_filter == "Em aberto":
                             boleto_items = [r for r in boleto_items if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
-                        elif boleto_filter == "Com boleto":
-                            boleto_items = [r for r in boleto_items if str(r.get("boleto_url", "")).strip() or str(r.get("boleto_linha_digitavel", "")).strip()]
-                        elif boleto_filter == "Sem boleto":
-                            boleto_items = [r for r in boleto_items if not str(r.get("boleto_url", "")).strip() and not str(r.get("boleto_linha_digitavel", "")).strip()]
+                        elif boleto_filter == "Com cobranca":
+                            boleto_items = [r for r in boleto_items if _receivable_payment_generated(r)]
+                        elif boleto_filter == "Sem cobranca":
+                            boleto_items = [r for r in boleto_items if not _receivable_payment_generated(r)]
                         boleto_items = sorted(
                             boleto_items,
                             key=lambda item: parse_date(item.get("vencimento", "")) or datetime.date.max,
@@ -19932,43 +19943,44 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         if not boleto_items:
                             st.info("Nenhuma cobranca encontrada neste filtro.")
                         for idx_boleto, rec_obj in enumerate(boleto_items):
+                            payment_label = _receivable_payment_label(rec_obj)
                             valor_txt = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00"
                             venc_txt = str(rec_obj.get("vencimento", "")).strip() or "-"
                             desc_txt = str(rec_obj.get("descricao", "")).strip() or "Cobranca"
-                            status_boleto = str(rec_obj.get("boleto_status", "")).strip() or "Nao gerado"
+                            status_boleto = _receivable_payment_status(rec_obj)
                             with st.expander(
-                                f"{desc_txt} | Venc. {venc_txt} | R$ {valor_txt} | Boleto: {status_boleto}",
+                                f"{desc_txt} | Venc. {venc_txt} | R$ {valor_txt} | {payment_label}: {status_boleto}",
                                 expanded=False,
                             ):
                                 req = _boleto_generation_requirements(rec_obj)
                                 missing_fields = req.get("missing", []) if req.get("use_mercado_pago") else []
                                 if missing_fields:
-                                    st.warning("Preencha antes de gerar: " + ", ".join(missing_fields) + ".")
+                                    st.warning(f"Preencha antes de gerar o {payment_label.lower()}: " + ", ".join(missing_fields) + ".")
                                 info1, info2, info3, info4 = st.columns(4)
                                 info1.metric("Categoria", str(rec_obj.get("categoria", "")).strip() or "-")
                                 info2.metric("Parcela", str(rec_obj.get("parcela", "")).strip() or "-")
                                 info3.metric("Codigo", str(rec_obj.get("codigo", "")).strip() or "-")
                                 info4.metric("Status", str(rec_obj.get("status", "")).strip() or "-")
                                 pdf_bytes = None
-                                if str(rec_obj.get("boleto_url", "")).strip() or str(rec_obj.get("boleto_linha_digitavel", "")).strip():
+                                if _receivable_payment_generated(rec_obj):
                                     pdf_bytes = _student_boleto_pdf_bytes(rec_obj, boleto_student_obj)
                                 act1, act2, act3, act4 = st.columns(4)
                                 with act1:
                                     if st.button(
-                                        "Gerar boleto",
+                                        f"Gerar {payment_label}",
                                         key=f"student_boleto_generate_{idx_boleto}_{rec_obj.get('codigo', '')}",
                                         use_container_width=True,
                                         disabled=bool(missing_fields),
                                     ):
                                         ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
                                         if ok_bol:
-                                            st.success(f"Boleto gerado: {status_bol}.")
+                                            st.success(f"{payment_label} gerado: {status_bol}.")
                                         else:
-                                            st.error(f"Falha ao gerar boleto: {status_bol}.")
+                                            st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
                                         st.rerun()
                                 with act2:
                                     if st.button(
-                                        "Gerar e enviar",
+                                        f"Gerar e enviar {payment_label}",
                                         key=f"student_boleto_send_{idx_boleto}_{rec_obj.get('codigo', '')}",
                                         use_container_width=True,
                                         disabled=bool(missing_fields),
@@ -19976,7 +19988,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
                                         if ok_send:
                                             st.success(
-                                                f"Boleto enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                                f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
                                                 f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
                                             )
                                         else:
@@ -19985,40 +19997,34 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 with act3:
                                     if pdf_bytes:
                                         student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(boleto_student_name or "aluno")).strip("_") or "aluno"
-                                        code_base = re.sub(r"[^A-Za-z0-9]+", "_", str(rec_obj.get("codigo", "")).strip()) or "boleto"
+                                        code_base = re.sub(r"[^A-Za-z0-9]+", "_", str(rec_obj.get("codigo", "")).strip()) or payment_label.lower()
                                         st.download_button(
-                                            "Baixar boleto PDF",
+                                            f"Baixar {payment_label} PDF",
                                             data=pdf_bytes,
-                                            file_name=f"boleto_{student_base}_{code_base}.pdf",
+                                            file_name=f"{payment_label.lower()}_{student_base}_{code_base}.pdf",
                                             mime="application/pdf",
                                             key=f"student_boleto_pdf_{idx_boleto}_{code_base}",
                                             use_container_width=True,
                                         )
                                     else:
                                         st.button(
-                                            "Baixar boleto PDF",
+                                            f"Baixar {payment_label} PDF",
                                             key=f"student_boleto_pdf_disabled_{idx_boleto}_{rec_obj.get('codigo', '')}",
                                             use_container_width=True,
                                             disabled=True,
                                         )
                                 with act4:
-                                    boleto_url_txt = str(rec_obj.get("boleto_url", "")).strip()
+                                    boleto_url_txt = _receivable_payment_url(rec_obj)
                                     if boleto_url_txt:
-                                        st.link_button("Abrir boleto", boleto_url_txt, use_container_width=True)
+                                        st.link_button(f"Abrir {payment_label.lower()}", boleto_url_txt, use_container_width=True)
                                     else:
                                         st.button(
-                                            "Abrir boleto",
+                                            f"Abrir {payment_label.lower()}",
                                             key=f"student_boleto_open_disabled_{idx_boleto}_{rec_obj.get('codigo', '')}",
                                             use_container_width=True,
                                             disabled=True,
                                         )
-                                if rec_obj.get("boleto_linha_digitavel"):
-                                    st.code(str(rec_obj.get("boleto_linha_digitavel")).strip(), language="text")
-                                if rec_obj.get("boleto_enviado_em"):
-                                    st.caption(
-                                        f"Enviado em {rec_obj.get('boleto_enviado_em')} "
-                                        f"({rec_obj.get('boleto_enviado_canais', '')})"
-                                    )
+                                _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{rec_obj.get('codigo', '')}")
 
             if finance_receber_menu == "Lancar Recebimento":
                 with st.form("add_rec"):
@@ -20589,35 +20595,36 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
                     boleto_requirements = _boleto_generation_requirements(rec_obj)
                     mp_missing_fields = boleto_requirements.get("missing", []) if boleto_requirements.get("use_mercado_pago") else []
-                    st.caption("Boleto automatico: gere o boleto e envie diretamente por e-mail e WhatsApp.")
+                    payment_label = _receivable_payment_label(rec_obj)
+                    st.caption(f"{payment_label} automatico: gere e envie diretamente por e-mail e WhatsApp.")
                     if mp_missing_fields:
                         st.warning(
                             "Mercado Pago bloqueado para este lancamento. "
                             "Preencha no cadastro do aluno: " + ", ".join(mp_missing_fields) + "."
                         )
                     elif boleto_requirements.get("use_mercado_pago"):
-                        st.success("Cadastro pronto para emitir boleto no Mercado Pago.")
+                        st.success(f"Cadastro pronto para emitir {payment_label.lower()} no Mercado Pago.")
                     rb1, rb2, rb3 = st.columns([1, 1, 2])
                     with rb1:
                         if st.button(
-                            "Gerar boleto",
+                            f"Gerar {payment_label}",
                             key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
                             disabled=bool(mp_missing_fields),
-                            help="Preencha os campos obrigatorios do aluno para emitir no Mercado Pago." if mp_missing_fields else None,
+                            help=f"Preencha os campos obrigatorios do aluno para emitir {payment_label.lower()} no Mercado Pago." if mp_missing_fields else None,
                         ):
                             ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
                             if ok_bol:
-                                st.success(f"Boleto gerado: {status_bol}.")
+                                st.success(f"{payment_label} gerado: {status_bol}.")
                             else:
-                                st.error(f"Falha ao gerar boleto: {status_bol}.")
+                                st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
                             st.rerun()
                     with rb2:
                         if st.button(
-                            "Gerar e enviar",
+                            f"Gerar e enviar {payment_label}",
                             key=f"fin_send_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
                             disabled=(not aluno_lancamento) or bool(mp_missing_fields),
                             help=(
-                                "Preencha os campos obrigatorios do aluno para emitir no Mercado Pago."
+                                f"Preencha os campos obrigatorios do aluno para emitir {payment_label.lower()} no Mercado Pago."
                                 if mp_missing_fields
                                 else "Disponivel somente para lancamentos com categoria 'Aluno'."
                             ),
@@ -20625,7 +20632,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
                             if ok_send:
                                 st.success(
-                                    "Boleto enviado. "
+                                    f"{payment_label} enviado. "
                                     f"E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
                                     f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
                                 )
@@ -20633,15 +20640,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.error(f"Falha no envio: {status_send}.")
                             st.rerun()
                     with rb3:
-                        if rec_obj.get("boleto_url"):
-                            st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
-                        if rec_obj.get("boleto_linha_digitavel"):
-                            st.caption(f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}")
-                        if rec_obj.get("boleto_enviado_em"):
-                            st.caption(
-                                f"Enviado em {rec_obj.get('boleto_enviado_em')} "
-                                f"({rec_obj.get('boleto_enviado_canais', '')})"
-                            )
+                        _render_receivable_payment_output(rec_obj, key_prefix=f"manage_receivable_{idx_rec}_{rec_obj.get('codigo','')}")
 
             if finance_receber_menu == "Lancar Material do Estoque":
                 with st.container(border=True):
