@@ -18938,7 +18938,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.caption(
                             f"Boleto: {str(rec_obj.get('boleto_status', '')).strip() or 'Nao gerado'}"
                         )
-                        action1, action2, action3, action4 = st.columns(4)
+                        boleto_requirements = _boleto_generation_requirements(rec_obj)
+                        mp_missing_fields = boleto_requirements.get("missing", []) if boleto_requirements.get("use_mercado_pago") else []
+                        boleto_pdf_bytes = None
+                        if str(rec_obj.get("boleto_url", "")).strip() or str(rec_obj.get("boleto_linha_digitavel", "")).strip():
+                            boleto_pdf_bytes = _student_boleto_pdf_bytes(rec_obj, student_obj)
+                        if mp_missing_fields:
+                            st.warning("Preencha antes de gerar o boleto: " + ", ".join(mp_missing_fields) + ".")
+                        action1, action2, action3, action4, action5 = st.columns(5)
                         if action1.button(
                             "Dar baixa",
                             key=f"student_fin_mark_paid_{scope_key}_{idx_item}_{code_txt}",
@@ -18954,9 +18961,22 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success("Baixa realizada.")
                             st.rerun()
                         if action2.button(
-                            "Enviar cobrança",
+                            "Gerar boleto",
+                            key=f"student_fin_generate_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                            disabled=bool(mp_missing_fields),
+                        ):
+                            ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
+                            if ok_bol:
+                                st.success(f"Boleto gerado: {status_bol}.")
+                            else:
+                                st.error(f"Falha ao gerar boleto: {status_bol}.")
+                            st.rerun()
+                        if action3.button(
+                            "Gerar e enviar",
                             key=f"student_fin_send_{scope_key}_{idx_item}_{code_txt}",
                             use_container_width=True,
+                            disabled=bool(mp_missing_fields),
                         ):
                             ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
                             if ok_send:
@@ -18966,19 +18986,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                             else:
                                 st.error(f"Falha ao enviar cobrança: {status_send}.")
-                        if action3.button(
-                            "Excluir",
-                            key=f"student_fin_delete_{scope_key}_{idx_item}_{code_txt}",
-                            use_container_width=True,
-                            type="primary",
-                        ):
-                            current_receivables = st.session_state.get("receivables", [])
-                            if rec_obj in current_receivables:
-                                current_receivables.remove(rec_obj)
-                                save_list(RECEIVABLES_FILE, current_receivables)
-                                st.success("Cobrança excluída.")
-                                st.rerun()
-                            st.error("Não foi possível localizar a cobrança para excluir.")
                         if action4.button(
                             "Editar cobrança",
                             key=f"student_fin_edit_{scope_key}_{idx_item}_{code_txt}",
@@ -18996,6 +19003,38 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.session_state["manage_rec_idx"] = selected_idx
                                 st.rerun()
                             st.error("Não foi possível abrir esta cobrança para edição.")
+                        with action5:
+                            if boleto_pdf_bytes:
+                                student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(selected_student or "aluno")).strip("_") or "aluno"
+                                code_base = re.sub(r"[^A-Za-z0-9]+", "_", code_txt) or "boleto"
+                                st.download_button(
+                                    "Baixar boleto PDF",
+                                    data=boleto_pdf_bytes,
+                                    file_name=f"boleto_{student_base}_{code_base}.pdf",
+                                    mime="application/pdf",
+                                    key=f"student_fin_pdf_{scope_key}_{idx_item}_{code_base}",
+                                    use_container_width=True,
+                                )
+                            else:
+                                st.button(
+                                    "Baixar boleto PDF",
+                                    key=f"student_fin_pdf_disabled_{scope_key}_{idx_item}_{code_txt}",
+                                    use_container_width=True,
+                                    disabled=True,
+                                )
+                        if st.button(
+                            "Excluir",
+                            key=f"student_fin_delete_{scope_key}_{idx_item}_{code_txt}",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            current_receivables = st.session_state.get("receivables", [])
+                            if rec_obj in current_receivables:
+                                current_receivables.remove(rec_obj)
+                                save_list(RECEIVABLES_FILE, current_receivables)
+                                st.success("Cobrança excluída.")
+                                st.rerun()
+                            st.error("Não foi possível localizar a cobrança para excluir.")
                         if rec_obj.get("boleto_url"):
                             st.markdown(f"[Abrir boleto]({rec_obj.get('boleto_url')})")
                         if rec_obj.get("boleto_linha_digitavel"):
