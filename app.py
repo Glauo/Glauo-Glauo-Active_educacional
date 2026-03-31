@@ -2432,6 +2432,52 @@ def send_receivable_boleto_to_student(rec_obj):
 
     return True, f"{payment_label.lower()} enviado", stats
 
+def _run_receivable_due_reminders(days_before=10, force=False):
+    can_run, _ = _wiz_can_operate_system()
+    if not can_run and not force:
+        return {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    today = datetime.date.today()
+    today_txt = today.strftime("%d/%m/%Y")
+    reminder_sent_key = f"auto_due_reminder_{int(days_before)}d_sent_for_due"
+    reminder_attempt_key = f"auto_due_reminder_{int(days_before)}d_attempt_date"
+    reminder_status_key = f"auto_due_reminder_{int(days_before)}d_status"
+    totals = {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    changed = False
+    for rec_obj in st.session_state.get("receivables", []):
+        if str(rec_obj.get("categoria_lancamento", "Aluno")).strip() != "Aluno":
+            totals["skipped"] += 1
+            continue
+        if str(rec_obj.get("status", "")).strip().lower() in {"pago", "cancelado"}:
+            totals["skipped"] += 1
+            continue
+        due_date = parse_date(rec_obj.get("vencimento", ""))
+        if not due_date:
+            totals["skipped"] += 1
+            continue
+        due_txt = due_date.strftime("%d/%m/%Y")
+        if not force and (due_date - today).days != int(days_before):
+            totals["skipped"] += 1
+            continue
+        if str(rec_obj.get(reminder_sent_key, "")).strip() == due_txt:
+            totals["skipped"] += 1
+            continue
+        if not force and str(rec_obj.get(reminder_attempt_key, "")).strip() == today_txt:
+            totals["skipped"] += 1
+            continue
+        totals["checked"] += 1
+        rec_obj[reminder_attempt_key] = today_txt
+        ok_send, status_send, _ = send_receivable_boleto_to_student(rec_obj)
+        rec_obj[reminder_status_key] = str(status_send).strip()
+        changed = True
+        if ok_send:
+            rec_obj[reminder_sent_key] = due_txt
+            totals["sent"] += 1
+        else:
+            totals["failed"] += 1
+    if changed:
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    return totals
+
 def _student_boleto_pdf_bytes(rec_obj, student=None):
     try:
         from fpdf import FPDF
@@ -14890,6 +14936,12 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     if not st.session_state["wiz_daily_backup_checked"]:
         _run_wiz_daily_backup(force=False)
         st.session_state["wiz_daily_backup_checked"] = True
+
+    if "finance_due_reminders_checked" not in st.session_state:
+        st.session_state["finance_due_reminders_checked"] = False
+    if not st.session_state["finance_due_reminders_checked"]:
+        _run_receivable_due_reminders(days_before=10, force=False)
+        st.session_state["finance_due_reminders_checked"] = True
 
     st.session_state["_active_runtime_loaded"] = True
 
