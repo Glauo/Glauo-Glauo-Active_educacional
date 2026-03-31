@@ -1895,7 +1895,12 @@ def _student_federal_unit(student):
     cfg_value = str(_finance_config_value("ACTIVE_BOLETO_DEFAULT_FEDERAL_UNIT", "boleto_default_federal_unit", "")).strip().upper()
     return cfg_value[:2]
 
-def _mercado_pago_payment_payload(rec_obj, student):
+def _is_mercado_pago_boleto_provider(provider="", api_key=""):
+    provider_txt = str(provider or "").strip().lower()
+    api_key_txt = str(api_key or "").strip()
+    return provider_txt in ("mercado_pago", "mercadopago", "mp") or api_key_txt.startswith("APP_USR-")
+
+def _mercado_pago_missing_fields(rec_obj, student):
     student = student if isinstance(student, dict) else {}
     valor = float(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) or 0)
     cpf = _wiz_digits(student.get("cpf", ""))
@@ -1909,13 +1914,13 @@ def _mercado_pago_payment_payload(rec_obj, student):
     first_name, last_name = _split_person_name(student.get("nome", rec_obj.get("aluno", "")))
     missing = []
     if valor <= 0:
-        missing.append("valor")
+        missing.append("valor do lancamento")
     if len(cpf) != 11:
-        missing.append("cpf do aluno")
+        missing.append("CPF do aluno")
     if not email:
-        missing.append("email do aluno")
+        missing.append("e-mail do aluno")
     if len(zip_code) < 8:
-        missing.append("cep do aluno")
+        missing.append("CEP do aluno")
     if not street_name:
         missing.append("rua do aluno")
     if not street_number:
@@ -1927,9 +1932,88 @@ def _mercado_pago_payment_payload(rec_obj, student):
     if len(federal_unit) != 2:
         missing.append("UF do aluno ou UF padrao do boleto")
     if not first_name or not last_name:
-        missing.append("nome do aluno")
+        missing.append("nome completo do aluno")
+    return missing
+
+def _boleto_generation_requirements(rec_obj):
+    if not isinstance(rec_obj, dict):
+        return {"use_mercado_pago": False, "missing": ["recebimento invalido"], "student": {}}
+    student = _find_student_by_name(rec_obj.get("aluno", ""))
+    provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
+    api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
+    use_mercado_pago = _is_mercado_pago_boleto_provider(provider, api_key)
+    missing = []
+    if use_mercado_pago:
+        if not api_key:
+            missing.append("Access Token do Mercado Pago")
+        if not student:
+            missing.append("cadastro do aluno vinculado ao lancamento")
+        else:
+            missing.extend(_mercado_pago_missing_fields(rec_obj, student))
+    return {
+        "use_mercado_pago": use_mercado_pago,
+        "missing": missing,
+        "student": student,
+    }
+
+def test_mercado_pago_connection():
+    provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
+    api_url = str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()
+    api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
+    if not _is_mercado_pago_boleto_provider(provider, api_key):
+        return False, "provedor Mercado Pago nao esta configurado", {}
+    if not api_key:
+        return False, "informe o Access Token APP_USR do Mercado Pago", {}
+
+    base_url = api_url.rstrip("/") if api_url else "https://api.mercadopago.com"
+    if base_url.lower().endswith("/v1/payments"):
+        base_url = base_url[:-12].rstrip("/")
+    test_url = f"{base_url}/v1/payment_methods"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": api_key if api_key.lower().startswith("bearer ") else f"Bearer {api_key}",
+        "User-Agent": "Active-Wiz-Automation/1.0",
+    }
+    status, ct, body, err = _http_request("GET", test_url, headers=headers, timeout=20)
+    parsed, preview = _try_parse_json(ct, body)
+    ok_http = status is not None and 200 <= int(status) < 300
+    if not ok_http:
+        msg = f"falha ao validar credenciais Mercado Pago (HTTP {status})"
+        if err:
+            msg += f" {err}"
+        elif preview:
+            msg += f" {preview[:160]}"
+        return False, msg, {"status": status, "preview": preview}
+
+    methods = parsed if isinstance(parsed, list) else []
+    boleto_methods = [
+        str(item.get("id", "")).strip()
+        for item in methods
+        if isinstance(item, dict) and str(item.get("payment_type_id", "")).strip().lower() == "ticket"
+    ]
+    bolbradesco_available = "bolbradesco" in boleto_methods
+    return True, "credenciais validadas com sucesso", {
+        "status": status,
+        "boleto_methods": boleto_methods,
+        "bolbradesco_available": bolbradesco_available,
+        "methods_total": len(methods),
+    }
+
+def _mercado_pago_payment_payload(rec_obj, student):
+    student = student if isinstance(student, dict) else {}
+    missing = _mercado_pago_missing_fields(rec_obj, student)
     if missing:
         return None, "dados obrigatorios para Mercado Pago ausentes: " + ", ".join(missing)
+    valor = float(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) or 0)
+    cpf = _wiz_digits(student.get("cpf", ""))
+    email = str(student.get("email", "")).strip().lower()
+    zip_code = _wiz_digits(student.get("cep", ""))
+    street_name = str(student.get("rua", "")).strip()
+    street_number = str(student.get("numero", "")).strip()
+    neighborhood = str(student.get("bairro", "")).strip()
+    city = str(student.get("cidade", "")).strip()
+    federal_unit = _student_federal_unit(student)
+    first_name, last_name = _split_person_name(student.get("nome", rec_obj.get("aluno", "")))
     venc = parse_date(rec_obj.get("vencimento", ""))
     if venc:
         expiration_txt = f"{venc.strftime('%Y-%m-%d')}T23:59:59.000-03:00"
@@ -2016,17 +2100,20 @@ def generate_boleto_for_receivable(rec_obj, force=False):
     if rec_obj.get("boleto_url") and not force:
         return True, "boleto ja gerado"
 
-    student = _find_student_by_name(rec_obj.get("aluno", ""))
     provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
     api_url = str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()
     api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
+    requirements = _boleto_generation_requirements(rec_obj)
+    student = requirements.get("student", {})
     boleto_url = ""
     linha = ""
     erro_api = ""
 
-    use_mercado_pago = provider in ("mercado_pago", "mercadopago", "mp") or api_key.startswith("APP_USR-")
+    use_mercado_pago = _is_mercado_pago_boleto_provider(provider, api_key)
 
     if use_mercado_pago:
+        if requirements.get("missing"):
+            return False, "dados obrigatorios para Mercado Pago ausentes: " + ", ".join(requirements.get("missing", []))
         mp_url = api_url.rstrip("/") if api_url else "https://api.mercadopago.com"
         if not mp_url.lower().endswith("/v1/payments"):
             mp_url = f"{mp_url}/v1/payments"
@@ -19281,6 +19368,26 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success("Configuracoes financeiras salvas.")
                             st.rerun()
 
+                    current_cfg = get_finance_settings()
+                    current_provider = str(current_cfg.get("boleto_provider", "link")).strip().lower()
+                    current_api_key = str(current_cfg.get("boleto_api_key", "")).strip()
+                    if _is_mercado_pago_boleto_provider(current_provider, current_api_key):
+                        st.markdown("#### Teste Mercado Pago")
+                        st.caption("Valida o Access Token e consulta os metodos de pagamento disponiveis na sua conta.")
+                        if st.button("Testar conexao Mercado Pago", key="finance_test_mp_connection"):
+                            ok_mp, status_mp, details_mp = test_mercado_pago_connection()
+                            if ok_mp:
+                                st.success(status_mp)
+                                boleto_methods = details_mp.get("boleto_methods", [])
+                                if boleto_methods:
+                                    st.caption("Metodos boleto encontrados: " + ", ".join(boleto_methods))
+                                if details_mp.get("bolbradesco_available"):
+                                    st.info("Metodo bolbradesco disponivel para emissao de boleto.")
+                                else:
+                                    st.warning("A conexao esta valida, mas o metodo bolbradesco nao apareceu na resposta da conta.")
+                            else:
+                                st.error(status_mp)
+
             if finance_receber_menu == "Lancar Recebimento":
                 with st.form("add_rec"):
                     st.markdown("### Lançar Recebimento")
@@ -19841,10 +19948,24 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
                     aluno_lancamento = str(rec_obj.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                    boleto_requirements = _boleto_generation_requirements(rec_obj)
+                    mp_missing_fields = boleto_requirements.get("missing", []) if boleto_requirements.get("use_mercado_pago") else []
                     st.caption("Boleto automatico: gere o boleto e envie diretamente por e-mail e WhatsApp.")
+                    if mp_missing_fields:
+                        st.warning(
+                            "Mercado Pago bloqueado para este lancamento. "
+                            "Preencha no cadastro do aluno: " + ", ".join(mp_missing_fields) + "."
+                        )
+                    elif boleto_requirements.get("use_mercado_pago"):
+                        st.success("Cadastro pronto para emitir boleto no Mercado Pago.")
                     rb1, rb2, rb3 = st.columns([1, 1, 2])
                     with rb1:
-                        if st.button("Gerar boleto", key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}"):
+                        if st.button(
+                            "Gerar boleto",
+                            key=f"fin_gen_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
+                            disabled=bool(mp_missing_fields),
+                            help="Preencha os campos obrigatorios do aluno para emitir no Mercado Pago." if mp_missing_fields else None,
+                        ):
                             ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
                             if ok_bol:
                                 st.success(f"Boleto gerado: {status_bol}.")
@@ -19855,8 +19976,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         if st.button(
                             "Gerar e enviar",
                             key=f"fin_send_boleto_{idx_rec}_{rec_obj.get('codigo','')}",
-                            disabled=not aluno_lancamento,
-                            help="Disponivel somente para lancamentos com categoria 'Aluno'.",
+                            disabled=(not aluno_lancamento) or bool(mp_missing_fields),
+                            help=(
+                                "Preencha os campos obrigatorios do aluno para emitir no Mercado Pago."
+                                if mp_missing_fields
+                                else "Disponivel somente para lancamentos com categoria 'Aluno'."
+                            ),
                         ):
                             ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
                             if ok_send:
