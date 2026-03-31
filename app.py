@@ -1098,6 +1098,7 @@ DEFAULT_FINANCE_SETTINGS = {
     "boleto_api_url": "",
     "boleto_api_key": "",
     "boleto_api_auth_header": "Authorization",
+    "boleto_default_federal_unit": "",
 }
 
 def _load_json_dict(path, default_obj=None):
@@ -1818,6 +1819,7 @@ def _boleto_config_diagnostics():
         "template_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_LINK_TEMPLATE", "boleto_link_template", "")).strip()),
         "api_url_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()),
         "api_key_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()),
+        "default_federal_unit_ok": bool(str(_finance_config_value("ACTIVE_BOLETO_DEFAULT_FEDERAL_UNIT", "boleto_default_federal_unit", "")).strip()),
     }
 
 def _find_student_by_name(name):
@@ -1876,6 +1878,90 @@ def _build_boleto_link_from_template(template, rec_obj, student):
 
     return re.sub(r"\{([A-Za-z0-9_]+)\}", _replace, str(template or "")).strip()
 
+def _split_person_name(name):
+    parts = [part for part in str(name or "").strip().split() if part]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], parts[0]
+    return parts[0], " ".join(parts[1:])
+
+def _student_federal_unit(student):
+    student = student if isinstance(student, dict) else {}
+    for key in ("uf", "estado", "state", "federal_unit"):
+        value = str(student.get(key, "")).strip().upper()
+        if value:
+            return value[:2]
+    cfg_value = str(_finance_config_value("ACTIVE_BOLETO_DEFAULT_FEDERAL_UNIT", "boleto_default_federal_unit", "")).strip().upper()
+    return cfg_value[:2]
+
+def _mercado_pago_payment_payload(rec_obj, student):
+    student = student if isinstance(student, dict) else {}
+    valor = float(parse_money(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))) or 0)
+    cpf = _wiz_digits(student.get("cpf", ""))
+    email = str(student.get("email", "")).strip().lower()
+    zip_code = _wiz_digits(student.get("cep", ""))
+    street_name = str(student.get("rua", "")).strip()
+    street_number = str(student.get("numero", "")).strip()
+    neighborhood = str(student.get("bairro", "")).strip()
+    city = str(student.get("cidade", "")).strip()
+    federal_unit = _student_federal_unit(student)
+    first_name, last_name = _split_person_name(student.get("nome", rec_obj.get("aluno", "")))
+    missing = []
+    if valor <= 0:
+        missing.append("valor")
+    if len(cpf) != 11:
+        missing.append("cpf do aluno")
+    if not email:
+        missing.append("email do aluno")
+    if len(zip_code) < 8:
+        missing.append("cep do aluno")
+    if not street_name:
+        missing.append("rua do aluno")
+    if not street_number:
+        missing.append("numero do aluno")
+    if not neighborhood:
+        missing.append("bairro do aluno")
+    if not city:
+        missing.append("cidade do aluno")
+    if len(federal_unit) != 2:
+        missing.append("UF do aluno ou UF padrao do boleto")
+    if not first_name or not last_name:
+        missing.append("nome do aluno")
+    if missing:
+        return None, "dados obrigatorios para Mercado Pago ausentes: " + ", ".join(missing)
+    venc = parse_date(rec_obj.get("vencimento", ""))
+    if venc:
+        expiration_txt = f"{venc.strftime('%Y-%m-%d')}T23:59:59.000-03:00"
+    else:
+        expiration_txt = ""
+    payload = {
+        "transaction_amount": valor,
+        "description": str(rec_obj.get("descricao", "")).strip() or "Mensalidade",
+        "payment_method_id": "bolbradesco",
+        "external_reference": str(rec_obj.get("codigo", "")).strip(),
+        "payer": {
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "identification": {
+                "type": "CPF",
+                "number": cpf,
+            },
+            "address": {
+                "zip_code": zip_code,
+                "street_name": street_name,
+                "street_number": street_number,
+                "neighborhood": neighborhood,
+                "city": city,
+                "federal_unit": federal_unit,
+            },
+        },
+    }
+    if expiration_txt:
+        payload["date_of_expiration"] = expiration_txt
+    return payload, ""
+
 def _extract_boleto_info_from_json(payload):
     if not isinstance(payload, dict):
         return "", ""
@@ -1886,6 +1972,8 @@ def _extract_boleto_info_from_json(payload):
         "payment_url",
         "invoice_url",
         "bank_slip_url",
+        "ticket_url",
+        "external_resource_url",
         "url",
         "link",
     ]
@@ -1894,6 +1982,8 @@ def _extract_boleto_info_from_json(payload):
         "linha",
         "bar_code",
         "barcode",
+        "barcode_content",
+        "content",
         "digitable_line",
     ]
     boleto_url = ""
@@ -1927,13 +2017,51 @@ def generate_boleto_for_receivable(rec_obj, force=False):
         return True, "boleto ja gerado"
 
     student = _find_student_by_name(rec_obj.get("aluno", ""))
+    provider = str(_finance_config_value("ACTIVE_BOLETO_PROVIDER", "boleto_provider", "link")).strip().lower() or "link"
     api_url = str(_finance_config_value("ACTIVE_BOLETO_API_URL", "boleto_api_url", "")).strip()
     api_key = str(_finance_config_value("ACTIVE_BOLETO_API_KEY", "boleto_api_key", "")).strip()
     boleto_url = ""
     linha = ""
     erro_api = ""
 
-    if api_url:
+    use_mercado_pago = provider in ("mercado_pago", "mercadopago", "mp") or api_key.startswith("APP_USR-")
+
+    if use_mercado_pago:
+        mp_url = api_url.rstrip("/") if api_url else "https://api.mercadopago.com"
+        if not mp_url.lower().endswith("/v1/payments"):
+            mp_url = f"{mp_url}/v1/payments"
+        payload, payload_err = _mercado_pago_payment_payload(rec_obj, student)
+        if not payload:
+            return False, payload_err
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Active-Wiz-Automation/1.0",
+            "X-Idempotency-Key": str(uuid.uuid4()),
+        }
+        if not api_key:
+            return False, "informe o Access Token do Mercado Pago em ACTIVE_BOLETO_API_KEY"
+        headers["Authorization"] = api_key if api_key.lower().startswith("bearer ") else f"Bearer {api_key}"
+        status, ct, body, err = _http_request(
+            "POST",
+            mp_url,
+            headers=headers,
+            json_payload=payload,
+            timeout=20,
+        )
+        parsed, preview = _try_parse_json(ct, body)
+        ok_http = status is not None and 200 <= int(status) < 300
+        if ok_http and isinstance(parsed, dict):
+            boleto_url, linha = _extract_boleto_info_from_json(parsed)
+            if parsed.get("id"):
+                rec_obj["boleto_payment_id"] = str(parsed.get("id", "")).strip()
+        if not ok_http:
+            erro_api = f"falha Mercado Pago (HTTP {status})"
+            if err:
+                erro_api += f" {err}"
+            elif preview:
+                erro_api += f" {preview[:120]}"
+    elif api_url:
         payload = {
             "codigo": str(rec_obj.get("codigo", "")).strip(),
             "aluno": str(rec_obj.get("aluno", "")).strip(),
@@ -1976,7 +2104,7 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             elif preview:
                 erro_api += f" {preview[:120]}"
 
-    if not boleto_url:
+    if not boleto_url and not use_mercado_pago:
         template = str(_finance_config_value("ACTIVE_BOLETO_LINK_TEMPLATE", "boleto_link_template", "")).strip()
         base_url = str(_finance_config_value("ACTIVE_BOLETO_BASE_URL", "boleto_base_url", "")).strip()
         if template:
@@ -1997,6 +2125,8 @@ def generate_boleto_for_receivable(rec_obj, force=False):
 
     if not boleto_url and not linha:
         msg = "configure ACTIVE_BOLETO_LINK_TEMPLATE ou ACTIVE_BOLETO_BASE_URL para gerar boleto"
+        if use_mercado_pago:
+            msg = "nao foi possivel gerar boleto no Mercado Pago"
         if erro_api:
             msg = f"{msg} ({erro_api})"
         return False, msg
@@ -19082,9 +19212,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         with bl1:
                             cfg_boleto_provider = st.selectbox(
                                 "Provedor",
-                                ["link", "api"],
-                                index=0 if str(current_cfg.get("boleto_provider", "link")).strip().lower() != "api" else 1,
+                                ["link", "api", "mercado_pago"],
+                                index=(
+                                    ["link", "api", "mercado_pago"].index(str(current_cfg.get("boleto_provider", "link")).strip().lower())
+                                    if str(current_cfg.get("boleto_provider", "link")).strip().lower() in ["link", "api", "mercado_pago"]
+                                    else 0
+                                ),
                             )
+                        api_url_default = str(current_cfg.get("boleto_api_url", ""))
+                        if not api_url_default and str(cfg_boleto_provider).strip().lower() == "mercado_pago":
+                            api_url_default = "https://api.mercadopago.com"
                         with bl2:
                             cfg_boleto_base_url = st.text_input(
                                 "Base URL do boleto (opcional)",
@@ -19098,15 +19235,29 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         )
                         bl3, bl4, bl5 = st.columns(3)
                         with bl3:
-                            cfg_boleto_api_url = st.text_input("API URL (opcional)", value=str(current_cfg.get("boleto_api_url", "")))
+                            cfg_boleto_api_url = st.text_input(
+                                "API URL (opcional)",
+                                value=api_url_default,
+                            )
                         with bl4:
-                            cfg_boleto_api_key = st.text_input("API Key (opcional)", value=str(current_cfg.get("boleto_api_key", "")), type="password")
+                            cfg_boleto_api_key = st.text_input(
+                                "API Key / Access Token (opcional)",
+                                value=str(current_cfg.get("boleto_api_key", "")),
+                                type="password",
+                            )
                         with bl5:
                             cfg_boleto_api_auth = st.text_input(
                                 "Header da API Key",
                                 value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
                                 help="Exemplo: Authorization ou apikey",
                             )
+                        if str(cfg_boleto_provider).strip().lower() == "mercado_pago":
+                            st.info("Mercado Pago: informe o Access Token APP_USR e mantenha a API URL em https://api.mercadopago.com.")
+                        cfg_boleto_default_federal_unit = st.text_input(
+                            "UF padrao do boleto (ex.: SP, RJ)",
+                            value=str(current_cfg.get("boleto_default_federal_unit", "")),
+                            help="Usado quando o cadastro do aluno nao tiver UF preenchida.",
+                        )
 
                         salvar_fin_cfg = st.form_submit_button("Salvar configuracoes automaticas")
                         if salvar_fin_cfg:
@@ -19124,6 +19275,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     "boleto_api_url": cfg_boleto_api_url,
                                     "boleto_api_key": cfg_boleto_api_key,
                                     "boleto_api_auth_header": cfg_boleto_api_auth,
+                                    "boleto_default_federal_unit": cfg_boleto_default_federal_unit,
                                 }
                             )
                             st.success("Configuracoes financeiras salvas.")
