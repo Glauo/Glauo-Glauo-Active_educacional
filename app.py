@@ -1807,7 +1807,9 @@ def _has_wapi_config():
 def _has_evolution_config():
     return bool(_evolution_base_url() and _evolution_api_key() and _evolution_instance_name())
 
-def _send_whatsapp_auto(number, text, timeout=20):
+def _send_whatsapp_auto(number, text, timeout=20, allow_when_paused=False):
+    if wiz_chatbot_paused() and not bool(allow_when_paused):
+        return False, "bloqueado: atendimento humano assumido", []
     provider = str(_get_config_value("ACTIVE_WHATSAPP_PROVIDER", "auto")).strip().lower()
     if provider == "wapi":
         ok, status, attempts = _send_whatsapp_wapi(number, text, timeout=timeout)
@@ -2166,33 +2168,36 @@ def _save_manual_external_boleto_pdf(rec_obj, uploaded_file):
 def _render_manual_external_boleto_actions(rec_obj, key_prefix=""):
     if _receivable_payment_mode(rec_obj) == "pix":
         return
-    with st.expander("Boleto de outro banco (PDF)", expanded=False):
-        st.caption("Anexe o PDF do boleto externo e envie ao aluno sem passar pela integraçao automática.")
-        upload = st.file_uploader(
-            "Selecionar boleto PDF",
-            type=["pdf"],
-            key=f"{key_prefix}_external_boleto_pdf",
-        )
-        b1, b2 = st.columns(2)
-        if b1.button("Anexar boleto", key=f"{key_prefix}_external_boleto_save", use_container_width=True):
-            ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
-            if ok_save:
-                st.success(status_save)
-                st.rerun()
+    st.markdown("### Boleto de outro banco")
+    st.caption("Anexe um PDF externo e, se quiser, envie automaticamente ao aluno.")
+    upload = st.file_uploader(
+        "Selecionar boleto PDF",
+        type=["pdf"],
+        key=f"{key_prefix}_external_boleto_pdf",
+    )
+    current_name = str((rec_obj or {}).get("boleto_pdf_nome", "")).strip()
+    if current_name:
+        st.caption(f"PDF anexado atual: {current_name}")
+    b1, b2 = st.columns(2)
+    if b1.button("Anexar boleto externo", key=f"{key_prefix}_external_boleto_save", use_container_width=True):
+        ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
+        if ok_save:
+            st.success(status_save)
+            st.rerun()
+        st.error(status_save)
+    if b2.button("Anexar e enviar ao aluno", key=f"{key_prefix}_external_boleto_send", use_container_width=True):
+        ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
+        if not ok_save:
             st.error(status_save)
-        if b2.button("Anexar + enviar ao aluno", key=f"{key_prefix}_external_boleto_send", use_container_width=True):
-            ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
-            if not ok_save:
-                st.error(status_save)
-            else:
-                ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
-                if ok_send:
-                    st.success(
-                        f"Boleto externo enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
-                        f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
-                    )
-                    st.rerun()
-                st.error(f"Boleto anexado, mas falhou no envio: {status_send}.")
+        else:
+            ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+            if ok_send:
+                st.success(
+                    f"Boleto externo enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                    f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                )
+                st.rerun()
+            st.error(f"Boleto anexado, mas falhou no envio: {status_send}.")
 
 def _split_person_name(name):
     parts = [part for part in str(name or "").strip().split() if part]
