@@ -2939,6 +2939,256 @@ def _wiz_norm_text(value):
 def _wiz_digits(value):
     return re.sub(r"\D", "", str(value or ""))
 
+def _wiz_norm_tokens(value):
+    norm = _wiz_norm_text(value)
+    if not norm:
+        return []
+    return [tok for tok in re.split(r"[^a-z0-9]+", norm) if tok]
+
+def _wiz_has_all_tokens(text_value, query_value):
+    query_tokens = _wiz_norm_tokens(query_value)
+    if not query_tokens:
+        return False
+    text_norm = _wiz_norm_text(text_value)
+    if not text_norm:
+        return False
+    return all(token in text_norm for token in query_tokens)
+
+def _wiz_is_execution_intent(text):
+    norm = _wiz_norm_text(text)
+    if not norm:
+        return False
+    triggers = (
+        "cadastre", "cadastrar", "crie", "criar", "inclua", "incluir", "adicione", "adicionar",
+        "atualize", "atualizar", "altere", "alterar", "edite", "editar", "ajuste", "ajustar",
+        "corrija", "corrigir", "exclua", "excluir", "remova", "remover", "delete", "deletar",
+        "agende", "agendar", "lance", "lancar", "gere", "gerar", "envie", "enviar", "publique",
+        "publicar", "baixe", "baixar", "dar baixa", "assuma", "retome", "pausar", "retomar",
+        "faça", "faca", "realize", "realizar",
+    )
+    return any(token in norm for token in triggers)
+
+def _wiz_list_preview(items, formatter, max_items=8):
+    preview = []
+    for item in items or []:
+        try:
+            text = str(formatter(item) or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            preview.append(text)
+        if len(preview) >= max_items:
+            break
+    return preview
+
+def _wiz_relevant_system_context(user_text, max_items=8):
+    query = str(user_text or "").strip()
+    if not query:
+        return ""
+    query_norm = _wiz_norm_text(query)
+    query_digits = _wiz_digits(query)
+    sections = []
+
+    def add_section(title, rows):
+        clean = [str(row).strip() for row in (rows or []) if str(row).strip()]
+        if clean:
+            sections.append(f"{title}:\n- " + "\n- ".join(clean[:max_items]))
+
+    student_matches = []
+    for student in st.session_state.get("students", []):
+        if not isinstance(student, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(student.get("nome", "")),
+                str(student.get("matricula", "")),
+                str(student.get("turma", "")),
+                str(student.get("email", "")),
+                str(student.get("celular", "")),
+                str(student.get("cpf", "")),
+                str(student.get("livro", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm) or (query_digits and query_digits in _wiz_digits(haystack)):
+            student_matches.append(student)
+    add_section(
+        "Alunos encontrados",
+        _wiz_list_preview(
+            student_matches,
+            lambda s: f"{s.get('nome','')} | Turma: {s.get('turma','-')} | Email: {s.get('email','-')} | CPF: {str(s.get('cpf','')).strip() or '-'}",
+            max_items=max_items,
+        ),
+    )
+
+    teacher_matches = []
+    for teacher in st.session_state.get("teachers", []):
+        if not isinstance(teacher, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(teacher.get("nome", "")),
+                str(teacher.get("email", "")),
+                str(teacher.get("celular", "")),
+                str(teacher.get("cpf", "")),
+                str(teacher.get("livro", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm) or (query_digits and query_digits in _wiz_digits(haystack)):
+            teacher_matches.append(teacher)
+    add_section(
+        "Professores encontrados",
+        _wiz_list_preview(
+            teacher_matches,
+            lambda t: f"{t.get('nome','')} | Email: {t.get('email','-')} | Celular: {t.get('celular','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    class_matches = []
+    for class_obj in st.session_state.get("classes", []):
+        if not isinstance(class_obj, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(class_obj.get("nome", "")),
+                str(class_obj.get("professor", "")),
+                str(class_obj.get("livro", "")),
+                str(class_obj.get("link", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm):
+            class_matches.append(class_obj)
+    add_section(
+        "Turmas encontradas",
+        _wiz_list_preview(
+            class_matches,
+            lambda c: f"{c.get('nome','')} | Professor: {c.get('professor','-')} | Livro: {c.get('livro','-')} | Link: {c.get('link','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    receivable_matches = []
+    for rec in st.session_state.get("receivables", []):
+        if not isinstance(rec, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(rec.get("descricao", "")),
+                str(rec.get("aluno", "")),
+                str(rec.get("codigo", "")),
+                str(rec.get("categoria", "")),
+                str(rec.get("status", "")),
+                str(rec.get("vencimento", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm) or (query_digits and query_digits in _wiz_digits(haystack)):
+            receivable_matches.append(rec)
+    add_section(
+        "Recebimentos encontrados",
+        _wiz_list_preview(
+            receivable_matches,
+            lambda r: f"{r.get('descricao','')} | Aluno: {r.get('aluno','-')} | Valor: {r.get('valor_parcela', r.get('valor','-'))} | Venc.: {r.get('vencimento','-')} | Status: {r.get('status','-')} | Codigo: {r.get('codigo','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    payable_matches = []
+    for pay in st.session_state.get("payables", []):
+        if not isinstance(pay, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(pay.get("descricao", "")),
+                str(pay.get("fornecedor", "")),
+                str(pay.get("codigo", "")),
+                str(pay.get("categoria_lancamento", "")),
+                str(pay.get("status", "")),
+                str(pay.get("vencimento", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm) or (query_digits and query_digits in _wiz_digits(haystack)):
+            payable_matches.append(pay)
+    add_section(
+        "Pagamentos/Despesas encontrados",
+        _wiz_list_preview(
+            payable_matches,
+            lambda p: f"{p.get('descricao','')} | Referencia: {p.get('fornecedor','-')} | Valor: {p.get('valor_parcela', p.get('valor','-'))} | Venc.: {p.get('vencimento','-')} | Status: {p.get('status','-')} | Codigo: {p.get('codigo','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    agenda_matches = []
+    for ag in st.session_state.get("agenda", []):
+        if not isinstance(ag, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(ag.get("titulo", "")),
+                str(ag.get("turma", "")),
+                str(ag.get("professor", "")),
+                str(ag.get("data", "")),
+                str(ag.get("hora", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm):
+            agenda_matches.append(ag)
+    add_section(
+        "Agenda encontrada",
+        _wiz_list_preview(
+            agenda_matches,
+            lambda a: f"{a.get('titulo','')} | Turma: {a.get('turma','-')} | Professor: {a.get('professor','-')} | Data: {a.get('data','-')} {a.get('hora','')}",
+            max_items=max_items,
+        ),
+    )
+
+    user_matches = []
+    for user in st.session_state.get("users", []):
+        if not isinstance(user, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(user.get("usuario", "")),
+                str(user.get("pessoa", "")),
+                str(user.get("perfil", "")),
+                str(user.get("email", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm):
+            user_matches.append(user)
+    add_section(
+        "Usuários encontrados",
+        _wiz_list_preview(
+            user_matches,
+            lambda u: f"{u.get('usuario','')} | Pessoa: {u.get('pessoa','-')} | Perfil: {u.get('perfil','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    book_matches = []
+    for book in st.session_state.get("books", []):
+        if not isinstance(book, dict):
+            continue
+        haystack = " | ".join(
+            [
+                str(book.get("titulo", "")),
+                str(book.get("nivel", "")),
+                str(book.get("categoria", "")),
+                str(book.get("parte", "")),
+            ]
+        )
+        if _wiz_has_all_tokens(haystack, query_norm):
+            book_matches.append(book)
+    add_section(
+        "Livros encontrados",
+        _wiz_list_preview(
+            book_matches,
+            lambda b: f"{b.get('titulo','')} | Nivel: {b.get('nivel','-')} | Categoria: {b.get('categoria','-')} | Parte: {b.get('parte','-')}",
+            max_items=max_items,
+        ),
+    )
+
+    return "\n\n".join(sections[:8])
+
 def _wiz_can_operate_system():
     role = str(st.session_state.get("role", "")).strip()
     profile = str(st.session_state.get("account_profile", role)).strip()
@@ -3137,7 +3387,7 @@ def _wiz_build_execution_message(base_reply, reports, missing=None):
         lines.append("Não houve ação para executar.")
     return "\n".join(lines)
 
-def _wiz_plan_actions_with_ai(user_text, chat_history=None):
+def _wiz_plan_actions_with_ai(user_text, chat_history=None, force_execution=False):
     api_key = get_groq_api_key()
     if not api_key:
         return {"reply": "", "actions": [], "missing": []}
@@ -3163,15 +3413,23 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
         context_txt = get_active_context_text()
     except Exception:
         context_txt = ""
+    try:
+        relevant_context_txt = _wiz_relevant_system_context(user_text, max_items=10)
+    except Exception:
+        relevant_context_txt = ""
     system_prompt = "\n".join(
         [
             "Voce e um orquestrador de acoes internas do sistema Active Educacional.",
             "Retorne SOMENTE JSON valido, sem markdown.",
             "Nunca invente dados obrigatorios que nao foram informados.",
             "Nunca invente fatos do sistema (nomes, turmas, valores, status, quantidades, datas ou links).",
+            "Leia o contexto geral e o contexto relevante antes de responder que nao encontrou dados.",
+            "Use nomes aproximados, sinonimos e referencias por contexto para localizar registros do sistema.",
             "Se nao houver confirmacao no contexto/dados do pedido, nao afirme certeza e preencha missing com o que falta.",
             "Se o pedido for apenas pergunta, orientacao ou analise, retorne actions = [].",
             "Se o pedido exigir execucao interna, preencha actions com os tipos suportados.",
+            "Se o pedido pedir claramente para fazer/alterar/cadastrar/enviar/excluir/lancar e houver dados suficientes, gere actions em vez de recusar.",
+            ("O usuario quer execucao interna agora. Priorize actions e use missing apenas se faltar dado realmente indispensavel." if force_execution else ""),
             "Nunca inclua DietHealth.",
             "Para enviar_comunicado com turma='Todas', use por padrao somente alunos com turma valida existente.",
             "Inclua alunos sem turma apenas se o usuario pedir explicitamente.",
@@ -3211,6 +3469,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None):
             "Para exclusao/baixa use somente quando o pedido do usuario for explicito.",
             "Nao confirme execucao na resposta; a confirmacao final vem do relatorio de execucao do sistema.",
             ("Contexto atual:\n" + context_txt) if context_txt else "Contexto atual: indisponivel.",
+            ("Contexto relevante do pedido:\n" + relevant_context_txt) if relevant_context_txt else "Contexto relevante do pedido: sem correspondencias localizadas.",
             f"Formato JSON: {schema_hint}",
         ]
     )
@@ -3389,7 +3648,15 @@ def _wiz_execute_actions(actions):
             return True
         if not value_norm:
             return False
-        return expected_norm in value_norm or value_norm in expected_norm
+        if expected_norm in value_norm or value_norm in expected_norm:
+            return True
+        expected_tokens = _wiz_norm_tokens(expected_norm)
+        if expected_tokens and all(token in value_norm for token in expected_tokens):
+            return True
+        value_tokens = _wiz_norm_tokens(value_norm)
+        if value_tokens and all(token in expected_norm for token in value_tokens):
+            return True
+        return False
 
     def _find_student_indices(data):
         items = st.session_state.get("students", [])
@@ -5065,6 +5332,15 @@ def run_wiz_assistant():
     plan_actions = plan.get("actions", []) if isinstance(plan, dict) else []
     plan_reply = str((plan or {}).get("reply", "")).strip()
     plan_missing = (plan or {}).get("missing", []) if isinstance(plan, dict) else []
+    if api_key and wiz_auto_exec and not plan_actions and _wiz_is_execution_intent(full_user_text):
+        with st.spinner("Wiz esta reforcando o plano de execucao..."):
+            forced_plan = _wiz_plan_actions_with_ai(full_user_text, chat_history[-10:], force_execution=True)
+        forced_actions = forced_plan.get("actions", []) if isinstance(forced_plan, dict) else []
+        if forced_actions:
+            plan = forced_plan
+            plan_actions = forced_actions
+            plan_reply = str((forced_plan or {}).get("reply", "")).strip()
+            plan_missing = (forced_plan or {}).get("missing", []) if isinstance(forced_plan, dict) else []
     if not plan_actions and fallback_actions:
         plan_actions = fallback_actions
         if not plan_reply:
@@ -5083,6 +5359,7 @@ def run_wiz_assistant():
         )
         answer += "\n\nAtive a opcao de execucao automatica para o Wiz realizar essas tarefas no sistema."
     else:
+        relevant_context_txt = _wiz_relevant_system_context(full_user_text, max_items=12)
         system_prompt = "\n".join(
             [
                 "Você é o Assistente Wiz da Active Educacional para Coordenador/Admin.",
@@ -5090,11 +5367,15 @@ def run_wiz_assistant():
                 "Nunca responda com JSON, código ou estrutura técnica.",
                 "Quando houver dados faltantes para executar algo interno, peça apenas os dados faltantes.",
                 "Se houver anexo, use o conteúdo anexado como base da resposta.",
+                "Antes de dizer que nao encontrou informacao, confira o contexto geral e o contexto relevante do pedido.",
+                "Use nomes aproximados e referencias do sistema para localizar registros relacionados.",
+                "Se existir dado no contexto, cite esse dado objetivamente.",
                 "Nunca invente informacoes do sistema (alunos, turmas, valores, status, datas, links ou resultados).",
                 "Nao diga que tem certeza sem validacao no contexto atual.",
                 "Se nao conseguir confirmar algo no sistema, diga explicitamente que nao foi possivel confirmar agora.",
                 "Nunca mencione DietHealth.",
                 get_active_context_text(),
+                relevant_context_txt or "Contexto relevante do pedido: sem correspondencias localizadas.",
             ]
         )
         request_messages = [{"role": "system", "content": system_prompt}]
@@ -12443,6 +12724,8 @@ def get_active_context_text():
     role = st.session_state.get("role", "")
     user_name = st.session_state.get("user_name", "")
     unit = st.session_state.get("unit", "")
+    receivables_all = list(st.session_state.get("receivables", []) or [])
+    payables_all = list(st.session_state.get("payables", []) or [])
     lines = [
         "Contexto do sistema Active Educacional/Mister Wiz:",
         f"Perfil logado: {role}",
@@ -12468,6 +12751,53 @@ def get_active_context_text():
         lines.append(f"Total de professores: {len(st.session_state['teachers'])}")
         lines.append(f"Total de turmas: {len(st.session_state['classes'])}")
         lines.append(f"Mensagens cadastradas: {len(st.session_state['messages'])}")
+    elif role == "Admin":
+        lines.append(f"Total de alunos: {len(st.session_state['students'])}")
+        lines.append(f"Total de professores: {len(st.session_state['teachers'])}")
+        lines.append(f"Total de turmas: {len(st.session_state['classes'])}")
+        lines.append(f"Total de usuarios: {len(st.session_state['users'])}")
+
+    open_receivables = [
+        r for r in receivables_all
+        if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+    ]
+    open_payables = [
+        p for p in payables_all
+        if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+    ]
+    overdue_receivables = _financial_overdue_items(receivables_all, date_field="vencimento")
+    overdue_payables = _financial_overdue_items(payables_all, date_field="vencimento")
+    if role in ("Admin", "Coordenador"):
+        lines.append(f"Recebimentos em aberto: {len(open_receivables)} | Total: {format_money(sum(parse_money(r.get('valor_parcela', r.get('valor', 0))) for r in open_receivables))}")
+        lines.append(f"Recebimentos vencidos: {len(overdue_receivables)} | Total: {format_money(sum(parse_money(r.get('valor_parcela', r.get('valor', 0))) for r in overdue_receivables))}")
+        lines.append(f"Pagamentos/Despesas em aberto: {len(open_payables)} | Total: {format_money(sum(parse_money(p.get('valor_parcela', p.get('valor', 0))) for p in open_payables))}")
+        lines.append(f"Pagamentos/Despesas vencidos: {len(overdue_payables)} | Total: {format_money(sum(parse_money(p.get('valor_parcela', p.get('valor', 0))) for p in overdue_payables))}")
+        sample_students = [str(s.get("nome", "")).strip() for s in st.session_state.get("students", []) if str(s.get("nome", "")).strip()][:10]
+        sample_teachers = [str(t.get("nome", "")).strip() for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip()][:10]
+        sample_classes = [str(c.get("nome", "")).strip() for c in st.session_state.get("classes", []) if str(c.get("nome", "")).strip()][:10]
+        if sample_students:
+            lines.append("Alunos de referencia: " + "; ".join(sample_students))
+        if sample_teachers:
+            lines.append("Professores de referencia: " + "; ".join(sample_teachers))
+        if sample_classes:
+            lines.append("Turmas de referencia: " + "; ".join(sample_classes))
+        upcoming_agenda = sorted(
+            [
+                a for a in st.session_state.get("agenda", [])
+                if isinstance(a, dict)
+            ],
+            key=lambda a: (
+                parse_date(a.get("data", "")) or datetime.date(2100, 1, 1),
+                parse_time(a.get("hora", "00:00")),
+            ),
+        )[:8]
+        if upcoming_agenda:
+            lines.append(
+                "Agenda de referencia: " + " ; ".join(
+                    f"{str(a.get('titulo','')).strip() or 'Compromisso'} ({str(a.get('turma','')).strip() or '-'} {str(a.get('data','')).strip()} {str(a.get('hora','')).strip()})"
+                    for a in upcoming_agenda
+                )
+            )
 
     return "\n".join(lines)
 
