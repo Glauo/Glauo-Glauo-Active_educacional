@@ -1112,6 +1112,7 @@ DEFAULT_WIZ_SETTINGS = {
     "on_agenda_created": True,
     "on_class_link_updated": True,
     "on_financial_created": True,
+    "mister_wiz_paused": False,
 }
 
 DEFAULT_FINANCE_SETTINGS = {
@@ -1158,17 +1159,31 @@ def get_wiz_settings(refresh=True):
         raw = st.session_state.get("wiz_settings") or {}
     out = dict(DEFAULT_WIZ_SETTINGS)
     if isinstance(raw, dict):
-        for key in out:
+        for key, default_value in out.items():
             if key in raw:
-                out[key] = bool(raw.get(key))
+                if isinstance(default_value, bool):
+                    out[key] = bool(raw.get(key))
+                else:
+                    out[key] = raw.get(key)
     return out
 
 def save_wiz_settings(settings):
+    current = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
     merged = dict(DEFAULT_WIZ_SETTINGS)
+    if isinstance(current, dict):
+        for key, default_value in merged.items():
+            if key in current:
+                if isinstance(default_value, bool):
+                    merged[key] = bool(current.get(key))
+                else:
+                    merged[key] = current.get(key)
     if isinstance(settings, dict):
-        for key in merged:
+        for key, default_value in merged.items():
             if key in settings:
-                merged[key] = bool(settings.get(key))
+                if isinstance(default_value, bool):
+                    merged[key] = bool(settings.get(key))
+                else:
+                    merged[key] = settings.get(key)
     st.session_state["wiz_settings"] = merged
     _save_json_dict(WIZ_SETTINGS_FILE, merged)
     return merged
