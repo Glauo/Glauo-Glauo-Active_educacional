@@ -77,6 +77,8 @@ if "fee_templates" not in st.session_state:
     st.session_state["fee_templates"] = []
 if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
+if "permissions" not in st.session_state:
+    st.session_state["permissions"] = {}
 if "email_log" not in st.session_state:
     st.session_state["email_log"] = []
 if "challenges" not in st.session_state:
@@ -1216,6 +1218,12 @@ def _finance_config_value(env_key, settings_key, default=""):
     val = str(settings.get(settings_key, "")).strip()
     return val or default
 
+def _current_account_profile():
+    return str(st.session_state.get("account_profile") or st.session_state.get("role") or "").strip()
+
+def _is_admin_account():
+    return _current_account_profile() == "Admin"
+
 def _backup_datasets():
     return [
         ("users.json", "users", USERS_FILE),
@@ -1998,6 +2006,15 @@ def _receivable_pix_qr_png_bytes(rec_obj):
         return _qr_content_to_png_bytes(qr_code)
     return None
 
+def _receivable_manual_boleto_pdf_bytes(rec_obj):
+    payload = str((rec_obj or {}).get("boleto_pdf_b64", "")).strip()
+    if not payload:
+        return b""
+    try:
+        return base64.b64decode(payload)
+    except Exception:
+        return b""
+
 def _split_person_name(name):
     parts = [part for part in str(name or "").strip().split() if part]
     if not parts:
@@ -2120,6 +2137,198 @@ def test_mercado_pago_connection():
         "bolbradesco_available": bolbradesco_available,
         "methods_total": len(methods),
     }
+
+def _render_finance_settings_editor(panel_key="finance_settings"):
+    smtp_diag = _smtp_config_diagnostics()
+    boleto_diag = _boleto_config_diagnostics()
+    whatsapp_diag = _whatsapp_config_diagnostics()
+    smtp_ready = smtp_diag["host_ok"] and smtp_diag["port_ok"] and smtp_diag["from_ok"]
+    boleto_ready = boleto_diag["template_ok"] or boleto_diag["base_url_ok"] or boleto_diag["api_url_ok"]
+
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        st.metric("SMTP", "Configurado" if smtp_ready else "Pendente")
+    with d2:
+        st.metric("Boleto", "Configurado" if boleto_ready else "Pendente")
+    with d3:
+        st.metric("WhatsApp", "Configurado" if whatsapp_diag.get("wapi_ready") or whatsapp_diag.get("evolution_ready") else "Pendente")
+
+    st.caption("Se variaveis de ambiente ACTIVE_* estiverem definidas, elas tem prioridade sobre os campos abaixo.")
+
+    current_cfg = get_finance_settings()
+    with st.form(f"{panel_key}_form"):
+        st.markdown("#### SMTP (envio de e-mail)")
+        sm1, sm2, sm3 = st.columns(3)
+        with sm1:
+            cfg_smtp_host = st.text_input("Servidor SMTP", value=str(current_cfg.get("smtp_host", "")), key=f"{panel_key}_smtp_host")
+        with sm2:
+            cfg_smtp_port = st.text_input("Porta SMTP", value=str(current_cfg.get("smtp_port", "587")), key=f"{panel_key}_smtp_port")
+        with sm3:
+            cfg_smtp_tls = st.selectbox(
+                "TLS",
+                ["1", "0"],
+                index=0 if str(current_cfg.get("smtp_tls", "1")) != "0" else 1,
+                format_func=lambda v: "Ativo" if str(v) == "1" else "Desativado",
+                key=f"{panel_key}_smtp_tls",
+            )
+        sm4, sm5, sm6 = st.columns(3)
+        with sm4:
+            cfg_smtp_user = st.text_input("Usuario SMTP", value=str(current_cfg.get("smtp_user", "")), key=f"{panel_key}_smtp_user")
+        with sm5:
+            cfg_smtp_pass = st.text_input("Senha SMTP", value=str(current_cfg.get("smtp_pass", "")), type="password", key=f"{panel_key}_smtp_pass")
+        with sm6:
+            cfg_smtp_from = st.text_input("E-mail remetente", value=str(current_cfg.get("smtp_from", "")), key=f"{panel_key}_smtp_from")
+
+        st.markdown("#### Boleto")
+        bl1, bl2 = st.columns(2)
+        with bl1:
+            provider_options = ["link", "api", "mercado_pago"]
+            current_provider = str(current_cfg.get("boleto_provider", "link")).strip().lower()
+            cfg_boleto_provider = st.selectbox(
+                "Provedor",
+                provider_options,
+                index=provider_options.index(current_provider) if current_provider in provider_options else 0,
+                key=f"{panel_key}_boleto_provider",
+            )
+        api_url_default = str(current_cfg.get("boleto_api_url", ""))
+        if not api_url_default and str(cfg_boleto_provider).strip().lower() == "mercado_pago":
+            api_url_default = "https://api.mercadopago.com"
+        with bl2:
+            cfg_boleto_base_url = st.text_input(
+                "Base URL do boleto (opcional)",
+                value=str(current_cfg.get("boleto_base_url", "")),
+                help="Se informar somente a base URL, o sistema adiciona os parametros automaticamente.",
+                key=f"{panel_key}_boleto_base_url",
+            )
+        cfg_boleto_template = st.text_input(
+            "Template do link (opcional)",
+            value=str(current_cfg.get("boleto_link_template", "")),
+            help="Exemplo: https://provedor.com/boleto/{codigo}?aluno={aluno}",
+            key=f"{panel_key}_boleto_template",
+        )
+        bl3, bl4, bl5 = st.columns(3)
+        with bl3:
+            cfg_boleto_api_url = st.text_input("API URL (opcional)", value=api_url_default, key=f"{panel_key}_boleto_api_url")
+        with bl4:
+            cfg_boleto_api_key = st.text_input(
+                "API Key / Access Token (opcional)",
+                value=str(current_cfg.get("boleto_api_key", "")),
+                type="password",
+                key=f"{panel_key}_boleto_api_key",
+            )
+        with bl5:
+            cfg_boleto_api_auth = st.text_input(
+                "Header da API Key",
+                value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
+                help="Exemplo: Authorization ou apikey",
+                key=f"{panel_key}_boleto_api_auth",
+            )
+        if str(cfg_boleto_provider).strip().lower() == "mercado_pago":
+            st.info("Mercado Pago: informe o Access Token APP_USR e mantenha a API URL em https://api.mercadopago.com.")
+        cfg_boleto_default_federal_unit = st.text_input(
+            "UF padrao do boleto (ex.: SP, RJ)",
+            value=str(current_cfg.get("boleto_default_federal_unit", "")),
+            help="Usado quando o cadastro do aluno nao tiver UF preenchida.",
+            key=f"{panel_key}_boleto_uf",
+        )
+
+        salvar_fin_cfg = st.form_submit_button("Salvar configuracoes financeiras", type="primary")
+        if salvar_fin_cfg:
+            save_finance_settings(
+                {
+                    "smtp_host": cfg_smtp_host,
+                    "smtp_port": cfg_smtp_port,
+                    "smtp_user": cfg_smtp_user,
+                    "smtp_pass": cfg_smtp_pass,
+                    "smtp_tls": cfg_smtp_tls,
+                    "smtp_from": cfg_smtp_from,
+                    "boleto_provider": cfg_boleto_provider,
+                    "boleto_base_url": cfg_boleto_base_url,
+                    "boleto_link_template": cfg_boleto_template,
+                    "boleto_api_url": cfg_boleto_api_url,
+                    "boleto_api_key": cfg_boleto_api_key,
+                    "boleto_api_auth_header": cfg_boleto_api_auth,
+                    "boleto_default_federal_unit": cfg_boleto_default_federal_unit,
+                }
+            )
+            st.success("Configuracoes financeiras salvas.")
+            st.rerun()
+
+    current_cfg = get_finance_settings()
+    current_provider = str(current_cfg.get("boleto_provider", "link")).strip().lower()
+    current_api_key = str(current_cfg.get("boleto_api_key", "")).strip()
+    if _is_mercado_pago_boleto_provider(current_provider, current_api_key):
+        st.markdown("#### Teste Mercado Pago")
+        st.caption("Valida o Access Token e consulta os metodos de pagamento disponiveis na sua conta.")
+        if st.button("Testar conexao Mercado Pago", key=f"{panel_key}_test_mp"):
+            ok_mp, status_mp, details_mp = test_mercado_pago_connection()
+            if ok_mp:
+                st.success(status_mp)
+                boleto_methods = details_mp.get("boleto_methods", [])
+                if boleto_methods:
+                    st.caption("Metodos boleto encontrados: " + ", ".join(boleto_methods))
+                if details_mp.get("bolbradesco_available"):
+                    st.info("Metodo bolbradesco disponivel para emissao de boleto.")
+                else:
+                    st.warning("A conexao esta valida, mas o metodo bolbradesco nao apareceu na resposta da conta.")
+            else:
+                st.error(status_mp)
+
+def _render_admin_settings_panel():
+    if not _is_admin_account():
+        st.error("Acesso restrito ao Admin.")
+        return
+
+    st.markdown('<div class="main-header">Configurações</div>', unsafe_allow_html=True)
+    st.caption("Central única de configuração e autorizações do sistema.")
+    tab_access, tab_fin, tab_auto = st.tabs(["Autorizações", "Financeiro", "Automações"])
+
+    with tab_access:
+        st.markdown("### Acessos por usuário")
+        st.caption("O Admin define quais portais cada usuário pode abrir no login.")
+        users_all = st.session_state.get("users", [])
+        if not users_all:
+            st.info("Nenhum usuário cadastrado.")
+        else:
+            user_labels = [
+                f"{str(u.get('usuario', '')).strip()} | {str(u.get('perfil', '')).strip()} | {str(u.get('pessoa', '')).strip()}"
+                for u in users_all
+            ]
+            selected_label = st.selectbox("Usuário", user_labels, key="admin_settings_user_access")
+            user_obj = users_all[user_labels.index(selected_label)]
+            _normalize_user_access(user_obj)
+            portal_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
+            current_allowed = _normalize_allowed_portals(user_obj.get("allowed_portals", []), user_obj.get("perfil", ""))
+            can_manage = bool(_normalize_user_permissions(user_obj.get("permissions", {}), user_obj.get("perfil", "")).get("permissions", {}).get("manage", False))
+            with st.form("admin_user_access_form"):
+                st.text_input("Perfil principal", value=str(user_obj.get("perfil", "")).strip(), disabled=True)
+                new_allowed = st.multiselect(
+                    "Portais liberados no login",
+                    portal_opts,
+                    default=current_allowed,
+                    key="admin_user_allowed_portals",
+                )
+                new_manage = st.checkbox(
+                    "Permitir gerenciar usuários e autorizações",
+                    value=can_manage,
+                    key="admin_user_manage_permission",
+                )
+                if st.form_submit_button("Salvar autorizações", type="primary"):
+                    user_obj["allowed_portals"] = _normalize_allowed_portals(new_allowed, user_obj.get("perfil", ""))
+                    user_obj["permissions"] = {"permissions": {"manage": bool(new_manage)}}
+                    if str(user_obj.get("perfil", "")).strip() == "Admin" and "Admin" not in user_obj["allowed_portals"]:
+                        user_obj["allowed_portals"].insert(0, "Admin")
+                    save_users(st.session_state["users"])
+                    st.success("Autorizações atualizadas.")
+                    st.rerun()
+
+    with tab_fin:
+        st.markdown("### Configurações do financeiro")
+        _render_finance_settings_editor(panel_key="admin_finance_settings")
+
+    with tab_auto:
+        st.markdown("### Configurações das automações")
+        _render_wiz_automation_panel()
 
 def _mercado_pago_payment_payload(rec_obj, student, payment_mode="boleto"):
     student = student if isinstance(student, dict) else {}
@@ -2425,12 +2634,19 @@ def send_receivable_boleto_to_student(rec_obj):
     if not student:
         return False, "aluno nao encontrado para envio", {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
 
-    ok_gen, status_gen = generate_boleto_for_receivable(rec_obj, force=False)
-    if not ok_gen:
-        return False, status_gen, {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
-
     payment_label = _receivable_payment_label(rec_obj)
     payment_mode = _receivable_payment_mode(rec_obj)
+    manual_pdf_bytes = _receivable_manual_boleto_pdf_bytes(rec_obj)
+    if payment_mode != "pix" and manual_pdf_bytes and not _receivable_payment_generated(rec_obj):
+        rec_obj["boleto_status"] = "Gerado"
+        if not str(rec_obj.get("boleto_gerado_em", "")).strip():
+            rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    else:
+        ok_gen, status_gen = generate_boleto_for_receivable(rec_obj, force=False)
+        if not ok_gen:
+            return False, status_gen, {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
+
     valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
     assunto = f"[Active] {payment_label} {rec_obj.get('descricao', 'Mensalidade')} - {rec_obj.get('vencimento', '')}"
     corpo = (
@@ -2450,6 +2666,8 @@ def send_receivable_boleto_to_student(rec_obj):
         corpo += f"Linha digitavel: {rec_obj.get('boleto_linha_digitavel')}\n"
     if payment_mode != "pix" and rec_obj.get("boleto_url"):
         corpo += f"Boleto: {rec_obj.get('boleto_url')}\n"
+    if payment_mode != "pix" and manual_pdf_bytes:
+        corpo += "PDF do boleto disponível no portal do aluno para download.\n"
 
     stats = _notify_student_contacts(student, assunto, corpo, f"Financeiro {payment_label}", send_email=True, send_whatsapp=True)
 
@@ -2671,6 +2889,17 @@ def _render_receivable_payment_output(rec_obj, key_prefix=""):
         if linha:
             st.caption("Codigo de barras / linha digitavel")
             st.code(linha, language="text")
+        manual_pdf = _receivable_manual_boleto_pdf_bytes(rec_obj)
+        manual_pdf_name = str((rec_obj or {}).get("boleto_pdf_nome", "")).strip() or "boleto_manual.pdf"
+        if manual_pdf:
+            st.download_button(
+                "Baixar boleto anexado (PDF)",
+                data=manual_pdf,
+                file_name=manual_pdf_name,
+                mime=str((rec_obj or {}).get("boleto_pdf_mime", "")).strip() or "application/pdf",
+                key=f"{key_prefix}_manual_boleto_pdf",
+                use_container_width=False,
+            )
     sent_at = _receivable_payment_sent_at(rec_obj)
     if sent_at:
         st.caption(
@@ -4898,6 +5127,8 @@ def ensure_admin_user(users):
             "senha": ADMIN_PASSWORD,
             "perfil": "Admin",
             "pessoa": "Administrador",
+            "allowed_portals": ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"],
+            "permissions": {"permissions": {"manage": True}},
         })
 
     has_vendas_user = any(
@@ -4910,6 +5141,8 @@ def ensure_admin_user(users):
             "senha": VENDAS_PASSWORD,
             "perfil": "Comercial",
             "pessoa": VENDAS_PERSON_NAME,
+            "allowed_portals": ["Comercial"],
+            "permissions": {"permissions": {"manage": False}},
         })
 
     return users
@@ -4951,6 +5184,8 @@ def sync_users_from_profiles(users):
             "senha": senha_norm,
             "perfil": perfil,
             "pessoa": pessoa or login_norm,
+            "allowed_portals": [perfil],
+            "permissions": {"permissions": {"manage": False}},
         }
         users.append(new_user)
         by_login[key] = new_user
@@ -4961,6 +5196,72 @@ def sync_users_from_profiles(users):
         ensure_login(prof.get("usuario"), prof.get("senha"), "Professor", prof.get("nome"))
 
     return users
+
+def _default_allowed_portals_for_profile(profile):
+    profile_txt = str(profile or "").strip()
+    if profile_txt == "Aluno":
+        return ["Aluno"]
+    if profile_txt == "Professor":
+        return ["Professor"]
+    if profile_txt == "Comercial":
+        return ["Comercial"]
+    if profile_txt == "Coordenador":
+        return ["Aluno", "Professor", "Comercial", "Coordenador"]
+    if profile_txt == "Admin":
+        return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
+    return []
+
+def _normalize_allowed_portals(raw_value, fallback_profile=""):
+    valid_options = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
+    if isinstance(raw_value, (list, tuple, set)):
+        cleaned = []
+        for item in raw_value:
+            value = str(item or "").strip()
+            if value in valid_options and value not in cleaned:
+                cleaned.append(value)
+        if cleaned:
+            return cleaned
+    return _default_allowed_portals_for_profile(fallback_profile)
+
+def _normalize_user_permissions(raw_permissions, fallback_profile=""):
+    manage_default = str(fallback_profile or "").strip() == "Admin"
+    current = raw_permissions if isinstance(raw_permissions, dict) else {}
+    permissions_root = current.get("permissions", {}) if isinstance(current.get("permissions", {}), dict) else {}
+    return {
+        "permissions": {
+            "manage": bool(permissions_root.get("manage", manage_default)),
+        }
+    }
+
+def _normalize_user_access(user_obj):
+    if not isinstance(user_obj, dict):
+        return False
+    changed = False
+    perfil_txt = str(user_obj.get("perfil", "")).strip()
+    normalized_portals = _normalize_allowed_portals(user_obj.get("allowed_portals", []), perfil_txt)
+    if normalized_portals != user_obj.get("allowed_portals", []):
+        user_obj["allowed_portals"] = normalized_portals
+        changed = True
+    normalized_permissions = _normalize_user_permissions(user_obj.get("permissions", {}), perfil_txt)
+    if normalized_permissions != user_obj.get("permissions", {}):
+        user_obj["permissions"] = normalized_permissions
+        changed = True
+    return changed
+
+def _normalize_all_user_access(users):
+    changed = False
+    for user_obj in users if isinstance(users, list) else []:
+        if _normalize_user_access(user_obj):
+            changed = True
+    return changed
+
+def _user_permissions_for_session(user_obj):
+    if not isinstance(user_obj, dict):
+        return {}
+    return _normalize_user_permissions(
+        user_obj.get("permissions", {}),
+        user_obj.get("perfil", ""),
+    )
 
 def create_or_update_login(username, password, role, person_name):
     # Verifica se usuario ja existe
@@ -5117,7 +5418,8 @@ def restore_login_from_query():
         return
 
     account_profile = str(user_obj.get("perfil", "")).strip()
-    allowed = allowed_portals(account_profile)
+    _normalize_user_access(user_obj)
+    allowed = allowed_portals(account_profile, user_obj)
     if role_txt not in allowed:
         if not allowed:
             _set_auth_query_token("")
@@ -5130,6 +5432,7 @@ def restore_login_from_query():
     st.session_state["user_name"] = display_name
     st.session_state["unit"] = unit_txt or "Matriz"
     st.session_state["account_profile"] = account_profile
+    st.session_state["permissions"] = _user_permissions_for_session(user_obj)
     st.session_state["_active_runtime_loaded"] = False
 
     refreshed_token = _build_auth_token(
@@ -5143,12 +5446,13 @@ def restore_login_from_query():
         _set_auth_query_token(refreshed_token)
 
 
-def login_user(role, name, unit, account_profile, username_login=""):
+def login_user(role, name, unit, account_profile, username_login="", user_obj=None):
     st.session_state["logged_in"] = True
     st.session_state["role"] = role
     st.session_state["user_name"] = name
     st.session_state["unit"] = unit
     st.session_state["account_profile"] = account_profile
+    st.session_state["permissions"] = _user_permissions_for_session(user_obj)
     username_txt = str(username_login or "").strip()
     if username_txt:
         token = _build_auth_token(username_txt, role, unit, account_profile, name)
@@ -5164,6 +5468,7 @@ def logout_user():
     st.session_state["user_name"] = ""
     st.session_state["unit"] = ""
     st.session_state["account_profile"] = None
+    st.session_state["permissions"] = {}
     st.session_state["_active_runtime_loaded"] = False
     st.rerun()
 
@@ -9201,6 +9506,9 @@ def add_receivable(
         "boleto_gerado_em": "",
         "boleto_enviado_em": "",
         "boleto_enviado_canais": "",
+        "boleto_pdf_nome": "",
+        "boleto_pdf_mime": "",
+        "boleto_pdf_b64": "",
         "pix_url": "",
         "pix_qr_code": "",
         "pix_qr_image_b64": "",
@@ -11088,13 +11396,12 @@ def render_aulas_central(panel_key, viewer_profile="", viewer_name=""):
             st.success("Aula atualizada com sucesso.")
             st.rerun()
 
-def allowed_portals(profile):
-    if profile == "Aluno": return ["Aluno"]
-    if profile == "Professor": return ["Professor"]
-    if profile == "Comercial": return ["Comercial"]
-    if profile == "Coordenador": return ["Aluno", "Professor", "Comercial", "Coordenador"]
-    if profile == "Admin": return ["Admin", "Coordenador", "Aluno", "Professor", "Comercial"]
-    return []
+def allowed_portals(profile, user_obj=None):
+    if isinstance(user_obj, dict):
+        allowed_custom = _normalize_allowed_portals(user_obj.get("allowed_portals", []), profile)
+        if allowed_custom:
+            return allowed_custom
+    return _default_allowed_portals_for_profile(profile)
 
 def _send_email_smtp(to_email, subject, body):
     host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "").strip()
@@ -14902,6 +15209,7 @@ if not st.session_state.get("_active_users_loaded", False):
     users_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(USERS_FILE), "")
     st.session_state["users"] = ensure_admin_user(st.session_state["users"])
     st.session_state["users"] = sync_users_from_profiles(st.session_state["users"])
+    users_access_changed = _normalize_all_user_access(st.session_state["users"])
     if users_source != "db_unavailable":
         save_users(st.session_state["users"])
     st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
@@ -15050,11 +15358,12 @@ if not st.session_state.get("logged_in", False):
                 st.error("Usuario ou senha invalidos.")
             else:
                 perfil_conta = user.get("perfil", "")
-                if role not in allowed_portals(perfil_conta):
+                _normalize_user_access(user)
+                if role not in allowed_portals(perfil_conta, user):
                     st.error(f"Este usuario nao tem permissao de {role}.")
                 else:
                     display_name = user.get("pessoa") or usuario.strip()
-                    login_user(role, display_name, str(unidade).strip(), perfil_conta, usuario.strip())
+                    login_user(role, display_name, str(unidade).strip(), perfil_conta, usuario.strip(), user_obj=user)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
@@ -16507,9 +16816,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ("Acadêmico", ["Alunos", "Professores", "Turmas", "Aulas", "Biblioteca", "Certificados"]),
             ("Avaliações", ["Aprovação Notas", "Lições de Casa", "Desafios"]),
             ("Operacional", ["Financeiro", "Estoque", "Caixa de Entrada"]),
-            ("Sistema", ["Usuários", "Backup"]),
             ("Integrações", ["WhatsApp (Evolution)", "Professor Wiz"]),
         ]
+        system_items = []
+        if _is_admin_account() or _has_permission("permissions.manage"):
+            system_items = ["Usuários", "Backup", "Configurações"]
+        elif coord_profile == "Coordenador":
+            system_items = ["Backup"]
+        if system_items:
+            base_sections.append(("Sistema", system_items))
         if coord_profile in ("Admin", "Coordenador"):
             base_sections.append(("Assistente", ["ASSISTENTE WIZ"]))
         menu_coord_label = sidebar_menu_grouped("Administração", base_sections, "menu_coord")
@@ -16540,6 +16855,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "WhatsApp (Evolution)": "WhatsApp",
         "ASSISTENTE WIZ": "Assistente Wiz",
         "Backup": "Backup",
+        "Configurações": "Configuracoes",
         "Professor Wiz": "Chatbot IA",
     }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
@@ -19256,6 +19572,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         boleto_requirements = _boleto_generation_requirements(rec_obj)
                         mp_missing_fields = boleto_requirements.get("missing", []) if boleto_requirements.get("use_mercado_pago") else []
                         boleto_pdf_bytes = None
+                        manual_pdf_bytes = _receivable_manual_boleto_pdf_bytes(rec_obj)
                         if _receivable_payment_generated(rec_obj):
                             boleto_pdf_bytes = _student_boleto_pdf_bytes(rec_obj, student_obj)
                         if mp_missing_fields:
@@ -19319,14 +19636,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.rerun()
                             st.error("Não foi possível abrir esta cobrança para edição.")
                         with action5:
-                            if boleto_pdf_bytes:
+                            if boleto_pdf_bytes or manual_pdf_bytes:
                                 student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(selected_student or "aluno")).strip("_") or "aluno"
                                 code_base = re.sub(r"[^A-Za-z0-9]+", "_", code_txt) or "boleto"
                                 st.download_button(
-                                    f"Baixar {payment_label} PDF",
-                                    data=boleto_pdf_bytes,
-                                    file_name=f"{payment_label.lower()}_{student_base}_{code_base}.pdf",
-                                    mime="application/pdf",
+                                    "Baixar boleto PDF" if manual_pdf_bytes and not boleto_pdf_bytes else f"Baixar {payment_label} PDF",
+                                    data=manual_pdf_bytes or boleto_pdf_bytes,
+                                    file_name=(str(rec_obj.get("boleto_pdf_nome", "")).strip() or f"{payment_label.lower()}_{student_base}_{code_base}.pdf"),
+                                    mime=str(rec_obj.get("boleto_pdf_mime", "")).strip() or "application/pdf",
                                     key=f"student_fin_pdf_{scope_key}_{idx_item}_{code_base}",
                                     use_container_width=True,
                                 )
@@ -19462,7 +19779,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             "Recibos",
             "Cobrança e Inadimplência",
             "Relatórios",
-            "Configurações",
         ]
         if st.session_state.get("finance_workspace_menu") not in finance_sections:
             st.session_state["finance_workspace_menu"] = "Visão Geral"
@@ -19486,7 +19802,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             (ws_cols_top[3], finance_sections[3], 3),
             (ws_cols_bottom[0], finance_sections[4], 4),
             (ws_cols_bottom[1], finance_sections[5], 5),
-            (ws_cols_bottom[2], finance_sections[6], 6),
         ]
         for col_ref, option, idx_option in workspace_layout:
             selected = str(st.session_state.get("finance_workspace_menu", "")) == option
@@ -19665,9 +19980,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_main = "Contas a Pagar"
         elif finance_workspace == "Cobrança e Inadimplência":
             finance_main = "Vencimentos"
-        elif finance_workspace == "Configurações":
-            finance_main = "Contas a Receber"
-            st.session_state["finance_receber_menu"] = "Configuracao automatica de e-mail e boleto"
         elif finance_workspace == "Relatórios":
             finance_main = "__reports__"
 
@@ -19727,17 +20039,12 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Gerenciamento de Recebimentos",
                 "Lancar Material do Estoque",
                 "Baixa de Recebimentos",
-                "Configuracao automatica de e-mail e boleto",
             ]
             if st.session_state.get("finance_receber_menu") not in finance_receber_options:
                 st.session_state["finance_receber_menu"] = finance_receber_options[0]
             receber_chip = "Recebimentos"
-            receber_desc = "Lance cobranças, acompanhe carteiras em aberto, faça baixas e mantenha boleto, e-mail e WhatsApp configurados sem poluição visual."
+            receber_desc = "Lance cobranças, acompanhe carteiras em aberto, faça baixas e mantenha a carteira financeira organizada."
             receber_title = "Recebimentos"
-            if finance_workspace == "Configurações":
-                receber_chip = "Configurações"
-                receber_title = "Configurações financeiras"
-                receber_desc = "Centralize automação de boleto, e-mail e mensagens financeiras sem misturar isso com lançamentos do dia a dia."
             _finance_section_intro(
                 receber_title,
                 receber_desc,
@@ -19751,7 +20058,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Gerenciar cobranças": finance_receber_options[4],
                 "Material didático": finance_receber_options[5],
                 "Registrar pagamento": finance_receber_options[6],
-                "Automação e boletos": finance_receber_options[7],
             }
             current_receber = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             selected_receber_label = next(
@@ -19770,143 +20076,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             with st.container(border=True):
                 _student_financial_account_panel()
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
-            if finance_receber_menu == "Configuracao automatica de e-mail e boleto":
-                with st.expander("Configuracao automatica de e-mail e boleto", expanded=True):
-                    smtp_diag = _smtp_config_diagnostics()
-                    boleto_diag = _boleto_config_diagnostics()
-                    whatsapp_diag = _whatsapp_config_diagnostics()
-                    smtp_ready = smtp_diag["host_ok"] and smtp_diag["port_ok"] and smtp_diag["from_ok"]
-                    boleto_ready = boleto_diag["template_ok"] or boleto_diag["base_url_ok"] or boleto_diag["api_url_ok"]
-
-                    d1, d2, d3 = st.columns(3)
-                    with d1:
-                        st.metric("SMTP", "Configurado" if smtp_ready else "Pendente")
-                    with d2:
-                        st.metric("Boleto", "Configurado" if boleto_ready else "Pendente")
-                    with d3:
-                        st.metric("WhatsApp", "Configurado" if whatsapp_diag.get("wapi_ready") or whatsapp_diag.get("evolution_ready") else "Pendente")
-
-                    st.caption(
-                        "Se variaveis de ambiente estiverem definidas (ACTIVE_*), elas tem prioridade sobre os campos abaixo."
-                    )
-
-                    current_cfg = get_finance_settings()
-                    with st.form("finance_auto_cfg_form"):
-                        st.markdown("#### SMTP (envio de e-mail)")
-                        sm1, sm2, sm3 = st.columns(3)
-                        with sm1:
-                            cfg_smtp_host = st.text_input("Servidor SMTP", value=str(current_cfg.get("smtp_host", "")))
-                        with sm2:
-                            cfg_smtp_port = st.text_input("Porta SMTP", value=str(current_cfg.get("smtp_port", "587")))
-                        with sm3:
-                            cfg_smtp_tls = st.selectbox(
-                                "TLS",
-                                ["1", "0"],
-                                index=0 if str(current_cfg.get("smtp_tls", "1")) != "0" else 1,
-                                format_func=lambda v: "Ativo" if str(v) == "1" else "Desativado",
-                            )
-                        sm4, sm5, sm6 = st.columns(3)
-                        with sm4:
-                            cfg_smtp_user = st.text_input("Usuario SMTP", value=str(current_cfg.get("smtp_user", "")))
-                        with sm5:
-                            cfg_smtp_pass = st.text_input("Senha SMTP", value=str(current_cfg.get("smtp_pass", "")), type="password")
-                        with sm6:
-                            cfg_smtp_from = st.text_input("E-mail remetente", value=str(current_cfg.get("smtp_from", "")))
-
-                        st.markdown("#### Boleto")
-                        bl1, bl2 = st.columns(2)
-                        with bl1:
-                            cfg_boleto_provider = st.selectbox(
-                                "Provedor",
-                                ["link", "api", "mercado_pago"],
-                                index=(
-                                    ["link", "api", "mercado_pago"].index(str(current_cfg.get("boleto_provider", "link")).strip().lower())
-                                    if str(current_cfg.get("boleto_provider", "link")).strip().lower() in ["link", "api", "mercado_pago"]
-                                    else 0
-                                ),
-                            )
-                        api_url_default = str(current_cfg.get("boleto_api_url", ""))
-                        if not api_url_default and str(cfg_boleto_provider).strip().lower() == "mercado_pago":
-                            api_url_default = "https://api.mercadopago.com"
-                        with bl2:
-                            cfg_boleto_base_url = st.text_input(
-                                "Base URL do boleto (opcional)",
-                                value=str(current_cfg.get("boleto_base_url", "")),
-                                help="Se informar somente a base URL, o sistema adiciona os parametros automaticamente.",
-                            )
-                        cfg_boleto_template = st.text_input(
-                            "Template do link (opcional)",
-                            value=str(current_cfg.get("boleto_link_template", "")),
-                            help="Exemplo: https://provedor.com/boleto/{codigo}?aluno={aluno}",
-                        )
-                        bl3, bl4, bl5 = st.columns(3)
-                        with bl3:
-                            cfg_boleto_api_url = st.text_input(
-                                "API URL (opcional)",
-                                value=api_url_default,
-                            )
-                        with bl4:
-                            cfg_boleto_api_key = st.text_input(
-                                "API Key / Access Token (opcional)",
-                                value=str(current_cfg.get("boleto_api_key", "")),
-                                type="password",
-                            )
-                        with bl5:
-                            cfg_boleto_api_auth = st.text_input(
-                                "Header da API Key",
-                                value=str(current_cfg.get("boleto_api_auth_header", "Authorization")),
-                                help="Exemplo: Authorization ou apikey",
-                            )
-                        if str(cfg_boleto_provider).strip().lower() == "mercado_pago":
-                            st.info("Mercado Pago: informe o Access Token APP_USR e mantenha a API URL em https://api.mercadopago.com.")
-                        cfg_boleto_default_federal_unit = st.text_input(
-                            "UF padrao do boleto (ex.: SP, RJ)",
-                            value=str(current_cfg.get("boleto_default_federal_unit", "")),
-                            help="Usado quando o cadastro do aluno nao tiver UF preenchida.",
-                        )
-
-                        salvar_fin_cfg = st.form_submit_button("Salvar configuracoes automaticas")
-                        if salvar_fin_cfg:
-                            save_finance_settings(
-                                {
-                                    "smtp_host": cfg_smtp_host,
-                                    "smtp_port": cfg_smtp_port,
-                                    "smtp_user": cfg_smtp_user,
-                                    "smtp_pass": cfg_smtp_pass,
-                                    "smtp_tls": cfg_smtp_tls,
-                                    "smtp_from": cfg_smtp_from,
-                                    "boleto_provider": cfg_boleto_provider,
-                                    "boleto_base_url": cfg_boleto_base_url,
-                                    "boleto_link_template": cfg_boleto_template,
-                                    "boleto_api_url": cfg_boleto_api_url,
-                                    "boleto_api_key": cfg_boleto_api_key,
-                                    "boleto_api_auth_header": cfg_boleto_api_auth,
-                                    "boleto_default_federal_unit": cfg_boleto_default_federal_unit,
-                                }
-                            )
-                            st.success("Configuracoes financeiras salvas.")
-                            st.rerun()
-
-                    current_cfg = get_finance_settings()
-                    current_provider = str(current_cfg.get("boleto_provider", "link")).strip().lower()
-                    current_api_key = str(current_cfg.get("boleto_api_key", "")).strip()
-                    if _is_mercado_pago_boleto_provider(current_provider, current_api_key):
-                        st.markdown("#### Teste Mercado Pago")
-                        st.caption("Valida o Access Token e consulta os metodos de pagamento disponiveis na sua conta.")
-                        if st.button("Testar conexao Mercado Pago", key="finance_test_mp_connection"):
-                            ok_mp, status_mp, details_mp = test_mercado_pago_connection()
-                            if ok_mp:
-                                st.success(status_mp)
-                                boleto_methods = details_mp.get("boleto_methods", [])
-                                if boleto_methods:
-                                    st.caption("Metodos boleto encontrados: " + ", ".join(boleto_methods))
-                                if details_mp.get("bolbradesco_available"):
-                                    st.info("Metodo bolbradesco disponivel para emissao de boleto.")
-                                else:
-                                    st.warning("A conexao esta valida, mas o metodo bolbradesco nao apareceu na resposta da conta.")
-                            else:
-                                st.error(status_mp)
-
             if finance_receber_menu == "Boletos dos Alunos":
                 with st.container(border=True):
                     st.markdown("### Boletos dos alunos")
@@ -19974,6 +20143,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 info3.metric("Codigo", str(rec_obj.get("codigo", "")).strip() or "-")
                                 info4.metric("Status", str(rec_obj.get("status", "")).strip() or "-")
                                 pdf_bytes = None
+                                manual_pdf_bytes = _receivable_manual_boleto_pdf_bytes(rec_obj)
                                 if _receivable_payment_generated(rec_obj):
                                     pdf_bytes = _student_boleto_pdf_bytes(rec_obj, boleto_student_obj)
                                 act1, act2, act3, act4 = st.columns(4)
@@ -20007,14 +20177,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                             st.error(f"Falha no envio: {status_send}.")
                                         st.rerun()
                                 with act3:
-                                    if pdf_bytes:
+                                    if pdf_bytes or manual_pdf_bytes:
                                         student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(boleto_student_name or "aluno")).strip("_") or "aluno"
                                         code_base = re.sub(r"[^A-Za-z0-9]+", "_", str(rec_obj.get("codigo", "")).strip()) or payment_label.lower()
                                         st.download_button(
-                                            f"Baixar {payment_label} PDF",
-                                            data=pdf_bytes,
-                                            file_name=f"{payment_label.lower()}_{student_base}_{code_base}.pdf",
-                                            mime="application/pdf",
+                                            "Baixar boleto PDF" if manual_pdf_bytes and not pdf_bytes else f"Baixar {payment_label} PDF",
+                                            data=manual_pdf_bytes or pdf_bytes,
+                                            file_name=(str(rec_obj.get("boleto_pdf_nome", "")).strip() or f"{payment_label.lower()}_{student_base}_{code_base}.pdf"),
+                                            mime=str(rec_obj.get("boleto_pdf_mime", "")).strip() or "application/pdf",
                                             key=f"student_boleto_pdf_{idx_boleto}_{code_base}",
                                             use_container_width=True,
                                         )
@@ -20385,6 +20555,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     rec_obj.setdefault("boleto_gerado_em", "")
                     rec_obj.setdefault("boleto_enviado_em", "")
                     rec_obj.setdefault("boleto_enviado_canais", "")
+                    rec_obj.setdefault("boleto_pdf_nome", "")
+                    rec_obj.setdefault("boleto_pdf_mime", "")
+                    rec_obj.setdefault("boleto_pdf_b64", "")
                     rec_obj.setdefault("pix_url", "")
                     rec_obj.setdefault("pix_qr_code", "")
                     rec_obj.setdefault("pix_qr_image_b64", "")
@@ -20482,6 +20655,19 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             new_boleto_url = st.text_input("Link do boleto", value=str(rec_obj.get("boleto_url", "")))
                         with mb2:
                             new_boleto_linha = st.text_input("Linha digitavel", value=str(rec_obj.get("boleto_linha_digitavel", "")))
+                        boleto_pdf_nome_atual = str(rec_obj.get("boleto_pdf_nome", "")).strip()
+                        if boleto_pdf_nome_atual:
+                            st.caption(f"Boleto PDF anexado: {boleto_pdf_nome_atual}")
+                        boleto_pdf_upload = st.file_uploader(
+                            "Anexar boleto PDF manual",
+                            type=["pdf"],
+                            key=f"manage_boleto_pdf_upload_{idx_rec}_{rec_obj.get('codigo', '')}",
+                        )
+                        remove_boleto_pdf = st.checkbox(
+                            "Remover boleto PDF anexado",
+                            value=False,
+                            key=f"manage_boleto_pdf_remove_{idx_rec}_{rec_obj.get('codigo', '')}",
+                        )
 
                         related_preview_idx = _related_receivable_indices(recebimentos, idx_rec)
                         total_relacionados = len(set(related_preview_idx)) if related_preview_idx else 1
@@ -20510,6 +20696,21 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 new_boleto_linha_txt = _format_boleto_linha(new_boleto_linha)
                                 new_boleto_status = "Gerado" if (new_boleto_url_txt or new_boleto_linha_txt) else "Nao Gerado"
                                 new_boleto_em = datetime.datetime.now().strftime("%d/%m/%Y %H:%M") if new_boleto_status == "Gerado" else ""
+                                current_pdf_name = str(rec_obj.get("boleto_pdf_nome", "")).strip()
+                                current_pdf_mime = str(rec_obj.get("boleto_pdf_mime", "")).strip() or "application/pdf"
+                                current_pdf_b64 = str(rec_obj.get("boleto_pdf_b64", "")).strip()
+                                if bool(remove_boleto_pdf):
+                                    new_boleto_pdf_nome = ""
+                                    new_boleto_pdf_mime = ""
+                                    new_boleto_pdf_b64 = ""
+                                elif boleto_pdf_upload is not None:
+                                    new_boleto_pdf_nome = str(getattr(boleto_pdf_upload, "name", "boleto_manual.pdf")).strip() or "boleto_manual.pdf"
+                                    new_boleto_pdf_mime = str(getattr(boleto_pdf_upload, "type", "application/pdf") or "application/pdf").strip() or "application/pdf"
+                                    new_boleto_pdf_b64 = base64.b64encode(boleto_pdf_upload.getvalue()).decode("utf-8")
+                                else:
+                                    new_boleto_pdf_nome = current_pdf_name
+                                    new_boleto_pdf_mime = current_pdf_mime
+                                    new_boleto_pdf_b64 = current_pdf_b64
 
                                 if apply_all_rec:
                                     related_idx = _related_receivable_indices(recebimentos, idx_rec)
@@ -20564,6 +20765,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                 "boleto_gerado_em": new_boleto_em,
                                                 "boleto_enviado_em": "",
                                                 "boleto_enviado_canais": "",
+                                                "boleto_pdf_nome": new_boleto_pdf_nome,
+                                                "boleto_pdf_mime": new_boleto_pdf_mime,
+                                                "boleto_pdf_b64": new_boleto_pdf_b64,
                                             }
                                         )
                                 else:
@@ -20590,6 +20794,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         rec_obj["boleto_gerado_em"] = ""
                                     rec_obj["boleto_enviado_em"] = ""
                                     rec_obj["boleto_enviado_canais"] = ""
+                                    rec_obj["boleto_pdf_nome"] = new_boleto_pdf_nome
+                                    rec_obj["boleto_pdf_mime"] = new_boleto_pdf_mime
+                                    rec_obj["boleto_pdf_b64"] = new_boleto_pdf_b64
                                 save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                                 envio_msg = ""
                                 if salvar_enviar_rec:
@@ -22159,6 +22366,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         _render_grade_management_actions(managed_rows, "coord_manage_grade")
 
     elif menu_coord == "Usuarios":
+        if not (_is_admin_account() or _has_permission("permissions.manage")):
+            st.error("Acesso restrito ao Admin.")
+            st.stop()
         st.markdown('<div class="main-header">Controle de Usuários (Login)</div>', unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar / Excluir"])
         with tab1:
@@ -22194,6 +22404,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "pessoa": u_pessoa.strip(),
                             "email": u_email.strip().lower(),
                             "celular": u_cel.strip(),
+                            "allowed_portals": _default_allowed_portals_for_profile(u_role),
+                            "permissions": _normalize_user_permissions({}, u_role),
                         }
                     )
                     save_users(st.session_state["users"])
@@ -22236,6 +22448,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 user_obj["pessoa"] = new_person.strip()
                                 user_obj["email"] = new_email.strip().lower()
                                 user_obj["celular"] = new_cel.strip()
+                                _normalize_user_access(user_obj)
                                 save_users(st.session_state["users"])
                                 st.success("Usuário atualizado!")
                                 st.rerun()
@@ -22247,6 +22460,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     save_users(st.session_state["users"])
                                     st.success("Usuário excluído.")
                                     st.rerun()
+
+    elif menu_coord == "Configuracoes":
+        _render_admin_settings_panel()
 
     elif menu_coord == "Licoes de Casa":
         run_weekly_homework_panel(
