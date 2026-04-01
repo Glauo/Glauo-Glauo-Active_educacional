@@ -3043,6 +3043,44 @@ def _student_boleto_pdf_bytes(rec_obj, student=None):
         return pdf_output
     return str(pdf_output).encode("latin-1", "ignore")
 
+def _receivable_preferred_pdf_payload(rec_obj, student=None):
+    if not isinstance(rec_obj, dict):
+        return None, "", ""
+    manual_pdf = _receivable_manual_boleto_pdf_bytes(rec_obj)
+    if manual_pdf:
+        return (
+            manual_pdf,
+            str((rec_obj or {}).get("boleto_pdf_nome", "")).strip() or "boleto_manual.pdf",
+            str((rec_obj or {}).get("boleto_pdf_mime", "")).strip() or "application/pdf",
+        )
+    if _receivable_payment_generated(rec_obj):
+        generated_pdf = _student_boleto_pdf_bytes(rec_obj, student)
+        if generated_pdf:
+            student_name = str((rec_obj or {}).get("aluno", "")).strip() or str((student or {}).get("nome", "")).strip() or "aluno"
+            student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(student_name)).strip("_") or "aluno"
+            code_base = re.sub(r"[^A-Za-z0-9]+", "_", str((rec_obj or {}).get("codigo", "")).strip()) or "boleto"
+            payment_label = normalize_text(_receivable_payment_label(rec_obj) or "boleto") or "boleto"
+            return generated_pdf, f"{payment_label}_{student_base}_{code_base}.pdf", "application/pdf"
+    return None, "", ""
+
+def _receivable_bulk_pdf_zip_bytes(entries):
+    buffer = io.BytesIO()
+    written = 0
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for idx_entry, entry in enumerate(entries or []):
+            if not isinstance(entry, (tuple, list)) or len(entry) < 2:
+                continue
+            rec_obj, student_obj = entry[0], entry[1]
+            pdf_bytes, file_name, _ = _receivable_preferred_pdf_payload(rec_obj, student_obj)
+            if not pdf_bytes:
+                continue
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(file_name or f"boleto_{idx_entry + 1}.pdf")).strip("._") or f"boleto_{idx_entry + 1}.pdf"
+            archive.writestr(safe_name, pdf_bytes)
+            written += 1
+    if written <= 0:
+        return None
+    return buffer.getvalue()
+
 def _render_receivable_payment_output(rec_obj, key_prefix=""):
     payment_mode = _receivable_payment_mode(rec_obj)
     payment_label = _receivable_payment_label(rec_obj)
@@ -20667,126 +20705,264 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         }
                     )
                     if not boleto_student_names:
-                        st.info("Nenhum aluno com cobranca disponível para boleto.")
+                        st.info("Nenhum aluno com cobrança disponível para boleto.")
                     else:
-                        if st.session_state.get("finance_boleto_student_name") not in boleto_student_names:
-                            st.session_state["finance_boleto_student_name"] = boleto_student_names[0]
-                        bls1, bls2 = st.columns([1.4, 1])
-                        with bls1:
-                            boleto_student_name = st.selectbox(
-                                "Aluno para boleto",
-                                boleto_student_names,
-                                key="finance_boleto_student_name",
-                            )
-                        with bls2:
-                            boleto_filter = st.selectbox(
-                                "Filtro",
-                                ["Em aberto", "Todos", "Com cobranca", "Sem cobranca"],
-                                key="finance_boleto_filter",
-                            )
-                        boleto_student_obj = _student_profile_by_name(boleto_student_name)
-                        boleto_items = [
-                            r for r in st.session_state.get("receivables", [])
-                            if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
-                            and str(r.get("aluno", "")).strip() == boleto_student_name
-                        ]
-                        if boleto_filter == "Em aberto":
-                            boleto_items = [r for r in boleto_items if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
-                        elif boleto_filter == "Com cobranca":
-                            boleto_items = [r for r in boleto_items if _receivable_payment_generated(r)]
-                        elif boleto_filter == "Sem cobranca":
-                            boleto_items = [r for r in boleto_items if not _receivable_payment_generated(r)]
-                        boleto_items = sorted(
-                            boleto_items,
-                            key=lambda item: parse_date(item.get("vencimento", "")) or datetime.date.max,
+                        search_query = st.text_input(
+                            "Buscar aluno",
+                            value=str(st.session_state.get("finance_boleto_search", "")).strip(),
+                            key="finance_boleto_search",
+                            placeholder="Digite o nome do aluno",
                         )
-                        if not boleto_items:
-                            st.info("Nenhuma cobranca encontrada neste filtro.")
-                        for idx_boleto, rec_obj in enumerate(boleto_items):
-                            payment_label = _receivable_payment_label(rec_obj)
-                            valor_txt = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00"
-                            venc_txt = str(rec_obj.get("vencimento", "")).strip() or "-"
-                            desc_txt = str(rec_obj.get("descricao", "")).strip() or "Cobranca"
-                            status_boleto = _receivable_payment_status(rec_obj)
-                            with st.expander(
-                                f"{desc_txt} | Venc. {venc_txt} | R$ {valor_txt} | {payment_label}: {status_boleto}",
-                                expanded=False,
-                            ):
-                                req = _boleto_generation_requirements(rec_obj)
-                                missing_fields = req.get("missing", []) if req.get("use_mercado_pago") else []
-                                if missing_fields:
-                                    st.warning(f"Preencha antes de gerar o {payment_label.lower()}: " + ", ".join(missing_fields) + ".")
-                                info1, info2, info3, info4 = st.columns(4)
-                                info1.metric("Categoria", str(rec_obj.get("categoria", "")).strip() or "-")
-                                info2.metric("Parcela", str(rec_obj.get("parcela", "")).strip() or "-")
-                                info3.metric("Codigo", str(rec_obj.get("codigo", "")).strip() or "-")
-                                info4.metric("Status", str(rec_obj.get("status", "")).strip() or "-")
-                                pdf_bytes = None
-                                manual_pdf_bytes = _receivable_manual_boleto_pdf_bytes(rec_obj)
-                                if _receivable_payment_generated(rec_obj):
-                                    pdf_bytes = _student_boleto_pdf_bytes(rec_obj, boleto_student_obj)
-                                act1, act2, act3, act4 = st.columns(4)
-                                with act1:
-                                    if st.button(
-                                        f"Gerar {payment_label}",
-                                        key=f"student_boleto_generate_{idx_boleto}_{rec_obj.get('codigo', '')}",
-                                        use_container_width=True,
-                                        disabled=bool(missing_fields),
-                                    ):
-                                        ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
-                                        if ok_bol:
-                                            st.success(f"{payment_label} gerado: {status_bol}.")
-                                        else:
-                                            st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
-                                        st.rerun()
-                                with act2:
-                                    if st.button(
-                                        f"Gerar e enviar {payment_label}",
-                                        key=f"student_boleto_send_{idx_boleto}_{rec_obj.get('codigo', '')}",
-                                        use_container_width=True,
-                                        disabled=bool(missing_fields),
-                                    ):
-                                        ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
-                                        if ok_send:
-                                            st.success(
-                                                f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
-                                                f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                        filtered_student_names = [
+                            name for name in boleto_student_names
+                            if not str(search_query).strip() or normalize_text(search_query) in normalize_text(name)
+                        ]
+                        if not filtered_student_names:
+                            st.warning("Nenhum aluno encontrado nesta busca.")
+                        else:
+                            if st.session_state.get("finance_boleto_student_name") not in filtered_student_names:
+                                st.session_state["finance_boleto_student_name"] = filtered_student_names[0]
+                            bls1, bls2 = st.columns([1.6, 1])
+                            with bls1:
+                                boleto_student_name = st.selectbox(
+                                    "Aluno",
+                                    filtered_student_names,
+                                    key="finance_boleto_student_name",
+                                )
+                            with bls2:
+                                boleto_filter = st.selectbox(
+                                    "Filtro",
+                                    ["Em aberto", "Com cobrança", "Sem cobrança", "Histórico", "Cancelados"],
+                                    key="finance_boleto_filter",
+                                )
+                            boleto_student_obj = _student_profile_by_name(boleto_student_name)
+                            boleto_items = [
+                                r for r in st.session_state.get("receivables", [])
+                                if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+                                and str(r.get("aluno", "")).strip() == boleto_student_name
+                            ]
+                            if boleto_filter == "Em aberto":
+                                boleto_items = [r for r in boleto_items if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
+                            elif boleto_filter == "Com cobrança":
+                                boleto_items = [r for r in boleto_items if _receivable_payment_generated(r)]
+                            elif boleto_filter == "Sem cobrança":
+                                boleto_items = [r for r in boleto_items if not _receivable_payment_generated(r)]
+                            elif boleto_filter == "Cancelados":
+                                boleto_items = [r for r in boleto_items if str(r.get("status", "")).strip().lower() == "cancelado"]
+                            boleto_items = sorted(
+                                boleto_items,
+                                key=lambda item: (parse_date(item.get("vencimento", "")) or datetime.date.max, str(item.get("codigo", "")).strip()),
+                            )
+                            open_count = len([r for r in boleto_items if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}])
+                            generated_count = len([r for r in boleto_items if _receivable_payment_generated(r)])
+                            sent_count = len([
+                                r for r in boleto_items
+                                if str(_receivable_payment_sent_at(r)).strip()
+                            ])
+                            bm1, bm2, bm3 = st.columns(3)
+                            with bm1:
+                                _finance_metric_card("Em aberto", open_count, "Cobranças ativas do aluno", tone="blue")
+                            with bm2:
+                                _finance_metric_card("Gerados", generated_count, "Boletos/Pix já emitidos", tone="green")
+                            with bm3:
+                                _finance_metric_card("Enviados", sent_count, "Cobranças já disparadas", tone="orange")
+
+                            if not boleto_items:
+                                st.info("Nenhuma cobrança encontrada neste filtro.")
+                            else:
+                                st.caption("Selecione as cobranças e use as ações rápidas. A estrutura desta tela será reutilizada no restante do financeiro.")
+                                header_cols = st.columns([0.45, 1.0, 2.25, 1.7, 0.8, 1.0, 1.1, 1.5, 2.35])
+                                header_cols[0].markdown("**Sel.**")
+                                header_cols[1].markdown("**Nº Boleto**")
+                                header_cols[2].markdown("**Sacado**")
+                                header_cols[3].markdown("**ID Referência**")
+                                header_cols[4].markdown("**Valor**")
+                                header_cols[5].markdown("**Vencimento**")
+                                header_cols[6].markdown("**Categoria**")
+                                header_cols[7].markdown("**Situação**")
+                                header_cols[8].markdown("**Ações**")
+                                selected_entries = []
+                                selected_payload_entries = []
+                                for idx_boleto, rec_obj in enumerate(boleto_items):
+                                    code_txt = str(rec_obj.get("codigo", "")).strip() or f"REC-{idx_boleto + 1}"
+                                    payment_label = _receivable_payment_label(rec_obj)
+                                    status_boleto = _receivable_payment_status(rec_obj)
+                                    req = _boleto_generation_requirements(rec_obj)
+                                    missing_fields = req.get("missing", []) if req.get("use_mercado_pago") else []
+                                    status_color = "#2563eb" if _receivable_payment_generated(rec_obj) else "#94a3b8"
+                                    if str(rec_obj.get("status", "")).strip().lower() == "cancelado":
+                                        status_color = "#f59e0b"
+                                    row_cols = st.columns([0.45, 1.0, 2.25, 1.7, 0.8, 1.0, 1.1, 1.5, 2.35])
+                                    row_key = f"finance_boleto_select_{normalize_text(boleto_student_name)}_{code_txt}_{idx_boleto}"
+                                    selected_row = row_cols[0].checkbox(
+                                        "",
+                                        key=row_key,
+                                        value=bool(st.session_state.get(row_key, False)),
+                                    )
+                                    display_num = str(rec_obj.get("boleto_payment_id", "")).strip() or code_txt
+                                    row_cols[1].write(display_num)
+                                    row_cols[2].write(boleto_student_name)
+                                    row_cols[3].write(code_txt)
+                                    row_cols[4].write(str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00")
+                                    row_cols[5].write(str(rec_obj.get("vencimento", "")).strip() or "-")
+                                    row_cols[6].write(str(rec_obj.get("categoria", "")).strip() or "-")
+                                    row_cols[7].markdown(
+                                        f"<span style='display:inline-flex;align-items:center;gap:6px;'><span style='width:10px;height:10px;border-radius:999px;background:{status_color};display:inline-block;'></span>{status_boleto}</span>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    act_cols = row_cols[8].columns([0.9, 0.9, 0.9, 0.9])
+                                    pdf_bytes, file_name, mime_type = _receivable_preferred_pdf_payload(rec_obj, boleto_student_obj)
+                                    with act_cols[0]:
+                                        if pdf_bytes:
+                                            st.download_button(
+                                                "🖨️",
+                                                data=pdf_bytes,
+                                                file_name=file_name,
+                                                mime=mime_type or "application/pdf",
+                                                key=f"finance_boleto_print_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
                                             )
                                         else:
-                                            st.error(f"Falha no envio: {status_send}.")
+                                            st.button(
+                                                "🖨️",
+                                                key=f"finance_boleto_print_disabled_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=True,
+                                            )
+                                    with act_cols[1]:
+                                        if st.button(
+                                            "✉️",
+                                            key=f"finance_boleto_send_{idx_boleto}_{code_txt}",
+                                            use_container_width=True,
+                                            disabled=bool(missing_fields),
+                                        ):
+                                            ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                                            if ok_send:
+                                                st.success(
+                                                    f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                                    f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                                                )
+                                            else:
+                                                st.error(f"Falha no envio: {status_send}.")
+                                            st.rerun()
+                                    with act_cols[2]:
+                                        if st.button(
+                                            "🔄",
+                                            key=f"finance_boleto_refresh_{idx_boleto}_{code_txt}",
+                                            use_container_width=True,
+                                            disabled=bool(missing_fields),
+                                        ):
+                                            ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
+                                            if ok_bol:
+                                                st.success(f"{payment_label} atualizado: {status_bol}.")
+                                            else:
+                                                st.error(f"Falha ao atualizar {payment_label.lower()}: {status_bol}.")
+                                            st.rerun()
+                                    with act_cols[3]:
+                                        if st.button(
+                                            "✖",
+                                            key=f"finance_boleto_cancel_{idx_boleto}_{code_txt}",
+                                            use_container_width=True,
+                                            disabled=str(rec_obj.get("status", "")).strip().lower() == "cancelado",
+                                        ):
+                                            rec_obj["status"] = "Cancelado"
+                                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                            st.success("Cobrança cancelada.")
+                                            st.rerun()
+                                    if missing_fields:
+                                        st.caption(f"Pendente para geração: {', '.join(missing_fields)}.")
+                                    if selected_row:
+                                        selected_entries.append(rec_obj)
+                                        selected_payload_entries.append((rec_obj, boleto_student_obj))
+                                    with st.expander(f"Detalhes da cobrança {code_txt}", expanded=False):
+                                        payment_url_txt = _receivable_payment_url(rec_obj)
+                                        if payment_url_txt:
+                                            st.link_button(f"Abrir {payment_label.lower()}", payment_url_txt, use_container_width=False)
+                                        _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
+                                        _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
+                                        if st.button(
+                                            "Editar cobrança",
+                                            key=f"student_boleto_edit_{idx_boleto}_{code_txt}",
+                                            use_container_width=True,
+                                        ):
+                                            selected_idx = next(
+                                                (
+                                                    idx_ref for idx_ref, obj_ref in enumerate(st.session_state.get("receivables", []))
+                                                    if obj_ref is rec_obj
+                                                ),
+                                                None,
+                                            )
+                                            if selected_idx is not None:
+                                                st.session_state["finance_receber_menu"] = "Gerenciamento de Recebimentos"
+                                                st.session_state["manage_rec_idx"] = selected_idx
+                                                st.rerun()
+                                            st.error("Não foi possível abrir esta cobrança para edição.")
+
+                                bulk_zip = _receivable_bulk_pdf_zip_bytes(selected_payload_entries)
+                                bulk1, bulk2, bulk3, bulk4, bulk5, bulk6, bulk7 = st.columns([1.25, 1.05, 1.0, 1.0, 1.0, 1.0, 1.0])
+                                with bulk1:
+                                    if st.button("Boletos Cancelados", key="finance_boleto_show_cancelados", use_container_width=True):
+                                        st.session_state["finance_boleto_filter"] = "Cancelados"
                                         st.rerun()
-                                with act3:
-                                    if pdf_bytes or manual_pdf_bytes:
-                                        student_base = re.sub(r"[^a-z0-9]+", "_", normalize_text(boleto_student_name or "aluno")).strip("_") or "aluno"
-                                        code_base = re.sub(r"[^A-Za-z0-9]+", "_", str(rec_obj.get("codigo", "")).strip()) or payment_label.lower()
+                                with bulk2:
+                                    if st.button("Histórico", key="finance_boleto_show_history", use_container_width=True):
+                                        st.session_state["finance_boleto_filter"] = "Histórico"
+                                        st.rerun()
+                                with bulk3:
+                                    if bulk_zip:
                                         st.download_button(
-                                            "Baixar boleto PDF" if manual_pdf_bytes and not pdf_bytes else f"Baixar {payment_label} PDF",
-                                            data=manual_pdf_bytes or pdf_bytes,
-                                            file_name=(str(rec_obj.get("boleto_pdf_nome", "")).strip() or f"{payment_label.lower()}_{student_base}_{code_base}.pdf"),
-                                            mime=str(rec_obj.get("boleto_pdf_mime", "")).strip() or "application/pdf",
-                                            key=f"student_boleto_pdf_{idx_boleto}_{code_base}",
+                                            "Imprimir",
+                                            data=bulk_zip,
+                                            file_name=f"boletos_{re.sub(r'[^a-z0-9]+', '_', normalize_text(boleto_student_name)).strip('_') or 'aluno'}.zip",
+                                            mime="application/zip",
+                                            key="finance_boleto_bulk_print",
                                             use_container_width=True,
                                         )
                                     else:
-                                        st.button(
-                                            f"Baixar {payment_label} PDF",
-                                            key=f"student_boleto_pdf_disabled_{idx_boleto}_{rec_obj.get('codigo', '')}",
-                                            use_container_width=True,
-                                            disabled=True,
-                                        )
-                                with act4:
-                                    boleto_url_txt = _receivable_payment_url(rec_obj)
-                                    if boleto_url_txt:
-                                        st.link_button(f"Abrir {payment_label.lower()}", boleto_url_txt, use_container_width=True)
-                                    else:
-                                        st.button(
-                                            f"Abrir {payment_label.lower()}",
-                                            key=f"student_boleto_open_disabled_{idx_boleto}_{rec_obj.get('codigo', '')}",
-                                            use_container_width=True,
-                                            disabled=True,
-                                        )
-                                _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{rec_obj.get('codigo', '')}")
-                                _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{rec_obj.get('codigo', '')}")
+                                        st.button("Imprimir", key="finance_boleto_bulk_print_disabled", use_container_width=True, disabled=True)
+                                with bulk4:
+                                    if st.button("Enviar", key="finance_boleto_bulk_send", use_container_width=True, disabled=not bool(selected_entries)):
+                                        sent_ok = 0
+                                        sent_fail = 0
+                                        for rec_obj in selected_entries:
+                                            ok_send, _, _ = send_receivable_boleto_to_student(rec_obj)
+                                            if ok_send:
+                                                sent_ok += 1
+                                            else:
+                                                sent_fail += 1
+                                        st.success(f"Envio concluído. Sucesso: {sent_ok} | Falhas: {sent_fail}.")
+                                        st.rerun()
+                                with bulk5:
+                                    if st.button("Atualizar", key="finance_boleto_bulk_refresh", use_container_width=True, disabled=not bool(selected_entries)):
+                                        updated_ok = 0
+                                        updated_fail = 0
+                                        for rec_obj in selected_entries:
+                                            ok_bol, _ = generate_boleto_for_receivable(rec_obj, force=True)
+                                            if ok_bol:
+                                                updated_ok += 1
+                                            else:
+                                                updated_fail += 1
+                                        st.success(f"Atualização concluída. Sucesso: {updated_ok} | Falhas: {updated_fail}.")
+                                        st.rerun()
+                                with bulk6:
+                                    if st.button("Gerar", key="finance_boleto_bulk_generate", use_container_width=True, disabled=not bool(selected_entries)):
+                                        generated_ok = 0
+                                        generated_fail = 0
+                                        for rec_obj in selected_entries:
+                                            ok_bol, _ = generate_boleto_for_receivable(rec_obj, force=False)
+                                            if ok_bol:
+                                                generated_ok += 1
+                                            else:
+                                                generated_fail += 1
+                                        st.success(f"Geração concluída. Sucesso: {generated_ok} | Falhas: {generated_fail}.")
+                                        st.rerun()
+                                with bulk7:
+                                    if st.button("Cancelar", key="finance_boleto_bulk_cancel", use_container_width=True, disabled=not bool(selected_entries)):
+                                        for rec_obj in selected_entries:
+                                            rec_obj["status"] = "Cancelado"
+                                        save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                        st.success(f"{len(selected_entries)} cobrança(s) cancelada(s).")
+                                        st.rerun()
 
             if finance_receber_menu == "Lancar Recebimento":
                 with st.form("add_rec"):
