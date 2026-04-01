@@ -79,6 +79,8 @@ if "account_profile" not in st.session_state:
     st.session_state["account_profile"] = None
 if "permissions" not in st.session_state:
     st.session_state["permissions"] = {}
+if "group_permissions" not in st.session_state:
+    st.session_state["group_permissions"] = {}
 if "email_log" not in st.session_state:
     st.session_state["email_log"] = []
 if "challenges" not in st.session_state:
@@ -196,6 +198,7 @@ SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
+GROUP_PERMISSIONS_FILE = DATA_DIR / "group_permissions.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
 BACKUP_META_FILE = DATA_DIR / "backup_meta.json"
 ACTIVE_TIMEZONE_NAME = str(os.getenv("ACTIVE_TIMEZONE", "America/Sao_Paulo")).strip() or "America/Sao_Paulo"
@@ -1133,6 +1136,86 @@ DEFAULT_FINANCE_SETTINGS = {
     "boleto_default_federal_unit": "",
 }
 
+DEFAULT_GROUP_PERMISSIONS = {
+    "Aluno": [
+        "Painel",
+        "Agenda",
+        "Minhas Aulas",
+        "Boletim e Frequencia",
+        "Atividades",
+        "Lições de Casa",
+        "Desafios",
+        "Aulas Gravadas",
+        "Materiais de Estudo",
+        "Mensagens",
+        "Professor Wiz",
+        "Financeiro",
+    ],
+    "Professor": [
+        "Minhas Turmas",
+        "Agenda",
+        "Aulas",
+        "Atividades",
+        "Lições de Casa",
+        "Lançar Notas",
+        "Biblioteca",
+        "Mensagens",
+        "Professor Wiz",
+    ],
+    "Comercial": [
+        "Leads",
+        "Agenda Comercial",
+        "Financeiro Matricula",
+        "Alunos Matriculados",
+        "WhatsApp Leads",
+        "Professor Wiz",
+    ],
+    "Coordenador": [
+        "Dashboard",
+        "Agenda",
+        "Links Ao Vivo",
+        "Alunos",
+        "Professores",
+        "Turmas",
+        "Aulas",
+        "Biblioteca",
+        "Certificados",
+        "Aprovação Notas",
+        "Lições de Casa",
+        "Desafios",
+        "Financeiro",
+        "Estoque",
+        "Caixa de Entrada",
+        "Backup",
+        "WhatsApp (Evolution)",
+        "Professor Wiz",
+        "ASSISTENTE WIZ",
+    ],
+    "Admin": [
+        "Dashboard",
+        "Agenda",
+        "Links Ao Vivo",
+        "Alunos",
+        "Professores",
+        "Turmas",
+        "Aulas",
+        "Biblioteca",
+        "Certificados",
+        "Aprovação Notas",
+        "Lições de Casa",
+        "Desafios",
+        "Financeiro",
+        "Estoque",
+        "Caixa de Entrada",
+        "Usuários",
+        "Backup",
+        "Configurações",
+        "WhatsApp (Evolution)",
+        "Professor Wiz",
+        "ASSISTENTE WIZ",
+    ],
+}
+
 def _load_json_dict(path, default_obj=None):
     default_obj = dict(default_obj or {})
     with DATA_IO_LOCK:
@@ -1209,6 +1292,51 @@ def save_finance_settings(settings):
     st.session_state["finance_settings"] = merged
     _save_json_dict(FINANCE_SETTINGS_FILE, merged)
     return merged
+
+def get_group_permissions():
+    raw = st.session_state.get("group_permissions") or {}
+    merged = {}
+    for profile, default_items in DEFAULT_GROUP_PERMISSIONS.items():
+        current_items = raw.get(profile, default_items) if isinstance(raw, dict) else default_items
+        clean = []
+        valid = list(default_items)
+        for item in current_items if isinstance(current_items, list) else []:
+            item_txt = str(item or "").strip()
+            if item_txt in valid and item_txt not in clean:
+                clean.append(item_txt)
+        merged[profile] = clean or list(default_items)
+    return merged
+
+def save_group_permissions(settings):
+    merged = {}
+    incoming = settings if isinstance(settings, dict) else {}
+    for profile, default_items in DEFAULT_GROUP_PERMISSIONS.items():
+        valid = list(default_items)
+        clean = []
+        current_items = incoming.get(profile, default_items)
+        for item in current_items if isinstance(current_items, list) else []:
+            item_txt = str(item or "").strip()
+            if item_txt in valid and item_txt not in clean:
+                clean.append(item_txt)
+        merged[profile] = clean or list(default_items)
+    st.session_state["group_permissions"] = merged
+    _save_json_dict(GROUP_PERMISSIONS_FILE, merged)
+    return merged
+
+def _allowed_group_features(profile):
+    current = get_group_permissions()
+    return list(current.get(str(profile or "").strip(), DEFAULT_GROUP_PERMISSIONS.get(str(profile or "").strip(), [])))
+
+def _filter_sidebar_sections_for_profile(profile, sections):
+    allowed = set(_allowed_group_features(profile))
+    if not allowed:
+        return []
+    filtered = []
+    for section_label, items in sections or []:
+        visible_items = [str(item).strip() for item in (items or []) if str(item).strip() in allowed]
+        if visible_items:
+            filtered.append((section_label, visible_items))
+    return filtered
 
 def _finance_config_value(env_key, settings_key, default=""):
     env_val = _get_config_value(env_key, "")
@@ -2284,43 +2412,29 @@ def _render_admin_settings_panel():
     tab_access, tab_fin, tab_auto = st.tabs(["Autorizações", "Financeiro", "Automações"])
 
     with tab_access:
-        st.markdown("### Acessos por usuário")
-        st.caption("O Admin define quais portais cada usuário pode abrir no login.")
-        users_all = st.session_state.get("users", [])
-        if not users_all:
-            st.info("Nenhum usuário cadastrado.")
-        else:
-            user_labels = [
-                f"{str(u.get('usuario', '')).strip()} | {str(u.get('perfil', '')).strip()} | {str(u.get('pessoa', '')).strip()}"
-                for u in users_all
-            ]
-            selected_label = st.selectbox("Usuário", user_labels, key="admin_settings_user_access")
-            user_obj = users_all[user_labels.index(selected_label)]
-            _normalize_user_access(user_obj)
-            portal_opts = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
-            current_allowed = _normalize_allowed_portals(user_obj.get("allowed_portals", []), user_obj.get("perfil", ""))
-            can_manage = bool(_normalize_user_permissions(user_obj.get("permissions", {}), user_obj.get("perfil", "")).get("permissions", {}).get("manage", False))
-            with st.form("admin_user_access_form"):
-                st.text_input("Perfil principal", value=str(user_obj.get("perfil", "")).strip(), disabled=True)
-                new_allowed = st.multiselect(
-                    "Portais liberados no login",
-                    portal_opts,
-                    default=current_allowed,
-                    key="admin_user_allowed_portals",
-                )
-                new_manage = st.checkbox(
-                    "Permitir gerenciar usuários e autorizações",
-                    value=can_manage,
-                    key="admin_user_manage_permission",
-                )
-                if st.form_submit_button("Salvar autorizações", type="primary"):
-                    user_obj["allowed_portals"] = _normalize_allowed_portals(new_allowed, user_obj.get("perfil", ""))
-                    user_obj["permissions"] = {"permissions": {"manage": bool(new_manage)}}
-                    if str(user_obj.get("perfil", "")).strip() == "Admin" and "Admin" not in user_obj["allowed_portals"]:
-                        user_obj["allowed_portals"].insert(0, "Admin")
-                    save_users(st.session_state["users"])
-                    st.success("Autorizações atualizadas.")
-                    st.rerun()
+        st.markdown("### Autorizações por grupo")
+        st.caption("O Admin define quais funcionalidades cada grupo de usuário pode acessar.")
+        profile_options = ["Aluno", "Professor", "Comercial", "Coordenador", "Admin"]
+        selected_profile = st.selectbox("Grupo", profile_options, key="admin_group_permission_profile")
+        current_group_cfg = get_group_permissions()
+        feature_options = list(DEFAULT_GROUP_PERMISSIONS.get(selected_profile, []))
+        current_features = list(current_group_cfg.get(selected_profile, feature_options))
+        with st.form("admin_group_permission_form"):
+            st.multiselect(
+                "Funcionalidades liberadas",
+                feature_options,
+                default=current_features,
+                key="admin_group_permission_features",
+            )
+            if st.form_submit_button("Salvar autorizações do grupo", type="primary"):
+                selected_features = st.session_state.get("admin_group_permission_features", [])
+                current_group_cfg[selected_profile] = [
+                    item for item in feature_options
+                    if item in [str(v).strip() for v in selected_features]
+                ] or feature_options
+                save_group_permissions(current_group_cfg)
+                st.success("Autorizações do grupo atualizadas.")
+                st.rerun()
 
     with tab_fin:
         st.markdown("### Configurações do financeiro")
@@ -14335,15 +14449,15 @@ def run_commercial_panel():
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_sales_label = sidebar_menu_grouped(
+        sales_sections = _filter_sidebar_sections_for_profile(
             "Comercial",
             [
                 ("Pipeline", ["Leads", "Agenda Comercial"]),
                 ("Matrículas", ["Financeiro Matricula", "Alunos Matriculados"]),
                 ("Comunicação", ["WhatsApp Leads", "Professor Wiz"]),
             ],
-            "menu_sales",
         )
+        menu_sales_label = sidebar_menu_grouped("Comercial", sales_sections, "menu_sales") if sales_sections else ""
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"):
@@ -14359,6 +14473,9 @@ def run_commercial_panel():
         "Professor Wiz": "Professor Wiz",
     }
     menu_sales = menu_sales_map.get(menu_sales_label, "Leads")
+    if not menu_sales_label:
+        st.error("Este grupo está sem funcionalidades liberadas. Solicite liberação ao Admin.")
+        st.stop()
 
     vendedor_atual = str(st.session_state.get("user_name", "")).strip() or "Comercial"
 
@@ -15544,6 +15661,7 @@ if not st.session_state.get("_active_users_loaded", False):
         save_users(st.session_state["users"])
     st.session_state["wiz_settings"] = _load_json_dict(WIZ_SETTINGS_FILE, DEFAULT_WIZ_SETTINGS)
     st.session_state["finance_settings"] = _load_json_dict(FINANCE_SETTINGS_FILE, DEFAULT_FINANCE_SETTINGS)
+    st.session_state["group_permissions"] = _load_json_dict(GROUP_PERMISSIONS_FILE, DEFAULT_GROUP_PERMISSIONS)
     st.session_state["_active_users_loaded"] = True
 
 remote_handled, remote_msg = process_wiz_remote_control_from_query()
@@ -15757,8 +15875,8 @@ elif st.session_state["role"] == "Aluno":
         nivel_aluno_sidebar = student_book_level(aluno_sidebar_obj) or "Sem nivel definido"
         st.markdown(f"<div class='sidebar-level-chip'>Nível: {nivel_aluno_sidebar}</div>", unsafe_allow_html=True)
         st.markdown("---")
-        menu_aluno_label = sidebar_menu_grouped(
-            "Navegacao",
+        aluno_sections = _filter_sidebar_sections_for_profile(
+            "Aluno",
             [
                 ("Visão geral", ["Painel", "Agenda", "Minhas Aulas"]),
                 ("Acadêmico", ["Boletim e Frequencia", "Atividades", "Lições de Casa", "Desafios"]),
@@ -15766,8 +15884,8 @@ elif st.session_state["role"] == "Aluno":
                 ("Comunicação", ["Mensagens", "Professor Wiz"]),
                 ("Financeiro", ["Financeiro"]),
             ],
-            "menu_aluno",
         )
+        menu_aluno_label = sidebar_menu_grouped("Navegacao", aluno_sections, "menu_aluno") if aluno_sections else ""
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
@@ -15788,6 +15906,9 @@ elif st.session_state["role"] == "Aluno":
         "Professor Wiz": "Professor Wiz",
     }
     menu_aluno = menu_aluno_map.get(menu_aluno_label, "Dashboard")
+    if not menu_aluno_label:
+        st.error("Este grupo está sem funcionalidades liberadas. Solicite liberação ao Admin.")
+        st.stop()
 
     if menu_aluno == "Dashboard":
         st.markdown('<div class="main-header">Painel do Aluno</div>', unsafe_allow_html=True)
@@ -16430,15 +16551,15 @@ elif st.session_state["role"] == "Professor":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        menu_prof_label = sidebar_menu_grouped(
-            "Gestão",
+        prof_sections = _filter_sidebar_sections_for_profile(
+            "Professor",
             [
                 ("Visão geral", ["Minhas Turmas", "Agenda", "Aulas"]),
                 ("Acadêmico", ["Atividades", "Lições de Casa", "Lançar Notas", "Biblioteca"]),
                 ("Comunicação", ["Mensagens", "Professor Wiz"]),
             ],
-            "menu_prof",
         )
+        menu_prof_label = sidebar_menu_grouped("Gestão", prof_sections, "menu_prof") if prof_sections else ""
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
@@ -16458,6 +16579,9 @@ elif st.session_state["role"] == "Professor":
         "Professor Wiz": "Assistente IA",
     }
     menu_prof = menu_prof_map.get(menu_prof_label, "Minhas Turmas")
+    if not menu_prof_label:
+        st.error("Este grupo está sem funcionalidades liberadas. Solicite liberação ao Admin.")
+        st.stop()
 
     if menu_prof == "Minhas Turmas":
         st.markdown('<div class="main-header">Painel do Professor</div>', unsafe_allow_html=True)
@@ -17157,7 +17281,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             base_sections.append(("Sistema", system_items))
         if coord_profile in ("Admin", "Coordenador"):
             base_sections.append(("Assistente", ["ASSISTENTE WIZ"]))
-        menu_coord_label = sidebar_menu_grouped("Administração", base_sections, "menu_coord")
+        profile_for_sidebar = "Admin" if coord_profile == "Admin" else "Coordenador"
+        coord_sections = _filter_sidebar_sections_for_profile(profile_for_sidebar, base_sections)
+        menu_coord_label = sidebar_menu_grouped("Administração", coord_sections, "menu_coord") if coord_sections else ""
         st.markdown("---")
         st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("Sair"): logout_user()
@@ -17189,6 +17315,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         "Professor Wiz": "Chatbot IA",
     }
     menu_coord = menu_coord_map.get(menu_coord_label, "Dashboard")
+    if not menu_coord_label:
+        st.error("Este grupo está sem funcionalidades liberadas. Solicite liberação ao Admin.")
+        st.stop()
 
     if menu_coord == "Dashboard":
         st.markdown('<div class="main-header">Painel do Coordenador</div>', unsafe_allow_html=True)
