@@ -2143,6 +2143,57 @@ def _receivable_manual_boleto_pdf_bytes(rec_obj):
     except Exception:
         return b""
 
+def _save_manual_external_boleto_pdf(rec_obj, uploaded_file):
+    if not isinstance(rec_obj, dict):
+        return False, "recebimento invalido"
+    if uploaded_file is None:
+        return False, "selecione um PDF do boleto"
+    try:
+        raw = uploaded_file.getvalue()
+    except Exception:
+        raw = b""
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        return False, "nao foi possivel ler o PDF enviado"
+    rec_obj["boleto_pdf_nome"] = str(getattr(uploaded_file, "name", "boleto_externo.pdf")).strip() or "boleto_externo.pdf"
+    rec_obj["boleto_pdf_mime"] = str(getattr(uploaded_file, "type", "application/pdf") or "application/pdf").strip() or "application/pdf"
+    rec_obj["boleto_pdf_b64"] = base64.b64encode(bytes(raw)).decode("utf-8")
+    rec_obj["boleto_status"] = "Gerado"
+    if not str(rec_obj.get("boleto_gerado_em", "")).strip():
+        rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    return True, "boleto externo anexado"
+
+def _render_manual_external_boleto_actions(rec_obj, key_prefix=""):
+    if _receivable_payment_mode(rec_obj) == "pix":
+        return
+    with st.expander("Boleto de outro banco (PDF)", expanded=False):
+        st.caption("Anexe o PDF do boleto externo e envie ao aluno sem passar pela integraçao automática.")
+        upload = st.file_uploader(
+            "Selecionar boleto PDF",
+            type=["pdf"],
+            key=f"{key_prefix}_external_boleto_pdf",
+        )
+        b1, b2 = st.columns(2)
+        if b1.button("Anexar boleto", key=f"{key_prefix}_external_boleto_save", use_container_width=True):
+            ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
+            if ok_save:
+                st.success(status_save)
+                st.rerun()
+            st.error(status_save)
+        if b2.button("Anexar + enviar ao aluno", key=f"{key_prefix}_external_boleto_send", use_container_width=True):
+            ok_save, status_save = _save_manual_external_boleto_pdf(rec_obj, upload)
+            if not ok_save:
+                st.error(status_save)
+            else:
+                ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                if ok_send:
+                    st.success(
+                        f"Boleto externo enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                        f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                    )
+                    st.rerun()
+                st.error(f"Boleto anexado, mas falhou no envio: {status_send}.")
+
 def _split_person_name(name):
     parts = [part for part in str(name or "").strip().split() if part]
     if not parts:
@@ -20127,6 +20178,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 st.rerun()
                             st.error("Não foi possível localizar a cobrança para excluir.")
                         _render_receivable_payment_output(rec_obj, key_prefix=f"student_fin_{scope_key}_{idx_item}_{code_txt}")
+                        _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_fin_{scope_key}_{idx_item}_{code_txt}")
 
             with tab_open:
                 _render_student_receivable_cards(open_student_items, "open")
@@ -20666,6 +20718,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                             disabled=True,
                                         )
                                 _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{rec_obj.get('codigo', '')}")
+                                _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{rec_obj.get('codigo', '')}")
 
             if finance_receber_menu == "Lancar Recebimento":
                 with st.form("add_rec"):
