@@ -1085,6 +1085,12 @@ def _load_latest_class_sessions():
     st.session_state["class_sessions"] = latest
     return latest
 
+def _load_latest_payables():
+    latest = load_list(PAYABLES_FILE)
+    latest = latest if isinstance(latest, list) else []
+    st.session_state["payables"] = latest
+    return latest
+
 def _merge_and_save_class_session(session_obj):
     sess = dict(session_obj or {})
     sess_id = str(sess.get("id", "")).strip() or uuid.uuid4().hex
@@ -10104,7 +10110,7 @@ def _teacher_payment_value_for_minutes(minutes):
         return 50.0
     return 100.0
 
-def _teacher_payment_info_for_session(session_obj):
+def _teacher_payment_info_for_session(session_obj, force_recalculate=False):
     sess = session_obj if isinstance(session_obj, dict) else {}
     turma_nome = str(sess.get("turma", "")).strip()
     turma_obj = next(
@@ -10114,10 +10120,10 @@ def _teacher_payment_info_for_session(session_obj):
     sess_date = _class_session_effective_date(sess)
     modulo_label = str(turma_obj.get("modulo", "")).strip() or str(sess.get("modulo", "")).strip()
     professor_label = str(sess.get("professor", "")).strip() or str(turma_obj.get("professor", "")).strip()
-    minutos = int(sess.get("pagamento_minutos", 0) or 0)
+    minutos = 0 if force_recalculate else int(sess.get("pagamento_minutos", 0) or 0)
     if minutos <= 0:
         minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
-    valor = float(sess.get("pagamento_valor_aula", 0) or 0)
+    valor = 0.0 if force_recalculate else float(sess.get("pagamento_valor_aula", 0) or 0)
     if valor <= 0:
         valor = _teacher_payment_value_for_minutes(minutos)
     modulo_pag = str(sess.get("pagamento_tipo_aula", "")).strip() or modulo_label
@@ -10134,11 +10140,11 @@ def _teacher_payment_info_for_session(session_obj):
         "session_id": str(sess.get("id", "")).strip(),
     }
 
-def _apply_teacher_payment_snapshot_to_session(session_obj):
+def _apply_teacher_payment_snapshot_to_session(session_obj, force_recalculate=False):
     sess = session_obj if isinstance(session_obj, dict) else {}
     if not sess:
         return sess
-    payment_info = _teacher_payment_info_for_session(sess)
+    payment_info = _teacher_payment_info_for_session(sess, force_recalculate=force_recalculate)
     sess["pagamento_tipo_aula"] = str(payment_info.get("modulo", "")).strip()
     sess["pagamento_minutos"] = int(payment_info.get("minutos", 0) or 0)
     sess["pagamento_valor_aula"] = float(payment_info.get("valor", 0) or 0)
@@ -10628,19 +10634,20 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
-def _teacher_payment_already_launched(session_obj):
+def _teacher_payment_already_launched(session_obj, payables=None):
     ref = _teacher_payment_ref_for_session(session_obj)
-    for payable in st.session_state.get("payables", []):
+    payables_list = payables if isinstance(payables, list) else _load_latest_payables()
+    for payable in payables_list:
         if str(payable.get("class_session_ref", "")).strip() == ref:
             return True
     return False
 
-def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_name="Todas"):
-    month_start, month_end = _current_month_bounds(month_ref)
+def _teacher_payment_pending_sessions(period_start=None, period_end=None, professor_name="Todos", turma_name="Todas"):
     prof_target = str(professor_name or "Todos").strip() or "Todos"
     turma_target = str(turma_name or "Todas").strip() or "Todas"
     prof_target_norm = normalize_text(prof_target)
     turma_target_norm = normalize_text(turma_target)
+    latest_payables = _load_latest_payables()
     out = []
     for sess in _load_latest_class_sessions():
         if not _class_session_is_finalized(sess):
@@ -10651,7 +10658,11 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
             {},
         )
         sess_date = _class_session_effective_date(sess)
-        if not sess_date or sess_date < month_start or sess_date > month_end:
+        if not sess_date:
+            continue
+        if isinstance(period_start, datetime.date) and sess_date < period_start:
+            continue
+        if isinstance(period_end, datetime.date) and sess_date > period_end:
             continue
         professor_session = str(sess.get("professor", "")).strip()
         professor_turma = str(turma_obj.get("professor", "")).strip()
@@ -10660,11 +10671,55 @@ def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_na
                 continue
         if turma_target != "Todas" and normalize_text(turma_nome) != turma_target_norm:
             continue
-        if _teacher_payment_already_launched(sess):
+        if _teacher_payment_already_launched(sess, payables=latest_payables):
             continue
         out.append(_teacher_payment_info_for_session(sess))
-    out.sort(key=lambda item: (parse_date(item.get("data", "")) or month_start, item.get("professor", ""), item.get("turma", "")))
+    out.sort(key=lambda item: (parse_date(item.get("data", "")) or datetime.date.today(), item.get("professor", ""), item.get("turma", "")))
     return out
+
+def _teacher_payment_candidates(month_ref=None, professor_name="Todos", turma_name="Todas"):
+    month_start, month_end = _current_month_bounds(month_ref)
+    return _teacher_payment_pending_sessions(
+        period_start=month_start,
+        period_end=month_end,
+        professor_name=professor_name,
+        turma_name=turma_name,
+    )
+
+def _teacher_payment_pending_payable_items(period_start=None, period_end=None, professor_name="Todos", turma_name="Todas"):
+    pending_sessions = _teacher_payment_pending_sessions(
+        period_start=period_start,
+        period_end=period_end,
+        professor_name=professor_name,
+        turma_name=turma_name,
+    )
+    pending_items = []
+    for item in pending_sessions:
+        ref = str(item.get("ref", "")).strip()
+        pending_items.append(
+            {
+                "codigo": f"AUTO-{ref.replace('CLS-', '')[:12]}",
+                "descricao": str(item.get("descricao", "")).strip() or "Pagamento automatico de aula",
+                "valor": f"{float(item.get('valor', 0) or 0):.2f}".replace(".", ","),
+                "valor_parcela": f"{float(item.get('valor', 0) or 0):.2f}".replace(".", ","),
+                "parcela": "1",
+                "fornecedor": str(item.get("professor", "")).strip() or "Sem professor",
+                "categoria_lancamento": "Professor",
+                "numero_pedido": ref,
+                "class_session_ref": ref,
+                "class_session_id": str(item.get("session_id", "")).strip(),
+                "turma": str(item.get("turma", "")).strip(),
+                "modulo": str(item.get("modulo", "")).strip(),
+                "data_aula": str(item.get("data", "")).strip(),
+                "duracao_minutos": int(item.get("minutos", 0) or 0),
+                "data": str(item.get("data", "")).strip(),
+                "vencimento": str(item.get("data", "")).strip(),
+                "cobranca": "Automatico",
+                "status": "Aberto",
+                "origem_automatica": "class_session_pending",
+            }
+        )
+    return pending_items
 
 def _teacher_payment_pending_report(month_ref=None):
     candidates = _teacher_payment_candidates(month_ref=month_ref, professor_name="Todos", turma_name="Todas")
@@ -16846,7 +16901,7 @@ elif st.session_state["role"] == "Professor":
                                     }
                                     for item in vip_consumidos
                                 ]
-                            _apply_teacher_payment_snapshot_to_session(sessao_ativa)
+                            _apply_teacher_payment_snapshot_to_session(sessao_ativa, force_recalculate=True)
                             _merge_and_save_class_session(sessao_ativa)
                             if vip_consumidos:
                                 resumo_vip = ", ".join(
@@ -17382,6 +17437,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         with c2: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Professores</div><div class=\"card-value\">{len(st.session_state['teachers'])}</div></div></div>""", unsafe_allow_html=True)
         with c3: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">Turmas</div><div class=\"card-value\">{len(st.session_state['classes'])}</div></div></div>""", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+        payables_dashboard = _load_latest_payables()
+        teacher_pending_dashboard = _teacher_payment_pending_payable_items()
+        payables_dashboard_all = list(payables_dashboard) + list(teacher_pending_dashboard)
         total_rec = sum(
             parse_money(i.get("valor_parcela", i.get("valor", 0)))
             for i in st.session_state["receivables"]
@@ -17389,15 +17447,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         )
         total_pag = sum(
             parse_money(i.get("valor_parcela", i.get("valor", 0)))
-            for i in st.session_state["payables"]
+            for i in payables_dashboard_all
             if str(i.get("status", "Aberto")).strip().lower() not in ("pago", "cancelado")
         )
         total_rec_mes = _financial_due_total_for_month(st.session_state.get("receivables", []), date_field="vencimento")
-        total_pag_mes = _financial_due_total_for_month(st.session_state.get("payables", []), date_field="vencimento")
+        total_pag_mes = _financial_due_total_for_month(payables_dashboard_all, date_field="vencimento")
         total_rec_venc = _financial_overdue_total(st.session_state.get("receivables", []), date_field="vencimento")
-        total_pag_venc = _financial_overdue_total(st.session_state.get("payables", []), date_field="vencimento")
+        total_pag_venc = _financial_overdue_total(payables_dashboard_all, date_field="vencimento")
         qtd_rec_venc = len(_financial_overdue_items(st.session_state.get("receivables", []), date_field="vencimento"))
-        qtd_pag_venc = len(_financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento"))
+        qtd_pag_venc = len(_financial_overdue_items(payables_dashboard_all, date_field="vencimento"))
         saldo = total_rec - total_pag
         c4, c5, c6 = st.columns(3)
         with c4: st.markdown(f"""<div class=\"dash-card\"><div><div class=\"card-title\">A Receber</div><div class=\"card-value\" style=\"color:#2563eb;\">{format_money(total_rec)}</div></div></div>""", unsafe_allow_html=True)
@@ -19853,7 +19911,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.dataframe(pd.DataFrame(student_items), use_container_width=True)
 
         def _render_overdue_payables_panel():
-            overdue_payables = _financial_overdue_items(st.session_state.get("payables", []), date_field="vencimento")
+            overdue_base = list(_load_latest_payables() or [])
+            overdue_base.extend(_teacher_payment_pending_payable_items())
+            overdue_payables = _financial_overdue_items(overdue_base, date_field="vencimento")
             if not overdue_payables:
                 st.info("Nenhuma conta a pagar vencida.")
                 return
@@ -19963,7 +20023,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             )
 
         receivables_all = list(st.session_state.get("receivables", []) or [])
-        payables_all = list(st.session_state.get("payables", []) or [])
+        payables_all = list(_load_latest_payables() or [])
+        teacher_pending_payables_all = _teacher_payment_pending_payable_items()
+        payables_metrics_all = list(payables_all) + list(teacher_pending_payables_all)
         sales_payments_all = list(st.session_state.get("sales_payments", []) or [])
         today_fin = datetime.date.today()
         month_start_fin = today_fin.replace(day=1)
@@ -20270,9 +20332,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         paid_receivables = [r for r in receivables_all if str(r.get("status", "")).strip().lower() == "pago"]
         overdue_receivables_all = _financial_overdue_items(receivables_all, date_field="vencimento")
         open_student_receivables = [r for r in open_receivables if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"]
-        open_payables = [p for p in payables_all if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
+        open_payables = [p for p in payables_metrics_all if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}]
         paid_payables = [p for p in payables_all if str(p.get("status", "")).strip().lower() == "pago"]
-        professor_payables = [p for p in payables_all if str(p.get("categoria_lancamento", "")).strip().lower() == "professor"]
+        professor_payables = [p for p in payables_metrics_all if str(p.get("categoria_lancamento", "")).strip().lower() == "professor"]
         professor_payables_open = [p for p in professor_payables if str(p.get("status", "")).strip().lower() != "pago"]
 
         total_received_month = sum(
