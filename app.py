@@ -1741,14 +1741,50 @@ def _notify_direct_contacts(destinatario, emails, whatsapps, assunto, mensagem, 
 
     return stats
 
+def _student_friendly_subject(assunto, origem="Mensagens"):
+    subject = str(assunto or "").strip() or "Active Educacional"
+    theme = _notification_theme(origem, subject, "")
+    if not any(token in subject for token in ("📢", "💸", "🚀", "📚", "✨", "🎉", "😊", "📝", "📌")):
+        subject = f"{theme.get('title_emoji', '✨')} {subject}"
+    return subject
+
+def _student_friendly_body(student_name, assunto, mensagem, origem="Mensagens"):
+    nome = str(student_name or "").strip() or "Aluno"
+    body = str(mensagem or "").strip()
+    theme = _notification_theme(origem, assunto, body)
+    lines = [
+        f"Olá, {nome}! 😊",
+        "",
+        str(theme.get("header", "📢 *Active Educacional*")).strip() or "📢 *Active Educacional*",
+        "",
+        body,
+    ]
+    footer = str(theme.get("footer", "")).strip()
+    if footer:
+        lines.extend(["", footer])
+    lines.extend(["", "💙 Equipe Active Educacional"])
+    return "\n".join(lines).strip()
+
+def _notify_student_contacts(student, assunto, mensagem, origem, send_email=True, send_whatsapp=True):
+    student = student if isinstance(student, dict) else {}
+    nome = str(student.get("nome", "")).strip() or "Aluno"
+    assunto_final = _student_friendly_subject(assunto, origem)
+    mensagem_final = _student_friendly_body(nome, assunto_final, mensagem, origem)
+    return _notify_direct_contacts(
+        nome,
+        _message_recipients_for_student(student) if bool(send_email) else [],
+        _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
+        assunto_final,
+        mensagem_final,
+        origem,
+    )
+
 def notify_students_by_turma_multichannel(turma, assunto, corpo, origem):
     total_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
     for student in st.session_state.get("students", []):
         if turma != "Todas" and student.get("turma") != turma:
             continue
-        emails = _message_recipients_for_student(student)
-        whatsapps = _student_whatsapp_recipients(student)
-        stats = _notify_direct_contacts(student.get("nome", "Aluno"), emails, whatsapps, assunto, corpo, origem)
+        stats = _notify_student_contacts(student, assunto, corpo, origem, send_email=True, send_whatsapp=True)
         for key in total_stats:
             total_stats[key] += stats.get(key, 0)
     return total_stats
@@ -1761,12 +1797,9 @@ def notify_students_by_turma_whatsapp(turma, assunto, corpo, origem):
     for student in st.session_state.get("students", []):
         if turma != "Todas" and student.get("turma") != turma:
             continue
-        for number in _student_whatsapp_recipients(student):
-            ok, status, _ = _send_whatsapp_auto(number, f"{assunto}\n\n{corpo}")
-            total["whatsapp_total"] += 1
-            if ok:
-                total["whatsapp_ok"] += 1
-            _log_comm_event(student.get("nome", "Aluno"), "whatsapp", number, assunto, corpo, origem, status)
+        partial = _notify_student_contacts(student, assunto, corpo, origem, send_email=False, send_whatsapp=True)
+        total["whatsapp_total"] += int(partial.get("whatsapp_total", 0))
+        total["whatsapp_ok"] += int(partial.get("whatsapp_ok", 0))
     return total
 
 def notify_student_financial_event(aluno_nome, itens, send_email=True, send_whatsapp=True):
@@ -1786,14 +1819,7 @@ def notify_student_financial_event(aluno_nome, itens, send_email=True, send_what
         lines.append(item_line)
     assunto = "[Active] Novo lançamento financeiro"
     corpo = "Foram lançados novos itens financeiros no seu cadastro.\n\n" + "\n".join(lines)
-    return _notify_direct_contacts(
-        student.get("nome", "Aluno"),
-        _message_recipients_for_student(student) if bool(send_email) else [],
-        _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
-        assunto,
-        corpo,
-        "Financeiro",
-    )
+    return _notify_student_contacts(student, assunto, corpo, "Financeiro", send_email=bool(send_email), send_whatsapp=bool(send_whatsapp))
 
 def notify_student_profile_update(student, autor="", origem="Atualizacao Aluno", send_email=True, send_whatsapp=True):
     if not isinstance(student, dict):
@@ -1817,14 +1843,7 @@ def notify_student_profile_update(student, autor="", origem="Atualizacao Aluno",
     if str(autor or "").strip():
         corpo += f"Atualizado por: {str(autor).strip()}\n"
     corpo += "\nSe tiver duvidas, responda esta mensagem."
-    return _notify_direct_contacts(
-        nome,
-        _message_recipients_for_student(student) if bool(send_email) else [],
-        _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
-        assunto,
-        corpo,
-        origem,
-    )
+    return _notify_student_contacts(student, assunto, corpo, origem, send_email=bool(send_email), send_whatsapp=bool(send_whatsapp))
 
 def _smtp_config_diagnostics():
     host = _finance_config_value("ACTIVE_SMTP_HOST", "smtp_host", "")
@@ -2400,8 +2419,7 @@ def send_receivable_boleto_to_student(rec_obj):
     valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
     assunto = f"[Active] {payment_label} {rec_obj.get('descricao', 'Mensalidade')} - {rec_obj.get('vencimento', '')}"
     corpo = (
-        f"Ola, {student.get('nome', 'Aluno')}.\n\n"
-        f"Seu {payment_label.lower()} esta disponivel.\n"
+        f"Seu {payment_label.lower()} já está disponível. 🎉\n"
         f"Descricao: {rec_obj.get('descricao', '')}\n"
         f"Valor: {valor}\n"
         f"Vencimento: {rec_obj.get('vencimento', '')}\n"
@@ -2418,14 +2436,7 @@ def send_receivable_boleto_to_student(rec_obj):
     if payment_mode != "pix" and rec_obj.get("boleto_url"):
         corpo += f"Boleto: {rec_obj.get('boleto_url')}\n"
 
-    stats = _notify_direct_contacts(
-        student.get("nome", "Aluno"),
-        _message_recipients_for_student(student),
-        _student_whatsapp_recipients(student),
-        assunto,
-        corpo,
-        f"Financeiro {payment_label}",
-    )
+    stats = _notify_student_contacts(student, assunto, corpo, f"Financeiro {payment_label}", send_email=True, send_whatsapp=True)
 
     sent_at_txt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     sent_channels_txt = (
@@ -11159,14 +11170,7 @@ def notify_students_by_turma_channels(
         if turma_target == "Todas" and not bool(include_students_without_turma_when_all):
             if not student_turma or student_turma.lower() in ("sem turma", "todos", "todas"):
                 continue
-        partial = _notify_direct_contacts(
-            student.get("nome", "Aluno"),
-            _message_recipients_for_student(student) if bool(send_email) else [],
-            _student_whatsapp_recipients(student) if bool(send_whatsapp) else [],
-            assunto,
-            corpo,
-            origem,
-        )
+        partial = _notify_student_contacts(student, assunto, corpo, origem, send_email=bool(send_email), send_whatsapp=bool(send_whatsapp))
         stats["student_total"] += 1
         if int(partial.get("email_total", 0)) + int(partial.get("whatsapp_total", 0)) > 0:
             stats["student_with_channel"] += 1
@@ -11214,14 +11218,7 @@ def email_students_by_level(level, assunto, corpo, origem):
     for student in st.session_state.get("students", []):
         if student_book_level(student) != level:
             continue
-        partial = _notify_direct_contacts(
-            student.get("nome", "Aluno"),
-            _message_recipients_for_student(student),
-            _student_whatsapp_recipients(student),
-            assunto,
-            corpo,
-            origem,
-        )
+        partial = _notify_student_contacts(student, assunto, corpo, origem, send_email=True, send_whatsapp=True)
         for key in stats:
             stats[key] += int(partial.get(key, 0))
     stats["total"] = stats["email_total"]
@@ -18129,13 +18126,13 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 )
                                 notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                                 if wiz_event_enabled("on_student_created"):
-                                    notify_stats = _notify_direct_contacts(
-                                        nome,
-                                        _message_recipients_for_student(novo_aluno) if bool(send_student_email) else [],
-                                        _student_whatsapp_recipients(novo_aluno) if bool(send_student_whatsapp) else [],
+                                    notify_stats = _notify_student_contacts(
+                                        novo_aluno,
                                         assunto_auto,
                                         corpo_auto,
                                         "Cadastro Aluno",
+                                        send_email=bool(send_student_email),
+                                        send_whatsapp=bool(send_student_whatsapp),
                                     )
                                 st.session_state["add_student_feedback"] = {
                                     "success": "Cadastro realizado com sucesso!",
@@ -20479,13 +20476,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             f"({total_relacionados} parcela(s))."
                         )
 
-                        mc1, mc2 = st.columns(2)
+                        mc1, mc2, mc3 = st.columns(3)
                         with mc1:
                             salvar_rec = st.form_submit_button("Salvar cobranca (todas parcelas)")
                         with mc2:
+                            salvar_enviar_rec = st.form_submit_button("Salvar + enviar ao aluno")
+                        with mc3:
                             excluir_rec = st.form_submit_button("Excluir cobranca (todas parcelas)", type="primary")
 
-                    if salvar_rec:
+                    if salvar_rec or salvar_enviar_rec:
                         if not new_ref_rec.strip() or new_val_parcela_num <= 0:
                             st.error("Informe referencia e valor da parcela valido.")
                         else:
@@ -20577,7 +20576,28 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     rec_obj["boleto_enviado_em"] = ""
                                     rec_obj["boleto_enviado_canais"] = ""
                                 save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                st.success("Cobranca atualizada em lote!")
+                                envio_msg = ""
+                                if salvar_enviar_rec:
+                                    current_updated_obj = next(
+                                        (
+                                            item for item in st.session_state.get("receivables", [])
+                                            if str(item.get("codigo", "")).strip() == str(rec_obj.get("codigo", "")).strip()
+                                        ),
+                                        rec_obj,
+                                    )
+                                    if str(current_updated_obj.get("categoria_lancamento", "Aluno")).strip() != "Aluno":
+                                        envio_msg = " Envio ignorado: disponivel apenas para lancamentos de aluno."
+                                    else:
+                                        ok_send_manual, status_send_manual, stats_send_manual = send_receivable_boleto_to_student(current_updated_obj)
+                                        if ok_send_manual:
+                                            envio_msg = (
+                                                " Envio realizado. "
+                                                f"E-mail {stats_send_manual.get('email_ok', 0)}/{stats_send_manual.get('email_total', 0)} | "
+                                                f"WhatsApp {stats_send_manual.get('whatsapp_ok', 0)}/{stats_send_manual.get('whatsapp_total', 0)}."
+                                            )
+                                        else:
+                                            envio_msg = f" Falha no envio: {status_send_manual}."
+                                st.success("Cobranca atualizada em lote!" + envio_msg)
                                 st.rerun()
 
                         if excluir_rec:
@@ -21979,13 +21999,13 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     f"- {n.get('avaliacao','Avaliação')}: nota {n.get('nota','')} "
                                     f"({n.get('disciplina','Inglês')})"
                                 )
-                            _notify_direct_contacts(
-                                student.get("nome", "Aluno"),
-                                _message_recipients_for_student(student),
-                                _student_whatsapp_recipients(student),
+                            _notify_student_contacts(
+                                student,
                                 "[Active] Notas aprovadas",
-                                "Suas notas foram aprovadas:\n\n" + "\n".join(linhas),
+                                "Suas notas foram aprovadas com sucesso. 🥳\n\n" + "\n".join(linhas),
                                 "Notas",
+                                send_email=True,
+                                send_whatsapp=True,
                             )
                             sent_students += 1
                         if sent_students:
