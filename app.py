@@ -20589,9 +20589,10 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             st.caption(
                 f"Ação atual: {selected_receber_label if finance_receber_menu == current_receber else next((label for label, value in fr_map.items() if value == finance_receber_menu), 'Lançar cobrança')}"
             )
-            with st.container(border=True):
-                _student_financial_account_panel()
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
+            if finance_receber_menu == "Recebimentos":
+                with st.container(border=True):
+                    _student_financial_account_panel()
             if finance_receber_menu == "Boletos dos Alunos":
                 with st.container(border=True):
                     st.markdown("### Boletos dos alunos")
