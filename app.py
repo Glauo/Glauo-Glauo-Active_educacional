@@ -9011,6 +9011,108 @@ def _sales_receipt_html(payment_obj):
 </html>
 """.strip()
 
+def _ensure_receivable_receipt_number(rec_obj):
+    rec_obj = rec_obj if isinstance(rec_obj, dict) else {}
+    recibo = str(rec_obj.get("recibo_numero", "")).strip()
+    if recibo:
+        return recibo
+    base_code = re.sub(r"[^A-Z0-9]+", "", str(rec_obj.get("codigo", "")).upper())[:8]
+    if not base_code:
+        base_code = uuid.uuid4().hex[:8].upper()
+    recibo = f"REC-{datetime.datetime.now().strftime('%Y%m%d')}-{base_code}"
+    rec_obj["recibo_numero"] = recibo
+    return recibo
+
+def _receivable_receipt_html(rec_obj, student_obj=None):
+    rec_obj = rec_obj if isinstance(rec_obj, dict) else {}
+    student_obj = student_obj if isinstance(student_obj, dict) else {}
+    aluno = str(rec_obj.get("aluno", "")).strip() or str(student_obj.get("nome", "")).strip() or "Aluno"
+    responsavel = (
+        str(student_obj.get("responsavel", "")).strip()
+        or str(student_obj.get("responsavel_financeiro", "")).strip()
+        or "-"
+    )
+    telefone = (
+        str(student_obj.get("telefone", "")).strip()
+        or str(student_obj.get("whatsapp", "")).strip()
+        or str(student_obj.get("telefone_responsavel", "")).strip()
+        or "-"
+    )
+    email = (
+        str(student_obj.get("email", "")).strip()
+        or str(student_obj.get("email_responsavel", "")).strip()
+        or "-"
+    )
+    descricao = str(rec_obj.get("descricao", "")).strip() or "Recebimento"
+    categoria = str(rec_obj.get("categoria", "")).strip() or "-"
+    parcela = str(rec_obj.get("parcela", "")).strip() or "-"
+    codigo = str(rec_obj.get("codigo", "")).strip() or "-"
+    valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00"
+    vencimento = str(rec_obj.get("vencimento", "")).strip() or "-"
+    forma = str(rec_obj.get("cobranca", "")).strip() or "Nao informado"
+    data_pag = (
+        str(rec_obj.get("data_pagamento", "")).strip()
+        or str(rec_obj.get("baixa_data", "")).strip()
+        or datetime.date.today().strftime("%d/%m/%Y")
+    )
+    recibo = _ensure_receivable_receipt_number(rec_obj)
+    return f"""
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recibo de Recebimento</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; background: #f5f7fb; padding: 24px; }}
+    .card {{ max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #dbe7f6; border-radius: 14px; padding: 26px; }}
+    .title {{ font-size: 24px; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }}
+    .sub {{ color: #64748b; margin-bottom: 22px; }}
+    .row {{ margin: 8px 0; color: #0f172a; }}
+    .lbl {{ color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }}
+    .footer {{ margin-top: 30px; font-size: 12px; color: #64748b; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">Recibo de Recebimento</div>
+    <div class="sub">Ativo Sistema Educacional</div>
+    <div class="row"><span class="lbl">Recibo:</span> {html.escape(recibo)}</div>
+    <div class="row"><span class="lbl">Aluno:</span> {html.escape(aluno)}</div>
+    <div class="row"><span class="lbl">Responsavel:</span> {html.escape(responsavel)}</div>
+    <div class="row"><span class="lbl">Telefone:</span> {html.escape(telefone)}</div>
+    <div class="row"><span class="lbl">E-mail:</span> {html.escape(email)}</div>
+    <div class="row"><span class="lbl">Descricao:</span> {html.escape(descricao)}</div>
+    <div class="row"><span class="lbl">Categoria:</span> {html.escape(categoria)}</div>
+    <div class="row"><span class="lbl">Parcela:</span> {html.escape(parcela)}</div>
+    <div class="row"><span class="lbl">Codigo da cobranca:</span> {html.escape(codigo)}</div>
+    <div class="row"><span class="lbl">Vencimento:</span> {html.escape(vencimento)}</div>
+    <div class="row"><span class="lbl">Data do pagamento:</span> {html.escape(data_pag)}</div>
+    <div class="row"><span class="lbl">Valor recebido:</span> R$ {html.escape(valor)}</div>
+    <div class="row"><span class="lbl">Forma de pagamento:</span> {html.escape(forma)}</div>
+    <div class="footer">Este recibo foi gerado automaticamente após a baixa do recebimento.</div>
+  </div>
+</body>
+</html>
+""".strip()
+
+def _mark_receivable_as_paid(rec_obj, baixa_tipo="Financeiro", student_obj=None):
+    if not isinstance(rec_obj, dict):
+        return False, "Registro invalido."
+    hoje_txt = datetime.date.today().strftime("%d/%m/%Y")
+    rec_obj["status"] = "Pago"
+    rec_obj["baixa_data"] = hoje_txt
+    rec_obj["data_pagamento"] = hoje_txt
+    rec_obj["baixa_tipo"] = baixa_tipo
+    recibo_numero = _ensure_receivable_receipt_number(rec_obj)
+    receipt_html = _receivable_receipt_html(rec_obj, student_obj)
+    receipt_name = f"recibo_{normalize_text(str(rec_obj.get('aluno', 'aluno')) or 'aluno')}_{normalize_text(str(rec_obj.get('codigo', '')) or 'recebimento')}.html"
+    st.session_state["finance_last_receipt_html"] = receipt_html
+    st.session_state["finance_last_receipt_name"] = receipt_name
+    st.session_state["finance_last_receipt_code"] = str(rec_obj.get("codigo", "")).strip()
+    st.session_state["finance_last_receipt_number"] = recibo_numero
+    save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+    return True, recibo_numero
+
 def _decode_sales_attachment(payment_obj):
     payload = str((payment_obj or {}).get("comprovante_b64", "")).strip()
     if not payload:
@@ -20279,26 +20381,31 @@ div[data-baseweb="select"] > div {
                 unsafe_allow_html=True,
             )
 
-        def _finance_action_panel(title, actions, key_prefix, subtitle="", notes=None):
+        def _finance_action_panel(title, actions, key_prefix, subtitle="", notes=None, columns_per_row=4):
             with st.container(border=True):
                 st.markdown(f"### {title}")
                 if subtitle:
                     st.caption(subtitle)
-                for idx_action, action in enumerate(actions or []):
-                    if not isinstance(action, dict):
-                        continue
-                    label = str(action.get("label", "")).strip()
-                    if not label:
-                        continue
-                    button_key = f"{key_prefix}_action_{idx_action}_{normalize_text(label) or idx_action}"
-                    button_type = "primary" if bool(action.get("primary")) else "secondary"
-                    disabled = bool(action.get("disabled", False))
-                    if st.button(label, key=button_key, use_container_width=True, type=button_type, disabled=disabled):
-                        for state_key, state_value in (action.get("set_state") or {}).items():
-                            st.session_state[state_key] = state_value
-                        if bool(action.get("clear_overdue_focus")):
-                            st.session_state.pop("finance_overdue_focus", None)
-                        st.rerun()
+                valid_actions = [
+                    action for action in (actions or [])
+                    if isinstance(action, dict) and str(action.get("label", "")).strip()
+                ]
+                per_row = max(1, int(columns_per_row or 4))
+                for start_idx in range(0, len(valid_actions), per_row):
+                    row_actions = valid_actions[start_idx:start_idx + per_row]
+                    row_cols = st.columns(len(row_actions))
+                    for col, action in zip(row_cols, row_actions):
+                        label = str(action.get("label", "")).strip()
+                        button_key = f"{key_prefix}_action_{start_idx}_{normalize_text(label) or start_idx}"
+                        button_type = "primary" if bool(action.get("primary")) else "secondary"
+                        disabled = bool(action.get("disabled", False))
+                        with col:
+                            if st.button(label, key=button_key, use_container_width=True, type=button_type, disabled=disabled):
+                                for state_key, state_value in (action.get("set_state") or {}).items():
+                                    st.session_state[state_key] = state_value
+                                if bool(action.get("clear_overdue_focus")):
+                                    st.session_state.pop("finance_overdue_focus", None)
+                                st.rerun()
                 for note in notes or []:
                     if str(note).strip():
                         st.caption(str(note).strip())
@@ -20442,13 +20549,15 @@ div[data-baseweb="select"] > div {
                             use_container_width=True,
                             disabled=str(rec_obj.get("status", "")).strip().lower() == "pago",
                         ):
-                            rec_obj["status"] = "Pago"
-                            hoje_txt = datetime.date.today().strftime("%d/%m/%Y")
-                            rec_obj["baixa_data"] = hoje_txt
-                            rec_obj["data_pagamento"] = hoje_txt
-                            rec_obj["baixa_tipo"] = "Painel do aluno"
-                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                            st.success("Baixa realizada.")
+                            ok_paid, recibo_num = _mark_receivable_as_paid(
+                                rec_obj,
+                                baixa_tipo="Painel do aluno",
+                                student_obj=student_obj,
+                            )
+                            if ok_paid:
+                                st.success(f"Baixa realizada. Recibo {recibo_num} gerado.")
+                            else:
+                                st.error(str(recibo_num))
                             st.rerun()
                         if action2.button(
                             f"Gerar {payment_label}",
@@ -20838,30 +20947,28 @@ div[data-baseweb="select"] > div {
             finance_main = "__reports__"
 
         if finance_main == "__reports__":
-            reports_head_col, reports_side_col = st.columns([3.5, 1.1], gap="large")
-            with reports_head_col:
-                _finance_section_intro(
-                    "Relatórios financeiros",
-                    "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
-                    chip="Relatórios",
-                )
-                _finance_pane_header("Filtros do relatório", "Defina o período e mantenha a leitura dos resultados na mesma estrutura visual do módulo.")
-                rf1, rf2 = st.columns(2)
-                with rf1:
-                    report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
-                with rf2:
-                    report_end = st.date_input("Período final", value=month_end_fin, format="DD/MM/YYYY", key="finance_report_end")
-            with reports_side_col:
-                _finance_action_panel(
-                    "Ações",
-                    [
-                        {"label": "Recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos"}},
-                        {"label": "Contas a pagar", "set_state": {"finance_workspace_menu": "Professores"}},
-                        {"label": "Inadimplência", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência"}},
-                    ],
-                    key_prefix="finance_reports",
-                    subtitle="Atalhos rápidos do módulo.",
-                )
+            _finance_section_intro(
+                "Relatórios financeiros",
+                "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
+                chip="Relatórios",
+            )
+            _finance_action_panel(
+                "Ações",
+                [
+                    {"label": "Recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos"}},
+                    {"label": "Contas a pagar", "set_state": {"finance_workspace_menu": "Professores"}},
+                    {"label": "Inadimplência", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência"}},
+                ],
+                key_prefix="finance_reports",
+                subtitle="Atalhos rápidos do módulo.",
+                columns_per_row=3,
+            )
+            _finance_pane_header("Filtros do relatório", "Defina o período e mantenha a leitura dos resultados na mesma estrutura visual do módulo.")
+            rf1, rf2 = st.columns(2)
+            with rf1:
+                report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
+            with rf2:
+                report_end = st.date_input("Período final", value=month_end_fin, format="DD/MM/YYYY", key="finance_report_end")
             rec_report = [
                 r for r in receivables_all
                 if report_start <= (parse_date(r.get("vencimento", "")) or parse_date(r.get("data", "")) or today_fin) <= report_end
@@ -20929,27 +21036,25 @@ div[data-baseweb="select"] > div {
                 (label for label, value in fr_map.items() if value == current_receber),
                 "Lançar cobrança",
             )
-            receber_head_col, receber_side_col = st.columns([3.5, 1.1], gap="large")
-            with receber_head_col:
-                _finance_section_intro(
-                    receber_title,
-                    receber_desc,
-                    chip=receber_chip,
-                )
-                _finance_pane_header(
-                    "Operação atual",
-                    f"Ação selecionada: {selected_receber_label}. Use o painel lateral para navegar entre as operações de contas a receber.",
-                )
-            with receber_side_col:
-                _finance_action_panel(
-                    "Ações",
-                    [
-                        {"label": label, "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": value}, "primary": value == current_receber}
-                        for label, value in fr_map.items()
-                    ],
-                    key_prefix="finance_receber_nav",
-                    subtitle="Painel operacional de contas a receber.",
-                )
+            _finance_section_intro(
+                receber_title,
+                receber_desc,
+                chip=receber_chip,
+            )
+            _finance_action_panel(
+                "Ações",
+                [
+                    {"label": label, "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": value}, "primary": value == current_receber}
+                    for label, value in fr_map.items()
+                ],
+                key_prefix="finance_receber_nav",
+                subtitle="Operações de contas a receber.",
+                columns_per_row=4,
+            )
+            _finance_pane_header(
+                "Operação atual",
+                f"Ação selecionada: {selected_receber_label}.",
+            )
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             if finance_receber_menu == "Recebimentos":
                 with st.container(border=True):
@@ -21028,6 +21133,27 @@ div[data-baseweb="select"] > div {
                             with bm3:
                                 _finance_metric_card("Enviados", sent_count, "Cobranças já disparadas", tone="orange")
 
+                            last_receipt_html = str(st.session_state.get("finance_last_receipt_html", "")).strip()
+                            last_receipt_name = str(st.session_state.get("finance_last_receipt_name", "recibo_recebimento.html")).strip() or "recibo_recebimento.html"
+                            last_receipt_number = str(st.session_state.get("finance_last_receipt_number", "")).strip()
+                            last_receipt_code = str(st.session_state.get("finance_last_receipt_code", "")).strip()
+                            if last_receipt_html:
+                                lr1, lr2 = st.columns([2.2, 1])
+                                with lr1:
+                                    st.success(
+                                        f"Baixa registrada com recibo automático{f' ({last_receipt_number})' if last_receipt_number else ''}."
+                                        + (f" Referência: {last_receipt_code}." if last_receipt_code else "")
+                                    )
+                                with lr2:
+                                    st.download_button(
+                                        "Baixar último recibo",
+                                        data=last_receipt_html,
+                                        file_name=last_receipt_name,
+                                        mime="text/html",
+                                        key="finance_last_receipt_download",
+                                        use_container_width=True,
+                                    )
+
                             if not boleto_items:
                                 st.info("Nenhuma cobrança encontrada neste filtro.")
                             else:
@@ -21046,7 +21172,11 @@ div[data-baseweb="select"] > div {
                                     pdf_bytes, file_name, mime_type = _receivable_preferred_pdf_payload(rec_obj, boleto_student_obj)
                                     with st.container(border=True):
                                         row_key = f"finance_boleto_select_{normalize_text(boleto_student_name)}_{code_txt}_{idx_boleto}"
-                                        top1, top2, top3, top4, top5 = st.columns([0.5, 3.0, 1.1, 1.1, 1.4])
+                                        due_txt = str(rec_obj.get("vencimento", "")).strip() or "-"
+                                        amount_txt = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00"
+                                        parcela_txt = str(rec_obj.get("parcela", "")).strip() or "-"
+                                        cobranca_txt = str(rec_obj.get("cobranca", "")).strip() or "-"
+                                        top1, top2, top3 = st.columns([0.4, 3.8, 1.4])
                                         selected_row = top1.checkbox(
                                             "Selecionar",
                                             key=row_key,
@@ -21057,20 +21187,50 @@ div[data-baseweb="select"] > div {
                                         top2.markdown(
                                             f"**{str(rec_obj.get('descricao', '')).strip() or 'Cobrança'}**  \n"
                                             f"`{display_num}`  \n"
-                                            f"{boleto_student_name} | Ref.: `{code_txt}` | {str(rec_obj.get('categoria', '')).strip() or '-'}"
+                                            f"{boleto_student_name} | Ref.: `{code_txt}` | {str(rec_obj.get('categoria', '')).strip() or '-'}  \n"
+                                            f"**Vencimento:** {due_txt} | **Parcela:** {parcela_txt} | **Cobrança:** {cobranca_txt}"
                                         )
-                                        top3.metric("Valor", str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00")
-                                        top4.metric("Vencimento", str(rec_obj.get("vencimento", "")).strip() or "-")
-                                        top5.markdown(
-                                            f"<div style='padding-top:18px;display:inline-flex;align-items:center;gap:6px;'>"
+                                        top3.markdown(
+                                            f"<div style='padding-top:18px;display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;'>"
+                                            f"<span style='font-size:.82rem;color:#64748b;'>Valor</span>"
+                                            f"<strong style='font-size:1.2rem;color:#0f172a;'>R$ {html.escape(amount_txt)}</strong>"
                                             f"<span style='width:10px;height:10px;border-radius:999px;background:{status_color};display:inline-block;'></span>"
                                             f"<strong>{status_boleto}</strong></div>",
                                             unsafe_allow_html=True,
                                         )
+                                        info1, info2, info3, info4 = st.columns(4)
+                                        info1.markdown(f"**Vencimento**  \n{due_txt}")
+                                        info2.markdown(f"**Valor da parcela**  \nR$ {amount_txt}")
+                                        info3.markdown(f"**Forma de cobrança**  \n{cobranca_txt}")
+                                        info4.markdown(
+                                            f"<div style='padding-top:18px;display:inline-flex;align-items:center;gap:6px;'>"
+                                            f"<span style='width:10px;height:10px;border-radius:999px;background:{status_color};display:inline-block;'></span>"
+                                            f"<strong>{status_boleto}</strong></div>"
+                                            f"<div style='font-size:.82rem;color:#64748b;margin-top:6px;'>Recibo: {html.escape(str(rec_obj.get('recibo_numero', '')).strip() or '-')}</div>",
+                                            unsafe_allow_html=True,
+                                        )
                                         if missing_fields:
                                             st.warning(f"Pendente para geração: {', '.join(missing_fields)}.")
-                                        action1, action2, action3, action4, action5 = st.columns(5)
+                                        action1, action2, action3, action4 = st.columns(4)
                                         with action1:
+                                            if st.button(
+                                                "Dar baixa",
+                                                key=f"finance_boleto_mark_paid_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=str(rec_obj.get('status', '')).strip().lower() in {"pago", "cancelado"},
+                                            ):
+                                                ok_paid, recibo_num = _mark_receivable_as_paid(
+                                                    rec_obj,
+                                                    baixa_tipo="Painel de boletos",
+                                                    student_obj=boleto_student_obj,
+                                                )
+                                                if ok_paid:
+                                                    st.session_state["finance_boleto_filter"] = "Histórico"
+                                                    st.success(f"Baixa realizada. Recibo {recibo_num} gerado.")
+                                                else:
+                                                    st.error(str(recibo_num))
+                                                st.rerun()
+                                        with action2:
                                             if pdf_bytes:
                                                 st.download_button(
                                                     "Imprimir PDF",
@@ -21087,7 +21247,7 @@ div[data-baseweb="select"] > div {
                                                     use_container_width=True,
                                                     disabled=True,
                                                 )
-                                        with action2:
+                                        with action3:
                                             if st.button(
                                                 "Enviar e-mail + WhatsApp",
                                                 key=f"finance_boleto_send_{idx_boleto}_{code_txt}",
@@ -21103,7 +21263,19 @@ div[data-baseweb="select"] > div {
                                                 else:
                                                     st.error(f"Falha no envio: {status_send}.")
                                                 st.rerun()
-                                        with action3:
+                                        with action4:
+                                            payment_url_txt = _receivable_payment_url(rec_obj)
+                                            if payment_url_txt:
+                                                st.link_button("Abrir cobrança", payment_url_txt, use_container_width=True)
+                                            else:
+                                                st.button(
+                                                    "Abrir cobrança",
+                                                    key=f"finance_boleto_open_disabled_{idx_boleto}_{code_txt}",
+                                                    use_container_width=True,
+                                                    disabled=True,
+                                                )
+                                        extra1, extra2, extra3, extra4 = st.columns(4)
+                                        with extra1:
                                             if st.button(
                                                 "Atualizar cobrança",
                                                 key=f"finance_boleto_refresh_{idx_boleto}_{code_txt}",
@@ -21116,30 +21288,7 @@ div[data-baseweb="select"] > div {
                                                 else:
                                                     st.error(f"Falha ao atualizar {payment_label.lower()}: {status_bol}.")
                                                 st.rerun()
-                                        with action4:
-                                            payment_url_txt = _receivable_payment_url(rec_obj)
-                                            if payment_url_txt:
-                                                st.link_button("Abrir cobrança", payment_url_txt, use_container_width=True)
-                                            else:
-                                                st.button(
-                                                    "Abrir cobrança",
-                                                    key=f"finance_boleto_open_disabled_{idx_boleto}_{code_txt}",
-                                                    use_container_width=True,
-                                                    disabled=True,
-                                                )
-                                        with action5:
-                                            if st.button(
-                                                "Cancelar",
-                                                key=f"finance_boleto_cancel_{idx_boleto}_{code_txt}",
-                                                use_container_width=True,
-                                                disabled=str(rec_obj.get("status", "")).strip().lower() == "cancelado",
-                                            ):
-                                                rec_obj["status"] = "Cancelado"
-                                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                                st.success("Cobrança cancelada.")
-                                                st.rerun()
-                                        extra1, extra2 = st.columns([1.3, 1.7])
-                                        with extra1:
+                                        with extra2:
                                             if st.button(
                                                 "Gerar agora",
                                                 key=f"finance_boleto_generate_single_{idx_boleto}_{code_txt}",
@@ -21152,7 +21301,7 @@ div[data-baseweb="select"] > div {
                                                 else:
                                                     st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
                                                 st.rerun()
-                                        with extra2:
+                                        with extra3:
                                             if st.button(
                                                 "Editar cobrança",
                                                 key=f"student_boleto_edit_{idx_boleto}_{code_txt}",
@@ -21170,9 +21319,30 @@ div[data-baseweb="select"] > div {
                                                     st.session_state["manage_rec_idx"] = selected_idx
                                                     st.rerun()
                                                 st.error("Não foi possível abrir esta cobrança para edição.")
+                                        with extra4:
+                                            if st.button(
+                                                "Cancelar",
+                                                key=f"finance_boleto_cancel_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=str(rec_obj.get("status", "")).strip().lower() == "cancelado",
+                                            ):
+                                                rec_obj["status"] = "Cancelado"
+                                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                                st.success("Cobrança cancelada.")
+                                                st.rerun()
                                         with st.expander(f"Detalhes da cobrança {code_txt}", expanded=False):
                                             _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
                                             _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
+                                            if str(rec_obj.get("status", "")).strip().lower() == "pago" or str(rec_obj.get("recibo_numero", "")).strip():
+                                                receipt_html = _receivable_receipt_html(rec_obj, boleto_student_obj)
+                                                st.download_button(
+                                                    "Baixar recibo (HTML)",
+                                                    data=receipt_html,
+                                                    file_name=f"recibo_{normalize_text(boleto_student_name) or 'aluno'}_{normalize_text(code_txt) or 'recebimento'}.html",
+                                                    mime="text/html",
+                                                    key=f"student_boleto_receipt_{idx_boleto}_{code_txt}",
+                                                    use_container_width=True,
+                                                )
                                     if selected_row:
                                         selected_entries.append(rec_obj)
                                         selected_payload_entries.append((rec_obj, boleto_student_obj))
@@ -22038,25 +22208,33 @@ div[data-baseweb="select"] > div {
                             item_sel = st.selectbox("Selecione o lançamento", opcoes)
                             if st.button("Dar baixa manual"):
                                 item_obj = abertos[opcoes.index(item_sel)]
-                                item_obj["status"] = "Pago"
-                                item_obj["baixa_data"] = datetime.date.today().strftime("%d/%m/%Y")
-                                item_obj["baixa_tipo"] = "Manual"
-                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                st.success("Baixa realizada!")
+                                student_obj = _student_profile_by_name(str(item_obj.get("aluno", "")).strip())
+                                ok_paid, recibo_num = _mark_receivable_as_paid(
+                                    item_obj,
+                                    baixa_tipo="Manual",
+                                    student_obj=student_obj,
+                                )
+                                if ok_paid:
+                                    st.success(f"Baixa realizada. Recibo {recibo_num} gerado.")
+                                else:
+                                    st.error(str(recibo_num))
                                 st.rerun()
                         else:
                             if st.button("Baixar automaticamente vencidos (Aluno)"):
                                 hoje = datetime.date.today()
                                 count = 0
+                                aluno_baixa_obj = _student_profile_by_name(aluno_baixa)
                                 for r in st.session_state["receivables"]:
                                     if r.get("aluno") == aluno_baixa and r.get("status") != "Pago":
                                         vencimento = parse_date(r.get("vencimento", ""))
                                         if vencimento and vencimento <= hoje:
-                                            r["status"] = "Pago"
-                                            r["baixa_data"] = hoje.strftime("%d/%m/%Y")
-                                            r["baixa_tipo"] = "Automática"
-                                            count += 1
-                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                            ok_paid, _ = _mark_receivable_as_paid(
+                                                r,
+                                                baixa_tipo="Automática",
+                                                student_obj=aluno_baixa_obj,
+                                            )
+                                            if ok_paid:
+                                                count += 1
                                 st.success(f"Baixa automática realizada: {count} lançamento(s).")
                                 st.rerun()
         if finance_main == "Contas a Pagar":
@@ -22083,31 +22261,29 @@ div[data-baseweb="select"] > div {
                     "Recibo do professor": finance_receipt_options[0],
                     "Histórico de recibos": finance_receipt_options[1],
                 }
-                recibo_head_col, recibo_side_col = st.columns([3.5, 1.1], gap="large")
-                with recibo_head_col:
-                    _finance_section_intro(
-                        "Recibos",
-                        "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
-                        chip="Recibos",
-                    )
-                    current_receipt_label = next(
-                        (label for label, value in receipt_map.items() if value == st.session_state.get("finance_receipt_menu")),
-                        "Recibo do professor",
-                    )
-                    _finance_pane_header(
-                        "Fluxo atual",
-                        f"Ação selecionada: {current_receipt_label}. Use o painel lateral para alternar entre emissão e histórico.",
-                    )
-                with recibo_side_col:
-                    _finance_action_panel(
-                        "Ações",
-                        [
-                            {"label": label, "set_state": {"finance_workspace_menu": "Recibos", "finance_receipt_menu": value}, "primary": value == st.session_state.get("finance_receipt_menu")}
-                            for label, value in receipt_map.items()
-                        ],
-                        key_prefix="finance_receipt_nav",
-                        subtitle="Operações do recibo.",
-                    )
+                _finance_section_intro(
+                    "Recibos",
+                    "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
+                    chip="Recibos",
+                )
+                current_receipt_label = next(
+                    (label for label, value in receipt_map.items() if value == st.session_state.get("finance_receipt_menu")),
+                    "Recibo do professor",
+                )
+                _finance_action_panel(
+                    "Ações",
+                    [
+                        {"label": label, "set_state": {"finance_workspace_menu": "Recibos", "finance_receipt_menu": value}, "primary": value == st.session_state.get("finance_receipt_menu")}
+                        for label, value in receipt_map.items()
+                    ],
+                    key_prefix="finance_receipt_nav",
+                    subtitle="Operações do recibo.",
+                    columns_per_row=2,
+                )
+                _finance_pane_header(
+                    "Fluxo atual",
+                    f"Ação selecionada: {current_receipt_label}.",
+                )
                 recibos_emitidos = len([r for r in paid_receivables if str(r.get("data_pagamento", "")).strip()]) + len(
                     [p for p in sales_payments_all if str(p.get("recibo_numero", "")).strip()]
                 )
@@ -22125,31 +22301,29 @@ div[data-baseweb="select"] > div {
                     "Ações em massa": finance_teacher_options[5],
                     "Gerenciar despesas": finance_teacher_options[6],
                 }
-                pagar_head_col, pagar_side_col = st.columns([3.5, 1.1], gap="large")
-                with pagar_head_col:
-                    _finance_section_intro(
-                        "Professores e pagamentos",
-                        "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
-                        chip="Professores",
-                    )
-                    current_pay_label = next(
-                        (label for label, value in fp_map.items() if value == st.session_state.get("finance_pagar_menu")),
-                        "Resumo",
-                    )
-                    _finance_pane_header(
-                        "Fluxo atual",
-                        f"Ação selecionada: {current_pay_label}. Use o painel lateral para navegar entre resumo, pagamentos e despesas.",
-                    )
-                with pagar_side_col:
-                    _finance_action_panel(
-                        "Ações",
-                        [
-                            {"label": label, "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": value}, "primary": value == st.session_state.get("finance_pagar_menu")}
-                            for label, value in fp_map.items()
-                        ],
-                        key_prefix="finance_payables_nav",
-                        subtitle="Painel lateral de contas a pagar.",
-                    )
+                _finance_section_intro(
+                    "Professores e pagamentos",
+                    "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
+                    chip="Professores",
+                )
+                current_pay_label = next(
+                    (label for label, value in fp_map.items() if value == st.session_state.get("finance_pagar_menu")),
+                    "Resumo",
+                )
+                _finance_action_panel(
+                    "Ações",
+                    [
+                        {"label": label, "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": value}, "primary": value == st.session_state.get("finance_pagar_menu")}
+                        for label, value in fp_map.items()
+                    ],
+                    key_prefix="finance_payables_nav",
+                    subtitle="Operações de contas a pagar.",
+                    columns_per_row=4,
+                )
+                _finance_pane_header(
+                    "Fluxo atual",
+                    f"Ação selecionada: {current_pay_label}.",
+                )
             if finance_workspace == "Recibos" and finance_receipt_menu == "Historico de Recibos":
                 _finance_pane_header("Histórico de recibos", "Comprovantes emitidos e pagos sob a mesma identidade visual do módulo.")
                 paid_receipt_rows = [
@@ -23170,26 +23344,24 @@ div[data-baseweb="select"] > div {
                 (label for label, value in overdue_label_map.items() if value == current_overdue),
                 "Recebimentos vencidos",
             )
-            overdue_head_col, overdue_side_col = st.columns([3.5, 1.1], gap="large")
-            with overdue_head_col:
-                _finance_section_intro(
-                    "Cobrança e inadimplência",
-                    "Liste atrasos por aluno, responsável e vencimento, com leitura rápida e menos ruído operacional.",
-                    chip="Inadimplência",
-                )
-                _finance_pane_header("Filtros e visão atual", "Escolha o painel e acompanhe o valor exposto sem poluição visual.")
-            with overdue_side_col:
-                _finance_action_panel(
-                    "Ações",
-                    [
-                        {"label": "Recebimentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[0]}, "primary": current_overdue == finance_venc_options[0]},
-                        {"label": "Pagamentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[1]}, "primary": current_overdue == finance_venc_options[1]},
-                        {"label": "Abrir recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": "Recebimentos"}},
-                        {"label": "Abrir contas a pagar", "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": "Despesas"}},
-                    ],
-                    key_prefix="finance_overdue_nav",
-                    subtitle="Atalhos do painel de atraso.",
-                )
+            _finance_section_intro(
+                "Cobrança e inadimplência",
+                "Liste atrasos por aluno, responsável e vencimento, com leitura rápida e menos ruído operacional.",
+                chip="Inadimplência",
+            )
+            _finance_action_panel(
+                "Ações",
+                [
+                    {"label": "Recebimentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[0]}, "primary": current_overdue == finance_venc_options[0]},
+                    {"label": "Pagamentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[1]}, "primary": current_overdue == finance_venc_options[1]},
+                    {"label": "Abrir recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": "Recebimentos"}},
+                    {"label": "Abrir contas a pagar", "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": "Despesas"}},
+                ],
+                key_prefix="finance_overdue_nav",
+                subtitle="Atalhos do painel de atraso.",
+                columns_per_row=4,
+            )
+            _finance_pane_header("Filtros e visão atual", "Escolha o painel e acompanhe o valor exposto sem poluição visual.")
             overdue_col_a, overdue_col_b, overdue_col_c = st.columns([1.2, 1, 1])
             with overdue_col_a:
                 selected_overdue_label = st.selectbox(
