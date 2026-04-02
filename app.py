@@ -20231,12 +20231,6 @@ div[data-baseweb="select"] > div {
   font-size: .82rem;
   line-height: 1.35;
 }
-@media (min-width: 1101px) {
-  .finance-right-column [data-testid="stVerticalBlock"] > div:first-child {
-    position: sticky;
-    top: 84px;
-  }
-}
 @media (max-width: 1100px) {
   .finance-module-title {
     font-size: 1.22rem;
@@ -20286,7 +20280,6 @@ div[data-baseweb="select"] > div {
             )
 
         def _finance_action_panel(title, actions, key_prefix, subtitle="", notes=None):
-            st.markdown('<div class="finance-right-column">', unsafe_allow_html=True)
             with st.container(border=True):
                 st.markdown(f"### {title}")
                 if subtitle:
@@ -20309,7 +20302,6 @@ div[data-baseweb="select"] > div {
                 for note in notes or []:
                     if str(note).strip():
                         st.caption(str(note).strip())
-            st.markdown('</div>', unsafe_allow_html=True)
 
         receivables_all = list(st.session_state.get("receivables", []) or [])
         payables_all = list(_load_latest_payables() or [])
@@ -22081,9 +22073,12 @@ div[data-baseweb="select"] > div {
                 "Recibos de Professor",
                 "Historico de Recibos",
             ]
+            finance_receipt_menu = st.session_state.get("finance_receipt_menu", finance_receipt_options[0])
+            finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_teacher_options[0])
             if finance_workspace == "Recibos":
                 if st.session_state.get("finance_receipt_menu") not in finance_receipt_options:
                     st.session_state["finance_receipt_menu"] = finance_receipt_options[0]
+                finance_receipt_menu = st.session_state.get("finance_receipt_menu", finance_receipt_options[0])
                 receipt_map = {
                     "Recibo do professor": finance_receipt_options[0],
                     "Histórico de recibos": finance_receipt_options[1],
@@ -22120,6 +22115,7 @@ div[data-baseweb="select"] > div {
             else:
                 if st.session_state.get("finance_pagar_menu") not in finance_teacher_options:
                     st.session_state["finance_pagar_menu"] = finance_teacher_options[0]
+                finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_teacher_options[0])
                 fp_map = {
                     "Resumo": finance_teacher_options[0],
                     "Pagamento por aulas": finance_teacher_options[1],
