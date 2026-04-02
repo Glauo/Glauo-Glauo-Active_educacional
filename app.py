@@ -19915,7 +19915,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             st.dataframe(summary_df, use_container_width=True)
             st.markdown("#### Selecionar aluno")
             selected_student = str(st.session_state.get("finance_overdue_selected_student", "")).strip()
-            for row in summary_rows:
+            for row_idx, row in enumerate(summary_rows):
                 c1, c2, c3, c4 = st.columns([2.2, 1, 1, 0.9])
                 with c1:
                     st.markdown(f"**{row['aluno']}**")
@@ -19924,7 +19924,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 with c3:
                     st.caption(format_money(row["total_vencido"]))
                 with c4:
-                    if st.button("Ver", key=f"finance_overdue_student_btn_{row['aluno']}"):
+                    if st.button("Ver", key=f"finance_overdue_student_btn_{row_idx}_{normalize_text(row['aluno'])}"):
                         st.session_state["finance_overdue_selected_student"] = row["aluno"]
                         selected_student = row["aluno"]
                         st.rerun()
@@ -20770,17 +20770,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             if not boleto_items:
                                 st.info("Nenhuma cobrança encontrada neste filtro.")
                             else:
-                                st.caption("Selecione as cobranças e use as ações rápidas. A estrutura desta tela será reutilizada no restante do financeiro.")
-                                header_cols = st.columns([0.45, 1.0, 2.25, 1.7, 0.8, 1.0, 1.1, 1.5, 2.35])
-                                header_cols[0].markdown("**Sel.**")
-                                header_cols[1].markdown("**Nº Boleto**")
-                                header_cols[2].markdown("**Sacado**")
-                                header_cols[3].markdown("**ID Referência**")
-                                header_cols[4].markdown("**Valor**")
-                                header_cols[5].markdown("**Vencimento**")
-                                header_cols[6].markdown("**Categoria**")
-                                header_cols[7].markdown("**Situação**")
-                                header_cols[8].markdown("**Ações**")
+                                st.caption("Selecione as cobranças e use as ações rápidas abaixo. O envio usa e-mail + WhatsApp no mesmo fluxo.")
                                 selected_entries = []
                                 selected_payload_entries = []
                                 for idx_boleto, rec_obj in enumerate(boleto_items):
@@ -20792,111 +20782,139 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     status_color = "#2563eb" if _receivable_payment_generated(rec_obj) else "#94a3b8"
                                     if str(rec_obj.get("status", "")).strip().lower() == "cancelado":
                                         status_color = "#f59e0b"
-                                    row_cols = st.columns([0.45, 1.0, 2.25, 1.7, 0.8, 1.0, 1.1, 1.5, 2.35])
-                                    row_key = f"finance_boleto_select_{normalize_text(boleto_student_name)}_{code_txt}_{idx_boleto}"
-                                    selected_row = row_cols[0].checkbox(
-                                        "",
-                                        key=row_key,
-                                        value=bool(st.session_state.get(row_key, False)),
-                                    )
-                                    display_num = str(rec_obj.get("boleto_payment_id", "")).strip() or code_txt
-                                    row_cols[1].write(display_num)
-                                    row_cols[2].write(boleto_student_name)
-                                    row_cols[3].write(code_txt)
-                                    row_cols[4].write(str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00")
-                                    row_cols[5].write(str(rec_obj.get("vencimento", "")).strip() or "-")
-                                    row_cols[6].write(str(rec_obj.get("categoria", "")).strip() or "-")
-                                    row_cols[7].markdown(
-                                        f"<span style='display:inline-flex;align-items:center;gap:6px;'><span style='width:10px;height:10px;border-radius:999px;background:{status_color};display:inline-block;'></span>{status_boleto}</span>",
-                                        unsafe_allow_html=True,
-                                    )
-                                    act_cols = row_cols[8].columns([0.9, 0.9, 0.9, 0.9])
                                     pdf_bytes, file_name, mime_type = _receivable_preferred_pdf_payload(rec_obj, boleto_student_obj)
-                                    with act_cols[0]:
-                                        if pdf_bytes:
-                                            st.download_button(
-                                                "🖨️",
-                                                data=pdf_bytes,
-                                                file_name=file_name,
-                                                mime=mime_type or "application/pdf",
-                                                key=f"finance_boleto_print_{idx_boleto}_{code_txt}",
-                                                use_container_width=True,
-                                            )
-                                        else:
-                                            st.button(
-                                                "🖨️",
-                                                key=f"finance_boleto_print_disabled_{idx_boleto}_{code_txt}",
-                                                use_container_width=True,
-                                                disabled=True,
-                                            )
-                                    with act_cols[1]:
-                                        if st.button(
-                                            "✉️",
-                                            key=f"finance_boleto_send_{idx_boleto}_{code_txt}",
-                                            use_container_width=True,
-                                            disabled=bool(missing_fields),
-                                        ):
-                                            ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
-                                            if ok_send:
-                                                st.success(
-                                                    f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
-                                                    f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                                    with st.container(border=True):
+                                        row_key = f"finance_boleto_select_{normalize_text(boleto_student_name)}_{code_txt}_{idx_boleto}"
+                                        top1, top2, top3, top4, top5 = st.columns([0.5, 3.0, 1.1, 1.1, 1.4])
+                                        selected_row = top1.checkbox(
+                                            "Selecionar",
+                                            key=row_key,
+                                            value=bool(st.session_state.get(row_key, False)),
+                                            label_visibility="collapsed",
+                                        )
+                                        display_num = str(rec_obj.get("boleto_payment_id", "")).strip() or code_txt
+                                        top2.markdown(
+                                            f"**{str(rec_obj.get('descricao', '')).strip() or 'Cobrança'}**  \n"
+                                            f"`{display_num}`  \n"
+                                            f"{boleto_student_name} | Ref.: `{code_txt}` | {str(rec_obj.get('categoria', '')).strip() or '-'}"
+                                        )
+                                        top3.metric("Valor", str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() or "0,00")
+                                        top4.metric("Vencimento", str(rec_obj.get("vencimento", "")).strip() or "-")
+                                        top5.markdown(
+                                            f"<div style='padding-top:18px;display:inline-flex;align-items:center;gap:6px;'>"
+                                            f"<span style='width:10px;height:10px;border-radius:999px;background:{status_color};display:inline-block;'></span>"
+                                            f"<strong>{status_boleto}</strong></div>",
+                                            unsafe_allow_html=True,
+                                        )
+                                        if missing_fields:
+                                            st.warning(f"Pendente para geração: {', '.join(missing_fields)}.")
+                                        action1, action2, action3, action4, action5 = st.columns(5)
+                                        with action1:
+                                            if pdf_bytes:
+                                                st.download_button(
+                                                    "Imprimir PDF",
+                                                    data=pdf_bytes,
+                                                    file_name=file_name,
+                                                    mime=mime_type or "application/pdf",
+                                                    key=f"finance_boleto_print_{idx_boleto}_{code_txt}",
+                                                    use_container_width=True,
                                                 )
                                             else:
-                                                st.error(f"Falha no envio: {status_send}.")
-                                            st.rerun()
-                                    with act_cols[2]:
-                                        if st.button(
-                                            "🔄",
-                                            key=f"finance_boleto_refresh_{idx_boleto}_{code_txt}",
-                                            use_container_width=True,
-                                            disabled=bool(missing_fields),
-                                        ):
-                                            ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
-                                            if ok_bol:
-                                                st.success(f"{payment_label} atualizado: {status_bol}.")
+                                                st.button(
+                                                    "Imprimir PDF",
+                                                    key=f"finance_boleto_print_disabled_{idx_boleto}_{code_txt}",
+                                                    use_container_width=True,
+                                                    disabled=True,
+                                                )
+                                        with action2:
+                                            if st.button(
+                                                "Enviar e-mail + WhatsApp",
+                                                key=f"finance_boleto_send_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=bool(missing_fields),
+                                            ):
+                                                ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                                                if ok_send:
+                                                    st.success(
+                                                        f"{payment_label} enviado. E-mail {stats_send.get('email_ok', 0)}/{stats_send.get('email_total', 0)} | "
+                                                        f"WhatsApp {stats_send.get('whatsapp_ok', 0)}/{stats_send.get('whatsapp_total', 0)}."
+                                                    )
+                                                else:
+                                                    st.error(f"Falha no envio: {status_send}.")
+                                                st.rerun()
+                                        with action3:
+                                            if st.button(
+                                                "Atualizar cobrança",
+                                                key=f"finance_boleto_refresh_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=bool(missing_fields),
+                                            ):
+                                                ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=True)
+                                                if ok_bol:
+                                                    st.success(f"{payment_label} atualizado: {status_bol}.")
+                                                else:
+                                                    st.error(f"Falha ao atualizar {payment_label.lower()}: {status_bol}.")
+                                                st.rerun()
+                                        with action4:
+                                            payment_url_txt = _receivable_payment_url(rec_obj)
+                                            if payment_url_txt:
+                                                st.link_button("Abrir cobrança", payment_url_txt, use_container_width=True)
                                             else:
-                                                st.error(f"Falha ao atualizar {payment_label.lower()}: {status_bol}.")
-                                            st.rerun()
-                                    with act_cols[3]:
-                                        if st.button(
-                                            "✖",
-                                            key=f"finance_boleto_cancel_{idx_boleto}_{code_txt}",
-                                            use_container_width=True,
-                                            disabled=str(rec_obj.get("status", "")).strip().lower() == "cancelado",
-                                        ):
-                                            rec_obj["status"] = "Cancelado"
-                                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
-                                            st.success("Cobrança cancelada.")
-                                            st.rerun()
-                                    if missing_fields:
-                                        st.caption(f"Pendente para geração: {', '.join(missing_fields)}.")
+                                                st.button(
+                                                    "Abrir cobrança",
+                                                    key=f"finance_boleto_open_disabled_{idx_boleto}_{code_txt}",
+                                                    use_container_width=True,
+                                                    disabled=True,
+                                                )
+                                        with action5:
+                                            if st.button(
+                                                "Cancelar",
+                                                key=f"finance_boleto_cancel_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=str(rec_obj.get("status", "")).strip().lower() == "cancelado",
+                                            ):
+                                                rec_obj["status"] = "Cancelado"
+                                                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                                                st.success("Cobrança cancelada.")
+                                                st.rerun()
+                                        extra1, extra2 = st.columns([1.3, 1.7])
+                                        with extra1:
+                                            if st.button(
+                                                "Gerar agora",
+                                                key=f"finance_boleto_generate_single_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                                disabled=bool(missing_fields),
+                                            ):
+                                                ok_bol, status_bol = generate_boleto_for_receivable(rec_obj, force=False)
+                                                if ok_bol:
+                                                    st.success(f"{payment_label} gerado: {status_bol}.")
+                                                else:
+                                                    st.error(f"Falha ao gerar {payment_label.lower()}: {status_bol}.")
+                                                st.rerun()
+                                        with extra2:
+                                            if st.button(
+                                                "Editar cobrança",
+                                                key=f"student_boleto_edit_{idx_boleto}_{code_txt}",
+                                                use_container_width=True,
+                                            ):
+                                                selected_idx = next(
+                                                    (
+                                                        idx_ref for idx_ref, obj_ref in enumerate(st.session_state.get("receivables", []))
+                                                        if obj_ref is rec_obj
+                                                    ),
+                                                    None,
+                                                )
+                                                if selected_idx is not None:
+                                                    st.session_state["finance_receber_menu"] = "Gerenciamento de Recebimentos"
+                                                    st.session_state["manage_rec_idx"] = selected_idx
+                                                    st.rerun()
+                                                st.error("Não foi possível abrir esta cobrança para edição.")
+                                        with st.expander(f"Detalhes da cobrança {code_txt}", expanded=False):
+                                            _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
+                                            _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
                                     if selected_row:
                                         selected_entries.append(rec_obj)
                                         selected_payload_entries.append((rec_obj, boleto_student_obj))
-                                    with st.expander(f"Detalhes da cobrança {code_txt}", expanded=False):
-                                        payment_url_txt = _receivable_payment_url(rec_obj)
-                                        if payment_url_txt:
-                                            st.link_button(f"Abrir {payment_label.lower()}", payment_url_txt, use_container_width=False)
-                                        _render_receivable_payment_output(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
-                                        _render_manual_external_boleto_actions(rec_obj, key_prefix=f"student_boleto_{idx_boleto}_{code_txt}")
-                                        if st.button(
-                                            "Editar cobrança",
-                                            key=f"student_boleto_edit_{idx_boleto}_{code_txt}",
-                                            use_container_width=True,
-                                        ):
-                                            selected_idx = next(
-                                                (
-                                                    idx_ref for idx_ref, obj_ref in enumerate(st.session_state.get("receivables", []))
-                                                    if obj_ref is rec_obj
-                                                ),
-                                                None,
-                                            )
-                                            if selected_idx is not None:
-                                                st.session_state["finance_receber_menu"] = "Gerenciamento de Recebimentos"
-                                                st.session_state["manage_rec_idx"] = selected_idx
-                                                st.rerun()
-                                            st.error("Não foi possível abrir esta cobrança para edição.")
 
                                 bulk_zip = _receivable_bulk_pdf_zip_bytes(selected_payload_entries)
                                 bulk1, bulk2, bulk3, bulk4, bulk5, bulk6, bulk7 = st.columns([1.25, 1.05, 1.0, 1.0, 1.0, 1.0, 1.0])
@@ -20921,7 +20939,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     else:
                                         st.button("Imprimir", key="finance_boleto_bulk_print_disabled", use_container_width=True, disabled=True)
                                 with bulk4:
-                                    if st.button("Enviar", key="finance_boleto_bulk_send", use_container_width=True, disabled=not bool(selected_entries)):
+                                    if st.button("Enviar e-mail + WhatsApp", key="finance_boleto_bulk_send", use_container_width=True, disabled=not bool(selected_entries)):
                                         sent_ok = 0
                                         sent_fail = 0
                                         for rec_obj in selected_entries:
