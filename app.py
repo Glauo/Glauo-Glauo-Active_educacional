@@ -20019,46 +20019,292 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
         def _finance_metric_card(title, value, subtitle="", tone="blue"):
             tone_map = {
-                "blue": ("#1d4ed8", "#eff6ff"),
-                "green": ("#059669", "#ecfdf5"),
-                "orange": ("#ea580c", "#fff7ed"),
-                "red": ("#dc2626", "#fef2f2"),
+                "blue": ("#2954cc", "#f6f8fd"),
+                "green": ("#0f766e", "#f0fdfa"),
+                "orange": ("#b45309", "#fff8eb"),
+                "red": ("#b91c1c", "#fef2f2"),
                 "slate": ("#334155", "#f8fafc"),
             }
             accent, bg = tone_map.get(tone, tone_map["blue"])
             st.markdown(
                 (
-                    f'<div style="background:{bg};border:1px solid rgba(148,163,184,.18);border-radius:18px;'
-                    f'padding:18px 18px 16px;box-shadow:0 12px 30px rgba(15,23,42,.06);height:100%;">'
-                    f'<div style="font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:{accent};">{title}</div>'
-                    f'<div style="margin-top:10px;font-size:2rem;font-weight:800;color:#0f172a;line-height:1.05;">{value}</div>'
-                    f'<div style="margin-top:8px;color:#64748b;font-size:.9rem;line-height:1.4;">{subtitle}</div>'
+                    f'<div class="finance-metric-card" style="--finance-metric-accent:{accent};--finance-metric-bg:{bg};">'
+                    f'<div class="finance-metric-title">{title}</div>'
+                    f'<div class="finance-metric-value">{value}</div>'
+                    f'<div class="finance-metric-subtitle">{subtitle}</div>'
                     f'</div>'
                 ),
                 unsafe_allow_html=True,
             )
 
-        def _finance_section_intro(title, description, chip=None):
-            chip_html = (
-                f'<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;'
-                f'background:rgba(255,255,255,.72);border:1px solid rgba(148,163,184,.22);color:#1e3a8a;'
-                f'font-size:.78rem;font-weight:800;letter-spacing:.04em;">{chip}</span>'
-                if chip
-                else ""
+        def _render_finance_theme():
+            if st.session_state.get("_finance_theme_rendered", False):
+                return
+            st.markdown(
+                """
+<style>
+.finance-module-hero {
+  background: linear-gradient(180deg, #f9fbff 0%, #eef3fb 100%);
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 26px;
+  padding: 24px 26px 20px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .07);
+  margin: 0 0 18px;
+}
+.finance-module-kicker {
+  color: #475569;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.finance-module-title {
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.finance-module-subtitle {
+  margin-top: 10px;
+  color: #526277;
+  font-size: .98rem;
+  line-height: 1.6;
+  max-width: 920px;
+}
+.finance-module-nav {
+  margin: 0 0 16px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 22px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .05);
+}
+.finance-section-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfe 100%);
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 22px;
+  padding: 18px 20px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .05);
+  margin: 10px 0 16px;
+}
+.finance-section-kicker {
+  color: #2954cc;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.finance-section-title {
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+.finance-section-description {
+  margin-top: 6px;
+  color: #607086;
+  font-size: .96rem;
+  line-height: 1.55;
+}
+.finance-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eff4ff;
+  border: 1px solid rgba(41, 84, 204, .18);
+  color: #1e3a8a;
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.finance-pane {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 22px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .05);
+  padding: 18px 18px 8px;
+  margin: 0 0 16px;
+}
+.finance-pane-title {
+  color: #0f172a;
+  font-size: 1.08rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.finance-pane-subtitle {
+  color: #66768b;
+  font-size: .92rem;
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+.finance-metric-card {
+  background: var(--finance-metric-bg);
+  border: 1px solid rgba(148, 163, 184, .16);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.finance-metric-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--finance-metric-accent);
+}
+.finance-metric-title {
+  color: var(--finance-metric-accent);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.finance-metric-value {
+  margin-top: 12px;
+  color: #0f172a;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.06;
+}
+.finance-metric-subtitle {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: .9rem;
+  line-height: 1.4;
+}
+[data-testid="stDataFrame"] {
+  border: 1px solid rgba(148, 163, 184, .20);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .04);
+  background: #ffffff;
+}
+[data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] thead tr th {
+  background: #42566f !important;
+  color: #f8fafc !important;
+}
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stTimeInput input,
+.stTextArea textarea {
+  border-radius: 14px !important;
+  border: 1px solid rgba(148, 163, 184, .28) !important;
+  background: #fcfdff !important;
+}
+div[data-baseweb="select"] > div {
+  border-radius: 14px !important;
+  border: 1px solid rgba(148, 163, 184, .28) !important;
+  background: #fcfdff !important;
+}
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stLinkButton"] a {
+  border-radius: 14px !important;
+  min-height: 44px !important;
+  font-weight: 700 !important;
+  border: 1px solid rgba(148, 163, 184, .22) !important;
+  box-shadow: none !important;
+}
+.stButton > button[kind="primary"],
+.stDownloadButton > button[kind="primary"] {
+  background: linear-gradient(135deg, #2144b4 0%, #1c6d7b 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+.stButton > button:hover,
+.stDownloadButton > button:hover,
+[data-testid="stLinkButton"] a:hover {
+  border-color: rgba(41, 84, 204, .35) !important;
+}
+[data-testid="stExpander"] {
+  border: 1px solid rgba(148, 163, 184, .18) !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+}
+[data-testid="stForm"] {
+  border: 1px solid rgba(148, 163, 184, .18) !important;
+  border-radius: 20px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%) !important;
+  padding: 12px !important;
+}
+@media (max-width: 1100px) {
+  .finance-module-title {
+    font-size: 1.65rem;
+  }
+}
+</style>
+                """,
+                unsafe_allow_html=True,
             )
+            st.session_state["_finance_theme_rendered"] = True
+
+        def _finance_module_header(title, subtitle):
             st.markdown(
                 (
-                    '<div style="background:linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(248,250,252,.92) 100%);'
-                    'border:1px solid rgba(148,163,184,.16);border-radius:22px;padding:18px 20px;'
-                    'box-shadow:0 14px 34px rgba(15,23,42,.06);margin:10px 0 16px;">'
+                    '<div class="finance-module-hero">'
+                    '<div class="finance-module-kicker">Financeiro escolar</div>'
+                    f'<div class="finance-module-title">{title}</div>'
+                    f'<div class="finance-module-subtitle">{subtitle}</div>'
+                    '</div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        def _finance_section_intro(title, description, chip=None):
+            chip_html = f'<span class="finance-chip">{chip}</span>' if chip else ""
+            st.markdown(
+                (
+                    '<div class="finance-section-card">'
                     '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
-                    f'<div><div style="font-size:1.35rem;font-weight:800;color:#0f172a;">{title}</div>'
-                    f'<div style="margin-top:6px;color:#64748b;font-size:.96rem;line-height:1.55;">{description}</div></div>'
+                    f'<div><div class="finance-section-kicker">Operação financeira</div><div class="finance-section-title">{title}</div>'
+                    f'<div class="finance-section-description">{description}</div></div>'
                     f'{chip_html}'
                     '</div></div>'
                 ),
                 unsafe_allow_html=True,
             )
+
+        def _finance_pane_header(title, subtitle=""):
+            st.markdown(
+                (
+                    '<div class="finance-pane">'
+                    f'<div class="finance-pane-title">{title}</div>'
+                    + (f'<div class="finance-pane-subtitle">{subtitle}</div>' if subtitle else "")
+                    + '</div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
+        def _finance_action_panel(title, actions, key_prefix, subtitle="", notes=None):
+            with st.container(border=True):
+                st.markdown(f"### {title}")
+                if subtitle:
+                    st.caption(subtitle)
+                for idx_action, action in enumerate(actions or []):
+                    if not isinstance(action, dict):
+                        continue
+                    label = str(action.get("label", "")).strip()
+                    if not label:
+                        continue
+                    button_key = f"{key_prefix}_action_{idx_action}_{normalize_text(label) or idx_action}"
+                    button_type = "primary" if bool(action.get("primary")) else "secondary"
+                    disabled = bool(action.get("disabled", False))
+                    if st.button(label, key=button_key, use_container_width=True, type=button_type, disabled=disabled):
+                        for state_key, state_value in (action.get("set_state") or {}).items():
+                            st.session_state[state_key] = state_value
+                        if bool(action.get("clear_overdue_focus")):
+                            st.session_state.pop("finance_overdue_focus", None)
+                        st.rerun()
+                for note in notes or []:
+                    if str(note).strip():
+                        st.caption(str(note).strip())
 
         receivables_all = list(st.session_state.get("receivables", []) or [])
         payables_all = list(_load_latest_payables() or [])
@@ -20103,7 +20349,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if st.session_state.get("finance_student_account_name") not in student_names:
                 st.session_state["finance_student_account_name"] = student_names[0]
 
-            st.markdown("### Conta do aluno")
+            _finance_pane_header("Conta do aluno", "Visualização individual com histórico, status, baixa, geração e envio financeiro.")
             account_col, meta_col = st.columns([1.4, 1])
             with account_col:
                 selected_student = st.selectbox(
@@ -20398,37 +20644,34 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
         ]
         if st.session_state.get("finance_workspace_menu") not in finance_sections:
             st.session_state["finance_workspace_menu"] = "Visão Geral"
-        st.markdown(
-            (
-                '<div style="background:linear-gradient(135deg, rgba(30,64,175,.98) 0%, rgba(15,118,110,.94) 55%, rgba(234,88,12,.90) 100%);'
-                'border-radius:24px;padding:20px 22px;color:#fff;box-shadow:0 20px 46px rgba(30,64,175,.20);margin:0 0 18px;">'
-                '<div style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;opacity:.85;">Financeiro escolar</div>'
-                '<div style="font-size:1.85rem;font-weight:800;margin-top:6px;">Controle financeiro premium da escola</div>'
-                '<div style="margin-top:8px;font-size:1rem;line-height:1.6;opacity:.92;">Mensalidades, materiais, matrículas, professores, recibos e inadimplência em um fluxo mais claro.</div>'
-                '</div>'
-            ),
-            unsafe_allow_html=True,
+        _render_finance_theme()
+        _finance_module_header(
+            "Controle financeiro premium da escola",
+            "Mensalidades, materiais, matrículas, professores, recibos, inadimplência, caixa operacional e relatórios em uma navegação única, corporativa e organizada.",
         )
-        ws_cols_top = st.columns(4)
-        ws_cols_bottom = st.columns(3)
-        workspace_layout = [
-            (ws_cols_top[0], finance_sections[0], 0),
-            (ws_cols_top[1], finance_sections[1], 1),
-            (ws_cols_top[2], finance_sections[2], 2),
-            (ws_cols_top[3], finance_sections[3], 3),
-            (ws_cols_bottom[0], finance_sections[4], 4),
-            (ws_cols_bottom[1], finance_sections[5], 5),
-        ]
-        for col_ref, option, idx_option in workspace_layout:
-            selected = str(st.session_state.get("finance_workspace_menu", "")) == option
-            if col_ref.button(
-                option,
-                key=f"finance_workspace_box_{idx_option}",
-                use_container_width=True,
-                type="primary" if selected else "secondary",
-            ):
-                st.session_state["finance_workspace_menu"] = option
-                st.rerun()
+        with st.container(border=True):
+            st.markdown("### Áreas do módulo")
+            st.caption("Todas as telas do financeiro usam a mesma navegação principal.")
+            ws_cols_top = st.columns(4)
+            ws_cols_bottom = st.columns(3)
+            workspace_layout = [
+                (ws_cols_top[0], finance_sections[0], 0),
+                (ws_cols_top[1], finance_sections[1], 1),
+                (ws_cols_top[2], finance_sections[2], 2),
+                (ws_cols_top[3], finance_sections[3], 3),
+                (ws_cols_bottom[0], finance_sections[4], 4),
+                (ws_cols_bottom[1], finance_sections[5], 5),
+            ]
+            for col_ref, option, idx_option in workspace_layout:
+                selected = str(st.session_state.get("finance_workspace_menu", "")) == option
+                if col_ref.button(
+                    option,
+                    key=f"finance_workspace_box_{idx_option}",
+                    use_container_width=True,
+                    type="primary" if selected else "secondary",
+                ):
+                    st.session_state["finance_workspace_menu"] = option
+                    st.rerun()
         finance_workspace = st.session_state.get("finance_workspace_menu", finance_sections[0])
 
         if finance_focus in ("receber", "pagar"):
@@ -20600,17 +20843,30 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_main = "__reports__"
 
         if finance_main == "__reports__":
-            _finance_section_intro(
-                "Relatórios financeiros",
-                "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
-                chip="Relatórios",
-            )
-            st.markdown("### Relatórios")
-            rf1, rf2 = st.columns(2)
-            with rf1:
-                report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
-            with rf2:
-                report_end = st.date_input("Período final", value=month_end_fin, format="DD/MM/YYYY", key="finance_report_end")
+            reports_head_col, reports_side_col = st.columns([3.5, 1.1], gap="large")
+            with reports_head_col:
+                _finance_section_intro(
+                    "Relatórios financeiros",
+                    "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
+                    chip="Relatórios",
+                )
+                _finance_pane_header("Filtros do relatório", "Defina o período e mantenha a leitura dos resultados na mesma estrutura visual do módulo.")
+                rf1, rf2 = st.columns(2)
+                with rf1:
+                    report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
+                with rf2:
+                    report_end = st.date_input("Período final", value=month_end_fin, format="DD/MM/YYYY", key="finance_report_end")
+            with reports_side_col:
+                _finance_action_panel(
+                    "Ações",
+                    [
+                        {"label": "Recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos"}},
+                        {"label": "Contas a pagar", "set_state": {"finance_workspace_menu": "Professores"}},
+                        {"label": "Inadimplência", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência"}},
+                    ],
+                    key_prefix="finance_reports",
+                    subtitle="Atalhos rápidos do módulo.",
+                )
             rec_report = [
                 r for r in receivables_all
                 if report_start <= (parse_date(r.get("vencimento", "")) or parse_date(r.get("data", "")) or today_fin) <= report_end
@@ -20626,25 +20882,28 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 _finance_metric_card("Mensalidades em aberto", len([r for r in rec_report if normalize_text(r.get("categoria", "")) == "mensalidade" and str(r.get("status", "")).strip().lower() != "pago"]), "No período filtrado", tone="orange")
             with rc3:
                 _finance_metric_card("Pagamentos professores", format_money(sum(_payable_amount(p) for p in pay_report if str(p.get("categoria_lancamento", "")).strip().lower() == "professor")), "Lançados no período", tone="blue")
-            st.dataframe(pd.DataFrame([
-                {
-                    "tipo": "Recebimento",
-                    "referencia": str(r.get("aluno", "")).strip(),
-                    "categoria": str(r.get("categoria", "")).strip(),
-                    "vencimento": str(r.get("vencimento", "")).strip(),
-                    "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
-                    "status": str(r.get("status", "")).strip(),
-                } for r in rec_report[:200]
-            ] + [
-                {
-                    "tipo": "Professor/Despesa",
-                    "referencia": str(p.get("fornecedor", "")).strip(),
-                    "categoria": str(p.get("categoria_lancamento", "")).strip(),
-                    "vencimento": str(p.get("vencimento", "")).strip(),
-                    "valor": str(p.get("valor_parcela", p.get("valor", ""))).strip(),
-                    "status": str(p.get("status", "")).strip(),
-                } for p in pay_report[:200]
-            ]), use_container_width=True, hide_index=True)
+            with st.container(border=True):
+                st.markdown("### Consolidação do período")
+                st.caption("Tabela financeira padrão do módulo para análise administrativa.")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "tipo": "Recebimento",
+                        "referencia": str(r.get("aluno", "")).strip(),
+                        "categoria": str(r.get("categoria", "")).strip(),
+                        "vencimento": str(r.get("vencimento", "")).strip(),
+                        "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
+                        "status": str(r.get("status", "")).strip(),
+                    } for r in rec_report[:200]
+                ] + [
+                    {
+                        "tipo": "Professor/Despesa",
+                        "referencia": str(p.get("fornecedor", "")).strip(),
+                        "categoria": str(p.get("categoria_lancamento", "")).strip(),
+                        "vencimento": str(p.get("vencimento", "")).strip(),
+                        "valor": str(p.get("valor_parcela", p.get("valor", ""))).strip(),
+                        "status": str(p.get("status", "")).strip(),
+                    } for p in pay_report[:200]
+                ]), use_container_width=True, hide_index=True)
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
@@ -20661,11 +20920,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             receber_chip = "Recebimentos"
             receber_desc = "Lance cobranças, acompanhe carteiras em aberto, faça baixas e mantenha a carteira financeira organizada."
             receber_title = "Recebimentos"
-            _finance_section_intro(
-                receber_title,
-                receber_desc,
-                chip=receber_chip,
-            )
             fr_map = {
                 "Lançar cobrança": finance_receber_options[0],
                 "Carteira de recebimentos": finance_receber_options[1],
@@ -20680,22 +20934,39 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 (label for label, value in fr_map.items() if value == current_receber),
                 "Lançar cobrança",
             )
-            st.markdown("### Ações de Recebimentos")
-            finance_receber_menu = _finance_submenu_buttons(
-                "finance_receber_menu",
-                fr_map,
-                columns_count=4,
-            )
-            st.caption(
-                f"Ação atual: {selected_receber_label if finance_receber_menu == current_receber else next((label for label, value in fr_map.items() if value == finance_receber_menu), 'Lançar cobrança')}"
-            )
+            receber_head_col, receber_side_col = st.columns([3.5, 1.1], gap="large")
+            with receber_head_col:
+                _finance_section_intro(
+                    receber_title,
+                    receber_desc,
+                    chip=receber_chip,
+                )
+                _finance_pane_header("Operação atual", "Use os botões para alternar entre carteira, geração, baixas, boletos e gerenciamento.")
+                finance_receber_menu = _finance_submenu_buttons(
+                    "finance_receber_menu",
+                    fr_map,
+                    columns_count=4,
+                )
+                st.caption(
+                    f"Ação atual: {selected_receber_label if finance_receber_menu == current_receber else next((label for label, value in fr_map.items() if value == finance_receber_menu), 'Lançar cobrança')}"
+                )
+            with receber_side_col:
+                _finance_action_panel(
+                    "Ações",
+                    [
+                        {"label": label, "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": value}, "primary": value == current_receber}
+                        for label, value in fr_map.items()
+                    ],
+                    key_prefix="finance_receber_nav",
+                    subtitle="Painel operacional de contas a receber.",
+                )
             finance_receber_menu = st.session_state.get("finance_receber_menu", finance_receber_options[0])
             if finance_receber_menu == "Recebimentos":
                 with st.container(border=True):
                     _student_financial_account_panel()
             if finance_receber_menu == "Boletos dos Alunos":
                 with st.container(border=True):
-                    st.markdown("### Boletos dos alunos")
+                    _finance_pane_header("Boletos do aluno", "Pesquisa individual com emissão, envio, atualização, impressão e cancelamento.")
                     boleto_student_names = sorted(
                         {
                             str(r.get("aluno", "")).strip()
@@ -20983,8 +21254,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.rerun()
 
             if finance_receber_menu == "Lancar Recebimento":
+                _finance_pane_header("Lançar recebimento", "Cadastro de mensalidades, materiais e cobranças sem alterar a lógica financeira existente.")
                 with st.form("add_rec"):
-                    st.markdown("### Lançar Recebimento")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
                     with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
@@ -21163,7 +21434,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             rec_bulk_filtered_codes = []
             rec_labels_by_code = {}
             if finance_receber_menu in ("Recebimentos", "Acoes em massa (Recebimentos)"):
-                st.markdown("### Recebimentos")
+                _finance_pane_header("Carteira de recebimentos", "Tabela central do financeiro com filtros, listagem e operação de carteira.")
                 with st.container(border=True):
                     st.markdown("#### Filtros de Recebimentos")
                     c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
@@ -21223,7 +21494,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.info("Nenhum recebimento encontrado.")
 
             if finance_receber_menu == "Acoes em massa (Recebimentos)":
-                st.markdown("### Acoes em massa (Recebimentos)")
+                _finance_pane_header("Ações em massa de recebimentos", "Seleção múltipla com confirmação antes de alterações críticas.")
                 if st.session_state.pop("fin_rec_bulk_reset_pending", False):
                     st.session_state.pop("fin_rec_bulk_codes", None)
                     st.session_state.pop("fin_rec_bulk_confirm_delete", None)
@@ -21308,7 +21579,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
 
             if finance_receber_menu == "Gerenciamento de Recebimentos":
-                st.markdown("### Gerenciamento de Recebimentos (Editar/Excluir Cobranca)")
+                _finance_pane_header("Gerenciamento de recebimentos", "Edição detalhada, anexos, links e exclusão agrupada por lançamento.")
                 if not recebimentos:
                     st.info("Nenhum recebimento para gerenciar.")
                 else:
@@ -21741,7 +22012,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 
             if finance_receber_menu == "Baixa de Recebimentos":
                 with st.container(border=True):
-                    st.markdown("### Baixa de Recebimentos")
+                    _finance_pane_header("Baixa de recebimentos", "Registre pagamentos e mantenha a carteira atualizada com leitura limpa.")
                     abertos = [r for r in st.session_state["receivables"] if r.get("status") != "Pago"]
                     if not abertos:
                         st.info("Nenhum recebimento em aberto.")
@@ -21796,20 +22067,33 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             if finance_workspace == "Recibos":
                 if st.session_state.get("finance_receipt_menu") not in finance_receipt_options:
                     st.session_state["finance_receipt_menu"] = finance_receipt_options[0]
-                _finance_section_intro(
-                    "Recibos",
-                    "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
-                    chip="Recibos",
-                )
                 receipt_map = {
                     "Recibo do professor": finance_receipt_options[0],
                     "Histórico de recibos": finance_receipt_options[1],
                 }
-                finance_receipt_menu = _finance_submenu_buttons(
-                    "finance_receipt_menu",
-                    receipt_map,
-                    columns_count=2,
-                )
+                recibo_head_col, recibo_side_col = st.columns([3.5, 1.1], gap="large")
+                with recibo_head_col:
+                    _finance_section_intro(
+                        "Recibos",
+                        "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
+                        chip="Recibos",
+                    )
+                    _finance_pane_header("Fluxo atual", "Recibos e histórico seguem o mesmo padrão visual do módulo financeiro.")
+                    finance_receipt_menu = _finance_submenu_buttons(
+                        "finance_receipt_menu",
+                        receipt_map,
+                        columns_count=2,
+                    )
+                with recibo_side_col:
+                    _finance_action_panel(
+                        "Ações",
+                        [
+                            {"label": label, "set_state": {"finance_workspace_menu": "Recibos", "finance_receipt_menu": value}, "primary": value == st.session_state.get("finance_receipt_menu")}
+                            for label, value in receipt_map.items()
+                        ],
+                        key_prefix="finance_receipt_nav",
+                        subtitle="Operações do recibo.",
+                    )
                 recibos_emitidos = len([r for r in paid_receivables if str(r.get("data_pagamento", "")).strip()]) + len(
                     [p for p in sales_payments_all if str(p.get("recibo_numero", "")).strip()]
                 )
@@ -21817,11 +22101,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             else:
                 if st.session_state.get("finance_pagar_menu") not in finance_teacher_options:
                     st.session_state["finance_pagar_menu"] = finance_teacher_options[0]
-                _finance_section_intro(
-                    "Professores e pagamentos",
-                    "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
-                    chip="Professores",
-                )
                 fp_map = {
                     "Resumo": finance_teacher_options[0],
                     "Pagamento por aulas": finance_teacher_options[1],
@@ -21831,14 +22110,32 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     "Ações em massa": finance_teacher_options[5],
                     "Gerenciar despesas": finance_teacher_options[6],
                 }
-                finance_pagar_menu = _finance_submenu_buttons(
-                    "finance_pagar_menu",
-                    fp_map,
-                    columns_count=4,
-                )
-                st.caption("Cada botão abre somente o fluxo selecionado.")
+                pagar_head_col, pagar_side_col = st.columns([3.5, 1.1], gap="large")
+                with pagar_head_col:
+                    _finance_section_intro(
+                        "Professores e pagamentos",
+                        "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
+                        chip="Professores",
+                    )
+                    _finance_pane_header("Fluxo atual", "Contas a pagar, pagamentos docentes e despesas administrativas no mesmo padrão operacional.")
+                    finance_pagar_menu = _finance_submenu_buttons(
+                        "finance_pagar_menu",
+                        fp_map,
+                        columns_count=4,
+                    )
+                    st.caption("Cada botão abre somente o fluxo selecionado.")
+                with pagar_side_col:
+                    _finance_action_panel(
+                        "Ações",
+                        [
+                            {"label": label, "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": value}, "primary": value == st.session_state.get("finance_pagar_menu")}
+                            for label, value in fp_map.items()
+                        ],
+                        key_prefix="finance_payables_nav",
+                        subtitle="Painel lateral de contas a pagar.",
+                    )
             if finance_workspace == "Recibos" and finance_receipt_menu == "Historico de Recibos":
-                st.markdown("### Histórico rápido de recibos")
+                _finance_pane_header("Histórico de recibos", "Comprovantes emitidos e pagos sob a mesma identidade visual do módulo.")
                 paid_receipt_rows = [
                     {
                         "origem": "Recebimento",
@@ -21874,7 +22171,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             finance_pagar_menu = st.session_state.get("finance_pagar_menu", finance_teacher_options[0])
             finance_receipt_menu = st.session_state.get("finance_receipt_menu", finance_receipt_options[0])
             if finance_workspace == "Professores" and finance_pagar_menu == "Resumo dos Professores":
-                st.markdown("### Resumo de professores")
+                _finance_pane_header("Resumo de professores", "Visão executiva dos valores pendentes, horas e detalhamento por docente.")
                 rp1, rp2 = st.columns(2)
                 with rp1:
                     teacher_report_month_ref = st.date_input(
@@ -21945,7 +22242,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 else:
                     st.info("Nao ha aulas pendentes de pagamento para os professores no periodo informado.")
             if finance_workspace == "Recibos" and finance_receipt_menu == "Recibos de Professor":
-                st.markdown("### Recibo de pagamento do professor")
+                _finance_pane_header("Recibo de pagamento do professor", "Emissão padronizada de comprovante docente.")
                 teacher_options = ["Todos"] + sorted(
                     {
                         str(t.get("nome", "")).strip()
@@ -22071,7 +22368,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 else:
                                     st.error("Nao foi possivel gerar PDF neste ambiente.")
             if finance_workspace == "Professores" and finance_pagar_menu == "Pagamento de Aulas do Professor":
-                st.markdown("### Lancar Pagamento de Aulas do Professor")
+                _finance_pane_header("Lançar pagamento de aulas do professor", "Seleção de aulas finalizadas para converter em contas a pagar.")
                 st.caption("Valores automaticos: 30min = R$ 25,00 | 1 hora = R$ 50,00 | 2 horas = R$ 100,00.")
                 tp1, tp2, tp3 = st.columns(3)
                 with tp1:
@@ -22205,7 +22502,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.rerun()
 
             if finance_workspace == "Professores" and finance_pagar_menu == "Lancamento Manual do Professor":
-                st.markdown("### Lancamento manual de pagamento")
+                _finance_pane_header("Lançamento manual de pagamento", "Cadastro manual de pagamentos docentes fora do fluxo automático.")
                 manual_turma_options = class_names()
                 if not manual_turma_options:
                     st.info("Nenhuma turma cadastrada para lancamento manual.")
@@ -22348,7 +22645,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             despesas = st.session_state["payables"]
             if finance_workspace == "Professores" and finance_pagar_menu == "Lancar Despesa":
                 with st.form("add_pag"):
-                    st.markdown("### Lancar Despesa")
+                    _finance_pane_header("Lançar despesa", "Cadastro de contas a pagar administrativas, fornecedores e despesas internas.")
                     c1, c2, c3 = st.columns(3)
                     with c1:
                         desc = st.text_input("Descricao")
@@ -22430,7 +22727,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.success(f"Despesa lancada! ({qtd_pag_int} parcela(s))")
 
             if finance_workspace == "Professores" and finance_pagar_menu == "Despesas":
-                st.markdown("### Despesas")
+                _finance_pane_header("Despesas", "Listagem central de contas a pagar, professores e despesas administrativas.")
                 despesas = st.session_state["payables"]
                 if despesas:
                     df_pag = pd.DataFrame(despesas)
@@ -22460,7 +22757,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     st.info("Nenhuma conta a pagar cadastrada.")
     
             if finance_workspace == "Professores" and finance_pagar_menu == "Acoes em massa (Despesas)":
-                st.markdown("### Acoes em massa (Despesas)")
+                _finance_pane_header("Ações em massa de despesas", "Seleção múltipla com confirmação antes de alterações críticas.")
                 if st.session_state.pop("fin_pag_bulk_reset_pending", False):
                     st.session_state.pop("fin_pag_bulk_codes", None)
                     st.session_state.pop("fin_pag_bulk_confirm_delete", None)
@@ -22532,7 +22829,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             st.rerun()
     
             if finance_workspace == "Professores" and finance_pagar_menu == "Gerenciamento de Despesas":
-                st.markdown("### Gerenciamento de Despesas")
+                _finance_pane_header("Gerenciamento de despesas", "Edição completa de parcelas, vencimentos, categoria e status.")
                 if not despesas:
                     st.info("Nenhuma despesa para gerenciar.")
                 else:
@@ -22736,7 +23033,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
             ):
                 st.session_state["finance_aprov_menu"] = finance_aprov_options[0]
                 st.rerun()
-            st.markdown("### Pagamentos de matricula enviados pelo Comercial")
+            _finance_pane_header("Pagamentos de matrícula enviados pelo Comercial", "Conferência financeira originada no comercial mantendo o mesmo padrão visual do módulo.")
             pagamentos = st.session_state.get("sales_payments", [])
             if not pagamentos:
                 st.info("Nenhum pagamento enviado pelo Comercial.")
@@ -22848,11 +23145,6 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.session_state["finance_overdue_mode"] = "A pagar vencidos"
             if st.session_state.get("finance_overdue_mode") not in finance_venc_options:
                 st.session_state["finance_overdue_mode"] = finance_venc_options[0]
-            _finance_section_intro(
-                "Cobrança e inadimplência",
-                "Liste atrasos por aluno, responsável e vencimento, com leitura rápida e menos ruído operacional.",
-                chip="Inadimplência",
-            )
             overdue_label_map = {
                 "Recebimentos vencidos": finance_venc_options[0],
                 "Pagamentos vencidos": finance_venc_options[1],
@@ -22862,6 +23154,26 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 (label for label, value in overdue_label_map.items() if value == current_overdue),
                 "Recebimentos vencidos",
             )
+            overdue_head_col, overdue_side_col = st.columns([3.5, 1.1], gap="large")
+            with overdue_head_col:
+                _finance_section_intro(
+                    "Cobrança e inadimplência",
+                    "Liste atrasos por aluno, responsável e vencimento, com leitura rápida e menos ruído operacional.",
+                    chip="Inadimplência",
+                )
+                _finance_pane_header("Filtros e visão atual", "Escolha o painel e acompanhe o valor exposto sem poluição visual.")
+            with overdue_side_col:
+                _finance_action_panel(
+                    "Ações",
+                    [
+                        {"label": "Recebimentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[0]}, "primary": current_overdue == finance_venc_options[0]},
+                        {"label": "Pagamentos vencidos", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência", "finance_overdue_mode": finance_venc_options[1]}, "primary": current_overdue == finance_venc_options[1]},
+                        {"label": "Abrir recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos", "finance_receber_menu": "Recebimentos"}},
+                        {"label": "Abrir contas a pagar", "set_state": {"finance_workspace_menu": "Professores", "finance_pagar_menu": "Despesas"}},
+                    ],
+                    key_prefix="finance_overdue_nav",
+                    subtitle="Atalhos do painel de atraso.",
+                )
             overdue_col_a, overdue_col_b, overdue_col_c = st.columns([1.2, 1, 1])
             with overdue_col_a:
                 selected_overdue_label = st.selectbox(
