@@ -21086,6 +21086,9 @@ div[data-baseweb="select"] > div {
                         if not filtered_student_names:
                             st.warning("Nenhum aluno encontrado nesta busca.")
                         else:
+                            next_boleto_filter = str(st.session_state.pop("finance_boleto_filter_next", "")).strip()
+                            if next_boleto_filter:
+                                st.session_state["finance_boleto_filter"] = next_boleto_filter
                             if st.session_state.get("finance_boleto_student_name") not in filtered_student_names:
                                 st.session_state["finance_boleto_student_name"] = filtered_student_names[0]
                             bls1, bls2 = st.columns([1.6, 1])
@@ -21225,7 +21228,7 @@ div[data-baseweb="select"] > div {
                                                     student_obj=boleto_student_obj,
                                                 )
                                                 if ok_paid:
-                                                    st.session_state["finance_boleto_filter"] = "Histórico"
+                                                    st.session_state["finance_boleto_filter_next"] = "Histórico"
                                                     st.success(f"Baixa realizada. Recibo {recibo_num} gerado.")
                                                 else:
                                                     st.error(str(recibo_num))
