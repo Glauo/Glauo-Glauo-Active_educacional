@@ -20044,68 +20044,60 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 """
 <style>
 .finance-module-hero {
-  background: linear-gradient(180deg, #f9fbff 0%, #eef3fb 100%);
+  background: linear-gradient(180deg, #fbfcff 0%, #f3f6fb 100%);
   border: 1px solid rgba(148, 163, 184, .22);
-  border-radius: 26px;
-  padding: 24px 26px 20px;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, .07);
-  margin: 0 0 18px;
+  border-radius: 22px;
+  padding: 14px 18px 12px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
+  margin: 0 0 12px;
 }
 .finance-module-kicker {
-  color: #475569;
-  font-size: .78rem;
-  font-weight: 800;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-}
-.finance-module-title {
-  margin-top: 8px;
-  color: #0f172a;
-  font-size: 2rem;
-  font-weight: 800;
-  line-height: 1.1;
-}
-.finance-module-subtitle {
-  margin-top: 10px;
-  color: #526277;
-  font-size: .98rem;
-  line-height: 1.6;
-  max-width: 920px;
-}
-.finance-module-nav {
-  margin: 0 0 16px;
-  padding: 14px;
-  background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, .18);
-  border-radius: 22px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, .05);
-}
-.finance-section-card {
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbfe 100%);
-  border: 1px solid rgba(148, 163, 184, .18);
-  border-radius: 22px;
-  padding: 18px 20px;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, .05);
-  margin: 10px 0 16px;
-}
-.finance-section-kicker {
-  color: #2954cc;
-  font-size: .74rem;
+  color: #64748b;
+  font-size: .68rem;
   font-weight: 800;
   letter-spacing: .14em;
   text-transform: uppercase;
 }
-.finance-section-title {
-  margin-top: 8px;
+.finance-module-title {
+  margin-top: 4px;
   color: #0f172a;
   font-size: 1.45rem;
   font-weight: 800;
+  line-height: 1.1;
+}
+.finance-module-subtitle {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: .88rem;
+  line-height: 1.45;
+  max-width: 820px;
+}
+.finance-section-card {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 18px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+  margin: 8px 0 12px;
+}
+.finance-section-kicker {
+  color: #2954cc;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.finance-section-title {
+  margin-top: 5px;
+  color: #0f172a;
+  font-size: 1.1rem;
+  font-weight: 800;
 }
 .finance-section-description {
-  margin-top: 6px;
-  color: #607086;
-  font-size: .96rem;
-  line-height: 1.55;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: .88rem;
+  line-height: 1.42;
 }
 .finance-chip {
   display: inline-flex;
@@ -20122,29 +20114,29 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
 .finance-pane {
   background: #ffffff;
   border: 1px solid rgba(148, 163, 184, .18);
-  border-radius: 22px;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, .05);
-  padding: 18px 18px 8px;
-  margin: 0 0 16px;
+  border-radius: 18px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+  padding: 12px 14px 6px;
+  margin: 0 0 12px;
 }
 .finance-pane-title {
   color: #0f172a;
-  font-size: 1.08rem;
+  font-size: .98rem;
   font-weight: 800;
   margin-bottom: 4px;
 }
 .finance-pane-subtitle {
   color: #66768b;
-  font-size: .92rem;
-  line-height: 1.45;
-  margin-bottom: 10px;
+  font-size: .84rem;
+  line-height: 1.4;
+  margin-bottom: 6px;
 }
 .finance-metric-card {
   background: var(--finance-metric-bg);
   border: 1px solid rgba(148, 163, 184, .16);
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .04);
   height: 100%;
   position: relative;
   overflow: hidden;
@@ -20166,16 +20158,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
   text-transform: uppercase;
 }
 .finance-metric-value {
-  margin-top: 12px;
+  margin-top: 8px;
   color: #0f172a;
-  font-size: 2rem;
+  font-size: 1.7rem;
   font-weight: 800;
   line-height: 1.06;
 }
 .finance-metric-subtitle {
-  margin-top: 8px;
+  margin-top: 6px;
   color: #64748b;
-  font-size: .9rem;
+  font-size: .82rem;
   line-height: 1.4;
 }
 [data-testid="stDataFrame"] {
@@ -20207,7 +20199,7 @@ div[data-baseweb="select"] > div {
 .stDownloadButton > button,
 [data-testid="stLinkButton"] a {
   border-radius: 14px !important;
-  min-height: 44px !important;
+  min-height: 40px !important;
   font-weight: 700 !important;
   border: 1px solid rgba(148, 163, 184, .22) !important;
   box-shadow: none !important;
@@ -20230,13 +20222,24 @@ div[data-baseweb="select"] > div {
 }
 [data-testid="stForm"] {
   border: 1px solid rgba(148, 163, 184, .18) !important;
-  border-radius: 20px !important;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%) !important;
-  padding: 12px !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  padding: 10px !important;
+}
+.finance-form-note {
+  color: #64748b;
+  font-size: .82rem;
+  line-height: 1.35;
+}
+@media (min-width: 1101px) {
+  .finance-right-column [data-testid="stVerticalBlock"] > div:first-child {
+    position: sticky;
+    top: 84px;
+  }
 }
 @media (max-width: 1100px) {
   .finance-module-title {
-    font-size: 1.65rem;
+    font-size: 1.22rem;
   }
 }
 </style>
@@ -20283,6 +20286,7 @@ div[data-baseweb="select"] > div {
             )
 
         def _finance_action_panel(title, actions, key_prefix, subtitle="", notes=None):
+            st.markdown('<div class="finance-right-column">', unsafe_allow_html=True)
             with st.container(border=True):
                 st.markdown(f"### {title}")
                 if subtitle:
@@ -20305,6 +20309,7 @@ div[data-baseweb="select"] > div {
                 for note in notes or []:
                     if str(note).strip():
                         st.caption(str(note).strip())
+            st.markdown('</div>', unsafe_allow_html=True)
 
         receivables_all = list(st.session_state.get("receivables", []) or [])
         payables_all = list(_load_latest_payables() or [])
@@ -20647,20 +20652,18 @@ div[data-baseweb="select"] > div {
         _render_finance_theme()
         _finance_module_header(
             "Controle financeiro premium da escola",
-            "Mensalidades, materiais, matrículas, professores, recibos, inadimplência, caixa operacional e relatórios em uma navegação única, corporativa e organizada.",
+            "Operação financeira escolar com cobrança, recebimento, inadimplência, caixa e pagamentos em um fluxo compacto.",
         )
         with st.container(border=True):
-            st.markdown("### Áreas do módulo")
-            st.caption("Todas as telas do financeiro usam a mesma navegação principal.")
-            ws_cols_top = st.columns(4)
-            ws_cols_bottom = st.columns(3)
+            st.caption("Navegação do módulo financeiro")
+            ws_cols_top = st.columns(6)
             workspace_layout = [
                 (ws_cols_top[0], finance_sections[0], 0),
                 (ws_cols_top[1], finance_sections[1], 1),
                 (ws_cols_top[2], finance_sections[2], 2),
                 (ws_cols_top[3], finance_sections[3], 3),
-                (ws_cols_bottom[0], finance_sections[4], 4),
-                (ws_cols_bottom[1], finance_sections[5], 5),
+                (ws_cols_top[4], finance_sections[4], 4),
+                (ws_cols_top[5], finance_sections[5], 5),
             ]
             for col_ref, option, idx_option in workspace_layout:
                 selected = str(st.session_state.get("finance_workspace_menu", "")) == option
@@ -21251,15 +21254,19 @@ div[data-baseweb="select"] > div {
             if finance_receber_menu == "Lancar Recebimento":
                 _finance_pane_header("Lançar recebimento", "Cadastro de mensalidades, materiais e cobranças sem alterar a lógica financeira existente.")
                 with st.form("add_rec"):
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: desc = st.text_input("Descricao (Ex: Mensalidade)")
-                    with c2: val_parcela_input = st.text_input("Valor Parcela * (Ex: 150,00)")
-                    with c3: categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
+                    c1, c2, c3, c4 = st.columns([2.1, 1.1, 1.2, 1.3])
+                    with c1:
+                        desc = st.text_input("Descrição (ex.: Mensalidade)")
+                    with c2:
+                        val_parcela_input = st.text_input("Valor da parcela *")
+                    with c3:
+                        categoria = st.selectbox("Categoria", ["Mensalidade", "Material", "Taxa de Matricula"])
                     with c4:
                         categoria_lancamento = st.selectbox(
                             "Categoria do lancamento",
                             ["Aluno", "Fornecedor", "Professor", "Interno", "Outro"],
                         )
+                    st.markdown('<div class="finance-form-note">Referência principal do lançamento</div>', unsafe_allow_html=True)
                     alunos_opts = [s.get("nome", "") for s in st.session_state["students"] if s.get("nome")]
                     if categoria_lancamento == "Aluno":
                         if alunos_opts:
@@ -21275,10 +21282,12 @@ div[data-baseweb="select"] > div {
                             "Outro": "Referencia",
                         }.get(categoria_lancamento, "Referencia")
                         aluno = st.text_input(f"{ref_label} *")
-                    c4, c5, c6, c6b = st.columns(4)
-                    with c4: data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
-                    with c5: venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
-                    with c6b:
+                    c5, c6, c7, c8 = st.columns(4)
+                    with c5:
+                        data_lanc = st.date_input("Data do lançamento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c6:
+                        venc = st.date_input("Primeiro vencimento", value=datetime.date.today(), format="DD/MM/YYYY")
+                    with c8:
                         rec_due_day = st.selectbox(
                             "Dia do vencimento",
                             list(range(1, 31)),
@@ -21287,31 +21296,34 @@ div[data-baseweb="select"] > div {
                         )
                     material_payment = "A vista"
                     if categoria == "Material":
-                        with c6:
+                        with c7:
                             material_payment = st.selectbox(
                                 "Pagamento do Material",
                                 material_payment_options(),
                             )
                         cobranca = material_payment
                     else:
-                        with c6: cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
-                    c7, c8, c9 = st.columns(3)
+                        with c7:
+                            cobranca = st.selectbox("Cobrança", ["Boleto", "Pix", "Cartao", "Dinheiro"])
+                    c9, c10, c11 = st.columns([1.0, 1.0, 1.2])
                     is_material = categoria == "Material"
-                    with c7:
+                    with c9:
                         parcela_inicial = st.number_input("Parcela inicial", min_value=1, step=1, value=1, disabled=is_material)
                     material_parcelado = categoria == "Material" and material_payment in ("Parcelado no Cartao", "Parcelado no Boleto")
                     if categoria == "Mensalidade":
-                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=12)
+                        qtd_default = 12
                     elif categoria == "Material":
+                        qtd_default = 2 if material_parcelado else 1
+                    else:
+                        qtd_default = 1
+                    with c10:
                         qtd_meses = st.number_input(
                             "Parcelas *",
                             min_value=1,
-                            max_value=6,
-                            value=2 if material_parcelado else 1,
-                            disabled=not material_parcelado,
+                            max_value=6 if categoria == "Material" else 24,
+                            value=qtd_default,
+                            disabled=(categoria == "Material" and not material_parcelado),
                         )
-                    else:
-                        qtd_meses = st.number_input("Parcelas *", min_value=1, max_value=24, value=1)
 
                     if categoria == "Material" and not material_parcelado:
                         qtd_parcelas_calc = 1
@@ -21322,9 +21334,10 @@ div[data-baseweb="select"] > div {
                     valor_parcela_txt = f"{valor_parcela_num:.2f}".replace(".", ",") if valor_parcela_num > 0 else "0,00"
                     valor_total_num = valor_parcela_num * max(1, int(qtd_parcelas_calc))
                     valor_total_auto = f"{valor_total_num:.2f}".replace(".", ",")
-                    with c9:
-                        st.text_input("Valor Total * (automatico)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
-                    d1, d2 = st.columns(2)
+                    with c11:
+                        st.text_input("Valor total * (automático)", value=valor_total_auto, disabled=True, key="rec_valor_total_auto")
+                    st.markdown('<div class="finance-form-note">Opções de envio do lançamento</div>', unsafe_allow_html=True)
+                    d1, d2 = st.columns([1, 1])
                     with d1:
                         enviar_fin_email = st.checkbox(
                             "Enviar comunicado por e-mail",
@@ -21342,7 +21355,16 @@ div[data-baseweb="select"] > div {
                     if categoria_lancamento != "Aluno":
                         st.caption("Envio automático de e-mail/WhatsApp disponível para lançamentos da categoria Aluno.")
 
-                    if st.form_submit_button("Lancar"):
+                    submit_col, note_col = st.columns([1, 2.2])
+                    with submit_col:
+                        lancar_recebimento = st.form_submit_button("Lançar recebimento", type="primary", use_container_width=True)
+                    with note_col:
+                        st.markdown(
+                            '<div class="finance-form-note">Ao confirmar, o sistema mantém as regras atuais de parcelas, cobrança e comunicação automática.</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    if lancar_recebimento:
                         if not str(aluno).strip() or valor_parcela_num <= 0:
                             st.error("Informe referencia e valor da parcela valido.")
                         elif categoria_lancamento == "Aluno" and not enviar_fin_email and not enviar_fin_whatsapp:
