@@ -20941,14 +20941,9 @@ div[data-baseweb="select"] > div {
                     receber_desc,
                     chip=receber_chip,
                 )
-                _finance_pane_header("Operação atual", "Use os botões para alternar entre carteira, geração, baixas, boletos e gerenciamento.")
-                finance_receber_menu = _finance_submenu_buttons(
-                    "finance_receber_menu",
-                    fr_map,
-                    columns_count=4,
-                )
-                st.caption(
-                    f"Ação atual: {selected_receber_label if finance_receber_menu == current_receber else next((label for label, value in fr_map.items() if value == finance_receber_menu), 'Lançar cobrança')}"
+                _finance_pane_header(
+                    "Operação atual",
+                    f"Ação selecionada: {selected_receber_label}. Use o painel lateral para navegar entre as operações de contas a receber.",
                 )
             with receber_side_col:
                 _finance_action_panel(
@@ -22078,11 +22073,13 @@ div[data-baseweb="select"] > div {
                         "Consulte comprovantes e emita recibos de professores sem misturar isso com o lançamento de pagamentos.",
                         chip="Recibos",
                     )
-                    _finance_pane_header("Fluxo atual", "Recibos e histórico seguem o mesmo padrão visual do módulo financeiro.")
-                    finance_receipt_menu = _finance_submenu_buttons(
-                        "finance_receipt_menu",
-                        receipt_map,
-                        columns_count=2,
+                    current_receipt_label = next(
+                        (label for label, value in receipt_map.items() if value == st.session_state.get("finance_receipt_menu")),
+                        "Recibo do professor",
+                    )
+                    _finance_pane_header(
+                        "Fluxo atual",
+                        f"Ação selecionada: {current_receipt_label}. Use o painel lateral para alternar entre emissão e histórico.",
                     )
                 with recibo_side_col:
                     _finance_action_panel(
@@ -22117,13 +22114,14 @@ div[data-baseweb="select"] > div {
                         "Separe resumo, pagamento por aulas, lançamento manual e despesas em fluxos independentes.",
                         chip="Professores",
                     )
-                    _finance_pane_header("Fluxo atual", "Contas a pagar, pagamentos docentes e despesas administrativas no mesmo padrão operacional.")
-                    finance_pagar_menu = _finance_submenu_buttons(
-                        "finance_pagar_menu",
-                        fp_map,
-                        columns_count=4,
+                    current_pay_label = next(
+                        (label for label, value in fp_map.items() if value == st.session_state.get("finance_pagar_menu")),
+                        "Resumo",
                     )
-                    st.caption("Cada botão abre somente o fluxo selecionado.")
+                    _finance_pane_header(
+                        "Fluxo atual",
+                        f"Ação selecionada: {current_pay_label}. Use o painel lateral para navegar entre resumo, pagamentos e despesas.",
+                    )
                 with pagar_side_col:
                     _finance_action_panel(
                         "Ações",
