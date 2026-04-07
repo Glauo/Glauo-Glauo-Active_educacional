@@ -10691,18 +10691,29 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     pdf.cell(0, 5.5, _safe(f"Contato (WhatsApp): {contato_txt or '-'}"), ln=1)
     pdf.ln(2)
 
+    def _fit_cell_text(value, width, padding=1.5):
+        txt = _safe(value or "-")
+        max_width = max(4, float(width) - float(padding * 2))
+        if pdf.get_string_width(txt) <= max_width:
+            return txt
+        ellipsis = "..."
+        base = txt
+        while base and pdf.get_string_width(base + ellipsis) > max_width:
+            base = base[:-1]
+        return (base + ellipsis) if base else ellipsis
+
     # Summary table
     _section_header("Resumo por Turma")
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
     headers = [
-        ("Turma", 26),
-        ("Tipo", 30),
-        ("Dias", 34),
-        ("Horario", 24),
+        ("Turma", 24),
+        ("Tipo", 28),
+        ("Dias", 36),
+        ("Horario", 22),
         ("Aulas", 14),
-        ("Valor/aula", 26),
-        ("Total", 26),
+        ("Valor/aula", 30),
+        ("Total", 32),
     ]
     for h, w in headers:
         pdf.cell(w, 6, _safe(h), border=1, fill=True)
@@ -10718,13 +10729,13 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
             total_geral += total
             horario = f"{hora_ini} - {hora_fim}".strip(" -")
             row = [
-                (turma or "-", 26, "L"),
-                (tipo or "-", 30, "L"),
-                (dias_turma or "-", 34, "L"),
-                (horario or "-", 24, "L"),
+                (_fit_cell_text(turma or "-", 24), 24, "L"),
+                (_fit_cell_text(tipo or "-", 28), 28, "L"),
+                (_fit_cell_text(dias_turma or "-", 36), 36, "L"),
+                (_fit_cell_text(horario or "-", 22), 22, "L"),
                 (str(qtd_aulas), 14, "C"),
-                (format_money(valor_aula), 26, "R"),
-                (format_money(total), 26, "R"),
+                (_fit_cell_text(format_money(valor_aula), 30), 30, "R"),
+                (_fit_cell_text(format_money(total), 32), 32, "R"),
             ]
             for value, width, align in row:
                 pdf.cell(width, 6, _safe(value), border=1, align=align)
