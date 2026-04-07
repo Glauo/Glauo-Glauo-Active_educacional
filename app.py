@@ -10090,7 +10090,12 @@ def build_certificate_pdf_bytes(data, logo_left_path=None, logo_right_path=None)
         pdf.cell(0, 6, obs, align="C")
         pdf.set_text_color(0, 0, 0)
 
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    pdf_output = pdf.output(dest="S")
+    if isinstance(pdf_output, bytearray):
+        return bytes(pdf_output)
+    if isinstance(pdf_output, bytes):
+        return pdf_output
+    return str(pdf_output).encode("latin-1", "ignore")
 
 def add_receivable(
     aluno,
