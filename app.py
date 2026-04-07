@@ -22461,6 +22461,126 @@ div[data-baseweb="select"] > div {
                             mime="text/csv",
                             key="fin_teacher_report_download_detail",
                         )
+                        st.markdown("#### Relatório completo do professor")
+                        if selected_detail_teacher == "Todos":
+                            st.info("Selecione um professor específico para gerar o relatório completo em HTML/PDF com recibo.")
+                        else:
+                            report_month_start, report_month_end = _current_month_bounds(teacher_report_month_ref)
+                            selected_teacher_obj = next(
+                                (
+                                    t for t in st.session_state.get("teachers", [])
+                                    if str(t.get("nome", "")).strip() == str(selected_detail_teacher).strip()
+                                ),
+                                {},
+                            )
+                            tr1, tr2, tr3 = st.columns(3)
+                            with tr1:
+                                summary_receipt_start = st.date_input(
+                                    "Periodo inicial",
+                                    value=report_month_start,
+                                    format="DD/MM/YYYY",
+                                    key="fin_teacher_summary_receipt_start",
+                                )
+                            with tr2:
+                                summary_receipt_end = st.date_input(
+                                    "Periodo final",
+                                    value=report_month_end,
+                                    format="DD/MM/YYYY",
+                                    key="fin_teacher_summary_receipt_end",
+                                )
+                            with tr3:
+                                summary_receipt_whatsapp = st.text_input(
+                                    "WhatsApp do professor",
+                                    value=str(selected_teacher_obj.get("celular", "")).strip(),
+                                    key="fin_teacher_summary_receipt_whatsapp",
+                                )
+                            tr4, tr5, tr6 = st.columns(3)
+                            with tr4:
+                                summary_receipt_pay_date = st.date_input(
+                                    "Data do pagamento",
+                                    value=datetime.date.today(),
+                                    format="DD/MM/YYYY",
+                                    key="fin_teacher_summary_receipt_pay_date",
+                                )
+                            with tr5:
+                                summary_receipt_pay_method = st.selectbox(
+                                    "Forma de pagamento",
+                                    ["", "Pix", "Dinheiro", "Transferencia", "Boleto", "Cartao", "Outro"],
+                                    key="fin_teacher_summary_receipt_pay_method",
+                                )
+                            with tr6:
+                                summary_receipt_responsavel = st.text_input(
+                                    "Responsavel",
+                                    value=str(st.session_state.get("user_name", "")).strip(),
+                                    key="fin_teacher_summary_receipt_responsavel",
+                                )
+                            srh, srp = st.columns(2)
+                            summary_generate_html = srh.button(
+                                "Gerar relatório HTML",
+                                key="fin_teacher_summary_receipt_btn_html",
+                                use_container_width=True,
+                            )
+                            summary_generate_pdf = srp.button(
+                                "Gerar relatório PDF",
+                                key="fin_teacher_summary_receipt_btn_pdf",
+                                type="primary",
+                                use_container_width=True,
+                            )
+                            if summary_generate_html or summary_generate_pdf:
+                                if summary_receipt_end < summary_receipt_start:
+                                    st.error("Periodo final nao pode ser menor que o inicial.")
+                                else:
+                                    summary_sessions = _teacher_payment_sessions_for_receipt(
+                                        summary_receipt_start,
+                                        summary_receipt_end,
+                                        professor_name=selected_detail_teacher,
+                                    )
+                                    if not summary_sessions:
+                                        st.warning("Nao ha aulas finalizadas para esse professor no periodo informado.")
+                                    else:
+                                        summary_file_name = (
+                                            f"Relatorio_Pagamento_Professor_{str(selected_detail_teacher).strip().replace(' ', '_')}_"
+                                            f"{summary_receipt_start.strftime('%Y%m%d')}_{summary_receipt_end.strftime('%Y%m%d')}"
+                                        )
+                                        if summary_generate_html:
+                                            summary_html = _teacher_payment_receipt_html(
+                                                selected_detail_teacher,
+                                                summary_receipt_start,
+                                                summary_receipt_end,
+                                                summary_sessions,
+                                                contato_whatsapp=summary_receipt_whatsapp,
+                                                data_pagamento=summary_receipt_pay_date,
+                                                forma_pagamento=summary_receipt_pay_method,
+                                                responsavel=summary_receipt_responsavel,
+                                            )
+                                            st.download_button(
+                                                "Baixar relatório completo (HTML)",
+                                                data=summary_html,
+                                                file_name=f"{summary_file_name}.html",
+                                                mime="text/html",
+                                                key=f"fin_teacher_summary_receipt_download_html_{summary_file_name}",
+                                            )
+                                        if summary_generate_pdf:
+                                            summary_pdf = _teacher_payment_receipt_pdf_bytes(
+                                                selected_detail_teacher,
+                                                summary_receipt_start,
+                                                summary_receipt_end,
+                                                summary_sessions,
+                                                contato_whatsapp=summary_receipt_whatsapp,
+                                                data_pagamento=summary_receipt_pay_date,
+                                                forma_pagamento=summary_receipt_pay_method,
+                                                responsavel=summary_receipt_responsavel,
+                                            )
+                                            if summary_pdf:
+                                                st.download_button(
+                                                    "Baixar relatório completo (PDF)",
+                                                    data=summary_pdf,
+                                                    file_name=f"{summary_file_name}.pdf",
+                                                    mime="application/pdf",
+                                                    key=f"fin_teacher_summary_receipt_download_pdf_{summary_file_name}",
+                                                )
+                                            else:
+                                                st.error("Nao foi possivel gerar PDF neste ambiente.")
                     else:
                         st.info("Nenhuma aula pendente encontrada para este recorte.")
                 else:
