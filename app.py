@@ -10805,7 +10805,112 @@ def _teacher_payment_receipt_pdf_bytes(professor_name, period_start, period_end,
     pdf.set_text_color(71, 85, 105)
     pdf.multi_cell(0, 4.5, _safe("Observacao: valores calculados com base nas aulas finalizadas no periodo informado."))
 
-    return pdf.output(dest="S").encode("latin-1", "ignore")
+    pdf_output = pdf.output(dest="S")
+    if isinstance(pdf_output, bytearray):
+        return bytes(pdf_output)
+    if isinstance(pdf_output, bytes):
+        return pdf_output
+    return str(pdf_output).encode("latin-1", "ignore")
+
+def _teacher_payment_receipt_excel_bytes(professor_name, period_start, period_end, sessions, contato_whatsapp="", data_pagamento=None, forma_pagamento="", responsavel=""):
+    prof_label = str(professor_name or "Professor").strip() or "Professor"
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    data_pag_txt = data_pagamento.strftime("%d/%m/%Y") if isinstance(data_pagamento, datetime.date) else str(data_pagamento or "").strip()
+    forma_txt = str(forma_pagamento or "").strip()
+    responsavel_txt = str(responsavel or "").strip()
+    contato_txt = str(contato_whatsapp or "").strip()
+
+    grouped = {}
+    for item in sessions or []:
+        key = (
+            str(item.get("turma", "")).strip(),
+            str(item.get("modulo", "")).strip(),
+            str(item.get("hora", "")).strip(),
+            str(item.get("hora_fim", "")).strip(),
+            float(item.get("valor", 0) or 0),
+            str(item.get("dias_turma", "")).strip(),
+        )
+        grouped.setdefault(key, []).append(item)
+
+    resumo_rows = []
+    total_geral = 0.0
+    for key in sorted(grouped.keys(), key=lambda k: (k[0], k[1], k[2])):
+        turma, tipo, hora_ini, hora_fim, valor_aula, dias_turma = key
+        itens = grouped.get(key, [])
+        qtd_aulas = len(itens)
+        total = float(valor_aula) * qtd_aulas
+        total_geral += total
+        resumo_rows.append(
+            {
+                "Professor": prof_label,
+                "Turma": turma or "-",
+                "Modulo": tipo or "-",
+                "Dias da turma": dias_turma or "-",
+                "Horario": f"{hora_ini} - {hora_fim}".strip(" -") or "-",
+                "Qtd aulas": qtd_aulas,
+                "Valor por aula": float(valor_aula),
+                "Total": total,
+            }
+        )
+
+    detalhes_rows = [
+        {
+            "Professor": str(item.get("professor", "")).strip() or prof_label,
+            "Data": str(item.get("data", "")).strip(),
+            "Turma": str(item.get("turma", "")).strip(),
+            "Modulo": str(item.get("modulo", "")).strip(),
+            "Hora inicio": str(item.get("hora", "")).strip(),
+            "Hora fim": str(item.get("hora_fim", "")).strip(),
+            "Dias da turma": str(item.get("dias_turma", "")).strip(),
+            "Minutos": int(item.get("minutos", 0) or 0),
+            "Valor": float(item.get("valor", 0) or 0),
+            "Referencia": str(item.get("ref", "")).strip(),
+        }
+        for item in (sessions or [])
+    ]
+
+    meta_rows = [
+        {"Campo": "Professor", "Valor": prof_label},
+        {"Campo": "Periodo inicial", "Valor": period_start_txt},
+        {"Campo": "Periodo final", "Valor": period_end_txt},
+        {"Campo": "WhatsApp", "Valor": contato_txt},
+        {"Campo": "Data do pagamento", "Valor": data_pag_txt},
+        {"Campo": "Forma de pagamento", "Valor": forma_txt},
+        {"Campo": "Responsavel", "Valor": responsavel_txt},
+        {"Campo": "Total geral", "Valor": total_geral},
+    ]
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame(meta_rows).to_excel(writer, index=False, sheet_name="Resumo", startrow=0)
+        pd.DataFrame(
+            resumo_rows or [{
+                "Professor": prof_label,
+                "Turma": "-",
+                "Modulo": "-",
+                "Dias da turma": "-",
+                "Horario": "-",
+                "Qtd aulas": 0,
+                "Valor por aula": 0.0,
+                "Total": 0.0,
+            }]
+        ).to_excel(writer, index=False, sheet_name="Resumo", startrow=len(meta_rows) + 2)
+        pd.DataFrame(
+            detalhes_rows or [{
+                "Professor": prof_label,
+                "Data": "",
+                "Turma": "",
+                "Modulo": "",
+                "Hora inicio": "",
+                "Hora fim": "",
+                "Dias da turma": "",
+                "Minutos": 0,
+                "Valor": 0.0,
+                "Referencia": "",
+            }]
+        ).to_excel(writer, index=False, sheet_name="Aulas")
+    return buffer.getvalue()
 
 def _teacher_payment_already_launched(session_obj, payables=None):
     ref = _teacher_payment_ref_for_session(session_obj)
@@ -22519,10 +22624,15 @@ div[data-baseweb="select"] > div {
                                     value=str(st.session_state.get("user_name", "")).strip(),
                                     key="fin_teacher_summary_receipt_responsavel",
                                 )
-                            srh, srp = st.columns(2)
+                            srh, sre, srp = st.columns(3)
                             summary_generate_html = srh.button(
                                 "Gerar relatório HTML",
                                 key="fin_teacher_summary_receipt_btn_html",
+                                use_container_width=True,
+                            )
+                            summary_generate_excel = sre.button(
+                                "Gerar relatório Excel",
+                                key="fin_teacher_summary_receipt_btn_excel",
                                 use_container_width=True,
                             )
                             summary_generate_pdf = srp.button(
@@ -22531,7 +22641,7 @@ div[data-baseweb="select"] > div {
                                 type="primary",
                                 use_container_width=True,
                             )
-                            if summary_generate_html or summary_generate_pdf:
+                            if summary_generate_html or summary_generate_excel or summary_generate_pdf:
                                 if summary_receipt_end < summary_receipt_start:
                                     st.error("Periodo final nao pode ser menor que o inicial.")
                                 else:
@@ -22564,6 +22674,24 @@ div[data-baseweb="select"] > div {
                                                 file_name=f"{summary_file_name}.html",
                                                 mime="text/html",
                                                 key=f"fin_teacher_summary_receipt_download_html_{summary_file_name}",
+                                            )
+                                        if summary_generate_excel:
+                                            summary_excel = _teacher_payment_receipt_excel_bytes(
+                                                selected_detail_teacher,
+                                                summary_receipt_start,
+                                                summary_receipt_end,
+                                                summary_sessions,
+                                                contato_whatsapp=summary_receipt_whatsapp,
+                                                data_pagamento=summary_receipt_pay_date,
+                                                forma_pagamento=summary_receipt_pay_method,
+                                                responsavel=summary_receipt_responsavel,
+                                            )
+                                            st.download_button(
+                                                "Baixar relatório completo (Excel)",
+                                                data=summary_excel,
+                                                file_name=f"{summary_file_name}.xlsx",
+                                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                key=f"fin_teacher_summary_receipt_download_excel_{summary_file_name}",
                                             )
                                         if summary_generate_pdf:
                                             summary_pdf = _teacher_payment_receipt_pdf_bytes(
@@ -22656,10 +22784,11 @@ div[data-baseweb="select"] > div {
                     value=str(st.session_state.get("user_name", "")).strip(),
                     key="fin_teacher_receipt_responsavel_top",
                 )
-                bth, btp = st.columns(2)
+                bth, bte, btp = st.columns(3)
                 gerar_html_top = bth.button("Gerar recibo HTML", key="fin_teacher_receipt_btn_top_html", type="secondary")
+                gerar_excel_top = bte.button("Gerar recibo Excel", key="fin_teacher_receipt_btn_top_excel", use_container_width=True)
                 gerar_pdf_top = btp.button("Gerar recibo PDF", key="fin_teacher_receipt_btn_top_pdf", type="primary")
-                if gerar_html_top or gerar_pdf_top:
+                if gerar_html_top or gerar_excel_top or gerar_pdf_top:
                     if str(receipt_prof_top).strip() in ("", "Todos"):
                         st.error("Selecione um professor especifico para gerar o recibo.")
                     elif receipt_end_top < receipt_start_top:
@@ -22694,6 +22823,24 @@ div[data-baseweb="select"] > div {
                                     file_name=f"{file_name_top}.html",
                                     mime="text/html",
                                     key=f"fin_teacher_receipt_download_top_html_{file_name_top}",
+                                )
+                            if gerar_excel_top:
+                                receipt_excel_top = _teacher_payment_receipt_excel_bytes(
+                                    receipt_prof_top,
+                                    receipt_start_top,
+                                    receipt_end_top,
+                                    receipt_sessions_top,
+                                    contato_whatsapp=receipt_whatsapp_top,
+                                    data_pagamento=receipt_pay_date_top,
+                                    forma_pagamento=receipt_pay_method_top,
+                                    responsavel=receipt_responsavel_top,
+                                )
+                                st.download_button(
+                                    "Baixar recibo Excel",
+                                    data=receipt_excel_top,
+                                    file_name=f"{file_name_top}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key=f"fin_teacher_receipt_download_top_excel_{file_name_top}",
                                 )
                             if gerar_pdf_top:
                                 receipt_pdf_top = _teacher_payment_receipt_pdf_bytes(
