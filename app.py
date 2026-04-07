@@ -1072,7 +1072,7 @@ def load_list(path):
     return _load_json_list(path)
 
 def save_list(path, data):
-    _save_json_list(path, data)
+    return _save_json_list(path, data)
 
 def active_now():
     if ACTIVE_TIMEZONE is not None:
@@ -2168,7 +2168,35 @@ def _save_manual_external_boleto_pdf(rec_obj, uploaded_file):
     rec_obj["boleto_status"] = "Gerado"
     if not str(rec_obj.get("boleto_gerado_em", "")).strip():
         rec_obj["boleto_gerado_em"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    save_ok = save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    if not save_ok:
+        return False, "o PDF foi lido, mas falhou ao persistir os dados do boleto"
+    saved_receivables = load_list(RECEIVABLES_FILE)
+    saved_receivables = saved_receivables if isinstance(saved_receivables, list) else []
+    codigo = str(rec_obj.get("codigo", "")).strip()
+    aluno = str(rec_obj.get("aluno", "")).strip()
+    descricao = str(rec_obj.get("descricao", "")).strip()
+    valor_parcela = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip()
+    confirmed = False
+    for item in saved_receivables:
+        if not isinstance(item, dict):
+            continue
+        if codigo:
+            if str(item.get("codigo", "")).strip() != codigo:
+                continue
+        else:
+            if str(item.get("aluno", "")).strip() != aluno:
+                continue
+            if str(item.get("descricao", "")).strip() != descricao:
+                continue
+            if str(item.get("valor_parcela", item.get("valor", ""))).strip() != valor_parcela:
+                continue
+        if str(item.get("boleto_pdf_b64", "")).strip():
+            confirmed = True
+            break
+    if not confirmed:
+        return False, "o anexo nao foi confirmado no salvamento"
+    st.session_state["receivables"] = saved_receivables
     return True, "boleto externo anexado"
 
 def _render_manual_external_boleto_actions(rec_obj, key_prefix=""):
@@ -21212,6 +21240,9 @@ div[data-baseweb="select"] > div {
                                             f"<div style='font-size:.82rem;color:#64748b;margin-top:6px;'>Recibo: {html.escape(str(rec_obj.get('recibo_numero', '')).strip() or '-')}</div>",
                                             unsafe_allow_html=True,
                                         )
+                                        manual_pdf_name = str(rec_obj.get("boleto_pdf_nome", "")).strip()
+                                        if manual_pdf_name:
+                                            st.caption(f"PDF manual anexado: {manual_pdf_name}")
                                         if missing_fields:
                                             st.warning(f"Pendente para geração: {', '.join(missing_fields)}.")
                                         action1, action2, action3, action4 = st.columns(4)
