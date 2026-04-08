@@ -21403,7 +21403,7 @@ div[data-baseweb="select"] > div {
                 if report_start <= (parse_date(r.get("vencimento", "")) or parse_date(r.get("data", "")) or today_fin) <= report_end
             ]
             pay_report = [
-                p for p in payables_all
+                p for p in payables_metrics_all
                 if report_start <= (parse_date(p.get("vencimento", "")) or parse_date(p.get("data", "")) or today_fin) <= report_end
             ]
             rc1, rc2, rc3 = st.columns(3)
@@ -21436,7 +21436,24 @@ div[data-baseweb="select"] > div {
                     } for p in pay_report[:200]
                 ]), use_container_width=True, hide_index=True)
             st.markdown("### Relatórios completos")
-            st.caption("Geração consolidada do financeiro, contas a receber e contas a pagar sem alterar a lógica do sistema.")
+            st.caption("Relatórios individuais do financeiro e um consolidado com tudo junto.")
+            rec_report_student = [
+                r for r in rec_report
+                if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+            ]
+            rec_report_overdue = [
+                r for r in rec_report
+                if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+                and (parse_date(r.get("vencimento", "")) or datetime.date.max) < today_fin
+            ]
+            rec_report_open = [
+                r for r in rec_report
+                if str(r.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+            ]
+            pay_report_open = [
+                p for p in pay_report
+                if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}
+            ]
             report_defs = [
                 {
                     "title": "Relatório Financeiro Geral",
@@ -21445,88 +21462,101 @@ div[data-baseweb="select"] > div {
                     "receivables": rec_report,
                     "payables": pay_report,
                     "tone": "blue",
-                    "subtitle": "Recebimentos e pagamentos do período no mesmo relatório.",
+                    "subtitle": "Todos os recebimentos e pagamentos do período no mesmo arquivo.",
                 },
                 {
-                    "title": "Relatório de Contas a Receber",
+                    "title": "Relatório de Recebimentos",
                     "mode": "receber",
-                    "suffix": "contas_a_receber",
+                    "suffix": "recebimentos",
                     "receivables": rec_report,
                     "payables": [],
                     "tone": "green",
-                    "subtitle": "Somente carteira de recebimentos do período.",
+                    "subtitle": "Todas as contas a receber do período.",
                 },
                 {
-                    "title": "Relatório de Contas a Pagar",
+                    "title": "Relatório de Pagamentos",
                     "mode": "pagar",
-                    "suffix": "contas_a_pagar",
+                    "suffix": "pagamentos",
                     "receivables": [],
                     "payables": pay_report,
                     "tone": "orange",
-                    "subtitle": "Pagamentos, despesas e lançamentos a pagar do período.",
+                    "subtitle": "Todas as contas a pagar do período.",
+                },
+                {
+                    "title": "Relatório Financeiro dos Alunos",
+                    "mode": "receber",
+                    "suffix": "alunos",
+                    "receivables": rec_report_student,
+                    "payables": [],
+                    "tone": "slate",
+                    "subtitle": "Somente lançamentos financeiros da categoria Aluno.",
+                },
+                {
+                    "title": "Relatório de Devedores",
+                    "mode": "receber",
+                    "suffix": "devedores",
+                    "receivables": rec_report_overdue,
+                    "payables": [],
+                    "tone": "red",
+                    "subtitle": "Cobranças vencidas e ainda não pagas.",
+                },
+                {
+                    "title": "Relatório de Vencimentos",
+                    "mode": "geral",
+                    "suffix": "vencimentos",
+                    "receivables": rec_report_open,
+                    "payables": pay_report_open,
+                    "tone": "orange",
+                    "subtitle": "Títulos em aberto no período, a receber e a pagar.",
                 },
             ]
-            report_cols = st.columns(3)
-            for col_ref, report_def in zip(report_cols, report_defs):
-                with col_ref:
-                    with st.container(border=True):
-                        st.markdown(f"#### {report_def['title']}")
-                        st.caption(report_def["subtitle"])
-                        btn_html, btn_excel, btn_pdf = st.columns(3)
-                        if btn_html.button(
-                            "HTML",
-                            key=f"finance_report_html_{report_def['suffix']}",
-                            use_container_width=True,
-                        ):
-                            html_payload = _finance_report_html(
-                                report_def["title"],
-                                report_start,
-                                report_end,
-                                receivable_items=report_def["receivables"],
-                                payable_items=report_def["payables"],
-                                mode=report_def["mode"],
-                            )
+            report_rows = [report_defs[i:i + 3] for i in range(0, len(report_defs), 3)]
+            for row_idx, defs_row in enumerate(report_rows):
+                report_cols = st.columns(3)
+                for col_ref, report_def in zip(report_cols, defs_row):
+                    html_payload = _finance_report_html(
+                        report_def["title"],
+                        report_start,
+                        report_end,
+                        receivable_items=report_def["receivables"],
+                        payable_items=report_def["payables"],
+                        mode=report_def["mode"],
+                    )
+                    excel_payload = _finance_report_excel_bytes(
+                        report_def["title"],
+                        report_start,
+                        report_end,
+                        receivable_items=report_def["receivables"],
+                        payable_items=report_def["payables"],
+                        mode=report_def["mode"],
+                    )
+                    pdf_payload = _finance_report_pdf_bytes(
+                        report_def["title"],
+                        report_start,
+                        report_end,
+                        receivable_items=report_def["receivables"],
+                        payable_items=report_def["payables"],
+                        mode=report_def["mode"],
+                    )
+                    with col_ref:
+                        with st.container(border=True):
+                            st.markdown(f"#### {report_def['title']}")
+                            st.caption(report_def["subtitle"])
                             st.download_button(
                                 "Baixar HTML",
                                 data=html_payload,
                                 file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.html",
                                 mime="text/html",
-                                key=f"finance_report_html_download_{report_def['suffix']}",
+                                key=f"finance_report_html_download_{report_def['suffix']}_{row_idx}",
                                 use_container_width=True,
-                            )
-                        if btn_excel.button(
-                            "Excel",
-                            key=f"finance_report_excel_{report_def['suffix']}",
-                            use_container_width=True,
-                        ):
-                            excel_payload = _finance_report_excel_bytes(
-                                report_def["title"],
-                                report_start,
-                                report_end,
-                                receivable_items=report_def["receivables"],
-                                payable_items=report_def["payables"],
-                                mode=report_def["mode"],
                             )
                             st.download_button(
                                 "Baixar Excel",
                                 data=excel_payload,
                                 file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"finance_report_excel_download_{report_def['suffix']}",
+                                key=f"finance_report_excel_download_{report_def['suffix']}_{row_idx}",
                                 use_container_width=True,
-                            )
-                        if btn_pdf.button(
-                            "PDF",
-                            key=f"finance_report_pdf_{report_def['suffix']}",
-                            use_container_width=True,
-                        ):
-                            pdf_payload = _finance_report_pdf_bytes(
-                                report_def["title"],
-                                report_start,
-                                report_end,
-                                receivable_items=report_def["receivables"],
-                                payable_items=report_def["payables"],
-                                mode=report_def["mode"],
                             )
                             if pdf_payload:
                                 st.download_button(
@@ -21534,11 +21564,16 @@ div[data-baseweb="select"] > div {
                                     data=pdf_payload,
                                     file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf",
                                     mime="application/pdf",
-                                    key=f"finance_report_pdf_download_{report_def['suffix']}",
+                                    key=f"finance_report_pdf_download_{report_def['suffix']}_{row_idx}",
                                     use_container_width=True,
                                 )
                             else:
-                                st.error("Nao foi possivel gerar PDF neste ambiente.")
+                                st.button(
+                                    "Baixar PDF",
+                                    key=f"finance_report_pdf_disabled_{report_def['suffix']}_{row_idx}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
