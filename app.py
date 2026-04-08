@@ -197,6 +197,7 @@ SALES_LEADS_FILE = DATA_DIR / "sales_leads.json"
 SALES_AGENDA_FILE = DATA_DIR / "sales_agenda.json"
 SALES_PAYMENTS_FILE = DATA_DIR / "sales_payments.json"
 WIZ_SETTINGS_FILE = DATA_DIR / "wiz_settings.json"
+WIZ_PAUSE_FILE = DATA_DIR / "wiz_paused.flag"
 FINANCE_SETTINGS_FILE = DATA_DIR / "finance_settings.json"
 GROUP_PERMISSIONS_FILE = DATA_DIR / "group_permissions.json"
 WIZ_ACTION_AUDIT_FILE = DATA_DIR / "wiz_action_audit.json"
@@ -1443,14 +1444,33 @@ def _run_wiz_daily_backup(force=False):
 def wiz_enabled():
     return bool(get_wiz_settings().get("enabled", True))
 
+def _wiz_pause_flag_active():
+    try:
+        return bool(WIZ_PAUSE_FILE.exists())
+    except Exception:
+        return False
+
+def _set_wiz_pause_flag(paused):
+    try:
+        if bool(paused):
+            WIZ_PAUSE_FILE.write_text(
+                f"paused_at={datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                encoding="utf-8",
+            )
+        elif WIZ_PAUSE_FILE.exists():
+            WIZ_PAUSE_FILE.unlink()
+    except Exception:
+        pass
+
 def wiz_chatbot_paused():
-    return bool(get_wiz_settings().get("mister_wiz_paused", False))
+    return bool(_wiz_pause_flag_active() or get_wiz_settings().get("mister_wiz_paused", False))
 
 def set_wiz_chatbot_paused(paused):
     settings = get_wiz_settings()
     settings["mister_wiz_paused"] = bool(paused)
     save_wiz_settings(settings)
-    return bool(settings.get("mister_wiz_paused", False))
+    _set_wiz_pause_flag(paused)
+    return wiz_chatbot_paused()
 
 def _wiz_control_command(text):
     norm = _wiz_norm_text(text)
@@ -13687,6 +13707,9 @@ def get_student_active_prompt(student_obj):
 def run_active_chatbot():
     st.markdown('<div class="main-header">Professor Wiz</div>', unsafe_allow_html=True)
     st.caption("Assistente dedicado ao contexto da Active Educacional e Mister Wiz.")
+    if wiz_chatbot_paused():
+        st.warning("Bot Mister Wiz pausado. Atendimento humano assumido.")
+        return
 
     api_key = get_groq_api_key()
     if not api_key:
