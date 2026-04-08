@@ -500,6 +500,32 @@ def _try_parse_json(content_type, body_bytes):
             return None, text
     return None, text
 
+def _lookup_address_by_cep(cep_raw):
+    cep_digits = re.sub(r"\D+", "", str(cep_raw or ""))
+    if len(cep_digits) != 8:
+        return None, "CEP invalido. Informe os 8 digitos."
+    status, content_type, body, err = _http_request(
+        "GET",
+        f"https://viacep.com.br/ws/{cep_digits}/json/",
+        headers={"Accept": "application/json", "User-Agent": "Active-Educacional/streamlit"},
+        timeout=10,
+    )
+    if not status or status >= 400:
+        return None, err or "Nao foi possivel consultar o CEP agora."
+    data, _ = _try_parse_json(content_type, body)
+    if not isinstance(data, dict):
+        return None, "Resposta invalida ao consultar o CEP."
+    if data.get("erro"):
+        return None, "CEP nao encontrado."
+    return {
+        "cep": str(data.get("cep", "")).strip(),
+        "cidade": str(data.get("localidade", "")).strip(),
+        "bairro": str(data.get("bairro", "")).strip(),
+        "rua": str(data.get("logradouro", "")).strip(),
+        "complemento": str(data.get("complemento", "")).strip(),
+        "uf": str(data.get("uf", "")).strip(),
+    }, None
+
 def _sanitize_for_debug(value, max_str=800, max_items=50, depth=3):
     if depth <= 0:
         return "(...)"
@@ -19291,6 +19317,17 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 info_msg = feedback.get("info")
                 if info_msg:
                     st.info(info_msg)
+            cep_feedback = st.session_state.pop("add_student_cep_feedback", None)
+            if cep_feedback:
+                cep_level = str(cep_feedback.get("level", "info")).strip().lower()
+                cep_message = str(cep_feedback.get("message", "")).strip()
+                if cep_message:
+                    if cep_level == "success":
+                        st.success(cep_message)
+                    elif cep_level == "error":
+                        st.error(cep_message)
+                    else:
+                        st.info(cep_message)
 
             if st.session_state.get("students"):
                 st.markdown("### Puxar Aluno Cadastrado")
@@ -19408,6 +19445,9 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 with ce1: cep = st.text_input("CEP", key=_sfk("add_student_cep"))
                 with ce2: cidade = st.text_input("Cidade", key=_sfk("add_student_cidade"))
                 with ce3: bairro = st.text_input("Bairro", key=_sfk("add_student_bairro"))
+                cep_action_cols = st.columns([1.35, 3.65])
+                with cep_action_cols[0]:
+                    buscar_cep_pressed = st.form_submit_button("Preencher por CEP")
 
                 ce4, ce5, ce6 = st.columns([3, 1, 2])
                 with ce4: rua = st.text_input("Rua", key=_sfk("add_student_rua"))
@@ -19494,7 +19534,41 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     submit_pressed = bool(submit_base or submit_with_notify)
                 else:
                     submit_pressed = st.form_submit_button("Cadastrar Aluno")
+                if buscar_cep_pressed and not submit_pressed:
+                    cep_info, cep_error = _lookup_address_by_cep(cep)
+                    if cep_info:
+                        st.session_state[_sfk("add_student_cep")] = str(cep_info.get("cep") or cep).strip()
+                        st.session_state[_sfk("add_student_cidade")] = str(cep_info.get("cidade", "")).strip()
+                        st.session_state[_sfk("add_student_bairro")] = str(cep_info.get("bairro", "")).strip()
+                        st.session_state[_sfk("add_student_rua")] = str(cep_info.get("rua", "")).strip()
+                        complemento_atual = str(st.session_state.get(_sfk("add_student_complemento"), "")).strip()
+                        complemento_api = str(cep_info.get("complemento", "")).strip()
+                        if complemento_api and not complemento_atual:
+                            st.session_state[_sfk("add_student_complemento")] = complemento_api
+                        st.session_state["add_student_cep_feedback"] = {
+                            "level": "success",
+                            "message": "Endereco preenchido automaticamente pelo CEP.",
+                        }
+                    else:
+                        st.session_state["add_student_cep_feedback"] = {
+                            "level": "error",
+                            "message": cep_error or "Nao foi possivel preencher o endereco pelo CEP.",
+                        }
+                    st.rerun()
                 if submit_pressed:
+                    cep_info = None
+                    cep_error = None
+                    if str(cep or "").strip():
+                        cep_info, cep_error = _lookup_address_by_cep(cep)
+                        if cep_info:
+                            if not str(cidade or "").strip():
+                                cidade = str(cep_info.get("cidade", "")).strip()
+                            if not str(bairro or "").strip():
+                                bairro = str(cep_info.get("bairro", "")).strip()
+                            if not str(rua or "").strip():
+                                rua = str(cep_info.get("rua", "")).strip()
+                            if not str(complemento or "").strip() and str(cep_info.get("complemento", "")).strip():
+                                complemento = str(cep_info.get("complemento", "")).strip()
                     idade_final = _calc_age_from_date_obj(data_nascimento) or 1
                     edit_idx_submit = int(st.session_state.get("add_student_edit_idx", -1) or -1)
                     edit_obj_submit = None
