@@ -15821,18 +15821,18 @@ if not st.session_state.get("logged_in", False):
         .stApp { background: radial-gradient(1200px 600px at 12% 8%, rgba(59,130,246,0.22), transparent 62%), linear-gradient(140deg, #0b1225 0%, #1b3c7c 48%, #2a67d4 100%); font-family: 'Inter', sans-serif; }
         header, footer {visibility: hidden;}
         section[data-testid="stMain"], div[data-testid="stAppViewContainer"], div[data-testid="stAppViewContainer"] > section, div[data-testid="stMainBlockContainer"], div[data-testid="stMainBlockContainer"] > div, section.main, div.main { background: transparent !important; box-shadow: none !important; border-radius: 0 !important; }
-        .block-container { padding-top: 3.5rem; padding-bottom: 4rem; max-width: 1500px; background: transparent !important; box-shadow: none !important; }
-        .hero-card { background: rgba(255, 255, 255, 0.96); border-radius: 28px; padding: 36px 34px; min-height: 520px; width: 100%; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 28px 70px rgba(15, 23, 42, 0.2); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; backdrop-filter: blur(6px); }
-        .hero-logo-img { width: 72%; max-width: 420px; height: auto; }
-        .hero-title { font-family: 'Sora', sans-serif; font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+        .block-container { padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1320px; background: transparent !important; box-shadow: none !important; }
+        .hero-card { background: rgba(255, 255, 255, 0.98); border-radius: 28px; padding: 34px 32px; min-height: 440px; width: 100%; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 24px 58px rgba(15, 23, 42, 0.18); color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; backdrop-filter: blur(6px); box-sizing: border-box; }
+        .hero-logo-img { width: min(72%, 360px); height: auto; }
+        .hero-title { font-family: 'Sora', sans-serif; font-size: clamp(2rem, 3vw, 3rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
         .hero-subtitle { font-size: 1rem; color: #475569; }
-        .hero-tagline { font-weight: 700; color: #0f172a; background: #eef2ff; border-radius: 999px; padding: 8px 16px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
+        .hero-tagline { font-weight: 700; color: #17326b; background: #eef4ff; border-radius: 999px; padding: 10px 18px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); }
         .hero-meta { font-size: 0.9rem; color: #1d4ed8; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
-        .feature-block { margin-top: 28px; background: rgba(255, 255, 255, 0.94); border-radius: 26px; padding: 26px 30px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 22px 50px rgba(15,23,42,0.16); position: relative; overflow: hidden; color: #0f172a; }
-        .feature-block::before { content: ""; position: absolute; inset: auto -10% -40% auto; width: 320px; height: 320px; background: radial-gradient(circle, rgba(59,130,246,0.12), transparent 60%); pointer-events: none; }
-        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.2rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; position: relative; z-index: 1; }
-        .feature-card { border-radius: 18px; padding: 18px 18px; border: 1px solid rgba(148,163,184,0.28); background: #ffffff; box-shadow: 0 10px 20px rgba(15, 23, 42, 0.1) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .feature-block { margin-top: 26px; background: rgba(255, 255, 255, 0.96); border-radius: 24px; padding: 24px 26px; border: 1px solid rgba(226,232,240,0.9); box-shadow: 0 18px 44px rgba(15,23,42,0.14); position: relative; overflow: hidden; color: #0f172a; }
+        .feature-block::before { content: ""; position: absolute; inset: auto -12% -46% auto; width: 280px; height: 280px; background: radial-gradient(circle, rgba(59,130,246,0.10), transparent 60%); pointer-events: none; }
+        .feature-title { font-family: 'Sora', sans-serif; font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-bottom: 18px; letter-spacing: -0.02em; }
+        .feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; position: relative; z-index: 1; }
+        .feature-card { border-radius: 18px; padding: 20px 18px; border: 1px solid rgba(148,163,184,0.24); background: #ffffff; box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08) !important; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; min-height: 108px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
         .feature-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(15, 23, 42, 0.16) !important; }
         .feature-card.feature-blue { background: linear-gradient(135deg, rgba(239,246,255,0.92), rgba(219,234,254,0.9)) !important; border-color: rgba(37,99,235,0.24); }
         .feature-card.feature-green { background: linear-gradient(135deg, rgba(236,253,245,0.92), rgba(209,250,229,0.9)) !important; border-color: rgba(22,163,74,0.24); }
@@ -15841,12 +15841,12 @@ if not st.session_state.get("logged_in", False):
         .feature-card:nth-child(2) .feature-icon { background: #ecfdf3; color: #16a34a; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.18); }
         .feature-card:nth-child(3) .feature-icon { background: #fff7ed; color: #ea580c; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.18); }
         .feature-card:nth-child(4) .feature-icon { background: #f5f3ff; color: #7c3aed; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.18); }
-        .feature-text { font-weight: 700; color: #0f172a; font-size: 0.98rem; }
-        .feature-sub { font-size: 0.84rem; color: #64748b; margin-top: 4px; }
-        .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; }
-        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #22c55e; color: white !important; font-weight: 700; padding: 12px 16px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        .feature-text { font-weight: 800; color: #0f172a; font-size: 1.02rem; line-height: 1.25; }
+        .feature-sub { font-size: 0.9rem; color: #52637a; margin-top: 6px; line-height: 1.55; }
+        .feature-cta { margin-top: 18px; display: flex; justify-content: flex-end; position: relative; z-index: 1; }
+        .whatsapp-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: white !important; font-weight: 700; padding: 12px 18px; border-radius: 12px; text-decoration: none; transition: transform 0.2s; box-shadow: 0 8px 18px rgba(34, 197, 94, 0.26); }
         .whatsapp-button:hover { transform: translateY(-2px); opacity: 0.95; }
-        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 24px; padding: 22px 26px 26px; width: 100%; min-height: 520px; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 24px 60px rgba(15,23,42,0.18); box-sizing: border-box; }
+        div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { background: rgba(255, 255, 255, 0.98); border-radius: 24px; padding: 22px 26px 26px; width: 100%; min-height: 440px; border: 1px solid rgba(15, 23, 42, 0.08); box-shadow: 0 24px 60px rgba(15,23,42,0.18); box-sizing: border-box; }
         div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) div[data-testid="stForm"] { background: transparent; border-radius: 0; padding: 0; border: none; width: 100%; height: auto; min-height: 0; max-height: none; overflow: visible; box-shadow: none; display: flex; flex-direction: column; justify-content: flex-start; }
         .login-header { font-family: 'Sora', sans-serif; font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
         .login-sub { font-size: 0.95rem; color: #64748b; margin-bottom: 24px; }
@@ -15858,6 +15858,27 @@ if not st.session_state.get("logged_in", False):
         div[data-testid="stPassword"] button { background: transparent !important; border: none !important; width: 28px !important; height: 28px !important; min-height: 28px !important; padding: 0 !important; box-shadow: none !important; color: #94a3b8 !important; }
         div[data-testid="stPassword"] button:hover { background: rgba(148, 163, 184, 0.12) !important; }
         div[data-testid="stPassword"] button svg { width: 14px !important; height: 14px !important; }
+        @media (max-width: 1080px) {
+            .block-container { padding-top: 1.4rem; padding-bottom: 2rem; max-width: 980px; }
+            .hero-card,
+            div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { min-height: 0; }
+            .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 720px) {
+            .block-container { padding-top: 1rem; padding-bottom: 1.5rem; }
+            .hero-card { padding: 24px 20px; border-radius: 22px; gap: 12px; }
+            .hero-title { font-size: 2rem; }
+            .hero-tagline { font-size: 0.92rem; line-height: 1.4; }
+            div[data-testid="stVerticalBlock"]:has(.auth-card-anchor) { padding: 18px 18px 20px; border-radius: 22px; }
+            .login-header { font-size: 1.4rem; }
+            .login-sub { margin-bottom: 18px; }
+            .feature-block { padding: 18px 18px 20px; border-radius: 20px; }
+            .feature-title { font-size: 1.12rem; margin-bottom: 14px; }
+            .feature-grid { grid-template-columns: 1fr; gap: 12px; }
+            .feature-card { min-height: 0; padding: 16px; }
+            .feature-cta { justify-content: stretch; }
+            .whatsapp-button { width: 100%; }
+        }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -16274,7 +16295,7 @@ else:
             gap: 1rem !important;
         }
         @media (max-width: 980px) {
-            :root { --sidebar-width: 100vw; --sidebar-menu-btn-width: min(88vw, 360px); }
+            :root { --sidebar-width: min(82vw, 320px); --sidebar-menu-btn-width: calc(min(82vw, 320px) - 36px); }
             .block-container { padding-top: 0.8rem; }
             .main-header { font-size: 1.35rem; }
             div[data-testid="stForm"] { padding: 16px !important; }
@@ -16287,22 +16308,47 @@ else:
             .sidebar-profile-shell,
             .sidebar-nav-shell { border-radius: 18px; }
             .sidebar-profile-head { align-items: flex-start; }
+            section[data-testid="stSidebar"] .stButton {
+                width: calc(var(--sidebar-width) - 28px) !important;
+                min-width: calc(var(--sidebar-width) - 28px) !important;
+                max-width: calc(var(--sidebar-width) - 28px) !important;
+            }
+            section[data-testid="stSidebar"] .stButton > button {
+                width: 100% !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
+                white-space: normal !important;
+                text-overflow: initial !important;
+                line-height: 1.2 !important;
+                height: auto !important;
+                min-height: 48px !important;
+                padding-top: 10px !important;
+                padding-bottom: 10px !important;
+            }
+            section[data-testid="stSidebar"] .stButton > button p {
+                white-space: normal !important;
+                line-height: 1.2 !important;
+            }
             section[data-testid="stSidebar"] {
-                position: relative !important;
-                min-width: 100vw !important;
-                max-width: 100vw !important;
-                width: 100vw !important;
+                position: fixed !important;
+                top: 0 !important;
+                height: 100dvh !important;
+                min-width: var(--sidebar-width) !important;
+                max-width: var(--sidebar-width) !important;
+                width: var(--sidebar-width) !important;
                 margin-left: 0 !important;
                 left: 0 !important;
+                z-index: 1002 !important;
+                overflow-y: auto !important;
                 transition: transform .22s ease, min-width .22s ease, max-width .22s ease, width .22s ease, margin-left .22s ease !important;
             }
             section[data-testid="stSidebar"][aria-expanded="false"] {
                 min-width: 0 !important;
                 max-width: 0 !important;
                 width: 0 !important;
-                margin-left: -100vw !important;
-                left: -100vw !important;
-                transform: translateX(-100vw) !important;
+                margin-left: 0 !important;
+                left: 0 !important;
+                transform: translateX(calc(var(--sidebar-width) * -1 - 12px)) !important;
                 border-right: none !important;
                 box-shadow: none !important;
                 overflow: hidden !important;
@@ -16323,6 +16369,9 @@ else:
             button[kind="header"][aria-label*="sidebar"],
             button[kind="header"][aria-label*="Sidebar"] {
                 z-index: 1001 !important;
+            }
+            div[data-testid="stSidebarContent"] {
+                padding-bottom: 32px !important;
             }
         }
     </style>
@@ -16493,8 +16542,6 @@ if not st.session_state.get("logged_in", False):
                     display_name = user.get("pessoa") or usuario.strip()
                     login_user(role, display_name, str(unidade).strip(), perfil_conta, usuario.strip(), user_obj=user)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown('<div class="feature-title">Recursos do Sistema</div>', unsafe_allow_html=True)
     feature_cards = [
         ("Comunicacao Direta", "Mensagens rapidas para alunos e turmas."),
         ("Professor Wiz IA", "Estudo assistido por IA com orientacao em tempo real."),
@@ -16504,25 +16551,27 @@ if not st.session_state.get("logged_in", False):
         ("Financeiro", "Controle de matriculas, parcelas e recebimentos."),
     ]
     feature_palette = ["feature-blue", "feature-green", "feature-orange"]
-    for i in range(0, len(feature_cards), 3):
-        cols = st.columns(3, gap="large")
-        for offset, (col, card) in enumerate(zip(cols, feature_cards[i:i+3])):
-            title, sub = card
-            feature_class = feature_palette[(i + offset) % len(feature_palette)]
-            with col:
-                st.markdown(
-                    f"""
+    feature_cards_html = []
+    for idx, (title, sub) in enumerate(feature_cards):
+        feature_class = feature_palette[idx % len(feature_palette)]
+        feature_cards_html.append(
+            f"""
 <div class="feature-card {feature_class}">
-  <div class="feature-text">{title}</div>
-  <div class="feature-sub">{sub}</div>
+  <div class="feature-text">{html.escape(title)}</div>
+  <div class="feature-sub">{html.escape(sub)}</div>
 </div>
-""",
-                    unsafe_allow_html=True,
-                )
+"""
+        )
     st.markdown(
         f"""
-<div class="feature-cta">
-  <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">Falar com Suporte no WhatsApp</a>
+<div class="feature-block">
+  <div class="feature-title">Recursos do Sistema</div>
+  <div class="feature-grid">
+    {''.join(feature_cards_html)}
+  </div>
+  <div class="feature-cta">
+    <a href="https://wa.me/{WHATSAPP_NUMBER}" target="_blank" class="whatsapp-button">Falar com Suporte no WhatsApp</a>
+  </div>
 </div>
 """,
         unsafe_allow_html=True,
