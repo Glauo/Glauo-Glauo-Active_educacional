@@ -10950,6 +10950,256 @@ def _teacher_payment_receipt_excel_bytes(professor_name, period_start, period_en
         ).to_excel(writer, index=False, sheet_name="Aulas")
     return buffer.getvalue()
 
+def _finance_report_receivable_rows(items):
+    rows = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "Referencia": str(item.get("aluno", "")).strip() or "-",
+                "Descricao": str(item.get("descricao", "")).strip() or "-",
+                "Categoria": str(item.get("categoria", "")).strip() or "-",
+                "Cobranca": str(item.get("cobranca", "")).strip() or "-",
+                "Vencimento": str(item.get("vencimento", "")).strip() or "-",
+                "Status": str(item.get("status", "")).strip() or "-",
+                "Valor": float(parse_money(item.get("valor_parcela", item.get("valor", 0))) or 0),
+                "Codigo": str(item.get("codigo", "")).strip() or "-",
+            }
+        )
+    return rows
+
+def _finance_report_payable_rows(items):
+    rows = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "Referencia": str(item.get("fornecedor", item.get("professor", ""))).strip() or "-",
+                "Descricao": str(item.get("descricao", "")).strip() or "-",
+                "Categoria": str(item.get("categoria_lancamento", item.get("categoria", ""))).strip() or "-",
+                "Forma": str(item.get("forma_pagamento", item.get("cobranca", ""))).strip() or "-",
+                "Vencimento": str(item.get("vencimento", "")).strip() or "-",
+                "Status": str(item.get("status", "")).strip() or "-",
+                "Valor": float(parse_money(item.get("valor_parcela", item.get("valor", 0))) or 0),
+                "Codigo": str(item.get("codigo", item.get("class_session_ref", ""))).strip() or "-",
+            }
+        )
+    return rows
+
+def _finance_report_html(title, period_start, period_end, receivable_items=None, payable_items=None, mode="geral"):
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    rec_rows = _finance_report_receivable_rows(receivable_items)
+    pay_rows = _finance_report_payable_rows(payable_items)
+    total_rec = sum(float(row.get("Valor", 0) or 0) for row in rec_rows)
+    total_pay = sum(float(row.get("Valor", 0) or 0) for row in pay_rows)
+
+    def _table_html(rows, headers):
+        if not rows:
+            return "<tr><td colspan='7' style='text-align:center'>Sem registros no período.</td></tr>"
+        lines = []
+        for row in rows:
+            lines.append(
+                "<tr>"
+                + "".join(
+                    f"<td style='text-align:{'right' if h == 'Valor' else 'left'}'>{html.escape(format_money(row[h]) if h == 'Valor' else str(row[h]))}</td>"
+                    for h in headers
+                )
+                + "</tr>"
+            )
+        return "".join(lines)
+
+    rec_headers = ["Referencia", "Descricao", "Categoria", "Cobranca", "Vencimento", "Status", "Valor"]
+    pay_headers = ["Referencia", "Descricao", "Categoria", "Forma", "Vencimento", "Status", "Valor"]
+    rec_section = ""
+    pay_section = ""
+    if mode in ("geral", "receber"):
+        rec_section = f"""
+        <div class="section">
+          <h3>Contas a Receber</h3>
+          <table>
+            <thead><tr>{''.join(f'<th>{html.escape(h)}</th>' for h in rec_headers)}</tr></thead>
+            <tbody>{_table_html(rec_rows, rec_headers)}</tbody>
+          </table>
+          <div class="total">Total a receber no período: {format_money(total_rec)}</div>
+        </div>
+        """
+    if mode in ("geral", "pagar"):
+        pay_section = f"""
+        <div class="section">
+          <h3>Contas a Pagar</h3>
+          <table>
+            <thead><tr>{''.join(f'<th>{html.escape(h)}</th>' for h in pay_headers)}</tr></thead>
+            <tbody>{_table_html(pay_rows, pay_headers)}</tbody>
+          </table>
+          <div class="total">Total a pagar no período: {format_money(total_pay)}</div>
+        </div>
+        """
+
+    return f"""<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html.escape(title)}</title>
+  <style>
+    body {{ margin: 0; padding: 20px; font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; background: #f3f6fb; }}
+    .sheet {{ max-width: 1120px; margin: 0 auto; background: #ffffff; border: 1px solid #d0d9e6; border-radius: 14px; overflow: hidden; }}
+    .header {{ padding: 18px 20px; background: linear-gradient(90deg, #1e3a8a 0%, #2753be 100%); color: #fff; }}
+    .title {{ margin: 0; font-size: 24px; line-height: 1.2; }}
+    .sub {{ margin-top: 4px; font-size: 13px; opacity: .95; }}
+    .content {{ padding: 18px 20px 20px 20px; }}
+    .meta-grid {{ display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }}
+    .meta-card {{ border: 1px solid #d0d9e6; border-radius: 10px; padding: 10px 12px; background: #f9fbff; }}
+    .meta-label {{ font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #475569; margin-bottom: 4px; }}
+    .meta-value {{ font-size: 14px; font-weight: 600; }}
+    .section {{ margin-top: 16px; }}
+    .section h3 {{ margin: 0 0 8px 0; font-size: 17px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 6px; }}
+    th, td {{ border: 1px solid #d0d9e6; padding: 8px; font-size: 12px; }}
+    th {{ background: #e8efff; text-align: left; color: #1f2a44; }}
+    .total {{ margin-top: 10px; padding: 10px 12px; border: 1px solid #d0d9e6; border-radius: 10px; font-size: 18px; font-weight: 700; background: #f8fbff; }}
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header">
+      <div class="title">{html.escape(title)}</div>
+      <div class="sub">Período: {html.escape(period_start_txt)} a {html.escape(period_end_txt)}</div>
+    </div>
+    <div class="content">
+      <div class="meta-grid">
+        <div class="meta-card"><div class="meta-label">Recebimentos</div><div class="meta-value">{len(rec_rows)}</div></div>
+        <div class="meta-card"><div class="meta-label">Total a receber</div><div class="meta-value">{format_money(total_rec)}</div></div>
+        <div class="meta-card"><div class="meta-label">Pagamentos</div><div class="meta-value">{len(pay_rows)}</div></div>
+        <div class="meta-card"><div class="meta-label">Total a pagar</div><div class="meta-value">{format_money(total_pay)}</div></div>
+      </div>
+      {rec_section}
+      {pay_section}
+    </div>
+  </div>
+</body>
+</html>""".strip()
+
+def _finance_report_pdf_bytes(title, period_start, period_end, receivable_items=None, payable_items=None, mode="geral"):
+    try:
+        from fpdf import FPDF
+    except Exception:
+        return None
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    rec_rows = _finance_report_receivable_rows(receivable_items)
+    pay_rows = _finance_report_payable_rows(payable_items)
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.add_page()
+    pdf.set_margins(10, 10, 10)
+
+    def _safe(text):
+        return str(text or "").encode("latin-1", "ignore").decode("latin-1")
+
+    def _fit(value, width):
+        txt = _safe(value or "-")
+        max_width = max(4, float(width) - 3)
+        if pdf.get_string_width(txt) <= max_width:
+            return txt
+        while txt and pdf.get_string_width(txt + "...") > max_width:
+            txt = txt[:-1]
+        return (txt + "...") if txt else "..."
+
+    def _section_header(text):
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_fill_color(30, 58, 138)
+        pdf.cell(0, 7, _safe(text), ln=1, fill=True)
+        pdf.set_text_color(15, 23, 42)
+
+    def _draw_table(headers, rows):
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(226, 232, 240)
+        widths = [44, 58, 34, 24, 24, 22, 28]
+        for (header, width) in zip(headers, widths):
+            pdf.cell(width, 6, _safe(header), border=1, fill=True)
+        pdf.ln(6)
+        pdf.set_font("Helvetica", "", 8)
+        if not rows:
+            pdf.cell(sum(widths), 6, _safe("Sem registros no período."), border=1, ln=1, align="C")
+            return
+        for row in rows:
+            values = [
+                row.get(headers[0], "-"),
+                row.get(headers[1], "-"),
+                row.get(headers[2], "-"),
+                row.get(headers[3], "-"),
+                row.get(headers[4], "-"),
+                row.get(headers[5], "-"),
+                format_money(row.get(headers[6], 0)) if headers[6] == "Valor" else row.get(headers[6], "-"),
+            ]
+            aligns = ["L", "L", "L", "L", "L", "L", "R"]
+            for value, width, align in zip(values, widths, aligns):
+                pdf.cell(width, 6, _fit(value, width), border=1, align=align)
+            pdf.ln(6)
+
+    pdf.set_draw_color(148, 163, 184)
+    pdf.set_line_width(0.3)
+    pdf.rect(8, 8, 281, 194)
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 8, _safe(title), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _safe(f"Período: {period_start_txt} a {period_end_txt}"), ln=1)
+    pdf.ln(2)
+
+    if mode in ("geral", "receber"):
+        _section_header("Contas a Receber")
+        _draw_table(["Referencia", "Descricao", "Categoria", "Cobranca", "Vencimento", "Status", "Valor"], rec_rows)
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 6, _safe(f"Total a receber: {format_money(sum(float(r.get('Valor', 0) or 0) for r in rec_rows))}"), ln=1)
+        pdf.ln(2)
+    if mode in ("geral", "pagar"):
+        _section_header("Contas a Pagar")
+        _draw_table(["Referencia", "Descricao", "Categoria", "Forma", "Vencimento", "Status", "Valor"], pay_rows)
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 6, _safe(f"Total a pagar: {format_money(sum(float(r.get('Valor', 0) or 0) for r in pay_rows))}"), ln=1)
+
+    pdf_output = pdf.output(dest="S")
+    if isinstance(pdf_output, bytearray):
+        return bytes(pdf_output)
+    if isinstance(pdf_output, bytes):
+        return pdf_output
+    return str(pdf_output).encode("latin-1", "ignore")
+
+def _finance_report_excel_bytes(title, period_start, period_end, receivable_items=None, payable_items=None, mode="geral"):
+    period_start_txt = period_start.strftime("%d/%m/%Y") if isinstance(period_start, datetime.date) else str(period_start or "").strip()
+    period_end_txt = period_end.strftime("%d/%m/%Y") if isinstance(period_end, datetime.date) else str(period_end or "").strip()
+    rec_rows = _finance_report_receivable_rows(receivable_items)
+    pay_rows = _finance_report_payable_rows(payable_items)
+    meta_rows = [
+        {"Campo": "Relatório", "Valor": title},
+        {"Campo": "Período inicial", "Valor": period_start_txt},
+        {"Campo": "Período final", "Valor": period_end_txt},
+        {"Campo": "Qtd recebimentos", "Valor": len(rec_rows)},
+        {"Campo": "Total a receber", "Valor": sum(float(row.get("Valor", 0) or 0) for row in rec_rows)},
+        {"Campo": "Qtd pagamentos", "Valor": len(pay_rows)},
+        {"Campo": "Total a pagar", "Valor": sum(float(row.get("Valor", 0) or 0) for row in pay_rows)},
+    ]
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame(meta_rows).to_excel(writer, index=False, sheet_name="Resumo")
+        if mode in ("geral", "receber"):
+            pd.DataFrame(rec_rows or [{"Referencia": "-", "Descricao": "-", "Categoria": "-", "Cobranca": "-", "Vencimento": "-", "Status": "-", "Valor": 0.0, "Codigo": "-"}]).to_excel(
+                writer, index=False, sheet_name="Contas a Receber"
+            )
+        if mode in ("geral", "pagar"):
+            pd.DataFrame(pay_rows or [{"Referencia": "-", "Descricao": "-", "Categoria": "-", "Forma": "-", "Vencimento": "-", "Status": "-", "Valor": 0.0, "Codigo": "-"}]).to_excel(
+                writer, index=False, sheet_name="Contas a Pagar"
+            )
+    return buffer.getvalue()
+
 def _teacher_payment_already_launched(session_obj, payables=None):
     ref = _teacher_payment_ref_for_session(session_obj)
     payables_list = payables if isinstance(payables, list) else _load_latest_payables()
@@ -21185,6 +21435,110 @@ div[data-baseweb="select"] > div {
                         "status": str(p.get("status", "")).strip(),
                     } for p in pay_report[:200]
                 ]), use_container_width=True, hide_index=True)
+            st.markdown("### Relatórios completos")
+            st.caption("Geração consolidada do financeiro, contas a receber e contas a pagar sem alterar a lógica do sistema.")
+            report_defs = [
+                {
+                    "title": "Relatório Financeiro Geral",
+                    "mode": "geral",
+                    "suffix": "financeiro_geral",
+                    "receivables": rec_report,
+                    "payables": pay_report,
+                    "tone": "blue",
+                    "subtitle": "Recebimentos e pagamentos do período no mesmo relatório.",
+                },
+                {
+                    "title": "Relatório de Contas a Receber",
+                    "mode": "receber",
+                    "suffix": "contas_a_receber",
+                    "receivables": rec_report,
+                    "payables": [],
+                    "tone": "green",
+                    "subtitle": "Somente carteira de recebimentos do período.",
+                },
+                {
+                    "title": "Relatório de Contas a Pagar",
+                    "mode": "pagar",
+                    "suffix": "contas_a_pagar",
+                    "receivables": [],
+                    "payables": pay_report,
+                    "tone": "orange",
+                    "subtitle": "Pagamentos, despesas e lançamentos a pagar do período.",
+                },
+            ]
+            report_cols = st.columns(3)
+            for col_ref, report_def in zip(report_cols, report_defs):
+                with col_ref:
+                    with st.container(border=True):
+                        st.markdown(f"#### {report_def['title']}")
+                        st.caption(report_def["subtitle"])
+                        btn_html, btn_excel, btn_pdf = st.columns(3)
+                        if btn_html.button(
+                            "HTML",
+                            key=f"finance_report_html_{report_def['suffix']}",
+                            use_container_width=True,
+                        ):
+                            html_payload = _finance_report_html(
+                                report_def["title"],
+                                report_start,
+                                report_end,
+                                receivable_items=report_def["receivables"],
+                                payable_items=report_def["payables"],
+                                mode=report_def["mode"],
+                            )
+                            st.download_button(
+                                "Baixar HTML",
+                                data=html_payload,
+                                file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.html",
+                                mime="text/html",
+                                key=f"finance_report_html_download_{report_def['suffix']}",
+                                use_container_width=True,
+                            )
+                        if btn_excel.button(
+                            "Excel",
+                            key=f"finance_report_excel_{report_def['suffix']}",
+                            use_container_width=True,
+                        ):
+                            excel_payload = _finance_report_excel_bytes(
+                                report_def["title"],
+                                report_start,
+                                report_end,
+                                receivable_items=report_def["receivables"],
+                                payable_items=report_def["payables"],
+                                mode=report_def["mode"],
+                            )
+                            st.download_button(
+                                "Baixar Excel",
+                                data=excel_payload,
+                                file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"finance_report_excel_download_{report_def['suffix']}",
+                                use_container_width=True,
+                            )
+                        if btn_pdf.button(
+                            "PDF",
+                            key=f"finance_report_pdf_{report_def['suffix']}",
+                            use_container_width=True,
+                        ):
+                            pdf_payload = _finance_report_pdf_bytes(
+                                report_def["title"],
+                                report_start,
+                                report_end,
+                                receivable_items=report_def["receivables"],
+                                payable_items=report_def["payables"],
+                                mode=report_def["mode"],
+                            )
+                            if pdf_payload:
+                                st.download_button(
+                                    "Baixar PDF",
+                                    data=pdf_payload,
+                                    file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"finance_report_pdf_download_{report_def['suffix']}",
+                                    use_container_width=True,
+                                )
+                            else:
+                                st.error("Nao foi possivel gerar PDF neste ambiente.")
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
