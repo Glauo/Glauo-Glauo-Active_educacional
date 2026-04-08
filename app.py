@@ -1633,6 +1633,8 @@ def _student_whatsapp_recipients(student):
     return sorted(numbers)
 
 def _send_whatsapp_evolution(number, text, timeout=20):
+    if wiz_chatbot_paused():
+        return False, "bloqueado: atendimento humano assumido", []
     number = _normalize_whatsapp_number(number)
     message_text = str(text or "").strip()
     base_url = _evolution_base_url()
@@ -1701,6 +1703,8 @@ def _send_whatsapp_evolution(number, text, timeout=20):
     return False, f"falha whatsapp (HTTP {last.get('status')})", attempts
 
 def _send_whatsapp_wapi(number, text, timeout=20):
+    if wiz_chatbot_paused():
+        return False, "bloqueado: atendimento humano assumido", []
     number = _normalize_whatsapp_number(number)
     message_text = str(text or "").strip()
     base_url = _wapi_base_url()
@@ -5411,6 +5415,7 @@ def _render_wiz_automation_panel():
                 force_on["enabled"] = True
                 force_on["notify_email"] = True
                 force_on["notify_whatsapp"] = True
+                force_on["mister_wiz_paused"] = wiz_chatbot_paused()
                 save_wiz_settings(force_on)
                 st.success("Envios por e-mail e WhatsApp reativados.")
                 st.rerun()
@@ -5484,6 +5489,7 @@ def run_wiz_assistant():
             force_on["enabled"] = True
             force_on["notify_email"] = True
             force_on["notify_whatsapp"] = True
+            force_on["mister_wiz_paused"] = wiz_chatbot_paused()
             save_wiz_settings(force_on)
             st.success("Envios por e-mail e WhatsApp reativados.")
             st.rerun()
@@ -5560,10 +5566,11 @@ def run_wiz_assistant():
         force_on["enabled"] = True
         force_on["notify_email"] = True
         force_on["notify_whatsapp"] = True
+        force_on["mister_wiz_paused"] = wiz_chatbot_paused()
         save_wiz_settings(force_on)
         answer = (
             "Pronto. Reativei os envios automáticos do sistema (e-mail e WhatsApp) e mantive "
-            "as automações do Assistente Wiz habilitadas."
+            "as automações do Assistente Wiz habilitadas sem remover a pausa atual do bot."
         )
         chat_history.append({"role": "user", "content": str(user_text).strip()})
         chat_history.append({"role": "assistant", "content": answer})
