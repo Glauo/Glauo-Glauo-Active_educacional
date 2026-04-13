@@ -21501,21 +21501,10 @@ div[data-baseweb="select"] > div {
         if finance_main == "__reports__":
             _finance_section_intro(
                 "Relatórios financeiros",
-                "Consulte o resumo do período com foco em recebimentos, mensalidades em aberto, pagamentos de professores e lançamentos principais.",
+                "Escolha o relatório, defina o alvo quando necessário e baixe apenas o PDF do item selecionado.",
                 chip="Relatórios",
             )
-            _finance_action_panel(
-                "Ações",
-                [
-                    {"label": "Recebimentos", "set_state": {"finance_workspace_menu": "Recebimentos"}},
-                    {"label": "Contas a pagar", "set_state": {"finance_workspace_menu": "Professores"}},
-                    {"label": "Inadimplência", "set_state": {"finance_workspace_menu": "Cobrança e Inadimplência"}},
-                ],
-                key_prefix="finance_reports",
-                subtitle="Atalhos rápidos do módulo.",
-                columns_per_row=3,
-            )
-            _finance_pane_header("Filtros do relatório", "Defina o período e mantenha a leitura dos resultados na mesma estrutura visual do módulo.")
+            _finance_pane_header("Baixar relatório em PDF", "Tela enxuta para escolher o relatório certo sem misturar vários blocos de download.")
             rf1, rf2 = st.columns(2)
             with rf1:
                 report_start = st.date_input("Período inicial", value=month_start_fin, format="DD/MM/YYYY", key="finance_report_start")
@@ -21529,40 +21518,17 @@ div[data-baseweb="select"] > div {
                 p for p in payables_metrics_all
                 if report_start <= (parse_date(p.get("vencimento", "")) or parse_date(p.get("data", "")) or today_fin) <= report_end
             ]
-            rc1, rc2, rc3 = st.columns(3)
-            with rc1:
-                _finance_metric_card("Recebimentos do período", format_money(sum(_receivable_amount(r) for r in rec_report if str(r.get("status", "")).strip().lower() == "pago")), "Liquidados no intervalo", tone="green")
-            with rc2:
-                _finance_metric_card("Mensalidades em aberto", len([r for r in rec_report if normalize_text(r.get("categoria", "")) == "mensalidade" and str(r.get("status", "")).strip().lower() != "pago"]), "No período filtrado", tone="orange")
-            with rc3:
-                _finance_metric_card("Pagamentos professores", format_money(sum(_payable_amount(p) for p in pay_report if str(p.get("categoria_lancamento", "")).strip().lower() == "professor")), "Lançados no período", tone="blue")
-            with st.container(border=True):
-                st.markdown("### Consolidação do período")
-                st.caption("Tabela financeira padrão do módulo para análise administrativa.")
-                st.dataframe(pd.DataFrame([
-                    {
-                        "tipo": "Recebimento",
-                        "referencia": str(r.get("aluno", "")).strip(),
-                        "categoria": str(r.get("categoria", "")).strip(),
-                        "vencimento": str(r.get("vencimento", "")).strip(),
-                        "valor": str(r.get("valor_parcela", r.get("valor", ""))).strip(),
-                        "status": str(r.get("status", "")).strip(),
-                    } for r in rec_report[:200]
-                ] + [
-                    {
-                        "tipo": "Professor/Despesa",
-                        "referencia": str(p.get("fornecedor", "")).strip(),
-                        "categoria": str(p.get("categoria_lancamento", "")).strip(),
-                        "vencimento": str(p.get("vencimento", "")).strip(),
-                        "valor": str(p.get("valor_parcela", p.get("valor", ""))).strip(),
-                        "status": str(p.get("status", "")).strip(),
-                    } for p in pay_report[:200]
-                ]), use_container_width=True, hide_index=True)
-            st.markdown("### Relatórios completos")
-            st.caption("Relatórios individuais do financeiro e um consolidado com tudo junto.")
             rec_report_student = [
                 r for r in rec_report
                 if str(r.get("categoria_lancamento", "Aluno")).strip() == "Aluno"
+            ]
+            rec_report_by_data = [
+                r for r in receivables_all
+                if report_start <= (parse_date(r.get("data", "")) or parse_date(r.get("vencimento", "")) or today_fin) <= report_end
+            ]
+            pay_report_by_data = [
+                p for p in payables_metrics_all
+                if report_start <= (parse_date(p.get("data", "")) or parse_date(p.get("vencimento", "")) or today_fin) <= report_end
             ]
             rec_report_overdue = [
                 r for r in rec_report
@@ -21577,126 +21543,216 @@ div[data-baseweb="select"] > div {
                 p for p in pay_report
                 if str(p.get("status", "")).strip().lower() not in {"pago", "cancelado"}
             ]
-            report_defs = [
+            student_report_options = ["Todos"] + sorted(
                 {
-                    "title": "Relatório Financeiro Geral",
-                    "mode": "geral",
-                    "suffix": "financeiro_geral",
-                    "receivables": rec_report,
-                    "payables": pay_report,
-                    "tone": "blue",
-                    "subtitle": "Todos os recebimentos e pagamentos do período no mesmo arquivo.",
-                },
+                    str(r.get("aluno", "")).strip()
+                    for r in rec_report_student
+                    if str(r.get("aluno", "")).strip()
+                }
+            )
+            teacher_report_options = ["Todos"] + sorted(
                 {
-                    "title": "Relatório de Recebimentos",
-                    "mode": "receber",
-                    "suffix": "recebimentos",
-                    "receivables": rec_report,
-                    "payables": [],
-                    "tone": "green",
-                    "subtitle": "Todas as contas a receber do período.",
-                },
-                {
-                    "title": "Relatório de Pagamentos",
-                    "mode": "pagar",
-                    "suffix": "pagamentos",
-                    "receivables": [],
-                    "payables": pay_report,
-                    "tone": "orange",
-                    "subtitle": "Todas as contas a pagar do período.",
-                },
-                {
-                    "title": "Relatório Financeiro dos Alunos",
-                    "mode": "receber",
-                    "suffix": "alunos",
-                    "receivables": rec_report_student,
-                    "payables": [],
-                    "tone": "slate",
-                    "subtitle": "Somente lançamentos financeiros da categoria Aluno.",
-                },
-                {
-                    "title": "Relatório de Devedores",
-                    "mode": "receber",
-                    "suffix": "devedores",
-                    "receivables": rec_report_overdue,
-                    "payables": [],
-                    "tone": "red",
-                    "subtitle": "Cobranças vencidas e ainda não pagas.",
-                },
-                {
-                    "title": "Relatório de Vencimentos",
-                    "mode": "geral",
-                    "suffix": "vencimentos",
-                    "receivables": rec_report_open,
-                    "payables": pay_report_open,
-                    "tone": "orange",
-                    "subtitle": "Títulos em aberto no período, a receber e a pagar.",
-                },
+                    str(t.get("nome", "")).strip()
+                    for t in st.session_state.get("teachers", [])
+                    if str(t.get("nome", "")).strip()
+                }
+            )
+            report_type_options = [
+                "Financeiro geral",
+                "Professores",
+                "Alunos",
+                "Recebimentos",
+                "Pagamentos",
+                "Lançamentos",
+                "Materiais",
+                "Devedores",
+                "Vencimentos",
             ]
-            report_rows = [report_defs[i:i + 3] for i in range(0, len(report_defs), 3)]
-            for row_idx, defs_row in enumerate(report_rows):
-                report_cols = st.columns(3)
-                for col_ref, report_def in zip(report_cols, defs_row):
-                    html_payload = _finance_report_html(
-                        report_def["title"],
-                        report_start,
-                        report_end,
-                        receivable_items=report_def["receivables"],
-                        payable_items=report_def["payables"],
-                        mode=report_def["mode"],
+            rr1, rr2 = st.columns(2)
+            with rr1:
+                selected_report_type = st.selectbox(
+                    "Qual relatório deseja baixar?",
+                    report_type_options,
+                    key="finance_clean_report_type",
+                )
+            selected_report_target = "Todos"
+            with rr2:
+                if selected_report_type == "Professores":
+                    selected_report_target = st.selectbox(
+                        "Professor",
+                        teacher_report_options,
+                        key="finance_clean_report_teacher",
                     )
-                    excel_payload = _finance_report_excel_bytes(
-                        report_def["title"],
-                        report_start,
-                        report_end,
-                        receivable_items=report_def["receivables"],
-                        payable_items=report_def["payables"],
-                        mode=report_def["mode"],
+                elif selected_report_type == "Alunos":
+                    selected_report_target = st.selectbox(
+                        "Aluno",
+                        student_report_options,
+                        key="finance_clean_report_student",
                     )
-                    pdf_payload = _finance_report_pdf_bytes(
-                        report_def["title"],
-                        report_start,
-                        report_end,
-                        receivable_items=report_def["receivables"],
-                        payable_items=report_def["payables"],
-                        mode=report_def["mode"],
+                else:
+                    st.text_input("Alvo", value="Todos", disabled=True, key="finance_clean_report_target_disabled")
+
+            report_title = ""
+            report_filename = ""
+            report_pdf_payload = None
+            report_info = ""
+            report_count = 0
+
+            if selected_report_type == "Professores":
+                teacher_target = str(selected_report_target or "Todos").strip() or "Todos"
+                teacher_sessions = _teacher_payment_sessions_for_receipt(
+                    report_start,
+                    report_end,
+                    professor_name=teacher_target,
+                )
+                teacher_obj = next(
+                    (t for t in st.session_state.get("teachers", []) if str(t.get("nome", "")).strip() == teacher_target),
+                    {},
+                ) if teacher_target != "Todos" else {}
+                report_title = "Relatorio de aulas e pagamento - Professores" if teacher_target == "Todos" else f"Relatorio de aulas e pagamento - {teacher_target}"
+                report_filename = f"relatorio_professores_{teacher_target.replace(' ', '_') if teacher_target != 'Todos' else 'todos'}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _teacher_payment_receipt_pdf_bytes(
+                    teacher_target,
+                    report_start,
+                    report_end,
+                    teacher_sessions,
+                    contato_whatsapp=str(teacher_obj.get("celular", "")).strip(),
+                )
+                report_count = len(teacher_sessions)
+                report_info = f"Aulas encontradas: {report_count}"
+            elif selected_report_type == "Alunos":
+                student_target = str(selected_report_target or "Todos").strip() or "Todos"
+                student_rows = [
+                    r for r in rec_report_student
+                    if student_target == "Todos" or str(r.get("aluno", "")).strip() == student_target
+                ]
+                report_title = "Relatorio financeiro dos alunos" if student_target == "Todos" else f"Relatorio financeiro do aluno - {student_target}"
+                report_filename = f"relatorio_alunos_{student_target.replace(' ', '_') if student_target != 'Todos' else 'todos'}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=student_rows,
+                    payable_items=[],
+                    mode="receber",
+                )
+                report_count = len(student_rows)
+                report_info = f"Lançamentos do aluno: {report_count}"
+            elif selected_report_type == "Recebimentos":
+                report_title = "Relatorio de recebimentos"
+                report_filename = f"relatorio_recebimentos_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=rec_report,
+                    payable_items=[],
+                    mode="receber",
+                )
+                report_count = len(rec_report)
+                report_info = f"Recebimentos encontrados: {report_count}"
+            elif selected_report_type == "Pagamentos":
+                report_title = "Relatorio de pagamentos"
+                report_filename = f"relatorio_pagamentos_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=[],
+                    payable_items=pay_report,
+                    mode="pagar",
+                )
+                report_count = len(pay_report)
+                report_info = f"Pagamentos encontrados: {report_count}"
+            elif selected_report_type == "Lançamentos":
+                report_title = "Relatorio de lancamentos financeiros"
+                report_filename = f"relatorio_lancamentos_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=rec_report_by_data,
+                    payable_items=pay_report_by_data,
+                    mode="geral",
+                )
+                report_count = len(rec_report_by_data) + len(pay_report_by_data)
+                report_info = f"Lançamentos encontrados: {report_count}"
+            elif selected_report_type == "Materiais":
+                material_rows = [
+                    r for r in rec_report
+                    if normalize_text(r.get("categoria", "")) == "material"
+                ]
+                report_title = "Relatorio de materiais"
+                report_filename = f"relatorio_materiais_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=material_rows,
+                    payable_items=[],
+                    mode="receber",
+                )
+                report_count = len(material_rows)
+                report_info = f"Lançamentos de material: {report_count}"
+            elif selected_report_type == "Devedores":
+                report_title = "Relatorio de devedores"
+                report_filename = f"relatorio_devedores_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=rec_report_overdue,
+                    payable_items=[],
+                    mode="receber",
+                )
+                report_count = len(rec_report_overdue)
+                report_info = f"Devedores encontrados: {report_count}"
+            elif selected_report_type == "Vencimentos":
+                report_title = "Relatorio de vencimentos"
+                report_filename = f"relatorio_vencimentos_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=rec_report_open,
+                    payable_items=pay_report_open,
+                    mode="geral",
+                )
+                report_count = len(rec_report_open) + len(pay_report_open)
+                report_info = f"Títulos em aberto: {report_count}"
+            else:
+                report_title = "Relatorio financeiro geral"
+                report_filename = f"relatorio_financeiro_geral_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf"
+                report_pdf_payload = _finance_report_pdf_bytes(
+                    report_title,
+                    report_start,
+                    report_end,
+                    receivable_items=rec_report,
+                    payable_items=pay_report,
+                    mode="geral",
+                )
+                report_count = len(rec_report) + len(pay_report)
+                report_info = f"Registros consolidados: {report_count}"
+
+            with st.container(border=True):
+                st.markdown(f"### {report_title or 'Relatório selecionado'}")
+                st.caption(report_info or "Selecione um relatório para gerar o PDF.")
+                if report_pdf_payload:
+                    st.download_button(
+                        "Baixar relatório em PDF",
+                        data=report_pdf_payload,
+                        file_name=report_filename,
+                        mime="application/pdf",
+                        key=f"finance_clean_report_download_{normalize_text(report_title)}",
+                        use_container_width=True,
                     )
-                    with col_ref:
-                        with st.container(border=True):
-                            st.markdown(f"#### {report_def['title']}")
-                            st.caption(report_def["subtitle"])
-                            st.download_button(
-                                "Baixar HTML",
-                                data=html_payload,
-                                file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.html",
-                                mime="text/html",
-                                key=f"finance_report_html_download_{report_def['suffix']}_{row_idx}",
-                                use_container_width=True,
-                            )
-                            st.download_button(
-                                "Baixar Excel",
-                                data=excel_payload,
-                                file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"finance_report_excel_download_{report_def['suffix']}_{row_idx}",
-                                use_container_width=True,
-                            )
-                            if pdf_payload:
-                                st.download_button(
-                                    "Baixar PDF",
-                                    data=pdf_payload,
-                                    file_name=f"{report_def['suffix']}_{report_start.strftime('%Y%m%d')}_{report_end.strftime('%Y%m%d')}.pdf",
-                                    mime="application/pdf",
-                                    key=f"finance_report_pdf_download_{report_def['suffix']}_{row_idx}",
-                                    use_container_width=True,
-                                )
-                            else:
-                                st.button(
-                                    "Baixar PDF",
-                                    key=f"finance_report_pdf_disabled_{report_def['suffix']}_{row_idx}",
-                                    disabled=True,
-                                    use_container_width=True,
-                                )
+                else:
+                    st.button(
+                        "Baixar relatório em PDF",
+                        disabled=True,
+                        key=f"finance_clean_report_disabled_{normalize_text(report_title)}",
+                        use_container_width=True,
+                    )
 
         if finance_main == "Contas a Receber":
             finance_receber_options = [
@@ -23465,9 +23521,14 @@ div[data-baseweb="select"] > div {
                     format_func=lambda ref: teacher_labels.get(ref, ref),
                 )
                 selected_teacher_items = [item for item in teacher_candidates if item.get("ref") in set(selected_teacher_refs)]
-                selected_teacher_total = sum(float(item.get("valor", 0) or 0) for item in selected_teacher_items)
+                teacher_pay_bonus_preview = parse_money(st.session_state.get("fin_teacher_pay_bonus_input", "0,00"))
+                selected_teacher_total_base = sum(float(item.get("valor", 0) or 0) for item in selected_teacher_items)
+                selected_teacher_bonus_total = float(teacher_pay_bonus_preview or 0) * len(selected_teacher_items)
+                selected_teacher_total = selected_teacher_total_base + selected_teacher_bonus_total
                 st.caption(
                     f"Selecionadas: {len(selected_teacher_items)} aula(s) | "
+                    f"Base: {format_money(selected_teacher_total_base)} | "
+                    f"Bonificacao: {format_money(selected_teacher_bonus_total)} | "
                     f"Total a lancar: {format_money(selected_teacher_total)}"
                 )
                 tp4, tp5, tp6 = st.columns(3)
@@ -23504,6 +23565,21 @@ div[data-baseweb="select"] > div {
                     index=0,
                     key="fin_teacher_pay_cobranca",
                 )
+                tp7, tp8 = st.columns([1, 2])
+                with tp7:
+                    teacher_pay_bonus_input = st.text_input(
+                        "Bonificacao por aula",
+                        value="0,00",
+                        key="fin_teacher_pay_bonus_input",
+                    )
+                with tp8:
+                    teacher_pay_obs = st.text_area(
+                        "Observacao do lancamento",
+                        value="",
+                        height=84,
+                        key="fin_teacher_pay_obs",
+                    )
+                teacher_pay_bonus_num = parse_money(teacher_pay_bonus_input)
                 if st.button(
                     "Lancar pagamentos das aulas selecionadas",
                     type="primary",
@@ -23520,13 +23596,19 @@ div[data-baseweb="select"] > div {
                             item = candidates_by_ref.get(ref)
                             if not item:
                                 continue
-                            valor_txt = f"{float(item.get('valor', 0) or 0):.2f}".replace(".", ",")
+                            valor_base = float(item.get("valor", 0) or 0)
+                            valor_final = max(0.0, valor_base + float(teacher_pay_bonus_num or 0))
+                            valor_txt = f"{valor_final:.2f}".replace(".", ",")
+                            bonus_txt = f"{float(teacher_pay_bonus_num or 0):.2f}".replace(".", ",")
+                            valor_base_txt = f"{valor_base:.2f}".replace(".", ",")
                             st.session_state["payables"].append(
                                 {
                                     "codigo": f"PAG-{uuid.uuid4().hex[:8].upper()}",
                                     "descricao": str(item.get("descricao", "")).strip() or "Pagamento de aula",
                                     "valor": valor_txt,
                                     "valor_parcela": valor_txt,
+                                    "valor_base": valor_base_txt,
+                                    "bonificacao": bonus_txt,
                                     "parcela": "1",
                                     "fornecedor": str(item.get("professor", "")).strip(),
                                     "categoria_lancamento": "Professor",
@@ -23541,6 +23623,7 @@ div[data-baseweb="select"] > div {
                                     "vencimento": _month_due_date(teacher_pay_venc, teacher_pay_due_day).strftime("%d/%m/%Y"),
                                     "cobranca": teacher_pay_cobranca,
                                     "status": teacher_pay_status,
+                                    "observacao": str(teacher_pay_obs or "").strip(),
                                     "lote_id": lote_id_teacher,
                                 }
                             )
@@ -23639,11 +23722,26 @@ div[data-baseweb="select"] > div {
                             placeholder="Ex: Unit 4 - Present Continuous",
                             key="fin_teacher_manual_licao",
                         )
+                    mp11, mp12 = st.columns([1, 2])
+                    with mp11:
+                        teacher_manual_bonus_input = st.text_input(
+                            "Bonificacao por aula",
+                            value="0,00",
+                            key="fin_teacher_manual_bonus_input",
+                        )
+                    with mp12:
+                        teacher_manual_obs = st.text_area(
+                            "Observacao do lancamento",
+                            value="",
+                            height=84,
+                            key="fin_teacher_manual_obs",
+                        )
+                    teacher_manual_bonus_num = parse_money(teacher_manual_bonus_input)
                     st.caption(
                         f"Professor: {professor_manual or '-'} | Modulo: {modulo_manual or '-'} | "
                         f"Duracao por aula: {minutos_manual} min | Valor unitario: {format_money(valor_unitario_manual)}"
                     )
-                    teacher_manual_total = float(valor_unitario_manual) * int(teacher_manual_qtd or 0)
+                    teacher_manual_total = (float(valor_unitario_manual) + float(teacher_manual_bonus_num or 0)) * int(teacher_manual_qtd or 0)
                     st.caption(f"Total manual a lancar: {format_money(teacher_manual_total)}")
                     if st.button(
                         "Lancar pagamento manual do professor",
@@ -23657,6 +23755,7 @@ div[data-baseweb="select"] > div {
                         else:
                             mes_manual_label = teacher_manual_month_ref.strftime("%m/%Y") if teacher_manual_month_ref else datetime.date.today().strftime("%m/%Y")
                             valor_total_manual_txt = f"{teacher_manual_total:.2f}".replace(".", ",")
+                            valor_bonus_manual_txt = f"{float(teacher_manual_bonus_num or 0):.2f}".replace(".", ",")
                             data_aula_manual_txt = teacher_manual_data_aula.strftime("%d/%m/%Y")
                             data_pag_manual_txt = teacher_manual_data_pag.strftime("%d/%m/%Y")
                             livro_manual_txt = str(teacher_manual_livro or "").strip()
@@ -23680,6 +23779,8 @@ div[data-baseweb="select"] > div {
                                     "duracao_minutos": int(minutos_manual),
                                     "quantidade_aulas": int(teacher_manual_qtd),
                                     "valor_unitario_aula": f"{float(valor_unitario_manual):.2f}".replace(".", ","),
+                                    "bonificacao": valor_bonus_manual_txt,
+                                    "observacao": str(teacher_manual_obs or "").strip(),
                                     "data": data_pag_manual_txt,
                                     "vencimento": _month_due_date(teacher_manual_data_pag, teacher_manual_due_day).strftime("%d/%m/%Y"),
                                     "cobranca": teacher_manual_cobranca,
