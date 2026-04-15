@@ -1063,6 +1063,16 @@ def _load_json_list(path):
             return seeded
         st.session_state["_data_sources"][key] = "db_invalid"
         return []
+    db_url_now = str(_db_url() or "").strip()
+    if db_url_now:
+        # Quando ha banco configurado mas indisponivel, evita criar/assumir arquivos
+        # locais vazios como se fossem a fonte oficial dos dados.
+        local_data = _load_json_list_file(path, create_if_missing=False)
+        if isinstance(local_data, list) and local_data:
+            st.session_state["_data_sources"][key] = "local_fallback_nonempty"
+            return local_data
+        st.session_state["_data_sources"][key] = "db_unavailable"
+        return local_data if isinstance(local_data, list) else []
     file_data = _load_json_list_file(path)
     st.session_state["_data_sources"][key] = "file"
     return file_data if isinstance(file_data, list) else []
@@ -16508,6 +16518,11 @@ else:
 
 if st.session_state.get("_persistence_alert"):
     st.warning(st.session_state.get("_persistence_alert"))
+    reconnect_allowed = bool(_db_url_now) and (bool(_db_has_unavailable) or _db_circuit_is_open())
+    if reconnect_allowed and st.button("Tentar reconectar banco agora", key="retry_db_connection_now"):
+        _db_close_circuit()
+        _db_reset_cache()
+        st.rerun()
 
 # ==============================================================================
 # TELA DE LOGIN
