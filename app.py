@@ -974,6 +974,33 @@ def _db_set(key, value):
         _db_reset_cache()
         return False
 
+def _db_has_unavailable_sources():
+    sources = st.session_state.get("_data_sources", {}) or {}
+    return any(str(src).strip() == "db_unavailable" for src in sources.values())
+
+def _db_try_recover_session():
+    if not _db_has_unavailable_sources():
+        return False
+    if not _db_url() or psycopg2 is None or _db_circuit_is_open():
+        return False
+
+    now_ts = time.time()
+    last_attempt = float(st.session_state.get("_db_recovery_attempt_at", 0.0) or 0.0)
+    if (now_ts - last_attempt) < 3:
+        return False
+    st.session_state["_db_recovery_attempt_at"] = now_ts
+
+    if not _db_load_cache():
+        return False
+
+    st.session_state["_data_sources"] = {}
+    st.session_state["_active_users_loaded"] = False
+    st.session_state["_active_runtime_loaded"] = False
+    st.session_state["_db_recovered_notice"] = (
+        "Conexao com banco restabelecida. Dados recarregados do armazenamento persistente."
+    )
+    return True
+
 def _load_latest_backup_list(path):
     backups = sorted(
         BACKUP_DIR.glob(f"{path.stem}_*{path.suffix}.bak"),
@@ -16406,6 +16433,9 @@ else:
 # ==============================================================================
 # LOGICA DE INICIALIZACAO DE DADOS
 # ==============================================================================
+if _db_try_recover_session():
+    st.rerun()
+
 if not st.session_state.get("_active_users_loaded", False):
     st.session_state["users"] = load_users()
     users_source = st.session_state.get("_data_sources", {}).get(_db_key_for_path(USERS_FILE), "")
@@ -16480,7 +16510,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     st.session_state["_active_runtime_loaded"] = True
 
 _db_sources = st.session_state.get("_data_sources", {}) or {}
-_db_has_unavailable = any(str(src).strip() == "db_unavailable" for src in _db_sources.values())
+_db_has_unavailable = _db_has_unavailable_sources()
 _db_last_error = str(st.session_state.get("_db_last_error", "") or "").strip()
 _db_url_now = str(_db_url() or "").strip()
 if _db_has_unavailable:
@@ -16497,6 +16527,8 @@ elif not _db_enabled():
         reason_parts.append("driver psycopg2 indisponivel")
     if _db_circuit_is_open():
         reason_parts.append("conexao em cooldown apos falha recente")
+    if _db_last_error:
+        reason_parts.append(f"ultimo erro: {_db_last_error}")
     reason_text = " | ".join(reason_parts) if reason_parts else "motivo nao identificado"
     st.session_state["_persistence_alert"] = (
         "Persistencia local ativa. Em hospedagem temporaria os dados podem sumir apos reinicio/deploy. "
@@ -16508,6 +16540,9 @@ else:
 
 if st.session_state.get("_persistence_alert"):
     st.warning(st.session_state.get("_persistence_alert"))
+if st.session_state.get("_db_recovered_notice"):
+    st.success(st.session_state.get("_db_recovered_notice"))
+    st.session_state["_db_recovered_notice"] = ""
 
 # ==============================================================================
 # TELA DE LOGIN
