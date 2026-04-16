@@ -3283,7 +3283,8 @@ def _wiz_is_execution_intent(text):
         "corrija", "corrigir", "exclua", "excluir", "remova", "remover", "delete", "deletar",
         "agende", "agendar", "lance", "lancar", "gere", "gerar", "envie", "enviar", "publique",
         "publicar", "baixe", "baixar", "dar baixa", "assuma", "retome", "pausar", "retomar",
-        "faça", "faca", "realize", "realizar",
+        "faça", "faca", "realize", "realizar", "boleto", "pix", "cobranca", "cobranca",
+        "desafio", "tarefa de casa", "licao de casa", "lição de casa", "atividade",
     )
     return any(token in norm for token in triggers)
 
@@ -3384,6 +3385,27 @@ def _wiz_relevant_system_context(user_text, max_items=8):
             lambda c: f"{c.get('nome','')} | Professor: {c.get('professor','-')} | Livro: {c.get('livro','-')} | Link: {c.get('link','-')}",
             max_items=max_items,
         ),
+    )
+
+    turma_refs = []
+    seen_turmas = set()
+    for student in student_matches:
+        turma_nome = str(student.get("turma", "")).strip()
+        if turma_nome and turma_nome not in seen_turmas:
+            seen_turmas.add(turma_nome)
+            turma_refs.append(turma_nome)
+    for class_obj in class_matches:
+        turma_nome = str(class_obj.get("nome", "")).strip()
+        if turma_nome and turma_nome not in seen_turmas:
+            seen_turmas.add(turma_nome)
+            turma_refs.append(turma_nome)
+    add_section(
+        "Licoes recentes das turmas relacionadas",
+        [
+            f"{turma_nome} | Conteudo atual: {(_wiz_reference_context(target_turma=turma_nome, limit=2).get('conteudo_atual') or '-')}"
+            f" | Historico: {' | '.join((_wiz_reference_context(target_turma=turma_nome, limit=2).get('licoes_recentes') or ['Sem licao finalizada']))}"
+            for turma_nome in turma_refs[:max_items]
+        ],
     )
 
     receivable_matches = []
@@ -3706,6 +3728,72 @@ def _wiz_build_execution_message(base_reply, reports, missing=None):
         lines.append("Não houve ação para executar.")
     return "\n".join(lines)
 
+def _wiz_append_completion_status(reply_text, reports=None, missing=None, actions_requested=False):
+    base = str(reply_text or "").strip()
+    reports = reports if isinstance(reports, list) else []
+    missing = [str(item).strip() for item in (missing or []) if str(item).strip()]
+    total = len(reports)
+    ok = len([r for r in reports if isinstance(r, dict) and r.get("ok")])
+    fail = total - ok
+
+    if total > 0 and fail == 0 and not missing:
+        status_line = "Status final: concluido. Ja terminei o que era possivel agora."
+    elif total > 0 and ok > 0:
+        status_line = "Status final: parcialmente concluido. Ja terminei a parte possivel e ainda ha pendencias."
+    elif missing:
+        status_line = "Status final: aguardando dados. Ainda nao terminei porque faltam informacoes objetivas."
+    elif bool(actions_requested):
+        status_line = "Status final: pendente. Ainda nao terminei a execucao solicitada."
+    else:
+        status_line = "Status final: resposta entregue. Nao houve execucao no sistema."
+
+    if not base:
+        return status_line
+    if status_line.lower() in base.lower():
+        return base
+    return f"{base}\n\n{status_line}"
+
+def _wiz_reference_context(target_turma="", target_aluno="", level="", limit=4):
+    turma_nome = str(target_turma or "").strip()
+    aluno_nome = str(target_aluno or "").strip()
+    level_txt = _norm_book_level(level or "")
+    aluno_obj = {}
+    turma_obj = {}
+
+    if aluno_nome:
+        aluno_obj = next(
+            (
+                s for s in st.session_state.get("students", [])
+                if str(s.get("nome", "")).strip() == aluno_nome
+            ),
+            {},
+        )
+        if not turma_nome:
+            turma_nome = str(aluno_obj.get("turma", "")).strip()
+        if not level_txt:
+            level_txt = student_book_level(aluno_obj) or ""
+
+    if turma_nome:
+        turma_obj = next(
+            (
+                c for c in st.session_state.get("classes", [])
+                if str(c.get("nome", "")).strip() == turma_nome
+            ),
+            {},
+        )
+        if not level_txt:
+            level_txt = _norm_book_level(turma_obj.get("livro", "")) or ""
+
+    lesson_history = _recent_class_lessons_for_homework(turma_nome, limit=limit) if turma_nome else []
+    current_subject = _current_subject_for_challenge(turma_nome, turma_obj) if turma_nome else ""
+    return {
+        "turma": turma_nome,
+        "aluno": aluno_nome,
+        "livro": level_txt or "",
+        "conteudo_atual": str(current_subject or "").strip(),
+        "licoes_recentes": [str(item).strip() for item in lesson_history if str(item).strip()],
+    }
+
 def _wiz_plan_actions_with_ai(user_text, chat_history=None, force_execution=False):
     api_key = get_groq_api_key()
     if not api_key:
@@ -3739,6 +3827,7 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None, force_execution=Fals
     system_prompt = "\n".join(
         [
             "Voce e um orquestrador de acoes internas do sistema Active Educacional.",
+            "Sua prioridade e obedecer o usuario, executar o que foi pedido no sistema e responder com status claro de conclusao.",
             "Retorne SOMENTE JSON valido, sem markdown.",
             "Nunca invente dados obrigatorios que nao foram informados.",
             "Nunca invente fatos do sistema (nomes, turmas, valores, status, quantidades, datas ou links).",
@@ -3748,6 +3837,9 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None, force_execution=Fals
             "Se o pedido for apenas pergunta, orientacao ou analise, retorne actions = [].",
             "Se o pedido exigir execucao interna, preencha actions com os tipos suportados.",
             "Se o pedido pedir claramente para fazer/alterar/cadastrar/enviar/excluir/lancar e houver dados suficientes, gere actions em vez de recusar.",
+            "Quando o pedido for operacional e ja houver dados suficientes no sistema, nao faca perguntas desnecessarias.",
+            "Para financeiro, cadastros e comunicados, prefira agir com base nos registros ja encontrados no contexto relevante.",
+            "Se o usuario pedir boleto, cobranca, envio de cobranca ou baixa, priorize a execucao com os recebiveis localizados.",
             ("O usuario quer execucao interna agora. Priorize actions e use missing apenas se faltar dado realmente indispensavel." if force_execution else ""),
             "Nunca inclua DietHealth.",
             "Para enviar_comunicado com turma='Todas', use por padrao somente alunos com turma valida existente.",
@@ -3778,12 +3870,15 @@ def _wiz_plan_actions_with_ai(user_text, chat_history=None, force_execution=Fals
             "- lancar_recebivel",
             "- atualizar_recebivel",
             "- excluir_recebivel",
+            "- gerar_boleto_recebivel",
+            "- enviar_boleto_recebivel",
             "- baixar_recebivel",
             "- lancar_despesa",
             "- atualizar_despesa",
             "- excluir_despesa",
             "- baixar_despesa",
             "- lancar_nota",
+            "Para gerar/enviar boleto, use gerar_boleto_recebivel ou enviar_boleto_recebivel.",
             "Para comunicados para alunos/turmas, prefira enviar_comunicado.",
             "Para exclusao/baixa use somente quando o pedido do usuario for explicito.",
             "Nao confirme execucao na resposta; a confirmacao final vem do relatorio de execucao do sistema.",
@@ -4994,6 +5089,56 @@ def _wiz_execute_actions(actions):
                         obj["vencimento"] = novo_venc.strftime("%d/%m/%Y")
                 save_list(RECEIVABLES_FILE, st.session_state["receivables"])
                 reports.append({"type": kind, "ok": True, "message": f"recebivel atualizado em {len(idx_list)} registro(s)"})
+            elif kind == "gerar_boleto_recebivel":
+                idx_list = _find_receivable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhum recebivel encontrado para gerar boleto"})
+                    continue
+                generated = 0
+                messages = []
+                for idx in sorted(set(idx_list)):
+                    if 0 <= idx < len(st.session_state.get("receivables", [])):
+                        rec_obj = st.session_state["receivables"][idx]
+                        ok_gen, status_gen = generate_boleto_for_receivable(
+                            rec_obj,
+                            force=_wiz_to_bool(data.get("forcar", data.get("force", False)), default=False),
+                        )
+                        if ok_gen:
+                            generated += 1
+                        messages.append(status_gen)
+                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                reports.append(
+                    {
+                        "type": kind,
+                        "ok": generated > 0,
+                        "message": f"boleto gerado em {generated} recebivel(is). " + " | ".join([m for m in messages[:3] if str(m).strip()]),
+                    }
+                )
+            elif kind == "enviar_boleto_recebivel":
+                idx_list = _find_receivable_indices(data)
+                if not idx_list:
+                    reports.append({"type": kind, "ok": False, "message": "nenhum recebivel encontrado para envio de boleto"})
+                    continue
+                sent = 0
+                details = []
+                for idx in sorted(set(idx_list)):
+                    if 0 <= idx < len(st.session_state.get("receivables", [])):
+                        rec_obj = st.session_state["receivables"][idx]
+                        ok_send, status_send, stats_send = send_receivable_boleto_to_student(rec_obj)
+                        if ok_send:
+                            sent += 1
+                        details.append(
+                            f"{status_send} (email {int(stats_send.get('email_ok', 0))}/{int(stats_send.get('email_total', 0))}, "
+                            f"wa {int(stats_send.get('whatsapp_ok', 0))}/{int(stats_send.get('whatsapp_total', 0))})"
+                        )
+                save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                reports.append(
+                    {
+                        "type": kind,
+                        "ok": sent > 0,
+                        "message": f"boleto enviado em {sent} recebivel(is). " + " | ".join([m for m in details[:3] if str(m).strip()]),
+                    }
+                )
             elif kind == "excluir_recebivel":
                 idx_list = _find_receivable_indices(data)
                 if not idx_list:
@@ -5673,6 +5818,7 @@ def run_wiz_assistant():
         reports = _wiz_execute_actions(plan_actions)
         st.session_state["wiz_last_execution"] = reports
         answer = _wiz_build_execution_message(plan_reply, reports, plan_missing)
+        answer = _wiz_append_completion_status(answer, reports=reports, missing=plan_missing, actions_requested=True)
     elif plan_actions and not wiz_auto_exec:
         answer = _wiz_build_execution_message(
             plan_reply or "Identifiquei acoes internas para executar.",
@@ -5680,12 +5826,14 @@ def run_wiz_assistant():
             plan_missing,
         )
         answer += "\n\nAtive a opcao de execucao automatica para o Wiz realizar essas tarefas no sistema."
+        answer = _wiz_append_completion_status(answer, reports=[], missing=plan_missing, actions_requested=True)
     else:
         relevant_context_txt = _wiz_relevant_system_context(full_user_text, max_items=12)
         system_prompt = "\n".join(
             [
                 "Você é o Assistente Wiz da Active Educacional para Coordenador/Admin.",
-                "Responda em português do Brasil, de forma simples, direta e útil.",
+                "Responda em portugues do Brasil, de forma simples, direta, util e obediente ao pedido do usuario.",
+                "Ao final, deixe claro se ja terminou ou se ainda depende de dados objetivos.",
                 "Nunca responda com JSON, código ou estrutura técnica.",
                 "Quando houver dados faltantes para executar algo interno, peça apenas os dados faltantes.",
                 "Se houver anexo, use o conteúdo anexado como base da resposta.",
@@ -5718,6 +5866,12 @@ def run_wiz_assistant():
                     answer = "Nao consegui responder agora. Tente novamente com mais detalhes."
             except Exception as exc:
                 answer = f"Falha ao consultar IA: {exc}"
+        answer = _wiz_append_completion_status(
+            answer,
+            reports=[],
+            missing=plan_missing if isinstance(plan_missing, list) else [],
+            actions_requested=_wiz_is_execution_intent(full_user_text),
+        )
 
     chat_history.append({"role": "assistant", "content": answer})
     st.session_state["active_chat_histories"][chat_key] = chat_history
@@ -7658,6 +7812,9 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
             "role": "system",
             "content": (
                 "Voce e o Professor Wiz (IA) e cria licoes de casa semanais de ingles para turmas escolares.\n"
+                "A licao deve seguir obrigatoriamente o livro/nivel e a ultima licao registrada da turma.\n"
+                "Nao troque de assunto, capitulo, habilidade ou vocabulario sem base nas referencias recebidas.\n"
+                "Se nao houver licao recente, mantenha a tarefa coerente com o livro/nivel sem inventar conteudo especifico.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -7671,6 +7828,7 @@ def generate_weekly_homework_ai(turma_nome, livro_nome, week_key, lesson_context
                 f"Foco opcional informado pelo professor/coordenador: {focus or 'Nenhum'}\n\n"
                 f"Crie uma licao de casa semanal com {question_count} questoes.\n"
                 "A atividade deve poder ser respondida no portal do aluno.\n\n"
+                "A licao precisa ser coerente com as referencias acima e mencionar o mesmo eixo de conteudo/tema estudado.\n"
                 "Retorne JSON com campos:\n"
                 "titulo (string), descricao (string), questions (array).\n"
                 "Cada item de questions deve ter:\n"
@@ -9376,12 +9534,18 @@ def _groq_chat_text(messages, temperature=0.2, max_tokens=900):
     )
     return (result.choices[0].message.content or "").strip()
 
-def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_text="", challenge_theme="Livro / Conteudo atual"):
+def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_text="", challenge_theme="Livro / Conteudo atual", reference_context=None):
     level = _norm_book_level(level)
     week_key = str(week_key or "").strip()
     reference_title = str(reference_title or "").strip()
     reference_text = str(reference_text or "").strip()
     challenge_theme = str(challenge_theme or "Livro / Conteudo atual").strip()
+    reference_context = reference_context if isinstance(reference_context, dict) else {}
+    turma_ref = str(reference_context.get("turma", "")).strip()
+    aluno_ref = str(reference_context.get("aluno", "")).strip()
+    conteudo_ref = str(reference_context.get("conteudo_atual", "")).strip()
+    licoes_ref = [str(item).strip() for item in (reference_context.get("licoes_recentes", []) or []) if str(item).strip()]
+    licoes_text = "; ".join(licoes_ref[:4]) if licoes_ref else "Sem licao recente registrada."
     messages = [
         {
             "role": "system",
@@ -9389,6 +9553,9 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
                 "Voce e o Professor Wiz (IA) e cria desafios semanais educacionais da Mister Wiz.\n"
                 "Gere UM desafio adequado ao nivel do aluno e que possa ser respondido no portal.\n"
                 "Use a referencia pedagogica enviada como base obrigatoria do desafio.\n"
+                "Nao crie desafio fora do livro, da turma, do aluno ou da licao informada.\n"
+                "Se houver conteudo atual e licoes recentes, siga esse eixo de forma obrigatoria.\n"
+                "Se nao houver conteudo recente, mantenha o desafio generico apenas no livro/nivel, sem inventar capitulo especifico.\n"
                 "Responda SOMENTE em JSON valido, sem markdown."
             ),
         },
@@ -9398,10 +9565,15 @@ def generate_weekly_challenge_ai(level, week_key, reference_title="", reference_
                 f"Nivel: {level}\n"
                 f"Semana: {week_key}\n"
                 f"Linha do desafio: {challenge_theme}\n"
+                f"Turma de referencia: {turma_ref or '-'}\n"
+                f"Aluno de referencia: {aluno_ref or '-'}\n"
                 f"Livro/Nivel de referencia: {reference_title or level or '-'}\n\n"
+                f"Conteudo atual da turma/aluno: {conteudo_ref or 'Nao informado'}\n"
+                f"Licoes recentes: {licoes_text}\n\n"
                 f"Referencia pedagogica para gerar o desafio:\n{reference_text or 'Sem referencia adicional informada.'}\n\n"
                 "Crie um desafio de 10 a 20 minutos com foco na referencia acima.\n"
                 "Formato: resposta escrita curta (texto).\n\n"
+                "O desafio deve ser claramente coerente com o livro/nivel e com o conteudo atual informado.\n"
                 "Campos obrigatorios no JSON:\n"
                 "titulo (string), descricao (string), pontos (int 5..50), rubrica (string curta), dica (string opcional).\n"
                 "Nao use caracteres especiais no JSON alem de acentos normais."
@@ -25053,10 +25225,16 @@ div[data-baseweb="select"] > div {
                     if not auto_ref_book:
                         auto_ref_book = str(default_book_reference or nivel).strip()
                     auto_ref_subject = str(materia_atual or "").strip()
+                    auto_ref_context = _wiz_reference_context(
+                        target_turma=target_turma if target_type == "turma" else str(aluno_vip_obj.get("turma", "")).strip(),
+                        target_aluno=target_aluno if target_type == "aluno_vip" else "",
+                        level=auto_ref_book or nivel,
+                    )
                     auto_ref_note = (
                         "Linha do desafio: Livro / Conteudo atual\n"
                         f"Livro/Nivel de referencia: {auto_ref_book or '-'}\n"
-                        f"Materia/Conteudo de referencia: {auto_ref_subject or 'Nao informado'}\n"
+                        f"Materia/Conteudo de referencia: {auto_ref_context.get('conteudo_atual') or auto_ref_subject or 'Nao informado'}\n"
+                        f"Licoes recentes: {' | '.join(auto_ref_context.get('licoes_recentes') or ['Sem licao finalizada'])}\n"
                         "Use essa base para gerar um desafio coerente com a turma e com o livro."
                     )
                     try:
@@ -25066,6 +25244,7 @@ div[data-baseweb="select"] > div {
                             reference_title=auto_ref_book or default_book_reference,
                             reference_text=auto_ref_note,
                             challenge_theme="Livro / Conteudo atual",
+                            reference_context=auto_ref_context,
                         )
                         st.session_state[draft_patch_key] = {
                             titulo_key: str(gen.get("titulo", "")).strip(),
@@ -25110,20 +25289,28 @@ div[data-baseweb="select"] > div {
             if not reference_book:
                 reference_book = str(default_book_reference or nivel).strip()
             reference_subject = str(materia_atual or "").strip()
+            reference_context = _wiz_reference_context(
+                target_turma=target_turma if target_type == "turma" else str(aluno_vip_obj.get("turma", "")).strip(),
+                target_aluno=target_aluno if target_type == "aluno_vip" else "",
+                level=reference_book,
+            )
             reference_note = (
                 f"Linha do desafio: {reference_theme}\n"
                 f"Livro/Nivel de referencia: {reference_book or '-'}\n"
-                f"Materia/Conteudo de referencia: {reference_subject or 'Nao informado'}\n"
+                f"Materia/Conteudo de referencia: {reference_context.get('conteudo_atual') or reference_subject or 'Nao informado'}\n"
+                f"Licoes recentes: {' | '.join(reference_context.get('licoes_recentes') or ['Sem licao finalizada'])}\n"
                 "Use essa base para gerar um desafio coerente com a turma e com o livro."
             )
             st.session_state[theme_key] = reference_theme
             st.session_state[ref_book_key] = reference_book
-            st.session_state[ref_subject_key] = reference_subject
+            st.session_state[ref_subject_key] = reference_context.get("conteudo_atual") or reference_subject
             st.session_state[ref_note_key] = reference_note
 
             st.markdown("#### Referencia do desafio (automatica)")
             st.caption(f"Livro/Nivel: {reference_book or '-'}")
-            st.caption(f"Conteudo atual: {reference_subject or 'Nao informado'}")
+            st.caption(f"Conteudo atual: {reference_context.get('conteudo_atual') or reference_subject or 'Nao informado'}")
+            if reference_context.get("licoes_recentes"):
+                st.caption("Licoes recentes: " + " | ".join(reference_context.get("licoes_recentes", [])[:3]))
 
             autor = st.session_state.get("user_name", "Coordenacao")
             creation_mode = st.radio(
