@@ -5923,6 +5923,18 @@ def sync_users_from_profiles(users):
         if login:
             by_login[login] = u
 
+    students_source = st.session_state.get("students", [])
+    if not isinstance(students_source, list) or not students_source:
+        students_source = load_list(STUDENTS_FILE)
+        if not isinstance(students_source, list):
+            students_source = []
+
+    teachers_source = st.session_state.get("teachers", [])
+    if not isinstance(teachers_source, list) or not teachers_source:
+        teachers_source = load_list(TEACHERS_FILE)
+        if not isinstance(teachers_source, list):
+            teachers_source = []
+
     def ensure_login(login, senha, perfil, pessoa):
         login_norm = str(login or "").strip()
         senha_norm = str(senha or "").strip()
@@ -5931,10 +5943,19 @@ def sync_users_from_profiles(users):
         key = login_norm.lower()
         existing = by_login.get(key)
         if existing:
-            if not existing.get("perfil"):
+            existing_profile = str(existing.get("perfil", "")).strip()
+            if existing_profile in ("", "Aluno", "Professor") or existing_profile == perfil:
                 existing["perfil"] = perfil
-            if not existing.get("pessoa") and pessoa:
-                existing["pessoa"] = pessoa
+                existing["senha"] = senha_norm
+                if pessoa:
+                    existing["pessoa"] = pessoa
+                existing["allowed_portals"] = _normalize_allowed_portals(existing.get("allowed_portals"), perfil)
+                existing["permissions"] = _normalize_user_permissions(existing.get("permissions"), perfil)
+            else:
+                if not existing.get("perfil"):
+                    existing["perfil"] = perfil
+                if not existing.get("pessoa") and pessoa:
+                    existing["pessoa"] = pessoa
             return
         new_user = {
             "usuario": login_norm,
@@ -5947,9 +5968,9 @@ def sync_users_from_profiles(users):
         users.append(new_user)
         by_login[key] = new_user
 
-    for aluno in st.session_state.get("students", []):
+    for aluno in students_source:
         ensure_login(aluno.get("usuario"), aluno.get("senha"), "Aluno", aluno.get("nome"))
-    for prof in st.session_state.get("teachers", []):
+    for prof in teachers_source:
         ensure_login(prof.get("usuario"), prof.get("senha"), "Professor", prof.get("nome"))
 
     return users
