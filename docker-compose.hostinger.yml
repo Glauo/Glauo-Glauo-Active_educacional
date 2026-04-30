@@ -9,8 +9,8 @@ services:
     restart: unless-stopped
     environment:
       ACTIVE_DATA_DIR: /app/data
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
+      DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       GROQ_API_KEY: ${GROQ_API_KEY}
       ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
       ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
@@ -40,9 +40,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
-      JWT_SECRET: ${JWT_SECRET:-ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb}
+      ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
+      DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
+      JWT_SECRET: "ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb"
       PORT: "3000"
     expose:
       - "3000"
@@ -62,8 +62,8 @@ services:
         GIT_SHA: ${GIT_SHA:-local}
     restart: unless-stopped
     environment:
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
+      DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN:-2523wiz}
       GROQ_API_KEY: ${GROQ_API_KEY}
       WAPI_BASE_URL: ${WAPI_BASE_URL}
