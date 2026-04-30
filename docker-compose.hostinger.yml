@@ -9,16 +9,16 @@ services:
     restart: unless-stopped
     environment:
       ACTIVE_DATA_DIR: /app/data
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL}
-      DATABASE_URL: ${DATABASE_URL}
+      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
       GROQ_API_KEY: ${GROQ_API_KEY}
       ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
-      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL}
-      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL}
-      ACTIVE_CHALLENGE_MODEL: ${ACTIVE_CHALLENGE_MODEL}
-      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL}
-      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL}
-      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER}
+      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_CHALLENGE_MODEL: ${ACTIVE_CHALLENGE_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
+      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
+      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
       WAPI_BASE_URL: ${WAPI_BASE_URL}
       WAPI_TOKEN: ${WAPI_TOKEN}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
@@ -37,9 +37,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL}
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
+      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb}
       PORT: "3000"
     expose:
       - "3000"
@@ -54,35 +54,12 @@ services:
         GIT_SHA: ${GIT_SHA:-local}
     restart: unless-stopped
     environment:
-      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL}
-      DATABASE_URL: ${DATABASE_URL}
-      ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN}
+      ACTIVE_DATABASE_URL: ${ACTIVE_DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable}
+      ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN:-2523wiz}
       GROQ_API_KEY: ${GROQ_API_KEY}
       WAPI_BASE_URL: ${WAPI_BASE_URL}
       WAPI_TOKEN: ${WAPI_TOKEN}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     expose:
       - "8787"
-
-  # ── Caddy — HTTPS automático + reverse proxy ──────────────────────────────
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      DOMAIN: ${DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
-    volumes:
-      - ./deploy/hostinger/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-      - wizbot
-
-volumes:
-  caddy_data:
-  caddy_config:
