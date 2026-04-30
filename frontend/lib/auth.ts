@@ -61,7 +61,8 @@ type StudentRecord = {
 
 export async function validateCredentials(
   usuario: string,
-  senha: string
+  senha: string,
+  unit?: string
 ): Promise<SessionUser | null> {
   let users: RawUser[] = await dbList<RawUser>("users.json");
 
@@ -81,7 +82,7 @@ export async function validateCredentials(
     usuario: found.usuario,
     perfil: found.perfil,
     pessoa: found.pessoa,
-    unit: found.unit
+    unit: unit || found.unit || "Matriz"
   };
 }
 

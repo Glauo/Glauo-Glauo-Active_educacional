@@ -3,13 +3,13 @@ import { validateCredentials, signToken, COOKIE_NAME, TTL_SECONDS } from "@/lib/
 
 export async function POST(req: NextRequest) {
   try {
-    const { usuario, senha } = await req.json();
+    const { usuario, senha, unit } = await req.json();
 
     if (!usuario || !senha) {
       return NextResponse.json({ error: "Usuário e senha são obrigatórios." }, { status: 400 });
     }
 
-    const user = await validateCredentials(String(usuario), String(senha));
+    const user = await validateCredentials(String(usuario), String(senha), String(unit || "Matriz"));
 
     if (!user) {
       return NextResponse.json({ error: "Usuário ou senha incorretos." }, { status: 401 });

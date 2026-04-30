@@ -7,19 +7,25 @@ export default function LoginPage() {
   const router = useRouter();
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
+  const [unidade, setUnidade] = useState("Matriz");
+  const [outra, setOutra] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const UNIDADES = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"];
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
+    const unit = unidade === "Outra" ? outra.trim() || "Outra" : unidade;
+
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usuario, senha })
+        body: JSON.stringify({ usuario, senha, unit })
       });
 
       const data = await res.json();
@@ -93,6 +99,34 @@ export default function LoginPage() {
 
           <form className="login-form" onSubmit={handleSubmit}>
             {error && <div className="login-error">{error}</div>}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="unidade">Filial / Unidade</label>
+              <select
+                id="unidade"
+                className="form-select"
+                value={unidade}
+                onChange={(e) => setUnidade(e.target.value)}
+              >
+                {UNIDADES.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {unidade === "Outra" && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="outra">Nome da unidade</label>
+                <input
+                  id="outra"
+                  type="text"
+                  className="form-input"
+                  placeholder="Digite o nome da unidade"
+                  value={outra}
+                  onChange={(e) => setOutra(e.target.value)}
+                />
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label" htmlFor="usuario">Usuário</label>
