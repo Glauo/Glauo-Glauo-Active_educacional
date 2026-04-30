@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,11 +51,8 @@ export default function LoginPage() {
       <div className="login-brand">
         <div>
           <div className="login-brand-logo">
-            <div className="login-brand-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                <path d="M6 12v5c3 3 9 3 12 0v-5" />
-              </svg>
+            <div className="login-brand-icon" style={{ background: "white", borderRadius: "14px", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Image src="/logo.png" alt="Ativo Educacional" width={52} height={52} style={{ objectFit: "contain" }} />
             </div>
             <div>
               <div className="login-brand-name">Ativo Educacional</div>
