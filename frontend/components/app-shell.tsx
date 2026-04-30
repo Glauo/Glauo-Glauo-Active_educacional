@@ -151,7 +151,7 @@ export function AppShell({
               </svg>
             </div>
             <div>
-              <div className="brand-name">Active Educacional</div>
+              <div className="brand-name">Ativo Educacional</div>
               <div className="brand-tagline">Sistema Premium</div>
             </div>
           </div>
@@ -201,7 +201,7 @@ export function AppShell({
         <header className="topbar">
           <div className="topbar-left">
             <div className="topbar-breadcrumb">
-              <span>Active Educacional</span>
+              <span>Ativo Educacional</span>
               {breadcrumb && (
                 <>
                   <span className="breadcrumb-sep">/</span>

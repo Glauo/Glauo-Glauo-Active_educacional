@@ -51,18 +51,17 @@ export default function LoginPage() {
               </svg>
             </div>
             <div>
-              <div className="login-brand-name">Active Educacional</div>
+              <div className="login-brand-name">Ativo Educacional</div>
               <div className="login-brand-tagline">Sistema de Gestão</div>
             </div>
           </div>
 
           <h2 className="login-headline">
-            Gestão educacional de <span>primeira linha</span>
+            Ativo Educacional
           </h2>
 
           <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "1rem", marginTop: "20px", lineHeight: "1.6", maxWidth: "420px" }}>
-            Plataforma completa para coordenação pedagógica, controle financeiro e
-            comunicação com alunos e professores.
+            Gestão completa da sua escola — com inteligência artificial, automações e uma experiência simples, moderna e inovadora.
           </p>
         </div>
 
@@ -135,7 +134,7 @@ export default function LoginPage() {
           </form>
 
           <p style={{ marginTop: "32px", fontSize: "0.8125rem", color: "var(--text-muted)", textAlign: "center" }}>
-            Active Educacional © 2026 — Sistema de Gestão Premium
+            Ativo Educacional © 2026 — Sistema de Gestão Premium
           </p>
         </div>
       </div>
