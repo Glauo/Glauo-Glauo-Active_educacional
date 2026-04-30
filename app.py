@@ -5914,6 +5914,81 @@ def find_user(username):
             return user
     return None
 
+def _find_user_by_role_and_person(role, person_name):
+    role_txt = str(role or "").strip()
+    person_norm = normalize_text(person_name)
+    if not role_txt or not person_norm:
+        return None
+    for user in st.session_state.get("users", []):
+        if str(user.get("perfil", "")).strip() != role_txt:
+            continue
+        if normalize_text(user.get("pessoa", "")) == person_norm:
+            return user
+    return None
+
+def _linked_profile_sources_for_role(role):
+    role_txt = str(role or "").strip()
+    if role_txt == "Aluno":
+        return st.session_state.get("students", []), STUDENTS_FILE
+    if role_txt == "Professor":
+        return st.session_state.get("teachers", []), TEACHERS_FILE
+    return [], ""
+
+def _sync_linked_profile_credentials_from_user(user_obj, old_login=""):
+    if not isinstance(user_obj, dict):
+        return False
+    role_txt = str(user_obj.get("perfil", "")).strip()
+    profile_list, profile_path = _linked_profile_sources_for_role(role_txt)
+    if not isinstance(profile_list, list) or not profile_path:
+        return False
+
+    login_now = str(user_obj.get("usuario", "")).strip()
+    senha_now = str(user_obj.get("senha", "")).strip()
+    pessoa_now = str(user_obj.get("pessoa", "")).strip()
+    old_login_norm = str(old_login or "").strip().lower()
+    login_now_norm = login_now.lower()
+    pessoa_norm = normalize_text(pessoa_now)
+    changed = False
+
+    for profile_obj in profile_list:
+        if not isinstance(profile_obj, dict):
+            continue
+        profile_login_norm = str(profile_obj.get("usuario", "")).strip().lower()
+        profile_name_norm = normalize_text(profile_obj.get("nome", ""))
+        linked = False
+        if old_login_norm and profile_login_norm == old_login_norm:
+            linked = True
+        elif login_now_norm and profile_login_norm == login_now_norm:
+            linked = True
+        elif pessoa_norm and profile_name_norm == pessoa_norm:
+            linked = True
+        if not linked:
+            continue
+        if login_now and str(profile_obj.get("usuario", "")).strip() != login_now:
+            profile_obj["usuario"] = login_now
+            changed = True
+        if senha_now and str(profile_obj.get("senha", "")).strip() != senha_now:
+            profile_obj["senha"] = senha_now
+            changed = True
+    if changed:
+        save_list(profile_path, profile_list)
+    return changed
+
+def _linked_access_credentials(role, profile_obj, birthdate_value=None, cpf_value=""):
+    profile = profile_obj if isinstance(profile_obj, dict) else {}
+    login_current = str(profile.get("usuario", "")).strip()
+    linked_user = find_user(login_current) if login_current else None
+    if not linked_user:
+        linked_user = _find_user_by_role_and_person(role, profile.get("nome", ""))
+    if linked_user:
+        return (
+            str(linked_user.get("usuario", "")).strip(),
+            str(linked_user.get("senha", "")).strip(),
+            linked_user,
+        )
+    auto_login, auto_password = _auto_panel_credentials(birthdate_value, cpf_value)
+    return auto_login, auto_password, None
+
 def sync_users_from_profiles(users):
     if not isinstance(users, list):
         users = []
@@ -5935,27 +6010,52 @@ def sync_users_from_profiles(users):
         if not isinstance(teachers_source, list):
             teachers_source = []
 
-    def ensure_login(login, senha, perfil, pessoa):
-        login_norm = str(login or "").strip()
-        senha_norm = str(senha or "").strip()
-        if not login_norm or not senha_norm:
+    def ensure_login(profile_obj, perfil):
+        if not isinstance(profile_obj, dict):
+            return
+        pessoa = str(profile_obj.get("nome", "")).strip()
+        login_norm = str(profile_obj.get("usuario", "")).strip()
+        senha_norm = str(profile_obj.get("senha", "")).strip()
+        existing = by_login.get(login_norm.lower()) if login_norm else None
+        if not existing and pessoa:
+            existing = next(
+                (
+                    user
+                    for user in users
+                    if str(user.get("perfil", "")).strip() == perfil
+                    and normalize_text(user.get("pessoa", "")) == normalize_text(pessoa)
+                ),
+                None,
+            )
+        if not login_norm and not senha_norm and not existing:
             return
         key = login_norm.lower()
-        existing = by_login.get(key)
         if existing:
             existing_profile = str(existing.get("perfil", "")).strip()
             if existing_profile in ("", "Aluno", "Professor") or existing_profile == perfil:
                 existing["perfil"] = perfil
-                existing["senha"] = senha_norm
                 if pessoa:
                     existing["pessoa"] = pessoa
                 existing["allowed_portals"] = _normalize_allowed_portals(existing.get("allowed_portals"), perfil)
                 existing["permissions"] = _normalize_user_permissions(existing.get("permissions"), perfil)
+                if not str(existing.get("senha", "")).strip() and senha_norm:
+                    existing["senha"] = senha_norm
+                if not str(existing.get("usuario", "")).strip() and login_norm:
+                    existing["usuario"] = login_norm
+                    by_login[login_norm.lower()] = existing
             else:
                 if not existing.get("perfil"):
                     existing["perfil"] = perfil
                 if not existing.get("pessoa") and pessoa:
                     existing["pessoa"] = pessoa
+            selected_login = str(existing.get("usuario", "")).strip() or login_norm
+            selected_password = str(existing.get("senha", "")).strip() or senha_norm
+            if selected_login and str(profile_obj.get("usuario", "")).strip() != selected_login:
+                profile_obj["usuario"] = selected_login
+            if selected_password and str(profile_obj.get("senha", "")).strip() != selected_password:
+                profile_obj["senha"] = selected_password
+            return
+        if not login_norm or not senha_norm:
             return
         new_user = {
             "usuario": login_norm,
@@ -5969,9 +6069,9 @@ def sync_users_from_profiles(users):
         by_login[key] = new_user
 
     for aluno in students_source:
-        ensure_login(aluno.get("usuario"), aluno.get("senha"), "Aluno", aluno.get("nome"))
+        ensure_login(aluno, "Aluno")
     for prof in teachers_source:
-        ensure_login(prof.get("usuario"), prof.get("senha"), "Professor", prof.get("nome"))
+        ensure_login(prof, "Professor")
 
     return users
 
@@ -19815,6 +19915,15 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                     resp_email = resp_email.strip()
                     old_login = str((edit_obj_submit or {}).get("usuario", "")).strip()
                     login_final, senha_final = _auto_panel_credentials(data_nascimento, cpf_digits)
+                    if edit_obj_submit:
+                        login_final, senha_final, linked_user_submit = _linked_access_credentials(
+                            "Aluno",
+                            edit_obj_submit,
+                            birthdate_value=data_nascimento,
+                            cpf_value=cpf_digits,
+                        )
+                    else:
+                        linked_user_submit = None
 
                     if idade_final < 18 and (not resp_nome or not resp_cpf):
                         st.error("ERRO: Aluno menor de idade! E obrigatorio preencher Nome e CPF do Responsavel.")
@@ -19826,7 +19935,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
                     else:
                         login_conflict = find_user(login_final) if login_final else None
-                        if login_conflict and (not old_login or str(login_final).strip().lower() != str(old_login).strip().lower()):
+                        if not edit_obj_submit and login_conflict:
                             st.error("ERRO: Este login ja existe.")
                         else:
                             turma_obj = next((c for c in st.session_state["classes"] if c.get("nome") == turma), {})
@@ -19872,12 +19981,16 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                 save_list(STUDENTS_FILE, st.session_state["students"])
 
                                 if login_final:
-                                    user_obj = find_user(old_login) if old_login else None
+                                    user_obj = linked_user_submit or (find_user(old_login) if old_login else _find_user_by_role_and_person("Aluno", nome))
                                     if user_obj:
-                                        user_obj["usuario"] = login_final
-                                        user_obj["senha"] = senha_final
                                         user_obj["perfil"] = "Aluno"
                                         user_obj["pessoa"] = nome
+                                        if email:
+                                            user_obj["email"] = email
+                                        if celular:
+                                            user_obj["celular"] = celular
+                                        login_final = str(user_obj.get("usuario", "")).strip() or login_final
+                                        senha_final = str(user_obj.get("senha", "")).strip() or senha_final
                                     elif not find_user(login_final):
                                         st.session_state["users"].append(
                                             {
@@ -19885,9 +19998,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                 "senha": senha_final,
                                                 "perfil": "Aluno",
                                                 "pessoa": nome,
+                                                "email": email,
+                                                "celular": celular,
                                             }
                                         )
                                     save_users(st.session_state["users"])
+                                    edit_obj_submit["usuario"] = login_final
+                                    edit_obj_submit["senha"] = senha_final
+                                    save_list(STUDENTS_FILE, st.session_state["students"])
 
                                 update_notify_stats = {"email_total": 0, "email_ok": 0, "whatsapp_total": 0, "whatsapp_ok": 0}
                                 if bool(submit_with_notify):
@@ -20124,15 +20242,20 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             )
                             new_vip_total = max(int(new_vip_total), int(new_vip_restantes))
 
-                        auto_login_edit, auto_senha_edit = _auto_panel_credentials(new_dn, new_cpf)
+                        current_login_edit, current_senha_edit, current_user_edit = _linked_access_credentials(
+                            "Aluno",
+                            aluno_obj,
+                            birthdate_value=new_dn,
+                            cpf_value=new_cpf,
+                        )
                         st.divider()
-                        st.markdown("### Acesso do Aluno (automatico)")
-                        st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
+                        st.markdown("### Acesso do Aluno")
+                        st.caption("Credenciais do aluno são gerenciadas pelo Admin na área Usuarios.")
                         ca1, ca2 = st.columns(2)
                         with ca1:
-                            st.text_input("Login do Aluno", value=auto_login_edit, disabled=True, key=f"edit_student_login_preview_{matricula_atual}")
+                            st.text_input("Login do Aluno", value=current_login_edit, disabled=True, key=f"edit_student_login_preview_{matricula_atual}")
                         with ca2:
-                            st.text_input("Senha do Aluno", value=auto_senha_edit, disabled=True, key=f"edit_student_senha_preview_{matricula_atual}")
+                            st.text_input("Senha do Aluno", value=current_senha_edit, disabled=True, key=f"edit_student_senha_preview_{matricula_atual}")
 
                         st.divider()
                         st.markdown("### Responsavel Legal / Financeiro")
@@ -20157,9 +20280,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             if save_student or save_student_notify:
                                 old_login = aluno_obj.get("usuario", "").strip()
                                 new_cpf_digits = _wiz_digits(new_cpf)
-                                login, senha = _auto_panel_credentials(new_dn, new_cpf_digits)
+                                login, senha, linked_user = _linked_access_credentials(
+                                    "Aluno",
+                                    aluno_obj,
+                                    birthdate_value=new_dn,
+                                    cpf_value=new_cpf_digits,
+                                )
 
-                                if login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
+                                if not old_login and login and find_user(login):
                                     st.error("ERRO: Este login já existe.")
                                 else:
                                     idade_final = _calc_age_from_date_obj(new_dn) or current_idade
@@ -20173,12 +20301,14 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
                                     else:
                                         if login:
-                                            user_obj = find_user(old_login) if old_login else None
+                                            user_obj = linked_user or (find_user(old_login) if old_login else None)
                                             if user_obj:
-                                                user_obj["usuario"] = login
-                                                user_obj["senha"] = senha
                                                 user_obj["perfil"] = "Aluno"
                                                 user_obj["pessoa"] = str(new_nome or "").strip()
+                                                if str(new_email or "").strip():
+                                                    user_obj["email"] = str(new_email or "").strip().lower()
+                                                if str(new_cel or "").strip():
+                                                    user_obj["celular"] = str(new_cel or "").strip()
                                             else:
                                                 st.session_state["users"].append(
                                                     {
@@ -20186,6 +20316,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                         "senha": senha,
                                                         "perfil": "Aluno",
                                                         "pessoa": str(new_nome or "").strip(),
+                                                        "email": str(new_email or "").strip().lower(),
+                                                        "celular": str(new_cel or "").strip(),
                                                     }
                                                 )
                                             save_users(st.session_state["users"])
@@ -20218,8 +20350,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                         aluno_obj["vip_tipo_plano"] = str(new_vip_tipo or "").strip() if _is_vip_module_label(new_modulo) else ""
                                         aluno_obj["vip_aulas_total"] = int(new_vip_total) if _is_vip_module_label(new_modulo) else 0
                                         aluno_obj["vip_aulas_restantes"] = int(new_vip_restantes) if _is_vip_module_label(new_modulo) else 0
-                                        aluno_obj["usuario"] = str(login or "").strip()
-                                        aluno_obj["senha"] = str(senha or "").strip()
+                                        aluno_obj["usuario"] = str(login or old_login or "").strip()
+                                        aluno_obj["senha"] = str(senha or aluno_obj.get("senha", "") or "").strip()
                                         aluno_obj["responsavel"] = {
                                             "nome": str(new_resp_nome or "").strip(),
                                             "cpf": str(new_resp_cpf or "").strip(),
@@ -20382,36 +20514,47 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                         with tc2:
                             new_cpf_prof = st.text_input("CPF *", value=prof_obj.get("cpf", ""))
 
-                        new_login_auto, new_senha_auto = _auto_panel_credentials(new_data_nascimento, new_cpf_prof)
+                        new_login_auto, new_senha_auto, linked_teacher_user = _linked_access_credentials(
+                            "Professor",
+                            prof_obj,
+                            birthdate_value=new_data_nascimento,
+                            cpf_value=new_cpf_prof,
+                        )
                         c3, c4 = st.columns(2)
                         with c3:
                             st.text_input("Login do Professor", value=new_login_auto, disabled=True, key=f"edit_prof_login_{prof_sel}")
                         with c4:
                             st.text_input("Senha do Professor", value=new_senha_auto, disabled=True, key=f"edit_prof_senha_{prof_sel}")
-                        st.caption("Login = data de nascimento completa | Senha = 5 primeiros digitos do CPF.")
+                        st.caption("Credenciais do professor são gerenciadas pelo Admin na área Usuarios.")
 
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("Salvar Alterações"):
                                 old_login = prof_obj.get("usuario", "").strip()
                                 new_cpf_prof_digits = _wiz_digits(new_cpf_prof)
-                                login = new_login_auto
-                                senha = new_senha_auto
+                                login, senha, linked_teacher_user = _linked_access_credentials(
+                                    "Professor",
+                                    prof_obj,
+                                    birthdate_value=new_data_nascimento,
+                                    cpf_value=new_cpf_prof_digits,
+                                )
 
                                 if len(new_cpf_prof_digits) < 5:
                                     st.error("ERRO: CPF do professor precisa ter pelo menos 5 digitos para gerar a senha automaticamente.")
                                 elif not login or not senha:
                                     st.error("ERRO: Nao foi possivel gerar login e senha automaticamente. Verifique data de nascimento e CPF.")
-                                elif login and find_user(login) and (not old_login or login.lower() != old_login.lower()):
+                                elif not old_login and login and find_user(login):
                                     st.error("ERRO: Este login já existe.")
                                 else:
                                     if login:
-                                        user_obj = find_user(old_login) if old_login else None
+                                        user_obj = linked_teacher_user or (find_user(old_login) if old_login else None)
                                         if user_obj:
-                                            user_obj["usuario"] = login
-                                            user_obj["senha"] = senha
                                             user_obj["perfil"] = "Professor"
                                             user_obj["pessoa"] = new_nome
+                                            if str(new_email or "").strip():
+                                                user_obj["email"] = new_email.strip().lower()
+                                            if str(new_cel or "").strip():
+                                                user_obj["celular"] = new_cel.strip()
                                         else:
                                             st.session_state["users"].append(
                                                 {
@@ -20419,6 +20562,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                                     "senha": senha,
                                                     "perfil": "Professor",
                                                     "pessoa": new_nome,
+                                                    "email": new_email.strip().lower(),
+                                                    "celular": new_cel.strip(),
                                                 }
                                             )
                                         save_users(st.session_state["users"])
@@ -20435,8 +20580,8 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                                     prof_obj["celular"] = new_cel.strip()
                                     prof_obj["data_nascimento"] = new_data_nascimento.strftime("%d/%m/%Y")
                                     prof_obj["cpf"] = str(new_cpf_prof or "").strip()
-                                    prof_obj["usuario"] = login
-                                    prof_obj["senha"] = senha
+                                    prof_obj["usuario"] = str(login or old_login or "").strip()
+                                    prof_obj["senha"] = str(senha or prof_obj.get("senha", "") or "").strip()
                                     save_list(TEACHERS_FILE, st.session_state["teachers"])
                                     st.success("Professor atualizado!")
                                     st.rerun()
@@ -24803,16 +24948,34 @@ div[data-baseweb="select"] > div {
                         c_edit, c_del = st.columns([1, 1])
                         with c_edit:
                             if st.form_submit_button("Salvar Alterações"):
-                                user_obj["usuario"] = new_user
-                                user_obj["senha"] = new_pass
-                                user_obj["perfil"] = new_role
-                                user_obj["pessoa"] = new_person.strip()
-                                user_obj["email"] = new_email.strip().lower()
-                                user_obj["celular"] = new_cel.strip()
-                                _normalize_user_access(user_obj)
-                                save_users(st.session_state["users"])
-                                st.success("Usuário atualizado!")
-                                st.rerun()
+                                new_user_clean = str(new_user or "").strip()
+                                new_pass_clean = str(new_pass or "").strip()
+                                old_login_user = str(user_obj.get("usuario", "")).strip()
+                                duplicate_user = next(
+                                    (
+                                        item
+                                        for item in st.session_state["users"]
+                                        if item is not user_obj
+                                        and str(item.get("usuario", "")).strip().lower() == new_user_clean.lower()
+                                    ),
+                                    None,
+                                )
+                                if not new_user_clean or not new_pass_clean:
+                                    st.error("Usuário e senha são obrigatórios.")
+                                elif duplicate_user:
+                                    st.error("Este usuário já existe.")
+                                else:
+                                    user_obj["usuario"] = new_user_clean
+                                    user_obj["senha"] = new_pass_clean
+                                    user_obj["perfil"] = new_role
+                                    user_obj["pessoa"] = new_person.strip()
+                                    user_obj["email"] = new_email.strip().lower()
+                                    user_obj["celular"] = new_cel.strip()
+                                    _normalize_user_access(user_obj)
+                                    _sync_linked_profile_credentials_from_user(user_obj, old_login=old_login_user)
+                                    save_users(st.session_state["users"])
+                                    st.success("Usuário atualizado!")
+                                    st.rerun()
                         with c_del:
                             if st.form_submit_button("EXCLUIR USUARIO", type="primary"):
                                 if user_obj["usuario"] == "admin": st.error("Não é possível excluir o Admin principal.")

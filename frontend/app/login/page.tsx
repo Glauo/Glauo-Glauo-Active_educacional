@@ -1,0 +1,144 @@
+"use client";
+
+import { useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [usuario, setUsuario] = useState("");
+  const [senha, setSenha] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario, senha })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Erro ao entrar.");
+        return;
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="login-shell">
+      {/* Painel de marca */}
+      <div className="login-brand">
+        <div>
+          <div className="login-brand-logo">
+            <div className="login-brand-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                <path d="M6 12v5c3 3 9 3 12 0v-5" />
+              </svg>
+            </div>
+            <div>
+              <div className="login-brand-name">Active Educacional</div>
+              <div className="login-brand-tagline">Sistema de Gestão</div>
+            </div>
+          </div>
+
+          <h2 className="login-headline">
+            Gestão educacional de <span>primeira linha</span>
+          </h2>
+
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "1rem", marginTop: "20px", lineHeight: "1.6", maxWidth: "420px" }}>
+            Plataforma completa para coordenação pedagógica, controle financeiro e
+            comunicação com alunos e professores.
+          </p>
+        </div>
+
+        <div>
+          <div className="login-stats">
+            <div className="login-stat">
+              <div className="login-stat-value">312</div>
+              <div className="login-stat-label">Alunos ativos no sistema</div>
+            </div>
+            <div className="login-stat">
+              <div className="login-stat-value">24</div>
+              <div className="login-stat-label">Turmas em operação</div>
+            </div>
+            <div className="login-stat">
+              <div className="login-stat-value">18</div>
+              <div className="login-stat-label">Professores cadastrados</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Formulário */}
+      <div className="login-form-area">
+        <div className="login-box">
+          <h1 className="login-title">Bem-vindo de volta</h1>
+          <p className="login-subtitle">
+            Entre com suas credenciais para acessar o sistema.
+          </p>
+
+          <form className="login-form" onSubmit={handleSubmit}>
+            {error && <div className="login-error">{error}</div>}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="usuario">Usuário</label>
+              <input
+                id="usuario"
+                type="text"
+                className="form-input"
+                placeholder="Seu usuário de acesso"
+                value={usuario}
+                onChange={(e) => setUsuario(e.target.value)}
+                required
+                autoComplete="username"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="senha">Senha</label>
+              <input
+                id="senha"
+                type="password"
+                className="form-input"
+                placeholder="Sua senha"
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary btn-lg"
+              style={{ marginTop: "8px", width: "100%" }}
+              disabled={loading}
+            >
+              {loading ? "Entrando..." : "Entrar no sistema"}
+            </button>
+          </form>
+
+          <p style={{ marginTop: "32px", fontSize: "0.8125rem", color: "var(--text-muted)", textAlign: "center" }}>
+            Active Educacional © 2026 — Sistema de Gestão Premium
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

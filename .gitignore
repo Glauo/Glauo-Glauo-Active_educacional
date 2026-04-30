@@ -1,9 +1,29 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 .venv/
 venv/
 .streamlit/secrets.toml
+
+# Logs e temporários
 *.log
+*.flag
+tmp_*
+
+# Backups
 manual_backups/
+migration_backups/
 active_backup_*.zip
+_data_backups/
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env*.local
+
+# Deploy secrets (nunca commitar)
+deploy/hostinger/.env
+deploy/wizbot/.env
