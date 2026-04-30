@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ReactNode, useState } from "react";
 
 const navSections = [
   {
@@ -128,16 +128,31 @@ type AppShellProps = {
   breadcrumb?: string;
   userName?: string;
   userRole?: string;
+  userUnit?: string;
 };
 
 export function AppShell({
   children,
   breadcrumb,
   userName = "Administrador",
-  userRole = "Admin"
+  userRole = "Admin",
+  userUnit
 }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const initials = userName.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth", { method: "DELETE" });
+    } finally {
+      router.push("/login");
+      router.refresh();
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -184,13 +199,25 @@ export function AppShell({
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sidebar-user">
+          <div className="sidebar-user-card">
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
+              <div className="user-greeting">Olá, {userName.split(" ")[0]}</div>
               <div className="user-name">{userName}</div>
-              <div className="user-role">{userRole}</div>
+              <div className="user-role">{userRole}{userUnit ? ` · ${userUnit}` : ""}</div>
             </div>
           </div>
+          <button
+            className="sidebar-logout-btn"
+            onClick={handleLogout}
+            disabled={loggingOut}
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h7a1 1 0 100-2H4V5h6a1 1 0 100-2H3zm11.707 4.293a1 1 0 010 1.414L13.414 10l1.293 1.293a1 1 0 01-1.414 1.414l-2-2a1 1 0 010-1.414l2-2a1 1 0 011.414 0z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M13 10a1 1 0 011-1h3a1 1 0 110 2h-3a1 1 0 01-1-1z" clipRule="evenodd" />
+            </svg>
+            {loggingOut ? "Saindo..." : "Sair do sistema"}
+          </button>
         </div>
       </aside>
 
@@ -215,7 +242,10 @@ export function AppShell({
               </svg>
               <div className="notif-dot" />
             </button>
-            <div className="topbar-avatar" title={userName}>{initials}</div>
+            <div className="topbar-user-pill" title={userName}>
+              <div className="topbar-avatar">{initials}</div>
+              <span className="topbar-user-name">{userName.split(" ")[0]}</span>
+            </div>
           </div>
         </header>
 

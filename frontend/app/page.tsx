@@ -240,10 +240,10 @@ export default async function DashboardPage() {
               <h3 className="section-title" style={{ marginBottom: "16px" }}>Ações rápidas</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {[
-                  { href: "/alunos", label: "Novo aluno", icon: "➕" },
-                  { href: "/turmas", label: "Ver turmas", icon: "📚" },
-                  { href: "/financeiro", label: "Financeiro", icon: "💰" },
-                  { href: "/agenda", label: "Agenda do dia", icon: "📅" }
+                  { href: "/alunos", label: "Gerenciar alunos" },
+                  { href: "/turmas", label: "Ver turmas" },
+                  { href: "/financeiro", label: "Painel financeiro" },
+                  { href: "/agenda", label: "Agenda do dia" }
                 ].map((item) => (
                   <a
                     key={item.href}
@@ -251,7 +251,7 @@ export default async function DashboardPage() {
                     className="module-chip"
                     style={{ textDecoration: "none" }}
                   >
-                    <span className="module-chip-name">{item.icon} {item.label}</span>
+                    <span className="module-chip-name">{item.label}</span>
                     <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" style={{ opacity: 0.4 }}>
                       <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                     </svg>
