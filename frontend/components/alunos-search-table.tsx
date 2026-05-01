@@ -16,6 +16,16 @@ type Aluno = {
   status_financeiro?: string;
   situacao_financeira?: string;
   responsavel?: string;
+  telefone?: string;
+  phone?: string;
+  email?: string;
+  data_nascimento?: string;
+  nascimento?: string;
+  cpf?: string;
+  endereco?: string;
+  address?: string;
+  observacoes?: string;
+  obs?: string;
   [k: string]: unknown;
 };
 
@@ -33,11 +43,104 @@ function financBadge(s: string) {
   return "success";
 }
 
+function DetailRow({ label, value }: { label: string; value?: string }) {
+  if (!value || value === "—") return null;
+  return (
+    <div className="drawer-detail-row">
+      <span className="drawer-detail-label">{label}</span>
+      <span className="drawer-detail-value">{value}</span>
+    </div>
+  );
+}
+
+function AlunoDrawer({ aluno, onClose }: { aluno: Aluno; onClose: () => void }) {
+  const nome = String(aluno.nome || aluno.name || "Aluno");
+  const turma = String(aluno.turma || aluno.classe || "—");
+  const livro = String(aluno.livro || aluno.book || "—");
+  const status = String(aluno.status || aluno.situacao || "Ativo");
+  const financeiro = String(aluno.status_financeiro || aluno.situacao_financeira || "Regular");
+  const responsavel = String((aluno.responsavel as string | undefined) || "—");
+  const telefone = String(aluno.telefone || aluno.phone || "—");
+  const email = String(aluno.email || "—");
+  const nascimento = String(aluno.data_nascimento || aluno.nascimento || "—");
+  const cpf = String(aluno.cpf || "—");
+  const endereco = String(aluno.endereco || aluno.address || "—");
+  const obs = String(aluno.observacoes || aluno.obs || "—");
+  const hue = (nome.charCodeAt(0) * 137) % 360;
+  const initials = nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer">
+        <div className="drawer-header">
+          <div className="drawer-title-row">
+            <div className="avatar avatar-lg" style={{ background: `hsl(${hue},50%,42%)` }}>
+              {initials}
+            </div>
+            <div>
+              <h2 className="drawer-title">{nome}</h2>
+              <p className="drawer-subtitle">Turma {turma} · {livro}</p>
+            </div>
+          </div>
+          <button className="drawer-close" onClick={onClose} aria-label="Fechar">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <div className="drawer-badges">
+            <span className={`badge badge-${statusBadge(status)}`}>
+              <span className="badge-dot" />{status}
+            </span>
+            <span className={`badge badge-${financBadge(financeiro)}`}>
+              <span className="badge-dot" />{financeiro}
+            </span>
+          </div>
+        </div>
+
+        <div className="drawer-body">
+          <div className="drawer-section">
+            <div className="drawer-section-title">Dados Pessoais</div>
+            <DetailRow label="CPF" value={cpf} />
+            <DetailRow label="Data de nascimento" value={nascimento} />
+            <DetailRow label="Endereço" value={endereco} />
+          </div>
+
+          <div className="drawer-section">
+            <div className="drawer-section-title">Responsável</div>
+            <DetailRow label="Nome" value={responsavel} />
+            <DetailRow label="Telefone" value={telefone} />
+            <DetailRow label="E-mail" value={email} />
+          </div>
+
+          <div className="drawer-section">
+            <div className="drawer-section-title">Acadêmico</div>
+            <DetailRow label="Turma" value={turma} />
+            <DetailRow label="Livro / Apostila" value={livro} />
+          </div>
+
+          {obs !== "—" && (
+            <div className="drawer-section">
+              <div className="drawer-section-title">Observações</div>
+              <p className="drawer-obs">{obs}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="drawer-footer">
+          <EditarAlunoBtn aluno={aluno} />
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroFinanceiro, setFiltroFinanceiro] = useState("Todos");
   const [filtroTurma, setFiltroTurma] = useState("Todas");
+  const [alunoSelecionado, setAlunoSelecionado] = useState<Aluno | null>(null);
 
   const turmas = useMemo(() => {
     const set = new Set(alunos.map((a) => String(a.turma || a.classe || "")).filter(Boolean));
@@ -66,6 +169,10 @@ export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
 
   return (
     <>
+      {alunoSelecionado && (
+        <AlunoDrawer aluno={alunoSelecionado} onClose={() => setAlunoSelecionado(null)} />
+      )}
+
       {/* Barra de busca e filtros */}
       <div className="card">
         <div className="toolbar">
@@ -144,7 +251,11 @@ export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
                   const financeiro = String(a.status_financeiro || a.situacao_financeira || "Regular");
                   const hue = (nome.charCodeAt(0) * 137) % 360;
                   return (
-                    <tr key={String(a.id || i)}>
+                    <tr
+                      key={String(a.id || i)}
+                      className="table-row-clickable"
+                      onClick={() => setAlunoSelecionado(a)}
+                    >
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                           <div className="avatar avatar-sm" style={{ background: `hsl(${hue},50%,42%)` }}>
@@ -170,7 +281,7 @@ export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
                           <span className="badge-dot" />{financeiro}
                         </span>
                       </td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <EditarAlunoBtn aluno={a} />
                       </td>
                     </tr>

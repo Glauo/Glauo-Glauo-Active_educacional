@@ -110,7 +110,7 @@ export default async function FinanceiroPage() {
         </div>
       </div>
 
-      <FinanceiroTable recebimentos={recebimentos} />
+      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} />
     </AppShell>
   );
 }

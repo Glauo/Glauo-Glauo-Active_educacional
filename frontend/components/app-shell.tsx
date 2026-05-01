@@ -141,6 +141,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const initials = userName.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
 
@@ -156,12 +157,18 @@ export function AppShell({
 
   return (
     <div className="app-shell">
+      {/* Backdrop mobile */}
+      <div
+        className={`sidebar-backdrop${mobileOpen ? " open" : ""}`}
+        onClick={() => setMobileOpen(false)}
+      />
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
         <div className="sidebar-brand">
           <div className="brand-logo-row">
-            <div className="brand-icon" style={{ background: "white", borderRadius: "10px", padding: "2px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Image src="/logo.png" alt="Ativo Educacional" width={40} height={40} style={{ objectFit: "contain" }} />
+            <div className="brand-icon">
+              <Image src="/logo.png" alt="Ativo Educacional" width={44} height={44} style={{ objectFit: "contain", display: "block" }} />
             </div>
             <div>
               <div className="brand-name">Ativo Educacional</div>
@@ -188,6 +195,7 @@ export function AppShell({
                     key={item.href}
                     href={item.href}
                     className={`nav-item${isActive ? " active" : ""}`}
+                    onClick={() => setMobileOpen(false)}
                   >
                     {item.icon}
                     <span className="nav-label">{item.label}</span>
@@ -225,6 +233,17 @@ export function AppShell({
       <div className="main-area">
         <header className="topbar">
           <div className="topbar-left">
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Abrir menu"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
             <div className="topbar-breadcrumb">
               <span>Ativo Educacional</span>
               {breadcrumb && (

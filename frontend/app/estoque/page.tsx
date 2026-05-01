@@ -2,7 +2,8 @@ import { AppShell } from "@/components/app-shell";
 import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { LancarEntradaBtn, NovoItemEstoqueBtn } from "@/components/estoque-modals";
+import { NovoItemEstoqueBtn, LancarEntradaBtn } from "@/components/estoque-modals";
+import { EstoqueTabView } from "@/components/estoque-tab-view";
 
 type ItemEstoque = { id?: string; nome?: string; name?: string; categoria?: string; quantidade?: number | string; quantidade_minima?: string | number; preco?: number | string; [k: string]: unknown };
 type MovimentoEstoque = { id?: string; item?: string; tipo?: string; quantidade?: number | string; data?: string; [k: string]: unknown };
@@ -106,59 +107,7 @@ export default async function EstoquePage() {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <div className="section-eyebrow">Inventário</div>
-            <h3 className="section-title">Todos os itens</h3>
-            <p className="section-subtitle">{estoque.length} itens cadastrados</p>
-          </div>
-          <div className="search-bar">
-            <span className="search-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg></span>
-            <input className="search-input" placeholder="Buscar item ou categoria..." />
-          </div>
-        </div>
-        <div className="card-body" style={{ paddingTop: "12px" }}>
-          {estoque.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5z" /></svg></div>
-              <div className="empty-title">Estoque vazio</div>
-              <p className="empty-desc">Lance entradas de material ou configure a URL do banco para carregar o estoque do Streamlit.</p>
-            </div>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr><th>Item</th><th>Categoria</th><th>Quantidade</th><th>Mínimo</th><th>Status</th><th>Ações</th></tr>
-              </thead>
-              <tbody>
-                {estoque.map((item, i) => {
-                  const nome = String(item.nome || item.name || `Item ${i + 1}`);
-                  const cat = String(item.categoria || "—");
-                  const qtd = Number(item.quantidade) || 0;
-                  const min = Number(item.quantidade_minima) || 0;
-                  const critico = min > 0 && qtd < min;
-                  return (
-                    <tr key={String(item.id || i)}>
-                      <td><span style={{ fontWeight: 600 }}>{nome}</span></td>
-                      <td>{cat}</td>
-                      <td style={{ fontWeight: 700, fontSize: "1rem" }}>{qtd}</td>
-                      <td style={{ color: "var(--text-muted)" }}>{min || "—"}</td>
-                      <td>
-                        <span className={`badge badge-${critico ? "danger" : "success"}`}>
-                          <span className="badge-dot" />{critico ? "Crítico" : "Regular"}
-                        </span>
-                      </td>
-                      <td>
-                        <LancarEntradaBtn itens={[item]} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      <EstoqueTabView estoque={estoque} movimentos={movimentos} pedidos={pedidos} />
     </AppShell>
   );
 }
