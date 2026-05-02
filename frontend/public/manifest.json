@@ -1,7 +1,7 @@
 {
   "name": "Ativo Educacional",
   "short_name": "Ativo Edu",
-  "description": "Sistema de gestão educacional premium — alunos, turmas, financeiro e muito mais.",
+  "description": "Sistema de gestao educacional - alunos, turmas, financeiro e muito mais.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

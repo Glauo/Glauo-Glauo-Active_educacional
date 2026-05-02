@@ -96,7 +96,7 @@ function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose:
             <div style={{ fontSize: "2.25rem", fontWeight: 800, color: "var(--green-700)", letterSpacing: "-0.03em" }}>{formatBRL(valor)}</div>
           </div>
           <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 14, textAlign: "center" }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-faint)" }}>Ativo Educacional © {new Date().getFullYear()} — Sistema de Gestão Premium</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-faint)" }}>Ativo Educacional {new Date().getFullYear()} - Sistema de Gestao Educacional</div>
             <div style={{ fontSize: "0.7rem", color: "var(--text-faint)", marginTop: 3 }}>Este recibo confirma o pagamento do valor acima especificado.</div>
           </div>
         </div>

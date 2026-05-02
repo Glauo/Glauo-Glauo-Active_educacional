@@ -2,7 +2,6 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 
 const UNIDADES = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"];
 
@@ -80,17 +79,11 @@ export default function LoginPage() {
           {/* Logo + nome */}
           <div className="login-brand-logo">
             <div className="login-logo-ring">
-              <Image
-                src="/logo.png"
-                alt="Ativo Educacional"
-                width={56}
-                height={56}
-                style={{ objectFit: "contain" }}
-              />
+              <img src="/logo.png" alt="Ativo Educacional Sistema" />
             </div>
             <div>
               <div className="login-brand-name">Ativo Educacional</div>
-              <div className="login-brand-tagline">Sistema Premium</div>
+              <div className="login-brand-tagline">Sistema Educacional</div>
             </div>
           </div>
 
@@ -138,12 +131,12 @@ export default function LoginPage() {
       {/* ── Painel do formulário (direita) ── */}
       <div className="login-form-area">
         <div className="login-box">
-          {/* Badge premium */}
+          {/* Badge educacional */}
           <div className="login-premium-badge">
             <svg viewBox="0 0 20 20" fill="currentColor">
               <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
             </svg>
-            Acesso exclusivo — VIP Premium
+            Acesso exclusivo - Sistema Educacional
           </div>
 
           <h1 className="login-title">Bem-vindo de volta</h1>
@@ -238,7 +231,7 @@ export default function LoginPage() {
           </div>
 
           <p style={{ marginTop: "28px", fontSize: "0.75rem", color: "var(--text-faint)", textAlign: "center" }}>
-            Ativo Educacional © 2026 — Sistema de Gestão Premium
+            Ativo Educacional 2026 - Sistema de Gestao Educacional
           </p>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { PWARegister } from "@/components/pwa-register";
 export const metadata: Metadata = {
   title: {
     template: "%s | Ativo Educacional",
-    default: "Ativo Educacional — Sistema de Gestão Premium"
+    default: "Ativo Educacional - Sistema de Gestao Educacional"
   },
   description: "Plataforma completa de gestão educacional: alunos, turmas, professores, financeiro e muito mais.",
   manifest: "/manifest.json",

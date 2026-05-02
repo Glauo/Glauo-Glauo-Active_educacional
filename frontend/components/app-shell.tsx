@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useState } from "react";
 
@@ -168,11 +167,11 @@ export function AppShell({
         <div className="sidebar-brand">
           <div className="brand-logo-row">
             <div className="brand-icon">
-              <Image src="/logo.png" alt="Ativo Educacional" width={44} height={44} style={{ objectFit: "contain", display: "block" }} />
+              <img src="/logo.png" alt="Ativo Educacional Sistema" />
             </div>
             <div>
               <div className="brand-name">Ativo Educacional</div>
-              <div className="brand-tagline">Sistema Premium</div>
+              <div className="brand-tagline">Sistema Educacional</div>
             </div>
           </div>
           <div className="brand-status">
