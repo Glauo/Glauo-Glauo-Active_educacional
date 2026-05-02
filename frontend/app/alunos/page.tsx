@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoAlunoBtn } from "@/components/aluno-modal";
 import { AlunosSearchTable } from "@/components/alunos-search-table";
+import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Aluno = { id?: string; nome?: string; name?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
 
@@ -82,7 +83,7 @@ export default async function AlunosPage() {
           </div>
         </div>
       ) : (
-        <AlunosSearchTable alunos={alunos} />
+        <AlunosSearchTable alunos={alunos} canManageAccess={isAdminOrCoordinator(session)} />
       )}
     </AppShell>
   );

@@ -225,6 +225,7 @@ export function EditarLancamentoBtn({ lancamento, tipo }: { lancamento: Lancamen
 export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tipo: "recebimentos" | "despesas" }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [aviso, setAviso] = useState(false);
   const jaFoiBaixado = String(lancamento.status || "").toLowerCase().includes("pago") ||
     String(lancamento.status || "").toLowerCase().includes("baixado");
 
@@ -238,10 +239,13 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
       body: JSON.stringify({ id: lancamento.id, tipo, status: "Pago", data_baixa: new Date().toISOString() })
     });
     setLoading(false);
+    setAviso(true);
+    setTimeout(() => setAviso(false), 3500);
     router.refresh();
   }
 
   return (
+    <>
     <button
       className="btn btn-ghost btn-sm"
       style={{ fontSize: "0.75rem", color: "var(--green-700)" }}
@@ -251,5 +255,7 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
     >
       {loading ? "…" : "Baixa"}
     </button>
+    {aviso && <span className="badge badge-success"><span className="badge-dot" />Recibo automatico</span>}
+    </>
   );
 }

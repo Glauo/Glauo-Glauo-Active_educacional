@@ -57,6 +57,31 @@ function whatsappUrl(phone: unknown, message: string) {
   return `https://wa.me/${digits || ""}?text=${encodeURIComponent(message)}`;
 }
 
+function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
+  const [loading, setLoading] = useState(false);
+  const id = String(lancamento.id || "");
+  const msg = `Boleto Ativo Educacional\nAluno: ${String(lancamento.aluno || lancamento.nome || "")}\nReferencia: ${String(lancamento.descricao || "")}\nValor: ${formatBRL(parseValor(lancamento.valor))}\nVencimento: ${String(lancamento.vencimento || lancamento.data_vencimento || "")}\nLink: ${typeof window !== "undefined" ? window.location.origin : ""}/api/financeiro/boleto?id=${id}`;
+
+  async function gerar() {
+    if (!id) return;
+    setLoading(true);
+    await fetch("/api/financeiro", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, tipo: "recebimentos", gerar_boleto: true })
+    });
+    setLoading(false);
+    window.open(`/api/financeiro/boleto?id=${id}`, "_blank");
+  }
+
+  return (
+    <>
+      <button className="btn btn-secondary btn-sm" onClick={gerar} disabled={loading}>{loading ? "Gerando..." : "Boleto PDF"}</button>
+      <a className="btn btn-secondary btn-sm" href={whatsappUrl(lancamento.telefone || lancamento.whatsapp, msg)} target="_blank" rel="noreferrer">WhatsApp</a>
+    </>
+  );
+}
+
 /* ── Recibo ── */
 function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose: () => void }) {
   const nome = String(lancamento.aluno || lancamento.nome || "Pagante");
@@ -221,7 +246,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                       <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
                       <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(parseValor(r.valor))}</span></td>
                       <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={r} tipo="recebimentos" /><ReciboBtn lancamento={r} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
+                      <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
                     </tr>
                   );
                 })}

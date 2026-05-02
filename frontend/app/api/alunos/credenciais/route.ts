@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; senha?: string; turma?: string; [k: string]: unknown };
 
 export async function GET() {
   const session = await getSession();
-  if (!session || session.perfil === "Aluno") {
+  if (!session || !isAdminOrCoordinator(session)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -17,6 +18,7 @@ export async function GET() {
     nome: a.nome || a.name,
     turma: a.turma,
     login: a.login || null,
+    senha: a.senha || null,
     temAcesso: Boolean(a.login && a.senha)
   }));
   return NextResponse.json(lista);
@@ -24,7 +26,7 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.perfil === "Aluno") {
+  if (!session || !isAdminOrCoordinator(session)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -63,7 +65,7 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.perfil === "Aluno") {
+  if (!session || !isAdminOrCoordinator(session)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 

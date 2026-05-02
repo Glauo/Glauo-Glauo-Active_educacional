@@ -19,6 +19,8 @@ type Aluno = {
   telefone?: string;
   phone?: string;
   email?: string;
+  login?: string;
+  senha?: string;
   data_nascimento?: string;
   nascimento?: string;
   cpf?: string;
@@ -53,7 +55,56 @@ function DetailRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
-function AlunoDrawer({ aluno, onClose }: { aluno: Aluno; onClose: () => void }) {
+function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
+  const [login, setLogin] = useState(String(aluno.login || ""));
+  const [senha, setSenha] = useState(String(aluno.senha || ""));
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  async function salvar() {
+    setFeedback("");
+    if (!login.trim() || senha.length < 4) {
+      setFeedback("Informe login e senha com pelo menos 4 caracteres.");
+      return;
+    }
+    setSaving(true);
+    const res = await fetch("/api/alunos/credenciais", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: aluno.id, login, senha })
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      setFeedback(data.error || "Erro ao alterar acesso.");
+      return;
+    }
+    setFeedback("Acesso atualizado com sucesso.");
+  }
+
+  return (
+    <div className="drawer-section">
+      <div className="drawer-section-title">Acesso do aluno</div>
+      <div className="form-grid">
+        <div className="form-group">
+          <label className="form-label">Login</label>
+          <input className="form-input" value={login} onChange={(e) => setLogin(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Senha</label>
+          <input className="form-input" value={senha} onChange={(e) => setSenha(e.target.value)} />
+        </div>
+      </div>
+      {feedback && <div className={feedback.includes("sucesso") ? "form-success" : "form-error"} style={{ marginTop: 10 }}>{feedback}</div>}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !aluno.id}>{saving ? "Salvando..." : "Alterar senha/login"}</button>
+        <a className="btn btn-secondary btn-sm" href="/alunos/credenciais">Gerenciar todos</a>
+      </div>
+    </div>
+  );
+}
+
+function AlunoDrawer({ aluno, onClose, canManageAccess }: { aluno: Aluno; onClose: () => void; canManageAccess: boolean }) {
   const nome = String(aluno.nome || aluno.name || "Aluno");
   const turma = String(aluno.turma || aluno.classe || "—");
   const livro = String(aluno.livro || aluno.book || "—");
@@ -125,6 +176,7 @@ function AlunoDrawer({ aluno, onClose }: { aluno: Aluno; onClose: () => void }) 
               <p className="drawer-obs">{obs}</p>
             </div>
           )}
+          {canManageAccess && <AcessoAlunoBox aluno={aluno} />}
         </div>
 
         <div className="drawer-footer">
@@ -135,7 +187,7 @@ function AlunoDrawer({ aluno, onClose }: { aluno: Aluno; onClose: () => void }) 
   );
 }
 
-export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
+export function AlunosSearchTable({ alunos, canManageAccess }: { alunos: Aluno[]; canManageAccess: boolean }) {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroFinanceiro, setFiltroFinanceiro] = useState("Todos");
@@ -170,7 +222,7 @@ export function AlunosSearchTable({ alunos }: { alunos: Aluno[] }) {
   return (
     <>
       {alunoSelecionado && (
-        <AlunoDrawer aluno={alunoSelecionado} onClose={() => setAlunoSelecionado(null)} />
+        <AlunoDrawer aluno={alunoSelecionado} canManageAccess={canManageAccess} onClose={() => setAlunoSelecionado(null)} />
       )}
 
       {/* Barra de busca e filtros */}

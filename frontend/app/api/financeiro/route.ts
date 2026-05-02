@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -47,8 +51,36 @@ export async function PUT(req: NextRequest) {
     const idx = lancamentos.findIndex((l) => l.id === id);
     if (idx === -1) return NextResponse.json({ error: "Lançamento não encontrado." }, { status: 404 });
 
-    lancamentos[idx] = { ...lancamentos[idx], ...updates, updated_at: new Date().toISOString() };
-    await dbSet(key, lancamentos);
+    const wasPaid = String(lancamentos[idx].status || "").toLowerCase().includes("pago");
+    const willBePaid = String(updates.status || "").toLowerCase().includes("pago");
+    const boletoUpdate = updates.gerar_boleto ? {
+      boleto_status: "Gerado",
+      boleto_codigo: text(lancamentos[idx].boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
+      boleto_gerado_em: new Date().toISOString(),
+      status: updates.status || "Boleto gerado"
+    } : {};
+
+    lancamentos[idx] = { ...lancamentos[idx], ...updates, ...boletoUpdate, updated_at: new Date().toISOString() };
+
+    const writes: Promise<boolean>[] = [dbSet(key, lancamentos)];
+    if (!wasPaid && willBePaid) {
+      const recibos = await dbList<Record<string, unknown>>("receipts.json");
+      const lancamento = lancamentos[idx];
+      const recibo = {
+        id: crypto.randomUUID(),
+        lancamento_id: id,
+        tipo,
+        pessoa: lancamento.aluno || lancamento.nome || lancamento.professor,
+        descricao: lancamento.descricao,
+        valor: lancamento.valor,
+        data: new Date().toISOString(),
+        gerado_automaticamente: true,
+        whatsapp: lancamento.telefone || lancamento.whatsapp || lancamento.professor_telefone || ""
+      };
+      writes.push(dbSet("receipts.json", [...recibos, recibo]));
+    }
+
+    await Promise.all(writes);
     return NextResponse.json({ ok: true, lancamento: lancamentos[idx] });
   } catch (err) {
     console.error("[financeiro PUT]", err);

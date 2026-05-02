@@ -7,18 +7,20 @@ type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
 type Nota = { aluno?: string; aluno_login?: string; titulo?: string; desafio?: string; nota?: number | string; status?: string; data?: string; [k: string]: unknown };
+type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; [k: string]: unknown };
 
 export default async function AlunoHomePage() {
   const session = await getSession();
   if (!session) redirect("/aluno/login");
   if (session.perfil !== "Aluno") redirect("/");
 
-  const [alunos, desafios, conclusoes, notas, frequencias] = await Promise.all([
+  const [alunos, desafios, conclusoes, notas, frequencias, recebimentos] = await Promise.all([
     dbList<Aluno>("students.json"),
     dbList<Desafio>("challenges.json"),
     dbList<Conclusao>("challenge_completions.json"),
     dbList<Nota>("grades.json"),
-    dbList<Record<string, unknown>>("attendance.json")
+    dbList<Record<string, unknown>>("attendance.json"),
+    dbList<Recebimento>("receivables.json")
   ]);
 
   const meuPerfil = alunos.find((a) => a.login === session.usuario);
@@ -37,6 +39,9 @@ export default async function AlunoHomePage() {
   const meusPontos = minhasConclusoes.reduce((acc, c) => acc + (Number(c.pontos) || 0), 0);
   const minhasNotas = notas.filter((n) => n.aluno === session.pessoa || n.aluno_login === session.usuario);
   const minhasFaltas = frequencias.filter((f) => (f.aluno === session.pessoa || f.aluno_id === meuPerfil?.id || f.aluno_id === session.usuario) && f.falta).length;
+  const minhasFaturas = recebimentos.filter((r) => String(r.aluno || r.nome || "").trim().toLowerCase() === String(session.pessoa).trim().toLowerCase());
+  const debitosAbertos = minhasFaturas.filter((r) => !String(r.status || "").toLowerCase().includes("pago"));
+  const totalDebitos = debitosAbertos.reduce((s, r) => s + (parseFloat(String(r.valor || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0), 0);
 
   const concluidosIds = new Set(minhasConclusoes.map((c) => c.desafio_id));
 
@@ -147,6 +152,40 @@ export default async function AlunoHomePage() {
                       <td>{n.data ? new Date(String(n.data)).toLocaleDateString("pt-BR") : "-"}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: "24px" }}>
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Financeiro</div>
+              <h3 className="section-title">Debitos, faturas e boletos</h3>
+              <p className="section-subtitle">Voce pode consultar faturas e baixar boletos. Alteracoes financeiras sao restritas a administracao.</p>
+            </div>
+            <span className="badge badge-warning"><span className="badge-dot" />{totalDebitos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} em aberto</span>
+          </div>
+          <div className="card-body" style={{ paddingTop: "12px" }}>
+            {minhasFaturas.length === 0 ? (
+              <div className="empty-state"><div className="empty-title">Nenhuma fatura encontrada</div><p className="empty-desc">Quando houver boleto ou mensalidade, ela aparecera aqui.</p></div>
+            ) : (
+              <table className="data-table">
+                <thead><tr><th>Fatura</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Boleto</th></tr></thead>
+                <tbody>
+                  {minhasFaturas.map((f, i) => {
+                    const pago = String(f.status || "").toLowerCase().includes("pago");
+                    return (
+                      <tr key={String(f.id || i)}>
+                        <td style={{ fontWeight: 600 }}>{String(f.descricao || "Mensalidade")}</td>
+                        <td>{String(f.vencimento || f.data_vencimento || "-")}</td>
+                        <td>{(parseFloat(String(f.valor || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
+                        <td><span className={`badge badge-${pago ? "success" : "warning"}`}><span className="badge-dot" />{String(f.status || "Pendente")}</span></td>
+                        <td><a className="btn btn-secondary btn-sm" href={`/api/financeiro/boleto?id=${String(f.id)}`} target="_blank" rel="noreferrer">Baixar boleto</a></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
