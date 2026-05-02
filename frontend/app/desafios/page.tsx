@@ -3,6 +3,7 @@ import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoDesafioBtn, EditarDesafioBtn } from "@/components/desafio-modal";
+import { NotaRapidaForm } from "@/components/notas-form";
 
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; descricao?: string; pontos?: number | string; status?: string; data_publicacao?: string; data?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
@@ -11,9 +12,10 @@ export default async function DesafiosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [desafios, conclusoes] = await Promise.all([
+  const [desafios, conclusoes, alunos] = await Promise.all([
     dbList<Desafio>("challenges.json"),
-    dbList<Conclusao>("challenge_completions.json")
+    dbList<Conclusao>("challenge_completions.json"),
+    dbList<Record<string, unknown>>("students.json")
   ]);
 
   const publicados = desafios.filter((d) => {
@@ -207,6 +209,9 @@ export default async function DesafiosPage() {
             </div>
           </div>
         </div>
+      </div>
+      <div style={{ marginTop: 24 }}>
+        <NotaRapidaForm alunos={alunos} desafios={desafios} />
       </div>
     </AppShell>
   );

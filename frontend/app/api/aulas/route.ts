@@ -9,6 +9,7 @@ const CLASSES_KEY = "classes.json";
 const TEACHERS_KEY = "teachers.json";
 const SESSIONS_KEY = "class_sessions.json";
 const PAYABLES_KEY = "payables.json";
+const ATTENDANCE_KEY = "attendance.json";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -61,11 +62,12 @@ export async function POST(req: NextRequest) {
     const turmaRef = text(body.turmaId || body.turma || body.turmaNome);
     if (!turmaRef) return NextResponse.json({ error: "Turma obrigatória." }, { status: 400 });
 
-    const [turmas, professores, aulas, despesas] = await Promise.all([
+    const [turmas, professores, aulas, despesas, frequencias] = await Promise.all([
       dbList<Row>(CLASSES_KEY),
       dbList<Row>(TEACHERS_KEY),
       dbList<Row>(SESSIONS_KEY),
-      dbList<Row>(PAYABLES_KEY)
+      dbList<Row>(PAYABLES_KEY),
+      dbList<Row>(ATTENDANCE_KEY)
     ]);
 
     const turma = findClass(turmas, turmaRef);
@@ -113,12 +115,22 @@ export async function POST(req: NextRequest) {
       const licaoFim = text(body.licao_fim || body.licao_final);
       if (!licaoFim) return NextResponse.json({ error: "Informe a lição em que a aula parou." }, { status: 400 });
 
+      const materia = text(body.materia || body.conteudo);
+      const tarefa = text(body.tarefa || body.trabalho_casa);
+      const presencas = Array.isArray(body.presencas) ? body.presencas as Row[] : [];
+      if (!materia) return NextResponse.json({ error: "Informe a materia/conteudo da aula." }, { status: 400 });
+      if (!tarefa) return NextResponse.json({ error: "Informe a tarefa de casa." }, { status: 400 });
+      if (presencas.some((p) => typeof p.presente !== "boolean")) return NextResponse.json({ error: "Marque presenca ou falta de todos os alunos." }, { status: 400 });
+
       const valorAula = moneyValue(body.valor_aula || turma.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
       const base = aulas[idx];
       const fechada = {
         ...base,
         status: "fechada",
         licao_fim: licaoFim,
+        materia,
+        tarefa,
+        presencas,
         observacoes: text(body.observacoes),
         valor_aula: valorAula,
         fechada_por: session.pessoa || session.usuario,
@@ -137,6 +149,23 @@ export async function POST(req: NextRequest) {
       } : t);
 
       const aulaFechadaId = text(base.id);
+      const registrosFrequencia = presencas.map((p) => ({
+        id: crypto.randomUUID(),
+        aula_id: aulaFechadaId,
+        turma_id: turmaId,
+        turma: className(turma),
+        professor,
+        aluno_id: text(p.aluno_id),
+        aluno: text(p.aluno),
+        presente: Boolean(p.presente),
+        falta: !Boolean(p.presente),
+        livro,
+        licao_inicio: text(base.licao_inicio),
+        licao_fim: licaoFim,
+        materia,
+        tarefa,
+        data: new Date().toISOString()
+      }));
       const alreadyPayable = despesas.some((d) => text(d.aula_id) === aulaFechadaId);
       const descricao = `Aula dada - ${className(turma)} - ${livro || "Livro não informado"} - lição ${text(base.licao_inicio) || "início"} até ${licaoFim}`;
       const payable = {
@@ -163,7 +192,8 @@ export async function POST(req: NextRequest) {
       await Promise.all([
         dbSet(SESSIONS_KEY, nextAulas),
         dbSet(CLASSES_KEY, nextTurmas),
-        dbSet(PAYABLES_KEY, alreadyPayable ? despesas : [...despesas, payable])
+        dbSet(PAYABLES_KEY, alreadyPayable ? despesas : [...despesas, payable]),
+        dbSet(ATTENDANCE_KEY, [...frequencias, ...registrosFrequencia])
       ]);
 
       return NextResponse.json({ ok: true, aula: fechada, financeiro: alreadyPayable ? null : payable });

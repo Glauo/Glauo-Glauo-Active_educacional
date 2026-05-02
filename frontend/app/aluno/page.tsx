@@ -6,16 +6,19 @@ import { StudentLogoutBtn } from "@/components/student-logout-btn";
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
+type Nota = { aluno?: string; aluno_login?: string; titulo?: string; desafio?: string; nota?: number | string; status?: string; data?: string; [k: string]: unknown };
 
 export default async function AlunoHomePage() {
   const session = await getSession();
   if (!session) redirect("/aluno/login");
   if (session.perfil !== "Aluno") redirect("/");
 
-  const [alunos, desafios, conclusoes] = await Promise.all([
+  const [alunos, desafios, conclusoes, notas, frequencias] = await Promise.all([
     dbList<Aluno>("students.json"),
     dbList<Desafio>("challenges.json"),
-    dbList<Conclusao>("challenge_completions.json")
+    dbList<Conclusao>("challenge_completions.json"),
+    dbList<Nota>("grades.json"),
+    dbList<Record<string, unknown>>("attendance.json")
   ]);
 
   const meuPerfil = alunos.find((a) => a.login === session.usuario);
@@ -32,6 +35,8 @@ export default async function AlunoHomePage() {
     (c) => c.aluno === session.usuario || c.aluno === session.pessoa
   );
   const meusPontos = minhasConclusoes.reduce((acc, c) => acc + (Number(c.pontos) || 0), 0);
+  const minhasNotas = notas.filter((n) => n.aluno === session.pessoa || n.aluno_login === session.usuario);
+  const minhasFaltas = frequencias.filter((f) => (f.aluno === session.pessoa || f.aluno_id === meuPerfil?.id || f.aluno_id === session.usuario) && f.falta).length;
 
   const concluidosIds = new Set(minhasConclusoes.map((c) => c.desafio_id));
 
@@ -116,6 +121,35 @@ export default async function AlunoHomePage() {
             <div className="metric-label">Posição no ranking</div>
             <div className="metric-value">{minhaPos > 0 ? `#${minhaPos}` : "—"}</div>
             <div className="metric-note">Entre todos os alunos</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: "24px" }}>
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Boletim</div>
+              <h3 className="section-title">Minhas notas e faltas</h3>
+              <p className="section-subtitle">{minhasNotas.length} notas registradas - {minhasFaltas} faltas</p>
+            </div>
+          </div>
+          <div className="card-body" style={{ paddingTop: "12px" }}>
+            {minhasNotas.length === 0 ? (
+              <div className="empty-state"><div className="empty-title">Nenhuma nota publicada</div><p className="empty-desc">As notas aparecem aqui assim que o professor corrigir os desafios.</p></div>
+            ) : (
+              <table className="data-table">
+                <thead><tr><th>Desafio</th><th>Nota</th><th>Status</th><th>Data</th></tr></thead>
+                <tbody>
+                  {minhasNotas.map((n, i) => (
+                    <tr key={String(n.id || i)}>
+                      <td style={{ fontWeight: 600 }}>{String(n.titulo || n.desafio || "-")}</td>
+                      <td><span className="badge badge-gold">{Number(n.nota || 0).toFixed(1)}</span></td>
+                      <td><span className="badge badge-success"><span className="badge-dot" />{String(n.status || "Corrigido")}</span></td>
+                      <td>{n.data ? new Date(String(n.data)).toLocaleDateString("pt-BR") : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

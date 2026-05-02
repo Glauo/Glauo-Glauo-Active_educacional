@@ -14,6 +14,7 @@ export default async function ProfessoresPage() {
   const professores = await dbList<Professor>("teachers.json");
   const turmas = await dbList<Record<string, unknown>>("classes.json");
   const aulas = await dbList<Record<string, unknown>>("class_sessions.json");
+  const alunos = await dbList<Record<string, unknown>>("students.json");
 
   const ativos = professores.filter((p) => {
     const s = String(p.status || p.situacao || "ativo").toLowerCase();
@@ -64,6 +65,7 @@ export default async function ProfessoresPage() {
         turmas={turmas}
         aulas={aulas}
         professores={professores}
+        alunos={alunos}
         userName={session.pessoa || session.usuario}
         userRole={session.perfil}
       />

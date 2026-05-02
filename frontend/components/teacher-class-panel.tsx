@@ -39,12 +39,14 @@ export function TeacherClassPanel({
   turmas,
   aulas,
   professores,
+  alunos,
   userName,
   userRole
 }: {
   turmas: Row[];
   aulas: Row[];
   professores: Row[];
+  alunos: Row[];
   userName: string;
   userRole: string;
 }) {
@@ -52,6 +54,9 @@ export function TeacherClassPanel({
   const [turmaId, setTurmaId] = useState("");
   const [licaoInicio, setLicaoInicio] = useState("");
   const [licaoFim, setLicaoFim] = useState("");
+  const [materia, setMateria] = useState("");
+  const [tarefa, setTarefa] = useState("");
+  const [presentes, setPresentes] = useState<Record<string, boolean>>({});
   const [observacoes, setObservacoes] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -68,6 +73,8 @@ export function TeacherClassPanel({
   const livro = text(selected?.livro || selected?.book);
   const ultimaLicao = text(selected?.ultima_licao || selected?.licao_atual || selected?.ultima_aula);
   const valorAula = moneyValue(selected?.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
+  const alunosTurma = alunos.filter((a) => sameName(a.turma || a.classe, className(selected || {})));
+  const presencasOk = alunosTurma.length === 0 || alunosTurma.every((a) => presentes[text(a.id || a.login || a.nome || a.name)] !== undefined);
 
   async function submit(action: "open" | "close") {
     if (!selectedId) return;
@@ -81,19 +88,28 @@ export function TeacherClassPanel({
         turmaId: selectedId,
         licao_inicio: licaoInicio || ultimaLicao,
         licao_fim: licaoFim,
+        materia,
+        tarefa,
         observacoes,
-        valor_aula: valorAula
+        valor_aula: valorAula,
+        presencas: alunosTurma.map((a) => {
+          const id = text(a.id || a.login || a.nome || a.name);
+          return { aluno_id: id, aluno: text(a.nome || a.name || a.login), presente: Boolean(presentes[id]) };
+        })
       })
     });
     const payload = await response.json().catch(() => ({}));
     setSaving(false);
     if (!response.ok) {
-      setMessage(payload.error || "Não foi possível salvar a aula.");
+      setMessage(payload.error || "Nao foi possivel salvar a aula.");
       return;
     }
-    setMessage(action === "open" ? "Aula aberta com sucesso." : "Aula fechada e financeiro do professor lançado.");
+    setMessage(action === "open" ? "Aula aberta com sucesso." : "Aula fechada e financeiro do professor lancado.");
     setLicaoInicio("");
     setLicaoFim("");
+    setMateria("");
+    setTarefa("");
+    setPresentes({});
     setObservacoes("");
     router.refresh();
   }
@@ -102,7 +118,7 @@ export function TeacherClassPanel({
     return (
       <div className="card teacher-class-panel">
         <div className="empty-state">
-          <div className="empty-title">Nenhuma turma disponível</div>
+          <div className="empty-title">Nenhuma turma disponivel</div>
           <p className="empty-desc">Vincule uma turma ao professor para abrir e fechar aulas.</p>
         </div>
       </div>
@@ -115,7 +131,7 @@ export function TeacherClassPanel({
         <div>
           <div className="section-eyebrow">Painel do professor</div>
           <h3 className="section-title">Abrir e fechar aula</h3>
-          <p className="section-subtitle">Ao fechar, a aula entra automaticamente no financeiro como pagamento ao professor.</p>
+          <p className="section-subtitle">O fechamento exige licao, materia, tarefa e presencas.</p>
         </div>
         <span className={`badge badge-${openClass ? "warning" : "success"}`}><span className="badge-dot" />{openClass ? "Aula aberta" : "Pronto para abrir"}</span>
       </div>
@@ -129,47 +145,52 @@ export function TeacherClassPanel({
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Livro automático</label>
-            <input className="form-input" value={livro || "Livro não informado"} readOnly />
+            <label className="form-label">Livro automatico</label>
+            <input className="form-input" value={livro || "Livro nao informado"} readOnly />
           </div>
           <div className="form-group">
             <label className="form-label">Valor da aula</label>
             <input className="form-input" value={valorAula ? formatBRL(valorAula) : "Sem valor cadastrado"} readOnly />
           </div>
           <div className="form-group">
-            <label className="form-label">Lição que inicia</label>
-            <input
-              className="form-input"
-              placeholder={ultimaLicao || "Ex: Unidade 4 - página 32"}
-              value={licaoInicio || (openClass ? text(openClass.licao_inicio) : "")}
-              onChange={(e) => setLicaoInicio(e.target.value)}
-              readOnly={Boolean(openClass)}
-            />
+            <label className="form-label">Licao que inicia</label>
+            <input className="form-input" placeholder={ultimaLicao || "Ex: Unidade 4 - pagina 32"} value={licaoInicio || (openClass ? text(openClass.licao_inicio) : "")} onChange={(e) => setLicaoInicio(e.target.value)} readOnly={Boolean(openClass)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Lição em que parou</label>
-            <input
-              className="form-input"
-              placeholder="Ex: Unidade 4 - página 36"
-              value={licaoFim}
-              onChange={(e) => setLicaoFim(e.target.value)}
-              disabled={!openClass}
-            />
+            <label className="form-label">Licao em que parou</label>
+            <input className="form-input" placeholder="Ex: Unidade 4 - pagina 36" value={licaoFim} onChange={(e) => setLicaoFim(e.target.value)} disabled={!openClass} />
           </div>
           <div className="form-group form-group-span2">
-            <label className="form-label">Observações da aula</label>
-            <textarea
-              className="form-input form-textarea"
-              rows={3}
-              placeholder="Presença, conteúdo, tarefa e observações rápidas."
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              disabled={!openClass}
-            />
+            <label className="form-label">Materia / conteudo da aula</label>
+            <input className="form-input" placeholder="Ex: Simple Past, paginas 34 a 38" value={materia} onChange={(e) => setMateria(e.target.value)} disabled={!openClass} />
+          </div>
+          <div className="form-group form-group-span2">
+            <label className="form-label">Tarefa de casa</label>
+            <input className="form-input" placeholder="Ex: Workbook p. 12 exercicios 1 a 5" value={tarefa} onChange={(e) => setTarefa(e.target.value)} disabled={!openClass} />
+          </div>
+          <div className="form-group form-group-span2">
+            <label className="form-label">Presencas da turma</label>
+            <div className="attendance-grid">
+              {alunosTurma.length === 0 ? (
+                <div className="text-muted text-sm">Nenhum aluno vinculado a esta turma.</div>
+              ) : alunosTurma.map((a) => {
+                const id = text(a.id || a.login || a.nome || a.name);
+                return (
+                  <label key={id} className="attendance-item">
+                    <input type="checkbox" checked={Boolean(presentes[id])} onChange={(e) => setPresentes((p) => ({ ...p, [id]: e.target.checked }))} disabled={!openClass} />
+                    <span>{text(a.nome || a.name || a.login)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="form-group form-group-span2">
+            <label className="form-label">Observacoes da aula</label>
+            <textarea className="form-input form-textarea" rows={3} placeholder="Presenca, conteudo, tarefa e observacoes rapidas." value={observacoes} onChange={(e) => setObservacoes(e.target.value)} disabled={!openClass} />
           </div>
         </div>
 
-        {message && <div className={message.includes("sucesso") || message.includes("lançado") ? "form-success" : "form-error"}>{message}</div>}
+        {message && <div className={message.includes("sucesso") || message.includes("lancado") ? "form-success" : "form-error"}>{message}</div>}
 
         <div className="teacher-class-actions">
           {!openClass ? (
@@ -177,8 +198,8 @@ export function TeacherClassPanel({
               {saving ? "Abrindo..." : "Abrir aula"}
             </button>
           ) : (
-            <button className="btn btn-primary" disabled={saving || !licaoFim.trim()} onClick={() => submit("close")}>
-              {saving ? "Fechando..." : "Fechar aula e lançar financeiro"}
+            <button className="btn btn-primary" disabled={saving || !licaoFim.trim() || !materia.trim() || !tarefa.trim() || !presencasOk} onClick={() => submit("close")}>
+              {saving ? "Fechando..." : "Fechar aula e lancar financeiro"}
             </button>
           )}
         </div>

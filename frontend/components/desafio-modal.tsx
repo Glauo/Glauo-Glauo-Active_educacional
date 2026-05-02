@@ -10,6 +10,11 @@ type DesafioData = {
   turma?: string;
   descricao?: string;
   pontos?: number | string;
+  tipo?: string;
+  opcoes?: string[] | string;
+  resposta_correta?: string;
+  livro?: string;
+  licao?: string;
   status?: string;
   [k: string]: unknown;
 };
@@ -19,6 +24,11 @@ type Form = {
   turma: string;
   pontos: string;
   descricao: string;
+  tipo: string;
+  opcoes: string;
+  resposta_correta: string;
+  livro: string;
+  licao: string;
   status: string;
 };
 
@@ -28,6 +38,11 @@ function fromDesafio(d?: DesafioData): Form {
     turma: String(d?.turma || "Todas"),
     pontos: String(d?.pontos || "10"),
     descricao: String(d?.descricao || ""),
+    tipo: String(d?.tipo || "Pergunta direta"),
+    opcoes: Array.isArray(d?.opcoes) ? d.opcoes.join("\n") : String(d?.opcoes || ""),
+    resposta_correta: String(d?.resposta_correta || ""),
+    livro: String(d?.livro || ""),
+    licao: String(d?.licao || ""),
     status: String(d?.status || "Publicado"),
   };
 }
@@ -43,8 +58,21 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
     setErro("");
   }
 
+  function gerarComWiz() {
+    const livro = form.livro || "livro da turma";
+    const licao = form.licao || "licao atual";
+    setForm((p) => ({
+      ...p,
+      titulo: p.titulo || `Desafio Wiz - ${livro} - ${licao}`,
+      descricao: `Responda com base no ${livro}, ${licao}. Leia o conteudo, resolva as questoes e justifique suas respostas quando necessario.`,
+      tipo: p.tipo || "Multipla escolha",
+      opcoes: p.opcoes || "A) Resposta 1\nB) Resposta 2\nC) Resposta 3\nD) Resposta 4",
+      resposta_correta: p.resposta_correta || "A"
+    }));
+  }
+
   async function excluir() {
-    if (!confirm(`Excluir o desafio "${desafio?.titulo}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Excluir o desafio "${desafio?.titulo}"? Esta acao nao pode ser desfeita.`)) return;
     setSaving(true);
     await fetch(`/api/desafios?id=${desafio!.id}`, { method: "DELETE" });
     setSaving(false);
@@ -52,12 +80,15 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
   }
 
   async function salvar() {
-    if (!form.titulo.trim()) { setErro("O título é obrigatório."); return; }
-    if (!form.pontos || isNaN(Number(form.pontos))) { setErro("Informe um valor de pontos válido."); return; }
+    if (!form.titulo.trim()) { setErro("O titulo e obrigatorio."); return; }
+    if (!form.pontos || isNaN(Number(form.pontos))) { setErro("Informe um valor de pontos valido."); return; }
     setSaving(true);
-    const payload = isEdit
-      ? { id: desafio!.id, ...form, pontos: Number(form.pontos) }
-      : { ...form, pontos: Number(form.pontos) };
+    const payload = {
+      ...(isEdit ? { id: desafio!.id } : {}),
+      ...form,
+      opcoes: form.opcoes.split("\n").map((o) => o.trim()).filter(Boolean),
+      pontos: Number(form.pontos)
+    };
     const res = await fetch("/api/desafios", {
       method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -83,38 +114,26 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
         <div className="modal-body">
           <div className="form-grid">
             <div className="form-group form-group-span2">
-              <label className="form-label">Título do desafio *</label>
-              <input className="form-input" placeholder="Ex: Revise o Capítulo 5 e responda as questões" value={form.titulo} onChange={(e) => update("titulo", e.target.value)} autoFocus />
+              <label className="form-label">Titulo do desafio *</label>
+              <input className="form-input" placeholder="Ex: Revise a licao e responda" value={form.titulo} onChange={(e) => update("titulo", e.target.value)} autoFocus />
             </div>
-            <div className="form-group">
-              <label className="form-label">Turma</label>
-              <input className="form-input" placeholder="Ex: Turma A (ou 'Todas')" value={form.turma} onChange={(e) => update("turma", e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Pontos</label>
-              <input className="form-input" type="number" min="0" placeholder="10" value={form.pontos} onChange={(e) => update("pontos", e.target.value)} />
-            </div>
-            <div className="form-group form-group-span2">
-              <label className="form-label">Descrição / Enunciado</label>
-              <textarea className="form-input form-textarea" rows={4} placeholder="Descreva o desafio, as instruções e o que o aluno deve entregar..." value={form.descricao} onChange={(e) => update("descricao", e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Status</label>
-              <select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}>
-                <option>Publicado</option>
-                <option>Rascunho</option>
-                <option>Arquivado</option>
-              </select>
-            </div>
+            <div className="form-group"><label className="form-label">Turma</label><input className="form-input" placeholder="Ex: Turma A ou Todas" value={form.turma} onChange={(e) => update("turma", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Pontos</label><input className="form-input" type="number" min="0" placeholder="10" value={form.pontos} onChange={(e) => update("pontos", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Tipo de desafio</label><select className="form-input" value={form.tipo} onChange={(e) => update("tipo", e.target.value)}><option>Multipla escolha</option><option>Pergunta direta</option><option>Assinalar</option></select></div>
+            <div className="form-group"><label className="form-label">Livro</label><input className="form-input" placeholder="Livro da turma" value={form.livro} onChange={(e) => update("livro", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Licao</label><input className="form-input" placeholder="Ex: Unidade 4 - pagina 36" value={form.licao} onChange={(e) => update("licao", e.target.value)} /></div>
+            <div className="form-group form-group-span2"><label className="form-label">Descricao / enunciado</label><textarea className="form-input form-textarea" rows={4} placeholder="Descreva o desafio, instrucoes e o que o aluno deve entregar..." value={form.descricao} onChange={(e) => update("descricao", e.target.value)} /></div>
+            <div className="form-group form-group-span2"><label className="form-label">Opcoes / alternativas</label><textarea className="form-input form-textarea" rows={3} placeholder="Uma alternativa por linha" value={form.opcoes} onChange={(e) => update("opcoes", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Resposta correta</label><input className="form-input" placeholder="Ex: A ou texto esperado" value={form.resposta_correta} onChange={(e) => update("resposta_correta", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}><option>Publicado</option><option>Rascunho</option><option>Arquivado</option></select></div>
           </div>
           {erro && <div className="form-error">{erro}</div>}
         </div>
         <div className="modal-footer">
           {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
+          <button className="btn btn-secondary" onClick={gerarComWiz} disabled={saving}>Wiz criar licao</button>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button className="btn btn-primary" onClick={salvar} disabled={saving}>
-            {saving ? "Salvando…" : isEdit ? "Salvar alterações" : "Publicar desafio"}
-          </button>
+          <button className="btn btn-primary" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Publicar desafio"}</button>
         </div>
       </div>
     </div>
