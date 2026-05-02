@@ -6,6 +6,7 @@ const SECRET = new TextEncoder().encode(
 );
 
 const PUBLIC_PATHS = ["/login", "/aluno/login", "/api/auth"];
+const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -13,8 +14,10 @@ export async function middleware(req: NextRequest) {
   // Libera caminhos públicos e assets
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
+    PUBLIC_FILES.includes(pathname) ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/icons/")
   ) {
     return NextResponse.next();
   }
@@ -37,5 +40,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png|manifest.json|sw.js|icons/).*)"]
 };
