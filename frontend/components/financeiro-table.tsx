@@ -41,6 +41,22 @@ function fmtDate(v: string) {
   try { return new Date(v).toLocaleDateString("pt-BR"); } catch { return v; }
 }
 
+function isProfessorPayment(d: Lancamento) {
+  const all = [d.aluno, d.nome, d.descricao, d.tipo, d.categoria, d.tipo_origem]
+    .map((v) => String(v || "").toLowerCase())
+    .join(" ");
+  return all.includes("professor") || all.includes("salário") || all.includes("salario") || all.includes("docente") || all.includes("pagto prof") || all.includes("aula_professor");
+}
+
+function professorLabel(d: Lancamento) {
+  return String(d.professor || d.aluno || d.nome || "Professor");
+}
+
+function whatsappUrl(phone: unknown, message: string) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return `https://wa.me/${digits || ""}?text=${encodeURIComponent(message)}`;
+}
+
 /* ── Recibo ── */
 function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose: () => void }) {
   const nome = String(lancamento.aluno || lancamento.nome || "Pagante");
@@ -105,14 +121,14 @@ function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose:
   );
 }
 
-function ReciboBtn({ lancamento }: { lancamento: Lancamento }) {
+function ReciboBtn({ lancamento, label = "Recibo" }: { lancamento: Lancamento; label?: string }) {
   const [open, setOpen] = useState(false);
   const isPago = String(lancamento.status || "").toLowerCase().includes("pago") ||
     String(lancamento.status || "").toLowerCase().includes("baixado");
   if (!isPago) return null;
   return (
     <>
-      <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--blue-600)" }} onClick={() => setOpen(true)} title="Ver recibo">Recibo</button>
+      <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--blue-600)" }} onClick={() => setOpen(true)} title="Ver recibo">{label}</button>
       {open && <ReciboModal lancamento={lancamento} onClose={() => setOpen(false)} />}
     </>
   );
@@ -381,6 +397,104 @@ function ProfessoresTab({ despesas }: { despesas: Lancamento[] }) {
 }
 
 /* ── Tab: Relatório mensal ── */
+function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
+  const [professor, setProfessor] = useState("todos");
+  const profDespesas = useMemo(() => despesas.filter(isProfessorPayment), [despesas]);
+  const professores = useMemo(() => Array.from(new Set(profDespesas.map(professorLabel))).sort(), [profDespesas]);
+  const filtradas = professor === "todos" ? profDespesas : profDespesas.filter((d) => professorLabel(d) === professor);
+  const total = filtradas.reduce((s, d) => s + parseValor(d.valor), 0);
+  const totalPago = filtradas.filter((d) => statusBadge(String(d.status || "")) === "success").reduce((s, d) => s + parseValor(d.valor), 0);
+  const aulasDadas = filtradas.filter((d) => String(d.tipo_origem || "").includes("aula_professor") || d.aula_id).length;
+  const selectedPhone = filtradas.find((d) => String(d.professor_telefone || "").trim())?.professor_telefone;
+  const selectedProfessor = professor === "todos" ? "todos os professores" : professor;
+  const whatsappMessage = `Relatorio de aulas - ${selectedProfessor}\nAulas dadas: ${aulasDadas}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nEm aberto: ${formatBRL(total - totalPago)}`;
+
+  return (
+    <>
+      <div className="metric-grid metric-grid-3">
+        <div className="metric-card metric-card-gold">
+          <div className="metric-icon metric-icon-gold"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg></div>
+          <div className="metric-label">Aulas dadas</div>
+          <div className="metric-value">{aulasDadas}</div>
+          <div className="metric-note">{filtradas.length} lancamentos no filtro</div>
+        </div>
+        <div className="metric-card metric-card-green">
+          <div className="metric-icon metric-icon-green"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>
+          <div className="metric-label">Pago</div>
+          <div className="metric-value" style={{ fontSize: "1.5rem" }}>{formatBRL(totalPago)}</div>
+          <div className="metric-note">Pagamentos confirmados</div>
+        </div>
+        <div className="metric-card metric-card-red">
+          <div className="metric-icon metric-icon-red"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9z" clipRule="evenodd" /></svg></div>
+          <div className="metric-label">Em aberto</div>
+          <div className="metric-value" style={{ fontSize: "1.5rem" }}>{formatBRL(total - totalPago)}</div>
+          <div className="metric-note">Aguardando pagamento</div>
+        </div>
+      </div>
+      <div className="card professor-report">
+        <div className="card-header">
+          <div>
+            <div className="section-eyebrow">Professores</div>
+            <h3 className="section-title">Relatorio de aulas e pagamentos</h3>
+            <p className="section-subtitle">{filtradas.length} lancamentos encontrados</p>
+          </div>
+          <div className="toolbar">
+            <select className="form-input" value={professor} onChange={(e) => setProfessor(e.target.value)} style={{ minWidth: 220 }}>
+              <option value="todos">Todos os professores</option>
+              {professores.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>Gerar PDF</button>
+            <a className="btn btn-secondary btn-sm" href={whatsappUrl(selectedPhone, whatsappMessage)} target="_blank" rel="noreferrer">Enviar WhatsApp</a>
+          </div>
+        </div>
+        <div className="card-body" style={{ paddingTop: 12 }}>
+          {filtradas.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-title">Nenhum pagamento de professor encontrado</div>
+              <p className="empty-desc">Ao fechar uma aula, o pagamento do professor passa a aparecer aqui automaticamente.</p>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead><tr><th>Professor / Aula</th><th>Turma</th><th>Licao</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Acoes</th></tr></thead>
+              <tbody>
+                {filtradas.map((d, i) => {
+                  const nome = professorLabel(d) || `Pagamento ${i + 1}`;
+                  const venc = String(d.vencimento || d.data_vencimento || "-");
+                  const status = String(d.status || d.situacao || "Pendente");
+                  const msg = `Recibo/relatorio de aula\nProfessor: ${nome}\nTurma: ${String(d.turma || "-")}\nLivro: ${String(d.livro || "-")}\nLicao: ${String(d.licao_inicio || "-")} ate ${String(d.licao_fim || "-")}\nValor: ${formatBRL(parseValor(d.valor))}\nStatus: ${status}`;
+                  return (
+                    <tr key={String(d.id || i)}>
+                      <td>
+                        <div className="table-name-cell">
+                          <span className="table-name-primary">{nome}</span>
+                          {String(d.descricao || "") && <span className="table-name-secondary">{String(d.descricao)}</span>}
+                        </div>
+                      </td>
+                      <td>{String(d.turma || "-")}</td>
+                      <td>{String(d.licao_inicio || "-")} {d.licao_fim ? `ate ${String(d.licao_fim)}` : ""}</td>
+                      <td><span style={{ fontWeight: 600 }}>{venc !== "-" ? fmtDate(venc) : "-"}</span></td>
+                      <td><span style={{ fontWeight: 700 }}>{formatBRL(parseValor(d.valor))}</span></td>
+                      <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
+                      <td>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <BaixaBtn lancamento={d} tipo="despesas" />
+                          <ReciboBtn lancamento={d} label="Recibo" />
+                          <a className="btn btn-secondary btn-sm" href={whatsappUrl(d.professor_telefone, msg)} target="_blank" rel="noreferrer">WhatsApp</a>
+                          <EditarLancamentoBtn lancamento={d} tipo="despesas" />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; despesas: Lancamento[] }) {
   const meses = useMemo(() => {
     const map = new Map<string, { chave: string; mes: string; recebido: number; aReceber: number; totalDespesas: number }>();
@@ -480,8 +594,24 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
 }
 
 /* ── Export principal ── */
-export function FinanceiroTable({ recebimentos, despesas }: { recebimentos: Lancamento[]; despesas: Lancamento[] }) {
+export function FinanceiroTable({
+  recebimentos,
+  despesas,
+  canSeeProfessorReports
+}: {
+  recebimentos: Lancamento[];
+  despesas: Lancamento[];
+  canSeeProfessorReports: boolean;
+}) {
   const [tab, setTab] = useState<Tab>("recebimentos");
+  const visibleTabs: { id: Tab; label: string }[] = [
+    { id: "recebimentos", label: "Recebimentos" },
+    { id: "despesas", label: "Despesas" },
+    ...(canSeeProfessorReports ? [
+      { id: "professores" as Tab, label: "Pagto. Professores" },
+      { id: "relatorio" as Tab, label: "Relatorio" },
+    ] : []),
+  ];
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "recebimentos", label: "Recebimentos" },
@@ -495,7 +625,7 @@ export function FinanceiroTable({ recebimentos, despesas }: { recebimentos: Lanc
       <div className="card">
         <div className="card-body" style={{ paddingTop: 16, paddingBottom: 16 }}>
           <div className="tab-bar">
-            {tabs.map((t) => (
+            {visibleTabs.map((t) => (
               <button key={t.id} className={`tab-btn${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
             ))}
           </div>
@@ -503,8 +633,8 @@ export function FinanceiroTable({ recebimentos, despesas }: { recebimentos: Lanc
       </div>
       {tab === "recebimentos" && <RecebimentosTab recebimentos={recebimentos} />}
       {tab === "despesas" && <DespesasTab despesas={despesas} />}
-      {tab === "professores" && <ProfessoresTab despesas={despesas} />}
-      {tab === "relatorio" && <RelatorioTab recebimentos={recebimentos} despesas={despesas} />}
+      {canSeeProfessorReports && tab === "professores" && <ProfessoresAulasTab despesas={despesas} />}
+      {canSeeProfessorReports && tab === "relatorio" && <RelatorioTab recebimentos={recebimentos} despesas={despesas} />}
     </>
   );
 }

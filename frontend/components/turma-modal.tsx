@@ -9,6 +9,8 @@ type TurmaData = {
   nivel?: string;
   professor?: string;
   livro?: string;
+  ultima_licao?: string;
+  valor_aula?: string | number;
   horario?: string;
   dia_semana?: string;
   sala?: string;
@@ -21,6 +23,8 @@ type Form = {
   nivel: string;
   professor: string;
   livro: string;
+  ultima_licao: string;
+  valor_aula: string;
   horario: string;
   dia_semana: string;
   sala: string;
@@ -33,6 +37,8 @@ function fromTurma(t?: TurmaData): Form {
     nivel: String(t?.nivel || ""),
     professor: String(t?.professor || ""),
     livro: String(t?.livro || ""),
+    ultima_licao: String(t?.ultima_licao || ""),
+    valor_aula: String(t?.valor_aula || ""),
     horario: String(t?.horario || ""),
     dia_semana: String(t?.dia_semana || ""),
     sala: String(t?.sala || ""),
@@ -133,6 +139,14 @@ function TurmaModal({
             <div className="form-group">
               <label className="form-label">Livro</label>
               <input className="form-input" placeholder="Livro didático" value={form.livro} onChange={(e) => update("livro", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Lição atual</label>
+              <input className="form-input" placeholder="Ex: Unidade 3 - página 24" value={form.ultima_licao} onChange={(e) => update("ultima_licao", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Valor da aula</label>
+              <input className="form-input" inputMode="decimal" placeholder="Ex: 45,00" value={form.valor_aula} onChange={(e) => update("valor_aula", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Dia(s) da semana</label>

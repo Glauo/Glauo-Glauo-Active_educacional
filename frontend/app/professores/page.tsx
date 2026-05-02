@@ -3,6 +3,7 @@ import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoProfessorBtn, EditarProfessorBtn } from "@/components/professor-modal";
+import { TeacherClassPanel } from "@/components/teacher-class-panel";
 
 type Professor = { id?: string; nome?: string; name?: string; area?: string; especialidade?: string; turmas?: string | string[]; status?: string; situacao?: string; telefone?: string; email?: string; [k: string]: unknown };
 
@@ -12,6 +13,7 @@ export default async function ProfessoresPage() {
 
   const professores = await dbList<Professor>("teachers.json");
   const turmas = await dbList<Record<string, unknown>>("classes.json");
+  const aulas = await dbList<Record<string, unknown>>("class_sessions.json");
 
   const ativos = professores.filter((p) => {
     const s = String(p.status || p.situacao || "ativo").toLowerCase();
@@ -57,6 +59,14 @@ export default async function ProfessoresPage() {
           <div className="metric-note">Turmas por professor</div>
         </div>
       </div>
+
+      <TeacherClassPanel
+        turmas={turmas}
+        aulas={aulas}
+        professores={professores}
+        userName={session.pessoa || session.usuario}
+        userRole={session.perfil}
+      />
 
       <div className="card">
         <div className="toolbar">

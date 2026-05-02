@@ -11,6 +11,7 @@ type ProfessorData = {
   area?: string;
   especialidade?: string;
   carga_horaria?: string | number;
+  valor_aula?: string | number;
   status?: string;
   [k: string]: unknown;
 };
@@ -21,6 +22,7 @@ type Form = {
   telefone: string;
   area: string;
   carga_horaria: string;
+  valor_aula: string;
   status: string;
 };
 
@@ -31,6 +33,7 @@ function fromProf(p?: ProfessorData): Form {
     telefone: String(p?.telefone || ""),
     area: String(p?.area || p?.especialidade || ""),
     carga_horaria: String(p?.carga_horaria || ""),
+    valor_aula: String(p?.valor_aula || ""),
     status: String(p?.status || "Ativo")
   };
 }
@@ -125,6 +128,10 @@ function ProfessorModal({
             <div className="form-group">
               <label className="form-label">Carga horária semanal</label>
               <input className="form-input" type="number" placeholder="Horas/semana" value={form.carga_horaria} onChange={(e) => update("carga_horaria", e.target.value)} min="0" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Valor por aula</label>
+              <input className="form-input" inputMode="decimal" placeholder="Ex: 45,00" value={form.valor_aula} onChange={(e) => update("valor_aula", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>

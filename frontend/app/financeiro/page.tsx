@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoLancamentoBtn } from "@/components/financeiro-modal";
 import { FinanceiroTable } from "@/components/financeiro-table";
+import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Lancamento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; tipo?: string; codigo?: string; [k: string]: unknown };
 
@@ -110,7 +111,7 @@ export default async function FinanceiroPage() {
         </div>
       </div>
 
-      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} />
+      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} canSeeProfessorReports={isAdminOrCoordinator(session)} />
     </AppShell>
   );
 }

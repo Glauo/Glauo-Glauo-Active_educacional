@@ -2174,16 +2174,46 @@
   background: rgba(14,32,64,0.03);
 }
 
+.teacher-class-panel {
+  margin-bottom: 24px;
+}
+
+.teacher-class-body {
+  display: grid;
+  gap: 16px;
+}
+
+.teacher-class-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-success {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(5, 150, 105, 0.24);
+  background: rgba(5, 150, 105, 0.08);
+  color: var(--green-700);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.professor-report .toolbar {
+  justify-content: flex-end;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    IMPRESSÃO — RECIBO
    ═══════════════════════════════════════════════════════════════ */
 
 @media print {
-  body > *:not(#recibo-print-wrapper) { display: none !important; }
+  .sidebar, .topbar, .page-header, .tab-bar, .toolbar, .btn, button { display: none !important; }
   #recibo-print { display: block !important; visibility: visible !important; }
   .modal-overlay { background: none; }
   .modal-box { box-shadow: none; border: none; }
-  .btn, button { display: none !important; }
+  .card { box-shadow: none !important; break-inside: avoid; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
