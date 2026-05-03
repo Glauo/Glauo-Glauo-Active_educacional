@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\prisma",
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\app\\api\\chat-cliente\\[patientId]\\messages",
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\app\\app",
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\components"
+    ]
+  }
+}
