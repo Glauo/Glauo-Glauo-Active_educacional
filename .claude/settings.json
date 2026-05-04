@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Read(//c/Windows/System32/drivers/etc/**)",
-      "PowerShell(Get-Process node, pm2 -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-Process node, pm2 -ErrorAction SilentlyContinue)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Mister Wiz\\\\Desktop\\\\DietHealth_Restaurado\\\\DietHealth_Restaurado\\\\next_app\" -Directory)",
+      "Bash(Select-Object Name)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\prisma",

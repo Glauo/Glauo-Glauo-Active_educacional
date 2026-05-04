@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoLancamentoBtn } from "@/components/financeiro-modal";
 import { FinanceiroTable } from "@/components/financeiro-table";
+import { FinanceiroCommandCenter } from "@/components/financeiro-command-center";
 import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Lancamento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; tipo?: string; codigo?: string; [k: string]: unknown };
@@ -21,9 +22,11 @@ export default async function FinanceiroPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [recebimentos, despesas] = await Promise.all([
+  const [recebimentos, despesas, alunos, professores] = await Promise.all([
     dbList<Lancamento>("receivables.json"),
-    dbList<Lancamento>("payables.json")
+    dbList<Lancamento>("payables.json"),
+    dbList<Record<string, unknown>>("students.json"),
+    dbList<Record<string, unknown>>("teachers.json")
   ]);
 
   const hoje = new Date();
@@ -75,6 +78,8 @@ export default async function FinanceiroPage() {
           <NovoLancamentoBtn />
         </div>
       </div>
+
+      <FinanceiroCommandCenter recebimentos={recebimentos} despesas={despesas} alunos={alunos} professores={professores} />
 
       <div className="metric-grid metric-grid-4">
         <div className="metric-card metric-card-gold">

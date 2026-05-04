@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { BaixaBtn, EditarLancamentoBtn } from "./financeiro-modal";
+import { BaixaBtn, EditarLancamentoBtn, EstornoBtn } from "./financeiro-modal";
 
 type Lancamento = {
   id?: string;
@@ -19,7 +19,7 @@ type Lancamento = {
   [k: string]: unknown;
 };
 
-type Tab = "recebimentos" | "despesas" | "professores" | "relatorio";
+type Tab = "recebimentos" | "despesas" | "inadimplencia" | "professores" | "relatorio";
 
 function parseValor(v: unknown): number {
   return parseFloat(String(v || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
@@ -39,6 +39,20 @@ function statusBadge(s: string) {
 
 function fmtDate(v: string) {
   try { return new Date(v).toLocaleDateString("pt-BR"); } catch { return v; }
+}
+
+function diasAtraso(lancamento: Lancamento) {
+  const venc = String(lancamento.vencimento || lancamento.data_vencimento || "");
+  const d = new Date(venc);
+  if (!venc || isNaN(d.getTime()) || statusBadge(String(lancamento.status || lancamento.situacao || "")) === "success") return 0;
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((hoje.getTime() - d.getTime()) / 86400000));
+}
+
+function extra(row: unknown, key: string) {
+  return (row as Record<string, unknown>)[key];
 }
 
 function isProfessorPayment(d: Lancamento) {
@@ -246,7 +260,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                       <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
                       <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(parseValor(r.valor))}</span></td>
                       <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
+                      <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
                     </tr>
                   );
                 })}
@@ -330,7 +344,7 @@ function DespesasTab({ despesas }: { despesas: Lancamento[] }) {
                       <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
                       <td><span style={{ fontWeight: 700, color: "var(--red-700)" }}>{formatBRL(parseValor(d.valor))}</span></td>
                       <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
+                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EstornoBtn lancamento={d} tipo="despesas" /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
                     </tr>
                   );
                 })}
@@ -408,7 +422,7 @@ function ProfessoresTab({ despesas }: { despesas: Lancamento[] }) {
                       <td><span style={{ fontWeight: 600 }}>{venc !== "—" ? fmtDate(venc) : "—"}</span></td>
                       <td><span style={{ fontWeight: 700 }}>{formatBRL(parseValor(d.valor))}</span></td>
                       <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
+                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EstornoBtn lancamento={d} tipo="despesas" /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
                     </tr>
                   );
                 })}
@@ -504,6 +518,7 @@ function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           <BaixaBtn lancamento={d} tipo="despesas" />
                           <ReciboBtn lancamento={d} label="Recibo" />
+                          <EstornoBtn lancamento={d} tipo="despesas" />
                           <a className="btn btn-secondary btn-sm" href={whatsappUrl(d.professor_telefone, msg)} target="_blank" rel="noreferrer">WhatsApp</a>
                           <EditarLancamentoBtn lancamento={d} tipo="despesas" />
                         </div>
@@ -619,6 +634,82 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
 }
 
 /* ── Export principal ── */
+function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
+  const [busca, setBusca] = useState("");
+  const atrasados = useMemo(() => recebimentos
+    .map((r) => ({ ...(r as Lancamento & Record<string, unknown>), dias: diasAtraso(r) }))
+    .filter((r) => r.dias > 0)
+    .filter((r) => !busca || [r.aluno, r.nome, extra(r, "responsavel"), extra(r, "turma"), r.descricao].map((v) => String(v || "").toLowerCase()).join(" ").includes(busca.toLowerCase()))
+    .sort((a, b) => b.dias - a.dias), [recebimentos, busca]);
+
+  const total = atrasados.reduce((s, r) => s + parseValor(r.valor), 0);
+  const doisOuMais = Object.values(atrasados.reduce((acc: Record<string, number>, r) => {
+    const aluno = String(r.aluno || r.nome || "Nao identificado");
+    acc[aluno] = (acc[aluno] || 0) + 1;
+    return acc;
+  }, {})).filter((count) => count >= 2).length;
+
+  function faixa(dias: number) {
+    if (dias > 60) return "danger";
+    if (dias > 30) return "warning";
+    return "gold";
+  }
+
+  return (
+    <>
+      <div className="metric-grid metric-grid-3">
+        <div className="metric-card metric-card-red"><div className="metric-label">Total em atraso</div><div className="metric-value" style={{ fontSize: "1.5rem" }}>{formatBRL(total)}</div><div className="metric-note">{atrasados.length} boletos vencidos</div></div>
+        <div className="metric-card metric-card-gold"><div className="metric-label">2+ mensalidades</div><div className="metric-value">{doisOuMais}</div><div className="metric-note">Risco de cancelamento</div></div>
+        <div className="metric-card metric-card-red"><div className="metric-label">+60 dias</div><div className="metric-value">{atrasados.filter((r) => r.dias >= 60).length}</div><div className="metric-note">Exige acao da direcao</div></div>
+      </div>
+      <div className="card">
+        <div className="toolbar">
+          <div className="toolbar-left">
+            <div className="search-bar">
+              <span className="search-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg></span>
+              <input className="search-input" placeholder="Buscar inadimplente, turma ou responsavel..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <div className="section-eyebrow">Cobranca inteligente</div>
+            <h3 className="section-title">Lista de inadimplentes</h3>
+            <p className="section-subtitle">Acoes diretas por WhatsApp, boleto e baixa em poucos cliques.</p>
+          </div>
+        </div>
+        <div className="card-body" style={{ paddingTop: 12 }}>
+          {atrasados.length === 0 ? (
+            <div className="empty-state"><div className="empty-title">Sem inadimplencia no filtro</div><p className="empty-desc">Quando houver boleto vencido, ele aparecera aqui com faixa de atraso.</p></div>
+          ) : (
+            <table className="data-table">
+              <thead><tr><th>Aluno</th><th>Turma</th><th>Valor</th><th>Atraso</th><th>Responsavel</th><th>Acoes</th></tr></thead>
+              <tbody>
+                {atrasados.map((r, i) => {
+                  const aluno = String(r.aluno || r.nome || `Aluno ${i + 1}`);
+                  const msg = `Ola! Identificamos pendencia financeira de ${aluno}: ${String(r.descricao || "mensalidade")} no valor de ${formatBRL(parseValor(r.valor))}, vencida ha ${r.dias} dia(s). Podemos ajudar com o pagamento ou negociacao?`;
+                  return (
+                    <tr key={String(r.id || i)}>
+                      <td><div className="table-name-cell"><span className="table-name-primary">{aluno}</span><span className="table-name-secondary">{String(r.descricao || "")}</span></div></td>
+                      <td>{String(extra(r, "turma") || "-")}</td>
+                      <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(parseValor(r.valor))}</td>
+                      <td><span className={`badge badge-${faixa(r.dias)}`}><span className="badge-dot" />{r.dias} dias</span></td>
+                      <td>{String(extra(r, "responsavel") || "-")}</td>
+                      <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><a className="btn btn-secondary btn-sm" href={whatsappUrl(extra(r, "telefone") || extra(r, "whatsapp"), msg)} target="_blank" rel="noreferrer">WhatsApp</a><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function FinanceiroTable({
   recebimentos,
   despesas,
@@ -631,6 +722,7 @@ export function FinanceiroTable({
   const [tab, setTab] = useState<Tab>("recebimentos");
   const visibleTabs: { id: Tab; label: string }[] = [
     { id: "recebimentos", label: "Recebimentos" },
+    { id: "inadimplencia", label: "Inadimplencia" },
     { id: "despesas", label: "Despesas" },
     ...(canSeeProfessorReports ? [
       { id: "professores" as Tab, label: "Pagto. Professores" },
@@ -657,6 +749,7 @@ export function FinanceiroTable({
         </div>
       </div>
       {tab === "recebimentos" && <RecebimentosTab recebimentos={recebimentos} />}
+      {tab === "inadimplencia" && <InadimplenciaTab recebimentos={recebimentos} />}
       {tab === "despesas" && <DespesasTab despesas={despesas} />}
       {canSeeProfessorReports && tab === "professores" && <ProfessoresAulasTab despesas={despesas} />}
       {canSeeProfessorReports && tab === "relatorio" && <RelatorioTab recebimentos={recebimentos} despesas={despesas} />}

@@ -226,6 +226,14 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [aviso, setAviso] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    valor_pago: String(lancamento.valor || ""),
+    forma_pagamento: "PIX",
+    data_baixa: hoje(),
+    banco_destino: "",
+    observacao_baixa: "",
+  });
   const jaFoiBaixado = String(lancamento.status || "").toLowerCase().includes("pago") ||
     String(lancamento.status || "").toLowerCase().includes("baixado");
 
@@ -233,12 +241,27 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
 
   async function darBaixa() {
     setLoading(true);
-    await fetch("/api/financeiro", {
+    const res = await fetch("/api/financeiro", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: lancamento.id, tipo, status: "Pago", data_baixa: new Date().toISOString() })
+      body: JSON.stringify({
+        id: lancamento.id,
+        tipo,
+        status: "Pago",
+        data_baixa: form.data_baixa,
+        valor_pago: form.valor_pago,
+        forma_pagamento: form.forma_pagamento,
+        banco_destino: form.banco_destino,
+        observacao_baixa: form.observacao_baixa,
+      })
     });
     setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(String(data.error || "Erro ao registrar baixa."));
+      return;
+    }
+    setOpen(false);
     setAviso(true);
     setTimeout(() => setAviso(false), 3500);
     router.refresh();
@@ -249,13 +272,73 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
     <button
       className="btn btn-ghost btn-sm"
       style={{ fontSize: "0.75rem", color: "var(--green-700)" }}
-      onClick={darBaixa}
+      onClick={() => setOpen(true)}
       disabled={loading}
-      title="Dar baixa como pago"
+      title="Registrar pagamento"
     >
-      {loading ? "…" : "Baixa"}
+      {loading ? "..." : "Baixa"}
     </button>
     {aviso && <span className="badge badge-success"><span className="badge-dot" />Recibo automatico</span>}
+    {open && (
+      <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
+        <div className="modal-box" style={{ maxWidth: 540 }}>
+          <div className="modal-header">
+            <div>
+              <div className="modal-title">Registrar pagamento</div>
+              <div className="modal-subtitle">Baixa com recibo automatico e log de auditoria</div>
+            </div>
+            <button className="modal-close" onClick={() => setOpen(false)}>
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="form-grid">
+              <div className="form-group"><label className="form-label">Valor pago</label><input className="form-input" inputMode="decimal" value={form.valor_pago} onChange={(e) => setForm((p) => ({ ...p, valor_pago: e.target.value }))} /></div>
+              <div className="form-group"><label className="form-label">Data do pagamento</label><input className="form-input" type="date" value={form.data_baixa} onChange={(e) => setForm((p) => ({ ...p, data_baixa: e.target.value }))} /></div>
+              <div className="form-group"><label className="form-label">Forma</label><select className="form-input" value={form.forma_pagamento} onChange={(e) => setForm((p) => ({ ...p, forma_pagamento: e.target.value }))}><option>PIX</option><option>Boleto</option><option>Dinheiro</option><option>Cartao</option><option>TED</option><option>Cheque</option></select></div>
+              <div className="form-group"><label className="form-label">Banco / conta</label><input className="form-input" value={form.banco_destino} onChange={(e) => setForm((p) => ({ ...p, banco_destino: e.target.value }))} /></div>
+              <div className="form-group form-group-span2"><label className="form-label">Observacao</label><textarea className="form-input form-textarea" rows={3} value={form.observacao_baixa} onChange={(e) => setForm((p) => ({ ...p, observacao_baixa: e.target.value }))} /></div>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => setOpen(false)} disabled={loading}>Cancelar</button>
+            <button className="btn btn-primary" onClick={darBaixa} disabled={loading}>{loading ? "Salvando..." : "Confirmar baixa"}</button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
+  );
+}
+
+export function EstornoBtn({ lancamento, tipo }: { lancamento: LancamentoData; tipo: "recebimentos" | "despesas" }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const pago = String(lancamento.status || "").toLowerCase().includes("pago") ||
+    String(lancamento.status || "").toLowerCase().includes("baixado");
+  if (!pago) return null;
+
+  async function estornar() {
+    const motivo = prompt("Motivo do estorno (obrigatorio):");
+    if (!motivo?.trim()) return;
+    setLoading(true);
+    const res = await fetch("/api/financeiro", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lancamento.id, tipo, estorno: true, estorno_motivo: motivo })
+    });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(String(data.error || "Erro ao estornar."));
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--red-700)" }} onClick={estornar} disabled={loading} title="Estornar baixa com auditoria">
+      {loading ? "..." : "Estornar"}
+    </button>
   );
 }
