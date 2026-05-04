@@ -10628,6 +10628,30 @@ def _session_duration_minutes_from_times(session_obj, turma_obj=None):
         return 0
     return int((fim_dt - inicio_dt).total_seconds() // 60)
 
+_LESSON_TIPO_VALORES = {
+    "presencial em turma": 100.0,
+    "turma online": 100.0,
+    "grupo": 100.0,
+    "kids e teens completo": 100.0,
+    "terceira idade": 100.0,
+    "aulas vip": 50.0,
+    "intensivo vip online": 30.0,
+    "intensivo vip": 30.0,
+    "reposicao": 50.0,
+}
+
+def _teacher_payment_value_for_module(module_label):
+    mn = normalize_text(module_label or "")
+    if "intensivo" in mn and "vip" in mn:
+        return 30.0
+    if "reposicao" in mn:
+        return 50.0
+    if "vip" in mn:
+        return 50.0
+    if "presencial" in mn or "turma" in mn or "grupo" in mn or "kids" in mn or "terceira" in mn:
+        return 100.0
+    return _teacher_payment_value_for_minutes(_teacher_payment_minutes_for_module(module_label))
+
 def _teacher_payment_minutes_for_module(module_label, session_obj=None, turma_obj=None):
     modulo_norm = normalize_text(module_label)
     if "intensivo" in modulo_norm and "vip" in modulo_norm:
@@ -10644,6 +10668,8 @@ def _teacher_payment_minutes_for_module(module_label, session_obj=None, turma_ob
         return 120
     if "terceira idade" in modulo_norm:
         return 120
+    if "reposicao" in modulo_norm:
+        return 60
     minutes_by_time = _session_duration_minutes_from_times(session_obj, turma_obj)
     if minutes_by_time > 0:
         return minutes_by_time
@@ -10671,7 +10697,7 @@ def _teacher_payment_info_for_session(session_obj, force_recalculate=False):
         minutos = _teacher_payment_minutes_for_module(modulo_label, sess, turma_obj)
     valor = 0.0 if force_recalculate else float(sess.get("pagamento_valor_aula", 0) or 0)
     if valor <= 0:
-        valor = _teacher_payment_value_for_minutes(minutos)
+        valor = _teacher_payment_value_for_module(modulo_label)
     modulo_pag = str(sess.get("pagamento_tipo_aula", "")).strip() or modulo_label
     return {
         "ref": _teacher_payment_ref_for_session(sess),
@@ -19573,6 +19599,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 "Aulas Vip",
                 "Intensivo vip online",
                 "Kids e teens completo",
+                "Reposição",
             ]
             # Nao podemos "resetar" valores de widgets diretamente apos o submit (StreamlitAPIException).
             # Em vez disso, usamos chaves versionadas e incrementamos a versao apenas quando o cadastro
@@ -19786,6 +19813,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                 st.markdown("### Turma")
                 turma = st.selectbox("Vincular a Turma", turma_opts, key=turma_key)
                 modulo_sel = st.selectbox("Modulo do curso", modulos, key=modulo_key)
+                st.caption(f"Valor da aula (pagamento professor): {format_money(_teacher_payment_value_for_module(modulo_sel))}")
                 livro_sel = st.selectbox("Livro/Nivel", livro_opts, key=livro_key)
                 vip_tipo_plano = ""
                 vip_aulas_total = 0
@@ -20198,6 +20226,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             "Aulas Vip",
                             "Intensivo vip online",
                             "Kids e teens completo",
+                            "Reposição",
                         ]
                         modulo_atual = aluno_obj.get("modulo", modulos[0] if modulos else "")
                         if modulo_atual not in modulos and modulo_atual:
@@ -20207,6 +20236,7 @@ elif st.session_state["role"] in ("Coordenador", "Admin"):
                             modulos,
                             index=modulos.index(modulo_atual) if modulo_atual in modulos else 0,
                         )
+                        st.caption(f"Valor da aula (pagamento professor): {format_money(_teacher_payment_value_for_module(new_modulo))}")
                         livro_atual = aluno_obj.get("livro", "")
                         livro_opts = ["Automatico (Turma)"] + book_levels()
                         if livro_atual and livro_atual not in livro_opts:
