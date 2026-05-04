@@ -22,10 +22,16 @@ function isPaid(row: Row) {
   return s.includes("pago") || s.includes("baixado") || s.includes("liquidado");
 }
 
+function parseBRDate(v: string): Date {
+  const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return new Date(v);
+}
+
 function dateOf(row: Row) {
   const raw = text(row.vencimento || row.data_vencimento || row.data_pagamento || row.data_baixa);
   if (!raw) return null;
-  const date = new Date(raw);
+  const date = parseBRDate(raw);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

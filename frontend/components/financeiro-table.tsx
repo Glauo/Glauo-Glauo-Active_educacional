@@ -37,13 +37,24 @@ function statusBadge(s: string) {
   return "neutral";
 }
 
+function parseBRDate(v: string): Date {
+  if (!v) return new Date(NaN);
+  const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return new Date(v);
+}
+
 function fmtDate(v: string) {
-  try { return new Date(v).toLocaleDateString("pt-BR"); } catch { return v; }
+  if (!v) return v;
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(v)) return v.substring(0, 10);
+  const d = parseBRDate(v);
+  if (isNaN(d.getTime())) return v;
+  return d.toLocaleDateString("pt-BR");
 }
 
 function diasAtraso(lancamento: Lancamento) {
   const venc = String(lancamento.vencimento || lancamento.data_vencimento || "");
-  const d = new Date(venc);
+  const d = parseBRDate(venc);
   if (!venc || isNaN(d.getTime()) || statusBadge(String(lancamento.status || lancamento.situacao || "")) === "success") return 0;
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -179,8 +190,8 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroPeriodo, setFiltroPeriodo] = useState("Todos");
 
-  function isMesAtual(v: string) { const d = new Date(v), n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }
-  function isMesPassado(v: string) { const d = new Date(v), n = new Date(), mp = new Date(n.getFullYear(), n.getMonth() - 1, 1); return d.getMonth() === mp.getMonth() && d.getFullYear() === mp.getFullYear(); }
+  function isMesAtual(v: string) { const d = parseBRDate(v), n = new Date(); return !isNaN(d.getTime()) && d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }
+  function isMesPassado(v: string) { const d = parseBRDate(v), n = new Date(), mp = new Date(n.getFullYear(), n.getMonth() - 1, 1); return !isNaN(d.getTime()) && d.getMonth() === mp.getMonth() && d.getFullYear() === mp.getFullYear(); }
 
   const filtrados = useMemo(() => recebimentos.filter((r) => {
     const nome = String(r.aluno || r.nome || r.descricao || "").toLowerCase();
@@ -247,7 +258,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                   const nome = String(r.aluno || r.nome || r.descricao || `Lançamento ${i + 1}`);
                   const venc = String(r.vencimento || r.data_vencimento || "—");
                   const status = String(r.status || r.situacao || "Pendente");
-                  const atrasado = venc !== "—" && statusBadge(status) !== "success" && new Date(venc) < new Date();
+                  const atrasado = venc !== "—" && statusBadge(status) !== "success" && parseBRDate(venc) < new Date();
                   return (
                     <tr key={String(r.id || i)}>
                       <td>
@@ -332,7 +343,7 @@ function DespesasTab({ despesas }: { despesas: Lancamento[] }) {
                   const nome = String(d.aluno || d.nome || d.descricao || `Despesa ${i + 1}`);
                   const venc = String(d.vencimento || d.data_vencimento || "—");
                   const status = String(d.status || d.situacao || "Pendente");
-                  const atrasado = venc !== "—" && statusBadge(status) !== "success" && new Date(venc) < new Date();
+                  const atrasado = venc !== "—" && statusBadge(status) !== "success" && parseBRDate(venc) < new Date();
                   return (
                     <tr key={String(d.id || i)}>
                       <td>
@@ -546,7 +557,7 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
 
     for (const r of recebimentos) {
       const v = r.vencimento || r.data_vencimento; if (!v) continue;
-      const d = new Date(String(v)); if (isNaN(d.getTime())) continue;
+      const d = parseBRDate(String(v)); if (isNaN(d.getTime())) continue;
       const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const entry = addEntry(chave, d);
       const s = String(r.status || r.situacao || "").toLowerCase();
@@ -556,7 +567,7 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
 
     for (const d of despesas) {
       const v = d.vencimento || d.data_vencimento; if (!v) continue;
-      const dt = new Date(String(v)); if (isNaN(dt.getTime())) continue;
+      const dt = parseBRDate(String(v)); if (isNaN(dt.getTime())) continue;
       const chave = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
       addEntry(chave, dt).totalDespesas += parseValor(d.valor);
     }
