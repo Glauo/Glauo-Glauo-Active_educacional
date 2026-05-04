@@ -22,11 +22,13 @@ export default async function FinanceiroPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [recebimentos, despesas, alunos, professores] = await Promise.all([
+  const [recebimentos, despesas, alunos, professores, fornecedores, fechamentos] = await Promise.all([
     dbList<Lancamento>("receivables.json"),
     dbList<Lancamento>("payables.json"),
     dbList<Record<string, unknown>>("students.json"),
-    dbList<Record<string, unknown>>("teachers.json")
+    dbList<Record<string, unknown>>("teachers.json"),
+    dbList<Record<string, unknown>>("fornecedores.json"),
+    dbList<Record<string, unknown>>("professor_fechamentos.json"),
   ]);
 
   const hoje = new Date();
@@ -62,6 +64,34 @@ export default async function FinanceiroPage() {
     return !s.includes("pago") && !s.includes("baixado") && !s.includes("liquidado");
   });
 
+  // Alunos inadimplentes (alunos únicos com parcelas em atraso)
+  const alunosInadimplentes = new Set<string>();
+  for (const r of recebimentos) {
+    const s = String(r.status || r.situacao || "").toLowerCase();
+    if (s.includes("pago") || s.includes("baixado") || s.includes("liquidado")) continue;
+    const venc = r.vencimento || r.data_vencimento;
+    if (!venc) continue;
+    const d = new Date(String(venc));
+    if (!isNaN(d.getTime()) && d < hoje) {
+      const aluno = String(r.aluno || r.nome || "");
+      if (aluno) alunosInadimplentes.add(aluno);
+    }
+  }
+
+  // Parcelas vencendo nos próximos 7 dias
+  const em7dias = new Date(hoje);
+  em7dias.setDate(em7dias.getDate() + 7);
+  let vencemEm7Dias = 0;
+  for (const r of recebimentos) {
+    const s = String(r.status || r.situacao || "").toLowerCase();
+    if (s.includes("pago") || s.includes("baixado") || s.includes("liquidado")) continue;
+    const venc = r.vencimento || r.data_vencimento;
+    if (!venc) continue;
+    const d = new Date(String(venc));
+    d.setHours(0, 0, 0, 0);
+    if (!isNaN(d.getTime()) && d > hoje && d <= em7dias) vencemEm7Dias++;
+  }
+
   return (
     <AppShell breadcrumb="Financeiro" userName={session.pessoa || session.usuario} userRole={session.perfil}>
       <div className="page-header">
@@ -81,7 +111,7 @@ export default async function FinanceiroPage() {
 
       <FinanceiroCommandCenter recebimentos={recebimentos} despesas={despesas} alunos={alunos} professores={professores} />
 
-      <div className="metric-grid metric-grid-4">
+      <div className="metric-grid metric-grid-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
         <div className="metric-card metric-card-gold">
           <div className="metric-icon metric-icon-gold">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>
@@ -114,9 +144,25 @@ export default async function FinanceiroPage() {
           <div className="metric-value">{vencemHoje}</div>
           <div className="metric-note">Requerem ação imediata</div>
         </div>
+        <div className="metric-card metric-card-red">
+          <div className="metric-icon metric-icon-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
+          </div>
+          <div className="metric-label">Alunos inadimplentes</div>
+          <div className="metric-value">{alunosInadimplentes.size}</div>
+          <div className="metric-note">Com parcelas em atraso</div>
+        </div>
+        <div className="metric-card metric-card-gold">
+          <div className="metric-icon metric-icon-gold">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
+          </div>
+          <div className="metric-label">Vencem em 7 dias</div>
+          <div className="metric-value">{vencemEm7Dias}</div>
+          <div className="metric-note">Parcelas próximas do vencimento</div>
+        </div>
       </div>
 
-      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} canSeeProfessorReports={isAdminOrCoordinator(session)} />
+      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} canSeeProfessorReports={isAdminOrCoordinator(session)} professores={professores} fornecedores={fornecedores} fechamentos={fechamentos} />
     </AppShell>
   );
 }

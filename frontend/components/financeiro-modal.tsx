@@ -23,6 +23,9 @@ type Form = {
   valor: string;
   vencimento: string;
   status: string;
+  tipo_lancamento_detalhe: string;
+  qtd_parcelas: string;
+  observacoes: string;
 };
 
 const hoje = () => new Date().toISOString().slice(0, 10);
@@ -45,7 +48,10 @@ function LancamentoModal({
     descricao: String(lancamento?.descricao || ""),
     valor: String(lancamento?.valor || ""),
     vencimento: String(lancamento?.vencimento || lancamento?.data_vencimento || hoje()),
-    status: String(lancamento?.status || "Pendente")
+    status: String(lancamento?.status || "Pendente"),
+    tipo_lancamento_detalhe: String(lancamento?.tipo_lancamento_detalhe || "Mensalidade"),
+    qtd_parcelas: "1",
+    observacoes: String(lancamento?.observacoes || ""),
   });
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
@@ -70,22 +76,59 @@ function LancamentoModal({
     }
     if (!form.vencimento) { setErro("Informe a data de vencimento."); return; }
 
-    setSaving(true);
-    const payload = isEdit
-      ? { id: lancamento!.id, tipo: form.tipo_lancamento, aluno: form.aluno, descricao: form.descricao, valor: form.valor, vencimento: form.vencimento, status: form.status }
-      : { tipo: form.tipo_lancamento, aluno: form.aluno, descricao: form.descricao, valor: form.valor, vencimento: form.vencimento, status: form.status };
+    const qtdParcelas = Math.min(24, Math.max(1, parseInt(form.qtd_parcelas) || 1));
 
-    const res = await fetch(`/api/financeiro`, {
-      method: isEdit ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    setSaving(false);
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      setErro((d as { error?: string }).error || "Erro ao salvar.");
+    setSaving(true);
+
+    if (isEdit) {
+      const payload = {
+        id: lancamento!.id,
+        tipo: form.tipo_lancamento,
+        aluno: form.aluno,
+        descricao: form.descricao,
+        valor: form.valor,
+        vencimento: form.vencimento,
+        status: form.status,
+        tipo_lancamento_detalhe: form.tipo_lancamento_detalhe,
+        observacoes: form.observacoes,
+      };
+      const res = await fetch("/api/financeiro", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      setSaving(false);
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setErro((d as { error?: string }).error || "Erro ao salvar."); return; }
+      onSaved();
       return;
     }
+
+    // Criação: suporte a parcelas múltiplas
+    const vencBase = new Date(form.vencimento + "T12:00:00");
+    const erros: string[] = [];
+
+    for (let i = 0; i < qtdParcelas; i++) {
+      const vencParcela = new Date(vencBase);
+      vencParcela.setDate(vencParcela.getDate() + i * 30);
+      const vencStr = vencParcela.toISOString().slice(0, 10);
+      const descParcela = qtdParcelas > 1
+        ? `${form.descricao ? form.descricao + " — " : ""}Parcela ${i + 1}/${qtdParcelas}`
+        : form.descricao;
+
+      const payload = {
+        tipo: form.tipo_lancamento,
+        aluno: form.aluno,
+        descricao: descParcela,
+        valor: form.valor,
+        vencimento: vencStr,
+        status: form.status,
+        tipo_lancamento_detalhe: form.tipo_lancamento_detalhe,
+        observacoes: form.observacoes,
+        parcela_numero: qtdParcelas > 1 ? i + 1 : undefined,
+        parcela_total: qtdParcelas > 1 ? qtdParcelas : undefined,
+      };
+      const res = await fetch("/api/financeiro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); erros.push((d as { error?: string }).error || `Erro na parcela ${i + 1}.`); }
+    }
+
+    setSaving(false);
+    if (erros.length) { setErro(erros.join(" | ")); return; }
     onSaved();
   }
 
@@ -158,6 +201,34 @@ function LancamentoModal({
               <label className="form-label">Vencimento *</label>
               <input className="form-input" type="date" value={form.vencimento} onChange={(e) => update("vencimento", e.target.value)} />
             </div>
+            {isRecebimento && (
+              <div className="form-group">
+                <label className="form-label">Tipo de cobrança</label>
+                <select className="form-input" value={form.tipo_lancamento_detalhe} onChange={(e) => update("tipo_lancamento_detalhe", e.target.value)}>
+                  <option>Mensalidade</option>
+                  <option>Material</option>
+                  <option>Aulas avulsas</option>
+                  <option>Taxa de matrícula</option>
+                  <option>Reposição</option>
+                  <option>Evento</option>
+                  <option>Outros</option>
+                </select>
+              </div>
+            )}
+            {!isEdit && isRecebimento && (
+              <div className="form-group">
+                <label className="form-label">Nº de parcelas</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={form.qtd_parcelas}
+                  onChange={(e) => update("qtd_parcelas", e.target.value)}
+                  placeholder="1"
+                />
+              </div>
+            )}
             <div className="form-group form-group-span2">
               <label className="form-label">Status</label>
               <select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}>
@@ -167,6 +238,16 @@ function LancamentoModal({
                 <option>Boleto gerado</option>
                 <option>Cancelado</option>
               </select>
+            </div>
+            <div className="form-group form-group-span2">
+              <label className="form-label">Observações</label>
+              <textarea
+                className="form-input form-textarea"
+                rows={2}
+                placeholder="Observações opcionais..."
+                value={form.observacoes}
+                onChange={(e) => update("observacoes", e.target.value)}
+              />
             </div>
           </div>
           {erro && <div className="form-error">{erro}</div>}

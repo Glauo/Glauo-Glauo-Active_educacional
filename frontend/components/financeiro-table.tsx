@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { BaixaBtn, EditarLancamentoBtn, EstornoBtn } from "./financeiro-modal";
+import { FinanceiroFornecedores } from "./financeiro-fornecedores";
+import { FinanceiroProfessorFechamento } from "./financeiro-professor-fechamento";
 
 type Lancamento = {
   id?: string;
@@ -31,7 +33,7 @@ type Lancamento = {
   [k: string]: unknown;
 };
 
-type Tab = "recebimentos" | "despesas" | "inadimplencia" | "professores" | "relatorio";
+type Tab = "recebimentos" | "despesas" | "inadimplencia" | "professores" | "fornecedores" | "fechamentos" | "relatorio";
 
 function parseValor(v: unknown): number {
   return parseFloat(String(v || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
@@ -917,7 +919,7 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                           <td><div className="table-name-cell"><span className="table-name-primary">{aluno}</span><span className="table-name-secondary">{String(r.descricao || "")}</span></div></td>
                           <td>{String(extra(r, "turma") || "—")}</td>
                           <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(parseValor(r.valor))}</td>
-                          <td><span className={`badge badge-${faixa(r.dias as number)}`}><span className="badge-dot" />{r.dias} dias</span></td>
+                          <td><span className={`badge badge-${faixa(r.dias as number)}`}><span className="badge-dot" />{r.dias as number} dias</span></td>
                           <td>{String(extra(r, "responsavel") || "—")}</td>
                           <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><a className="btn btn-secondary btn-sm" href={whatsappUrl(extra(r, "telefone") || extra(r, "whatsapp"), msg)} target="_blank" rel="noreferrer">WhatsApp</a><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
@@ -1038,22 +1040,33 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
 export function FinanceiroTable({
   recebimentos,
   despesas,
-  canSeeProfessorReports
+  canSeeProfessorReports,
+  professores = [],
+  fornecedores = [],
+  fechamentos = [],
 }: {
   recebimentos: Lancamento[];
   despesas: Lancamento[];
   canSeeProfessorReports: boolean;
+  professores?: Record<string, unknown>[];
+  fornecedores?: Record<string, unknown>[];
+  fechamentos?: Record<string, unknown>[];
 }) {
   const [tab, setTab] = useState<Tab>("recebimentos");
   const visibleTabs: { id: Tab; label: string }[] = [
     { id: "recebimentos", label: "Recebimentos" },
-    { id: "inadimplencia", label: "Inadimplência" },
     { id: "despesas", label: "Despesas" },
+    { id: "inadimplencia", label: "Inadimplência" },
     ...(canSeeProfessorReports ? [
-      { id: "professores" as Tab, label: "Pagto. Professores" },
+      { id: "professores" as Tab, label: "Professores" },
+      { id: "fornecedores" as Tab, label: "Fornecedores" },
+      { id: "fechamentos" as Tab, label: "Fechamentos" },
       { id: "relatorio" as Tab, label: "Relatório" },
     ] : []),
   ];
+
+  // Suppress unused warning for fechamentos (passed through to child as-is via props)
+  void fechamentos;
 
   return (
     <>
@@ -1067,9 +1080,17 @@ export function FinanceiroTable({
         </div>
       </div>
       {tab === "recebimentos" && <RecebimentosTab recebimentos={recebimentos} />}
-      {tab === "inadimplencia" && <InadimplenciaTab recebimentos={recebimentos} />}
       {tab === "despesas" && <DespesasTab despesas={despesas} />}
+      {tab === "inadimplencia" && <InadimplenciaTab recebimentos={recebimentos} />}
       {canSeeProfessorReports && tab === "professores" && <ProfessoresAulasTab despesas={despesas} />}
+      {canSeeProfessorReports && tab === "fornecedores" && (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <FinanceiroFornecedores fornecedores={fornecedores as any} despesas={despesas} />
+      )}
+      {canSeeProfessorReports && tab === "fechamentos" && (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <FinanceiroProfessorFechamento professores={professores as any} payables={despesas} />
+      )}
       {canSeeProfessorReports && tab === "relatorio" && <RelatorioTab recebimentos={recebimentos} despesas={despesas} />}
     </>
   );
