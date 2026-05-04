@@ -59,6 +59,25 @@ const navSections = [
         )
       },
       {
+        href: "/mural",
+        label: "Mural",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H7l-4 3v-3H4a2 2 0 01-2-2V5zm4 2a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h5a1 1 0 100-2H6z" />
+          </svg>
+        )
+      },
+      {
+        href: "/licoes",
+        label: "Licoes de Casa",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 5a1 1 0 011-1h5a1 1 0 110 2H9a1 1 0 01-1-1zm-1 4a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+        )
+      },
+      {
         href: "/desafios",
         label: "Desafios",
         icon: (

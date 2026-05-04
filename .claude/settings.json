@@ -1,10 +1,15 @@
 {
   "permissions": {
+    "allow": [
+      "Read(//c/Windows/System32/drivers/etc/**)",
+      "PowerShell(Get-Process node, pm2 -ErrorAction SilentlyContinue)"
+    ],
     "additionalDirectories": [
       "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\prisma",
       "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\app\\api\\chat-cliente\\[patientId]\\messages",
       "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\app\\app",
-      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\components"
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\next_app\\src\\components",
+      "C:\\Users\\Mister Wiz\\Desktop\\DietHealth_Restaurado\\DietHealth_Restaurado\\.github\\workflows"
     ]
   }
 }

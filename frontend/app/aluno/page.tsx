@@ -2,6 +2,8 @@ import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { StudentLogoutBtn } from "@/components/student-logout-btn";
+import { HomeworkSubmitForm, MuralConfirmButton } from "@/components/school-modules-client";
+import { isHomeworkActivity, studentMatchesTarget, tagBadge, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
@@ -14,13 +16,16 @@ export default async function AlunoHomePage() {
   if (!session) redirect("/aluno/login");
   if (session.perfil !== "Aluno") redirect("/");
 
-  const [alunos, desafios, conclusoes, notas, frequencias, recebimentos] = await Promise.all([
+  const [alunos, desafios, conclusoes, notas, frequencias, recebimentos, mensagens, atividades, entregas] = await Promise.all([
     dbList<Aluno>("students.json"),
     dbList<Desafio>("challenges.json"),
     dbList<Conclusao>("challenge_completions.json"),
     dbList<Nota>("grades.json"),
     dbList<Record<string, unknown>>("attendance.json"),
-    dbList<Recebimento>("receivables.json")
+    dbList<Recebimento>("receivables.json"),
+    dbList<WallPost>("messages.json"),
+    dbList<Homework>("activities.json"),
+    dbList<HomeworkSubmission>("activity_submissions.json")
   ]);
 
   const meuPerfil = alunos.find((a) => a.login === session.usuario);
@@ -44,6 +49,20 @@ export default async function AlunoHomePage() {
   const totalDebitos = debitosAbertos.reduce((s, r) => s + (parseFloat(String(r.valor || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0), 0);
 
   const concluidosIds = new Set(minhasConclusoes.map((c) => c.desafio_id));
+  const muralPosts = mensagens
+    .filter((post) => studentMatchesTarget(post, session, meuPerfil))
+    .sort((a, b) => {
+      if (Boolean(a.fixado) !== Boolean(b.fixado)) return Boolean(a.fixado) ? -1 : 1;
+      return text(b.publicado_em || b.data).localeCompare(text(a.publicado_em || a.data));
+    });
+  const minhasLicoes = atividades
+    .filter(isHomeworkActivity)
+    .filter((atividade) => studentMatchesTarget(atividade, session, meuPerfil))
+    .filter((atividade) => !text(atividade.status).toLowerCase().includes("rascunho"));
+  const minhasEntregas = entregas.filter((entrega) => entrega.aluno_login === session.usuario || entrega.aluno === session.pessoa);
+  const entregasPorLicao = new Map(minhasEntregas.map((entrega) => [text(entrega.activity_id), entrega]));
+  const muralNaoLido = muralPosts.filter((post) => post.requer_confirmacao && !(post.confirmacoes || []).some((item) => item.usuario === session.usuario)).length;
+  const licoesPendentes = minhasLicoes.filter((licao) => !entregasPorLicao.has(text(licao.id))).length;
 
   const ranking = Object.entries(
     conclusoes.reduce((acc: Record<string, number>, c) => {
@@ -126,6 +145,72 @@ export default async function AlunoHomePage() {
             <div className="metric-label">Posição no ranking</div>
             <div className="metric-value">{minhaPos > 0 ? `#${minhaPos}` : "—"}</div>
             <div className="metric-note">Entre todos os alunos</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: "24px" }}>
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Mural escolar</div>
+              <h3 className="section-title">Noticias e comunicados</h3>
+              <p className="section-subtitle">{muralPosts.length} comunicados disponiveis - {muralNaoLido} aguardando leitura</p>
+            </div>
+            {muralNaoLido > 0 && <span className="badge badge-warning"><span className="badge-dot" />Nao lido</span>}
+          </div>
+          <div className="card-body" style={{ display: "grid", gap: "12px", paddingTop: "12px" }}>
+            {muralPosts.length === 0 ? (
+              <div className="empty-state"><div className="empty-title">Nenhum comunicado publicado</div><p className="empty-desc">Os avisos da escola aparecem aqui assim que forem publicados.</p></div>
+            ) : muralPosts.slice(0, 4).map((post) => {
+              const tipo = text(post.tipo_post || post.tipo || "Aviso Geral");
+              const confirmado = (post.confirmacoes || []).some((item) => item.usuario === session.usuario);
+              return (
+                <article className="entity-card" key={text(post.id || post.titulo)} style={{ cursor: "default" }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                    <span className={`badge badge-${tagBadge(tipo)}`}><span className="badge-dot" />{tipo}</span>
+                    {post.fixado && <span className="badge badge-gold"><span className="badge-dot" />Fixado</span>}
+                    {post.requer_confirmacao && <span className={`badge badge-${confirmado ? "success" : "warning"}`}><span className="badge-dot" />{confirmado ? "Lido" : "Confirmar leitura"}</span>}
+                  </div>
+                  <div className="entity-card-name">{text(post.titulo || "Comunicado")}</div>
+                  <div className="entity-card-sub">{text(post.autor || "Escola")} | {text(post.data || "-")}</div>
+                  <p style={{ color: "var(--text-secondary)", marginTop: "10px", marginBottom: "12px" }}>{text(post.mensagem).slice(0, 340)}{text(post.mensagem).length > 340 ? "..." : ""}</p>
+                  {(post.requer_confirmacao || (post.enquete_opcoes || []).length > 0) && <MuralConfirmButton post={post} compact />}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: "24px" }}>
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Licoes de casa</div>
+              <h3 className="section-title">Tarefas publicadas</h3>
+              <p className="section-subtitle">{minhasLicoes.length} licoes para sua turma - {licoesPendentes} pendentes</p>
+            </div>
+          </div>
+          <div className="card-body" style={{ display: "grid", gap: "16px", paddingTop: "12px" }}>
+            {minhasLicoes.length === 0 ? (
+              <div className="empty-state"><div className="empty-title">Nenhuma licao de casa aberta</div><p className="empty-desc">Quando o professor publicar uma tarefa, ela aparecera aqui.</p></div>
+            ) : minhasLicoes.map((licao) => {
+              const entrega = entregasPorLicao.get(text(licao.id));
+              return (
+                <section className="entity-card" key={text(licao.id)} style={{ cursor: "default" }}>
+                  <div className="entity-card-top">
+                    <div className="entity-card-info">
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                        <span className="badge badge-info"><span className="badge-dot" />{text(licao.disciplina || "Geral")}</span>
+                        <span className={`badge badge-${entrega?.status === "Corrigido" ? "success" : entrega ? "warning" : "danger"}`}><span className="badge-dot" />{entrega?.status || "Pendente"}</span>
+                      </div>
+                      <div className="entity-card-name">{text(licao.titulo)}</div>
+                      <div className="entity-card-sub">Prazo: {text(licao.due_date || "Sem prazo")} | {text(licao.turma || minhaTurma)}</div>
+                    </div>
+                    {entrega?.status === "Corrigido" && <span className="badge badge-gold"><span className="badge-dot" />Nota {Number(entrega.score || 0).toFixed(1)}</span>}
+                  </div>
+                  {text(licao.descricao) && <p style={{ color: "var(--text-secondary)", marginBottom: "12px" }}>{text(licao.descricao)}</p>}
+                  <HomeworkSubmitForm homework={licao} submission={entrega} />
+                </section>
+              );
+            })}
           </div>
         </div>
 

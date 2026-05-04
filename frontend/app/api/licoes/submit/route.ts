@@ -1,0 +1,46 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { dbList, dbSet } from "@/lib/db";
+import { autoScore, nowIso, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
+
+export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session || session.perfil !== "Aluno") return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
+  const body = (await req.json()) as { activity_id?: string; answers?: Record<string, string> };
+  const activityId = text(body.activity_id);
+  const activities = await dbList<Homework>("activities.json");
+  const homework = activities.find((item) => text(item.id) === activityId);
+  if (!homework) return NextResponse.json({ error: "Licao nao encontrada." }, { status: 404 });
+
+  const answers = body.answers || {};
+  const missing = (homework.questions || []).filter((question) => !text(answers[question.id]));
+  if (missing.length > 0) {
+    return NextResponse.json({ error: "Responda todas as questoes obrigatorias antes de enviar." }, { status: 400 });
+  }
+
+  const submissions = await dbList<HomeworkSubmission>("activity_submissions.json");
+  const existingIdx = submissions.findIndex((item) => text(item.activity_id) === activityId && text(item.aluno_login) === text(session.usuario));
+  if (existingIdx >= 0 && !homework.allow_resubmission) {
+    return NextResponse.json({ error: "Esta licao ja foi enviada e nao permite reenvio." }, { status: 403 });
+  }
+
+  const scored = autoScore(homework, answers);
+  const submission: HomeworkSubmission = {
+    ...(existingIdx >= 0 ? submissions[existingIdx] : {}),
+    id: existingIdx >= 0 ? submissions[existingIdx].id : crypto.randomUUID(),
+    activity_id: activityId,
+    aluno: session.pessoa || session.usuario,
+    aluno_login: session.usuario,
+    turma: text(session.unit),
+    answers,
+    question_scores: scored.questionScores,
+    score: scored.total,
+    status: "Aguardando correcao",
+    submitted_at: nowIso(),
+  };
+  const next = existingIdx >= 0
+    ? submissions.map((item, index) => index === existingIdx ? submission : item)
+    : [...submissions, submission];
+  await dbSet("activity_submissions.json", next);
+  return NextResponse.json(submission, { status: 201 });
+}
