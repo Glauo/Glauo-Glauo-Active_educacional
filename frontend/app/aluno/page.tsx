@@ -93,7 +93,7 @@ export default async function AlunoHomePage() {
             <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
             <path d="M6 12v5c3 3 9 3 12 0v-5" />
           </svg>
-          <span style={{ color: "white", fontWeight: 700, fontSize: "1rem" }}>Active Educacional</span>
+          <span style={{ color: "white", fontWeight: 700, fontSize: "1rem" }}>Ativo Educacional</span>
           <span style={{ color: "rgba(255,255,255,0.3)", margin: "0 4px" }}>/</span>
           <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.875rem" }}>Área do Aluno</span>
         </div>

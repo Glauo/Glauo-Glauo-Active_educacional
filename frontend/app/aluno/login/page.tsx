@@ -62,7 +62,7 @@ export default function AlunoLoginPage() {
             Área do Aluno
           </h1>
           <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "1rem", lineHeight: 1.6, maxWidth: "320px" }}>
-            Acesse seus desafios, materiais e acompanhe seu progresso na Active Educacional.
+            Acesse seus desafios, materiais e acompanhe seu progresso na Ativo Educacional.
           </p>
 
           <div style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -85,7 +85,7 @@ export default function AlunoLoginPage() {
         <div className="login-form-box">
           <div style={{ marginBottom: "32px" }}>
             <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--blue-500)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>
-              Active Educacional
+              Ativo Educacional
             </div>
             <h2 style={{ fontSize: "1.625rem", fontWeight: 800, color: "var(--text-primary)", marginBottom: "6px" }}>
               Bem-vindo de volta
