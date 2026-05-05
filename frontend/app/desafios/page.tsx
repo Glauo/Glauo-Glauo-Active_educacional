@@ -2,8 +2,9 @@ import { AppShell } from "@/components/app-shell";
 import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { NovoDesafioBtn, EditarDesafioBtn } from "@/components/desafio-modal";
+import { NovoDesafioBtn } from "@/components/desafio-modal";
 import { NotaRapidaForm } from "@/components/notas-form";
+import { DesafiosTable } from "@/components/desafios-table";
 
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; descricao?: string; pontos?: number | string; status?: string; data_publicacao?: string; data?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
@@ -74,83 +75,7 @@ export default async function DesafiosPage() {
       </div>
 
       <div className="content-grid grid-2-1">
-        {/* Lista de desafios */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <div className="section-eyebrow">Conteúdo</div>
-              <h3 className="section-title">Desafios publicados</h3>
-              <p className="section-subtitle">{publicados.length} ativos</p>
-            </div>
-            <div className="search-bar">
-              <span className="search-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg></span>
-              <input className="search-input" placeholder="Buscar desafio ou turma..." style={{ minWidth: "200px" }} />
-            </div>
-          </div>
-          <div className="card-body" style={{ paddingTop: "12px" }}>
-            {desafios.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" /><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" clipRule="evenodd" /></svg>
-                </div>
-                <div className="empty-title">Nenhum desafio cadastrado</div>
-                <p className="empty-desc">Os desafios do Streamlit são carregados automaticamente do banco. Crie um novo ou configure a URL do banco.</p>
-              </div>
-            ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Desafio</th>
-                    <th>Turma</th>
-                    <th>Pontos</th>
-                    <th>Status</th>
-                    <th>Conclusões</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {desafios.map((d, i) => {
-                    const titulo = String(d.titulo || d.title || `Desafio ${i + 1}`);
-                    const turma = String(d.turma || "Todas");
-                    const pontos = Number(d.pontos) || 0;
-                    const status = String(d.status || "Publicado");
-                    const nConclusoes = conclusoes.filter((c) => c.desafio_id === (d.id || titulo)).length;
-                    const isRascunho = status.toLowerCase().includes("rascunho");
-                    return (
-                      <tr key={String(d.id || i)}>
-                        <td>
-                          <div className="table-name-cell">
-                            <span className="table-name-primary">{titulo}</span>
-                            {(d.descricao as string | undefined) && (
-                              <span className="table-name-secondary">
-                                {String(d.descricao).slice(0, 50)}{String(d.descricao).length > 50 ? "…" : ""}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td>{turma}</td>
-                        <td>
-                          <span className="badge badge-gold">{pontos} pts</span>
-                        </td>
-                        <td>
-                          <span className={`badge badge-${isRascunho ? "neutral" : "success"}`}>
-                            <span className="badge-dot" />{status}
-                          </span>
-                        </td>
-                        <td style={{ fontWeight: 600 }}>{nConclusoes}</td>
-                        <td>
-                          <div style={{ display: "flex", gap: "4px" }}>
-                            <EditarDesafioBtn desafio={d} />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
+        <DesafiosTable desafios={desafios} conclusoes={conclusoes} />
 
         {/* Ranking */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>

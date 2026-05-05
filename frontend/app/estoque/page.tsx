@@ -2,7 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { NovoItemEstoqueBtn, LancarEntradaBtn } from "@/components/estoque-modals";
+import { NovoItemEstoqueBtn, LancarEntradaBtn, PedirReposicaoBtn } from "@/components/estoque-modals";
 import { EstoqueTabView } from "@/components/estoque-tab-view";
 
 type ItemEstoque = { id?: string; nome?: string; name?: string; categoria?: string; quantidade?: number | string; quantidade_minima?: string | number; preco?: number | string; [k: string]: unknown };
@@ -99,7 +99,7 @@ export default async function EstoquePage() {
                       Estoque atual: <strong>{Number(item.quantidade)}</strong> — Mínimo: <strong>{Number(item.quantidade_minima)}</strong>
                     </div>
                   </div>
-                  <button className="btn btn-secondary btn-sm">Pedir</button>
+                  <PedirReposicaoBtn item={item} />
                 </div>
               ))}
             </div>

@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { NotaRapidaForm } from "@/components/notas-form";
+import { NotasClient } from "@/components/notas-client";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
 import { redirect } from "next/navigation";
@@ -48,36 +49,7 @@ export default async function NotasPage() {
 
       <NotaRapidaForm alunos={alunos} desafios={desafios} />
 
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-header">
-          <div>
-            <div className="section-eyebrow">Boletim</div>
-            <h3 className="section-title">Notas lancadas</h3>
-            <p className="section-subtitle">{notas.length} registros</p>
-          </div>
-        </div>
-        <div className="card-body" style={{ paddingTop: 12 }}>
-          {notas.length === 0 ? (
-            <div className="empty-state"><div className="empty-title">Nenhuma nota lancada</div><p className="empty-desc">Corrija um desafio para a nota aparecer aqui e no painel do aluno.</p></div>
-          ) : (
-            <table className="data-table">
-              <thead><tr><th>Aluno</th><th>Desafio</th><th>Turma</th><th>Nota</th><th>Status</th><th>Data</th></tr></thead>
-              <tbody>
-                {notas.map((n, i) => (
-                  <tr key={text(n.id || i)}>
-                    <td style={{ fontWeight: 700 }}>{text(n.aluno)}</td>
-                    <td>{text(n.titulo || n.desafio)}</td>
-                    <td>{text(n.turma || "-")}</td>
-                    <td><span className="badge badge-gold">{numberValue(n.nota).toFixed(1)}</span></td>
-                    <td><span className="badge badge-success"><span className="badge-dot" />{text(n.status || "Corrigido")}</span></td>
-                    <td>{n.data ? new Date(String(n.data)).toLocaleDateString("pt-BR") : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      <NotasClient notas={notas} frequencias={frequencias} />
     </AppShell>
   );
 }

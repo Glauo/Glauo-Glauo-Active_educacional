@@ -182,6 +182,83 @@ export function LancarEntradaBtn({ itens }: { itens: ItemEstoque[] }) {
   );
 }
 
+/* ─── Modal Pedido de Reposição ─── */
+function PedidoModal({ item, onClose, onSaved }: { item: ItemEstoque; onClose: () => void; onSaved: () => void }) {
+  const [quantidade, setQuantidade] = useState("1");
+  const [fornecedor, setFornecedor] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function salvar() {
+    if (!quantidade || isNaN(Number(quantidade)) || Number(quantidade) <= 0) {
+      setErro("Informe uma quantidade válida.");
+      return;
+    }
+    setSaving(true);
+    const res = await fetch("/api/estoque?tipo=pedidos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item: String(item.id || item.nome || item.name),
+        nome_item: String(item.nome || item.name),
+        quantidade: Number(quantidade),
+        fornecedor: fornecedor.trim() || undefined,
+        status: "Pendente",
+        data: new Date().toISOString(),
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setErro((d as {error?:string}).error || "Erro ao registrar pedido."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box">
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Pedir reposição</div>
+            <div className="modal-subtitle">{String(item.nome || item.name)} — estoque atual: {Number(item.quantidade) || 0}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Quantidade a pedir *</label>
+              <input className="form-input" type="number" min="1" value={quantidade} onChange={(e) => { setQuantidade(e.target.value); setErro(""); }} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Fornecedor</label>
+              <input className="form-input" placeholder="Nome do fornecedor (opcional)" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
+            </div>
+          </div>
+          {erro && <div className="form-error">{erro}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="btn btn-primary" onClick={salvar} disabled={saving}>
+            {saving ? "Registrando…" : "Registrar pedido"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PedirReposicaoBtn({ item }: { item: ItemEstoque }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>Pedir</button>
+      {open && <PedidoModal item={item} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
+    </>
+  );
+}
+
 export function NovoItemEstoqueBtn() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
