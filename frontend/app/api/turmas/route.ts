@@ -4,9 +4,13 @@ import { getSession } from "@/lib/auth";
 
 const KEY = "classes.json";
 
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
 export async function GET() {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   const turmas = await dbList(KEY);
   return NextResponse.json({ turmas });
@@ -14,12 +18,17 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   try {
     const body = await req.json();
     const turmas = await dbList<Record<string, unknown>>(KEY);
-    const nova = { ...body, id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
+    const nome = text(body.nome);
+    if (!nome) return NextResponse.json({ error: "Nome da turma e obrigatorio." }, { status: 400 });
+    const exists = turmas.some((t) => text(t.nome).toLowerCase() === nome.toLowerCase());
+    if (exists) return NextResponse.json({ error: "Turma ja existe." }, { status: 409 });
+
+    const nova = { ...body, nome, id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
     turmas.push(nova);
     await dbSet(KEY, turmas);
     return NextResponse.json({ ok: true, turma: nova }, { status: 201 });
@@ -31,18 +40,35 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   try {
     const { id, ...updates } = await req.json();
-    if (!id) return NextResponse.json({ error: "ID obrigatório." }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "ID obrigatorio." }, { status: 400 });
 
     const turmas = await dbList<Record<string, unknown>>(KEY);
     const idx = turmas.findIndex((t) => t.id === id || t.nome === id);
-    if (idx === -1) return NextResponse.json({ error: "Turma não encontrada." }, { status: 404 });
+    if (idx === -1) return NextResponse.json({ error: "Turma nao encontrada." }, { status: 404 });
 
+    const oldNome = text(turmas[idx].nome);
     turmas[idx] = { ...turmas[idx], ...updates, updated_at: new Date().toISOString() };
-    await dbSet(KEY, turmas);
+
+    const writes: Promise<boolean>[] = [dbSet(KEY, turmas)];
+    const newNome = text(turmas[idx].nome);
+    if (oldNome && newNome && oldNome !== newNome) {
+      const alunos = await dbList<Record<string, unknown>>("students.json");
+      let changed = false;
+      for (const aluno of alunos) {
+        if (text(aluno.turma) === oldNome || text(aluno.classe) === oldNome) {
+          aluno.turma = newNome;
+          if (aluno.classe) aluno.classe = newNome;
+          changed = true;
+        }
+      }
+      if (changed) writes.push(dbSet("students.json", alunos));
+    }
+
+    await Promise.all(writes);
     return NextResponse.json({ ok: true, turma: turmas[idx] });
   } catch (err) {
     console.error("[turmas PUT]", err);
@@ -52,12 +78,29 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
   const turmas = await dbList<Record<string, unknown>>(KEY);
+  const target = turmas.find((t) => t.id === id || t.nome === id);
+  const targetName = text(target?.nome);
   const filtered = turmas.filter((t) => t.id !== id && t.nome !== id);
-  await dbSet(KEY, filtered);
+
+  const writes: Promise<boolean>[] = [dbSet(KEY, filtered)];
+  if (targetName) {
+    const alunos = await dbList<Record<string, unknown>>("students.json");
+    let changed = false;
+    for (const aluno of alunos) {
+      if (text(aluno.turma) === targetName || text(aluno.classe) === targetName) {
+        aluno.turma = "Sem Turma";
+        if (aluno.classe) aluno.classe = "Sem Turma";
+        changed = true;
+      }
+    }
+    if (changed) writes.push(dbSet("students.json", alunos));
+  }
+
+  await Promise.all(writes);
   return NextResponse.json({ ok: true });
 }

@@ -4,9 +4,37 @@ import { getSession } from "@/lib/auth";
 
 const KEY = "teachers.json";
 
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
+function lower(value: unknown) {
+  return text(value).toLowerCase();
+}
+
+async function syncProfessorUser(professor: Record<string, unknown>, oldLogin?: string) {
+  const usuario = text(professor.usuario || professor.login);
+  const senha = text(professor.senha);
+  if (!usuario || !senha) return false;
+
+  const users = await dbList<Record<string, unknown>>("users.json");
+  const idx = users.findIndex((u) => lower(u.usuario) === lower(oldLogin || usuario) || lower(u.usuario) === lower(usuario));
+  const record = {
+    usuario,
+    senha,
+    perfil: "Professor",
+    pessoa: text(professor.nome),
+    email: lower(professor.email),
+    celular: text(professor.celular || professor.telefone || professor.whatsapp),
+  };
+  if (idx >= 0) users[idx] = { ...users[idx], ...record };
+  else users.push(record);
+  return dbSet("users.json", users);
+}
+
 export async function GET() {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   const professores = await dbList(KEY);
   return NextResponse.json({ professores });
@@ -14,14 +42,24 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   try {
     const body = await req.json();
     const professores = await dbList<Record<string, unknown>>(KEY);
-    const novo = { ...body, id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
+    const nome = text(body.nome);
+    if (!nome) return NextResponse.json({ error: "Nome do professor e obrigatorio." }, { status: 400 });
+    const login = text(body.usuario || body.login);
+    if (login) {
+      const users = await dbList<Record<string, unknown>>("users.json");
+      if (users.some((u) => lower(u.usuario) === lower(login))) {
+        return NextResponse.json({ error: "Login automatico ja existe." }, { status: 409 });
+      }
+    }
+
+    const novo = { ...body, nome, id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
     professores.push(novo);
-    await dbSet(KEY, professores);
+    await Promise.all([dbSet(KEY, professores), syncProfessorUser(novo)]);
     return NextResponse.json({ ok: true, professor: novo }, { status: 201 });
   } catch (err) {
     console.error("[professores POST]", err);
@@ -31,18 +69,35 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   try {
     const { id, ...updates } = await req.json();
-    if (!id) return NextResponse.json({ error: "ID obrigatório." }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "ID obrigatorio." }, { status: 400 });
 
     const professores = await dbList<Record<string, unknown>>(KEY);
     const idx = professores.findIndex((p) => p.id === id || p.nome === id);
-    if (idx === -1) return NextResponse.json({ error: "Professor não encontrado." }, { status: 404 });
+    if (idx === -1) return NextResponse.json({ error: "Professor nao encontrado." }, { status: 404 });
 
+    const oldNome = text(professores[idx].nome);
+    const oldLogin = text(professores[idx].usuario || professores[idx].login);
     professores[idx] = { ...professores[idx], ...updates, updated_at: new Date().toISOString() };
-    await dbSet(KEY, professores);
+
+    const writes: Promise<boolean>[] = [dbSet(KEY, professores), syncProfessorUser(professores[idx], oldLogin)];
+    const newNome = text(professores[idx].nome);
+    if (oldNome && newNome && oldNome !== newNome) {
+      const turmas = await dbList<Record<string, unknown>>("classes.json");
+      let changed = false;
+      for (const turma of turmas) {
+        if (text(turma.professor) === oldNome) {
+          turma.professor = newNome;
+          changed = true;
+        }
+      }
+      if (changed) writes.push(dbSet("classes.json", turmas));
+    }
+
+    await Promise.all(writes);
     return NextResponse.json({ ok: true, professor: professores[idx] });
   } catch (err) {
     console.error("[professores PUT]", err);
@@ -52,12 +107,34 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+
   const professores = await dbList<Record<string, unknown>>(KEY);
+  const target = professores.find((p) => p.id === id || p.nome === id);
+  const targetName = text(target?.nome);
+  const targetLogin = lower(target?.usuario || target?.login);
   const filtered = professores.filter((p) => p.id !== id && p.nome !== id);
-  await dbSet(KEY, filtered);
+
+  const writes: Promise<boolean>[] = [dbSet(KEY, filtered)];
+  if (targetName) {
+    const turmas = await dbList<Record<string, unknown>>("classes.json");
+    let changed = false;
+    for (const turma of turmas) {
+      if (text(turma.professor) === targetName) {
+        turma.professor = "Sem Professor";
+        changed = true;
+      }
+    }
+    if (changed) writes.push(dbSet("classes.json", turmas));
+  }
+  if (targetLogin) {
+    const users = await dbList<Record<string, unknown>>("users.json");
+    writes.push(dbSet("users.json", users.filter((u) => !(lower(u.usuario) === targetLogin && text(u.perfil) === "Professor"))));
+  }
+
+  await Promise.all(writes);
   return NextResponse.json({ ok: true });
 }

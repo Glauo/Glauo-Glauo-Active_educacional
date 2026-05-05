@@ -62,7 +62,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/");
+      router.push(typeof data.redirectTo === "string" ? data.redirectTo : "/");
       router.refresh();
     } catch {
       setError("Erro de conexão. Verifique sua internet e tente novamente.");

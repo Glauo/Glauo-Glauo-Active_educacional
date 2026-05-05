@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateStudentCredentials, signToken, COOKIE_NAME, TTL_SECONDS } from "@/lib/auth";
+import { validateStudentCredentials, signToken, COOKIE_NAME, TTL_SECONDS, dashboardForPerfil } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     const token = await signToken(user);
-    const res = NextResponse.json({ ok: true, user });
+    const res = NextResponse.json({ ok: true, user, redirectTo: dashboardForPerfil(user.perfil) });
     res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

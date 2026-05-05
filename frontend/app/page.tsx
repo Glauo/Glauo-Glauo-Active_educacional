@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { dbList } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { dashboardForPerfil, getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 type Aluno = Record<string, unknown>;
@@ -40,6 +40,8 @@ function calcStats(recebimentos: Recebimento[]) {
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const dashboard = dashboardForPerfil(session.perfil);
+  if (dashboard !== "/") redirect(dashboard);
 
   const [alunos, turmas, professores, recebimentos, agenda] = await Promise.all([
     dbList<Aluno>("students.json"),

@@ -30,7 +30,8 @@ export default function AlunoLoginPage() {
         return;
       }
 
-      router.push("/aluno");
+      router.push(typeof data.redirectTo === "string" ? data.redirectTo : "/aluno");
+      router.refresh();
     } catch {
       setErro("Erro de conexão. Tente novamente.");
       setLoading(false);

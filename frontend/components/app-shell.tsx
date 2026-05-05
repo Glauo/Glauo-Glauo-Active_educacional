@@ -167,6 +167,18 @@ type AppShellProps = {
   userUnit?: string;
 };
 
+function canSeeNavItem(userRole: string, href: string) {
+  const role = userRole.toLowerCase();
+  if (role.includes("admin") || role.includes("coord") || role.includes("dire")) return true;
+  if (role.includes("comercial")) {
+    return ["/", "/alunos", "/financeiro", "/agenda"].includes(href);
+  }
+  if (role.includes("prof")) {
+    return ["/", "/agenda", "/turmas", "/mural", "/licoes", "/desafios", "/notas", "/biblioteca"].includes(href);
+  }
+  return href === "/";
+}
+
 export function AppShell({
   children,
   breadcrumb,
@@ -222,7 +234,7 @@ export function AppShell({
           {navSections.map((section) => (
             <div key={section.section}>
               <div className="nav-section-label">{section.section}</div>
-              {section.items.filter((item) => item.href !== "/usuarios/credenciais" || canManageAccess).map((item) => {
+              {section.items.filter((item) => canSeeNavItem(userRole, item.href) && (item.href !== "/usuarios/credenciais" || canManageAccess)).map((item) => {
                 const isActive =
                   item.href === "/"
                     ? pathname === "/"

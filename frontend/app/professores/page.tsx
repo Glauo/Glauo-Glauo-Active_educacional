@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { NovoProfessorBtn, EditarProfessorBtn } from "@/components/professor-modal";
 import { TeacherClassPanel } from "@/components/teacher-class-panel";
 
-type Professor = { id?: string; nome?: string; name?: string; area?: string; especialidade?: string; turmas?: string | string[]; status?: string; situacao?: string; telefone?: string; email?: string; [k: string]: unknown };
+type Professor = { id?: string; nome?: string; name?: string; area?: string; especialidade?: string; turmas?: string | string[]; status?: string; situacao?: string; telefone?: string; celular?: string; email?: string; cpf?: string; usuario?: string; login?: string; valor_aula?: string | number; tipo_contrato?: string; pix?: string; disponibilidade?: string; [k: string]: unknown };
 
 export default async function ProfessoresPage() {
   const session = await getSession();
@@ -27,7 +27,7 @@ export default async function ProfessoresPage() {
         <div className="page-title-block">
           <div className="page-eyebrow"><span className="page-eyebrow-dot" />Módulo Acadêmico</div>
           <h1 className="page-title">Professores</h1>
-          <p className="page-description">Equipe docente — carga de aulas, turmas cobertas e status operacional.</p>
+          <p className="page-description">Equipe docente com dados completos, acesso, contato, pagamento e turmas vinculadas.</p>
         </div>
         <div className="page-actions">
           <NovoProfessorBtn />
@@ -105,6 +105,8 @@ export default async function ProfessoresPage() {
                 <tr>
                   <th>Professor</th>
                   <th>Área</th>
+                  <th>Contato / Acesso</th>
+                  <th>Pagamento</th>
                   <th>Turmas</th>
                   <th>Status</th>
                   <th>Ações</th>
@@ -114,9 +116,13 @@ export default async function ProfessoresPage() {
                 {professores.map((p, i) => {
                   const nome = String(p.nome || p.name || `Professor ${i + 1}`);
                   const area = String(p.area || p.especialidade || "—");
+                  const celular = String(p.celular || p.telefone || "—");
+                  const usuario = String(p.usuario || p.login || "—");
+                  const contrato = String(p.tipo_contrato || "—");
+                  const valorAula = String(p.valor_aula || "—");
                   const turmasList = Array.isArray(p.turmas)
                     ? (p.turmas as string[]).join(", ")
-                    : String(p.turmas || "—");
+                    : String(p.turmas || turmas.filter((t) => String(t.professor || "").trim() === nome).map((t) => String(t.nome || t.name || "")).filter(Boolean).join(", ") || "—");
                   const status = String(p.status || p.situacao || "Ativo");
                   const hue = (nome.charCodeAt(0) * 97) % 360;
                   return (
@@ -131,6 +137,18 @@ export default async function ProfessoresPage() {
                         </div>
                       </td>
                       <td>{area}</td>
+                      <td>
+                        <div className="table-name-cell">
+                          <span className="table-name-primary">{celular}</span>
+                          <span className="table-name-secondary">Login: {usuario}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="table-name-cell">
+                          <span className="table-name-primary">{contrato}</span>
+                          <span className="table-name-secondary">Aula: {valorAula}</span>
+                        </div>
+                      </td>
                       <td style={{ maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{turmasList}</td>
                       <td>
                         <span className={`badge badge-${status.toLowerCase().includes("inativ") ? "neutral" : "success"}`}>

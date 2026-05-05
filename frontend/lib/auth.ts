@@ -59,11 +59,27 @@ type StudentRecord = {
   [k: string]: unknown;
 };
 
+function normalize(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function dashboardForPerfil(perfil?: string) {
+  const p = normalize(perfil);
+  if (p.includes("aluno")) return "/aluno";
+  if (p.includes("prof")) return "/agenda";
+  if (p.includes("comercial")) return "/financeiro";
+  if (p.includes("coord")) return "/";
+  if (p.includes("admin") || p.includes("dire")) return "/";
+  return "/";
+}
+
 export async function validateCredentials(
   usuario: string,
   senha: string,
   unit?: string
 ): Promise<SessionUser | null> {
+  const login = normalize(usuario);
+  const password = String(senha);
   let users: RawUser[] = await dbList<RawUser>("users.json");
 
   if (!users || users.length === 0) {
@@ -73,10 +89,12 @@ export async function validateCredentials(
   }
 
   const found = users.find(
-    (u) => u.usuario === usuario && u.senha === senha
+    (u) => normalize(u.usuario) === login && String(u.senha) === password
   );
 
-  if (!found) return null;
+  if (!found) {
+    return validateStudentCredentials(login, password);
+  }
 
   return {
     usuario: found.usuario,
@@ -90,13 +108,15 @@ export async function validateStudentCredentials(
   login: string,
   senha: string
 ): Promise<SessionUser | null> {
+  const normalizedLogin = normalize(login);
+  const password = String(senha);
   const students = await dbList<StudentRecord>("students.json");
   const found = students.find(
-    (s) => s.login && s.login === login && s.senha === senha
+    (s) => s.login && normalize(s.login) === normalizedLogin && String(s.senha) === password
   );
   if (!found) return null;
   return {
-    usuario: found.login!,
+    usuario: String(found.login),
     perfil: "Aluno",
     pessoa: String(found.nome || found.name || found.login),
     unit: String(found.turma || found.classe || "")

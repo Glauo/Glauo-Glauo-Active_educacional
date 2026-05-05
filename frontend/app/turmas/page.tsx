@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovaTurmaBtn, EditarTurmaBtn } from "@/components/turma-modal";
 
-type Turma = { id?: string; nome?: string; name?: string; professor?: string; livro?: string; book?: string; status?: string; situacao?: string; ultima_licao?: string; ultima_aula?: string; horario?: string; [k: string]: unknown };
+type Turma = { id?: string; nome?: string; name?: string; professor?: string; modulo?: string; tipo_aula?: string; modalidade?: string; livro?: string; book?: string; status?: string; situacao?: string; ultima_licao?: string; ultima_aula?: string; horario?: string; dias?: string; link_zoom?: string; valor_aula?: string | number; total_aulas_vip?: string | number; aulas_realizadas_vip?: string | number; [k: string]: unknown };
 
 function statusBadge(s: string) {
   const l = s.toLowerCase();
@@ -35,7 +35,7 @@ export default async function TurmasPage() {
         <div className="page-title-block">
           <div className="page-eyebrow"><span className="page-eyebrow-dot" />Estrutura Escolar</div>
           <h1 className="page-title">Turmas</h1>
-          <p className="page-description">Progresso pedagógico, livros, professores e status de cada turma em operação.</p>
+          <p className="page-description">Modulo de aula, professor, livro, agenda, link online e saldo VIP das turmas.</p>
         </div>
         <div className="page-actions">
           <NovaTurmaBtn />
@@ -92,20 +92,27 @@ export default async function TurmasPage() {
               {turmas.map((t, i) => {
                 const nome = String(t.nome || t.name || `Turma ${i + 1}`);
                 const professor = String(t.professor || "—");
+                const modulo = String(t.modulo || t.tipo_aula || t.modalidade || "—");
                 const livro = String(t.livro || t.book || "—");
                 const status = String(t.status || t.situacao || "Ativa");
                 const ultimaLicao = String(t.ultima_licao || t.ultima_aula || "—");
-                const horario = String(t.horario || "—");
+                const horario = String(t.dias || t.horario || "—");
+                const totalVip = Number(t.total_aulas_vip || 0);
+                const feitasVip = Number(t.aulas_realizadas_vip || 0);
                 return (
                   <div className="entity-card" key={String(t.id || i)}>
                     <div className="entity-card-top">
                       <div className="entity-card-info">
                         <div className="entity-card-name">{nome}</div>
-                        <div className="entity-card-sub">{professor}</div>
+                        <div className="entity-card-sub">{professor} | {modulo}</div>
                       </div>
                       <span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span>
                     </div>
                     <div className="entity-card-rows">
+                      <div className="entity-card-row">
+                        <span className="entity-card-row-label">Modulo</span>
+                        <span className="entity-card-row-value">{modulo}</span>
+                      </div>
                       <div className="entity-card-row">
                         <span className="entity-card-row-label">Livro</span>
                         <span className="entity-card-row-value">{livro}</span>
@@ -115,9 +122,21 @@ export default async function TurmasPage() {
                         <span className="entity-card-row-value">{ultimaLicao}</span>
                       </div>
                       <div className="entity-card-row">
-                        <span className="entity-card-row-label">Horário</span>
+                        <span className="entity-card-row-label">Agenda</span>
                         <span className="entity-card-row-value">{horario}</span>
                       </div>
+                      {String(t.link_zoom || "").trim() && (
+                        <div className="entity-card-row">
+                          <span className="entity-card-row-label">Online</span>
+                          <span className="entity-card-row-value">Link cadastrado</span>
+                        </div>
+                      )}
+                      {modulo.toLowerCase().includes("vip") && (
+                        <div className="entity-card-row">
+                          <span className="entity-card-row-label">Saldo VIP</span>
+                          <span className="entity-card-row-value">{Math.max(0, totalVip - feitasVip)} de {totalVip || "—"}</span>
+                        </div>
+                      )}
                     </div>
                     <div style={{ marginTop: "12px" }}>
                       <EditarTurmaBtn turma={t} />

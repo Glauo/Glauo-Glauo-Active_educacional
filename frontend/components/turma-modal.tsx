@@ -6,84 +6,153 @@ import { useRouter } from "next/navigation";
 type TurmaData = {
   id?: string;
   nome?: string;
-  nivel?: string;
+  name?: string;
+  modulo?: string;
+  tipo_aula?: string;
+  modalidade?: string;
   professor?: string;
   livro?: string;
+  book?: string;
   ultima_licao?: string;
+  ultima_aula?: string;
   valor_aula?: string | number;
   horario?: string;
-  dia_semana?: string;
+  dias?: string;
+  dias_semana?: string[] | string;
+  hora_inicio?: string;
+  hora_fim?: string;
+  link_zoom?: string;
+  link?: string;
   sala?: string;
   status?: string;
+  situacao?: string;
+  plano_vip?: string;
+  total_aulas_vip?: string | number;
+  aulas_realizadas_vip?: string | number;
+  observacoes?: string;
   [k: string]: unknown;
 };
 
 type Form = {
   nome: string;
-  nivel: string;
+  modulo: string;
   professor: string;
   livro: string;
   ultima_licao: string;
-  valor_aula: string;
-  horario: string;
-  dia_semana: string;
+  dias_semana: string[];
+  hora_inicio: string;
+  hora_fim: string;
+  link_zoom: string;
   sala: string;
+  valor_aula: string;
+  plano_vip: string;
+  total_aulas_vip: string;
+  aulas_realizadas_vip: string;
   status: string;
+  observacoes: string;
 };
 
+const MODULOS = [
+  "Aula em turma Online",
+  "Aula em turma Vip",
+  "Teens Completo",
+  "Vip",
+  "Intensivo vip online",
+  "Presencial em turma",
+  "Online em turma",
+  "Kids completo presencial",
+];
+
+const DIAS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
+const LIVROS = ["Livro 1", "Livro 2", "Livro 3", "Livro 4", "Livro 5", "Express Teens", "Express Adults", "Business Adults", "Inteligencia Emocional", "Jovens Empreendedores"];
+
+function splitDias(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  const raw = String(value || "");
+  return DIAS.filter((dia) => raw.toLowerCase().includes(dia.toLowerCase().slice(0, 3)));
+}
+
+function formatDias(dias: string[], inicio: string, fim: string) {
+  const diasTxt = dias.length ? dias.join(", ") : "Sem dias definidos";
+  const horario = inicio && fim ? ` - ${inicio} às ${fim}` : "";
+  return `${diasTxt}${horario}`;
+}
+
 function fromTurma(t?: TurmaData): Form {
+  const horaInicio = String(t?.hora_inicio || "").slice(0, 5);
+  const horaFim = String(t?.hora_fim || "").slice(0, 5);
   return {
-    nome: String(t?.nome || ""),
-    nivel: String(t?.nivel || ""),
-    professor: String(t?.professor || ""),
-    livro: String(t?.livro || ""),
-    ultima_licao: String(t?.ultima_licao || ""),
-    valor_aula: String(t?.valor_aula || ""),
-    horario: String(t?.horario || ""),
-    dia_semana: String(t?.dia_semana || ""),
+    nome: String(t?.nome || t?.name || ""),
+    modulo: String(t?.modulo || t?.tipo_aula || t?.modalidade || "Aula em turma Online"),
+    professor: String(t?.professor || "Sem Professor"),
+    livro: String(t?.livro || t?.book || ""),
+    ultima_licao: String(t?.ultima_licao || t?.ultima_aula || ""),
+    dias_semana: splitDias(t?.dias_semana || t?.dias),
+    hora_inicio: horaInicio || "19:00",
+    hora_fim: horaFim || "20:00",
+    link_zoom: String(t?.link_zoom || t?.link || ""),
     sala: String(t?.sala || ""),
-    status: String(t?.status || "Ativa")
+    valor_aula: String(t?.valor_aula || ""),
+    plano_vip: String(t?.plano_vip || ""),
+    total_aulas_vip: String(t?.total_aulas_vip || ""),
+    aulas_realizadas_vip: String(t?.aulas_realizadas_vip || "0"),
+    status: String(t?.status || t?.situacao || "Ativa"),
+    observacoes: String(t?.observacoes || ""),
   };
 }
 
-function TurmaModal({
-  turma,
-  onClose,
-  onSaved
-}: {
-  turma?: TurmaData;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: () => void; onSaved: () => void }) {
   const isEdit = Boolean(turma?.id);
   const [form, setForm] = useState<Form>(fromTurma(turma));
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
+  const isVip = form.modulo.toLowerCase().includes("vip");
 
-  function update(field: keyof Form, value: string) {
+  function update<K extends keyof Form>(field: K, value: Form[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErro("");
   }
 
+  function toggleDia(dia: string) {
+    update("dias_semana", form.dias_semana.includes(dia) ? form.dias_semana.filter((d) => d !== dia) : [...form.dias_semana, dia]);
+  }
+
   async function excluir() {
-    if (!confirm(`Excluir a turma "${turma?.nome}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Excluir a turma "${turma?.nome}"? Os alunos vinculados voltarao para Sem Turma.`)) return;
     setSaving(true);
-    await fetch(`/api/turmas?id=${turma!.id}`, { method: "DELETE" });
+    await fetch(`/api/turmas?id=${encodeURIComponent(String(turma!.id || turma!.nome))}`, { method: "DELETE" });
     setSaving(false);
     onSaved();
   }
 
   async function salvar() {
     if (!form.nome.trim()) {
-      setErro("O nome da turma é obrigatório.");
+      setErro("O nome da turma e obrigatorio.");
+      return;
+    }
+    if (!form.dias_semana.length) {
+      setErro("Selecione pelo menos um dia de aula.");
+      return;
+    }
+    if (form.hora_fim <= form.hora_inicio) {
+      setErro("O horario final precisa ser maior que o inicial.");
       return;
     }
     setSaving(true);
-    const payload = isEdit ? { id: turma!.id, ...form } : form;
+    const payload = {
+      ...(isEdit ? { id: turma!.id || turma!.nome } : {}),
+      ...form,
+      professor: form.professor || "Sem Professor",
+      dias: formatDias(form.dias_semana, form.hora_inicio, form.hora_fim),
+      horario: `${form.hora_inicio} - ${form.hora_fim}`,
+      tipo_aula: form.modulo,
+      modalidade: form.modulo.toLowerCase().includes("online") ? "Online" : "Presencial",
+      nivel: form.livro,
+    };
     const res = await fetch("/api/turmas", {
       method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     setSaving(false);
     if (!res.ok) {
@@ -96,11 +165,11 @@ function TurmaModal({
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box">
+      <div className="modal-box" style={{ maxWidth: 900 }}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">{isEdit ? "Editar turma" : "Nova turma"}</div>
-            {isEdit && <div className="modal-subtitle">{turma?.nome}</div>}
+            <div className="modal-title">{isEdit ? "Editar turma completa" : "Nova turma completa"}</div>
+            <div className="modal-subtitle">Modulo de aula, professor, livro, agenda e plano VIP como no sistema anterior</div>
           </div>
           <button className="modal-close" onClick={onClose}>
             <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -111,62 +180,90 @@ function TurmaModal({
           <div className="form-grid">
             <div className="form-group form-group-span2">
               <label className="form-label">Nome da turma *</label>
-              <input
-                className="form-input"
-                placeholder="Ex: Turma Básico A — Noite"
-                value={form.nome}
-                onChange={(e) => update("nome", e.target.value)}
-                autoFocus
-              />
+              <input className="form-input" placeholder="Ex: Teens Completo - Seg/Qua 19h" value={form.nome} onChange={(e) => update("nome", e.target.value)} autoFocus />
             </div>
             <div className="form-group">
-              <label className="form-label">Nível</label>
-              <select className="form-input" value={form.nivel} onChange={(e) => update("nivel", e.target.value)}>
-                <option value="">Selecione…</option>
-                <option>Básico</option>
-                <option>Básico Avançado</option>
-                <option>Intermediário</option>
-                <option>Upper Intermediate</option>
-                <option>Avançado</option>
-                <option>Conversação</option>
-                <option>Preparatório</option>
+              <label className="form-label">Modulo da aula *</label>
+              <select className="form-input" value={form.modulo} onChange={(e) => update("modulo", e.target.value)}>
+                {MODULOS.map((m) => <option key={m}>{m}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Professor</label>
-              <input className="form-input" placeholder="Nome do professor" value={form.professor} onChange={(e) => update("professor", e.target.value)} />
+              <input className="form-input" placeholder="Sem Professor ou nome do professor" value={form.professor} onChange={(e) => update("professor", e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Livro</label>
-              <input className="form-input" placeholder="Livro didático" value={form.livro} onChange={(e) => update("livro", e.target.value)} />
+              <label className="form-label">Livro / Nivel</label>
+              <input className="form-input" list="livros-turma" value={form.livro} onChange={(e) => update("livro", e.target.value)} />
+              <datalist id="livros-turma">{LIVROS.map((l) => <option key={l} value={l} />)}</datalist>
             </div>
             <div className="form-group">
-              <label className="form-label">Lição atual</label>
-              <input className="form-input" placeholder="Ex: Unidade 3 - página 24" value={form.ultima_licao} onChange={(e) => update("ultima_licao", e.target.value)} />
+              <label className="form-label">Licao atual</label>
+              <input className="form-input" placeholder="Ex: Unit 3 / pagina 24" value={form.ultima_licao} onChange={(e) => update("ultima_licao", e.target.value)} />
+            </div>
+            <div className="form-group form-group-span2">
+              <label className="form-label">Dias das aulas *</label>
+              <div className="attendance-grid">
+                {DIAS.map((dia) => (
+                  <label className="attendance-item" key={dia}><input type="checkbox" checked={form.dias_semana.includes(dia)} onChange={() => toggleDia(dia)} /> {dia}</label>
+                ))}
+              </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Valor da aula</label>
-              <input className="form-input" inputMode="decimal" placeholder="Ex: 45,00" value={form.valor_aula} onChange={(e) => update("valor_aula", e.target.value)} />
+              <label className="form-label">Horario inicial</label>
+              <input className="form-input" type="time" value={form.hora_inicio} onChange={(e) => update("hora_inicio", e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Dia(s) da semana</label>
-              <input className="form-input" placeholder="Ex: Seg, Qua, Sex" value={form.dia_semana} onChange={(e) => update("dia_semana", e.target.value)} />
+              <label className="form-label">Horario final</label>
+              <input className="form-input" type="time" value={form.hora_fim} onChange={(e) => update("hora_fim", e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Horário</label>
-              <input className="form-input" placeholder="Ex: 19h00 – 20h30" value={form.horario} onChange={(e) => update("horario", e.target.value)} />
+              <label className="form-label">Link da aula online / Zoom</label>
+              <input className="form-input" placeholder="https://..." value={form.link_zoom} onChange={(e) => update("link_zoom", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Sala</label>
-              <input className="form-input" placeholder="Ex: Sala 3" value={form.sala} onChange={(e) => update("sala", e.target.value)} />
+              <input className="form-input" placeholder="Sala presencial" value={form.sala} onChange={(e) => update("sala", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Valor da aula / professor</label>
+              <input className="form-input" inputMode="decimal" placeholder="Ex: 50,00" value={form.valor_aula} onChange={(e) => update("valor_aula", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>
               <select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}>
                 <option>Ativa</option>
-                <option>Em atenção</option>
+                <option>Em atencao</option>
                 <option>Inativa</option>
+                <option>Concluida</option>
               </select>
+            </div>
+            {isVip && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Tipo do plano VIP</label>
+                  <select className="form-input" value={form.plano_vip} onChange={(e) => update("plano_vip", e.target.value)}>
+                    <option value="">Selecione</option>
+                    <option>VIP avulsa</option>
+                    <option>Pacote 4 aulas</option>
+                    <option>Pacote 8 aulas</option>
+                    <option>Pacote 12 aulas</option>
+                    <option>Intensivo VIP online</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Total de aulas VIP</label>
+                  <input className="form-input" type="number" min="0" value={form.total_aulas_vip} onChange={(e) => update("total_aulas_vip", e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Aulas realizadas VIP</label>
+                  <input className="form-input" type="number" min="0" value={form.aulas_realizadas_vip} onChange={(e) => update("aulas_realizadas_vip", e.target.value)} />
+                </div>
+              </>
+            )}
+            <div className="form-group form-group-span2">
+              <label className="form-label">Observacoes da turma</label>
+              <textarea className="form-input form-textarea" rows={3} value={form.observacoes} onChange={(e) => update("observacoes", e.target.value)} />
             </div>
           </div>
           {erro && <div className="form-error">{erro}</div>}
@@ -175,9 +272,7 @@ function TurmaModal({
         <div className="modal-footer">
           {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button className="btn btn-primary" onClick={salvar} disabled={saving}>
-            {saving ? "Salvando…" : isEdit ? "Salvar alterações" : "Criar turma"}
-          </button>
+          <button className="btn btn-primary" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Criar turma"}</button>
         </div>
       </div>
     </div>
@@ -193,12 +288,7 @@ export function NovaTurmaBtn() {
         <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
         Nova turma
       </button>
-      {open && (
-        <TurmaModal
-          onClose={() => setOpen(false)}
-          onSaved={() => { setOpen(false); router.refresh(); }}
-        />
-      )}
+      {open && <TurmaModal onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
     </>
   );
 }
@@ -209,13 +299,7 @@ export function EditarTurmaBtn({ turma }: { turma: TurmaData }) {
   return (
     <>
       <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>Editar</button>
-      {open && (
-        <TurmaModal
-          turma={turma}
-          onClose={() => setOpen(false)}
-          onSaved={() => { setOpen(false); router.refresh(); }}
-        />
-      )}
+      {open && <TurmaModal turma={turma} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
     </>
   );
 }
