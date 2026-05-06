@@ -216,7 +216,15 @@ function AlunoDrawer({ aluno, recebimentos, onClose, canManageAccess }: { aluno:
   const email = text(aluno.responsavel_email || aluno.email || "-");
   const nascimento = text(aluno.data_nascimento || aluno.nascimento || "-");
   const cpf = text(aluno.cpf || "-");
-  const endereco = text(aluno.endereco || aluno.address || "-");
+  const enderecoCompleto = [
+    text(aluno.rua),
+    text(aluno.numero),
+    text(aluno.complemento),
+    text(aluno.bairro),
+    text(aluno.cidade),
+    text(aluno.cep),
+  ].filter(Boolean).join(", ");
+  const endereco = enderecoCompleto || text(aluno.endereco || aluno.address || "-");
   const obs = text(aluno.observacoes || aluno.obs || "-");
   const hue = (nome.charCodeAt(0) * 137) % 360;
   const initials = nome.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
@@ -245,8 +253,14 @@ function AlunoDrawer({ aluno, recebimentos, onClose, canManageAccess }: { aluno:
         <div className="drawer-body">
           <div className="drawer-section">
             <div className="drawer-section-title">Dados pessoais</div>
+            <DetailRow label="Matricula" value={text(aluno.matricula || "-")} />
             <DetailRow label="CPF" value={cpf} />
+            <DetailRow label="RG" value={text(aluno.rg || "-")} />
+            <DetailRow label="Genero" value={text(aluno.genero || "-")} />
             <DetailRow label="Data de nascimento" value={nascimento} />
+            <DetailRow label="Idade" value={text(aluno.idade || "-")} />
+            <DetailRow label="Cidade natal" value={text(aluno.cidade_natal || "-")} />
+            <DetailRow label="Pais" value={text(aluno.pais || "-")} />
             <DetailRow label="Endereco" value={endereco} />
           </div>
 
@@ -393,6 +407,7 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
               <thead>
                 <tr>
                   <th>Aluno</th>
+                  <th>Matricula</th>
                   <th>Turma</th>
                   <th>Modulo</th>
                   <th>VIP</th>
@@ -425,6 +440,7 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
                           </div>
                         </div>
                       </td>
+                      <td>{text(a.matricula || "-")}</td>
                       <td>{turma}</td>
                       <td>{modulo}</td>
                       <td>{vip || "-"}</td>

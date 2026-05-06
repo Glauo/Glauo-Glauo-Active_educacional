@@ -22,6 +22,18 @@ type AlunoData = {
   telefone?: string;
   celular?: string;
   email?: string;
+  matricula?: string;
+  rg?: string;
+  genero?: string;
+  idade?: string | number;
+  cidade_natal?: string;
+  pais?: string;
+  cep?: string;
+  rua?: string;
+  numero?: string | number;
+  complemento?: string;
+  cidade?: string;
+  bairro?: string;
   data_nascimento?: string;
   nascimento?: string;
   cpf?: string;
@@ -34,6 +46,7 @@ type AlunoData = {
   vip_aulas_restantes?: string | number;
   observacoes?: string;
   login?: string;
+  usuario?: string;
   senha?: string;
   status?: string;
   [k: string]: unknown;
@@ -44,6 +57,18 @@ type Form = {
   turma: string;
   modulo: string;
   livro: string;
+  matricula: string;
+  rg: string;
+  genero: string;
+  idade: string;
+  cidade_natal: string;
+  pais: string;
+  cep: string;
+  rua: string;
+  numero: string;
+  complemento: string;
+  cidade: string;
+  bairro: string;
   data_nascimento: string;
   cpf: string;
   responsavel_nome: string;
@@ -89,13 +114,58 @@ function objValue(value: unknown, key: string) {
   return value && typeof value === "object" && !Array.isArray(value) ? text((value as Record<string, unknown>)[key]) : "";
 }
 
+function digits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function autoLogin(dateValue: string) {
+  const raw = digits(dateValue);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    const [year, month, day] = dateValue.split("-");
+    return `${day}${month}${year}`;
+  }
+  return raw;
+}
+
+function autoPassword(cpf: string) {
+  return digits(cpf).slice(0, 5);
+}
+
+function calcAge(dateValue: string) {
+  const raw = text(dateValue);
+  const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const year = match ? Number(match[3]) : iso ? Number(iso[1]) : 0;
+  const month = match ? Number(match[2]) : iso ? Number(iso[2]) : 0;
+  const day = match ? Number(match[1]) : iso ? Number(iso[3]) : 0;
+  if (!year || !month || !day) return "";
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const currentMonth = today.getMonth() + 1;
+  if (currentMonth < month || (currentMonth === month && today.getDate() < day)) age -= 1;
+  return age >= 0 && age < 130 ? String(age) : "";
+}
+
 function fromAluno(a?: AlunoData): Form {
+  const nascimento = text(a?.data_nascimento || a?.nascimento);
   return {
     nome: text(a?.nome || a?.name),
     turma: text(a?.turma || a?.classe),
     modulo: text(a?.modulo || a?.modalidade || "Ingles em turma online"),
     livro: text(a?.livro || a?.book),
-    data_nascimento: text(a?.data_nascimento || a?.nascimento),
+    matricula: text(a?.matricula),
+    rg: text(a?.rg),
+    genero: text(a?.genero),
+    idade: text(a?.idade) || calcAge(nascimento),
+    cidade_natal: text(a?.cidade_natal),
+    pais: text(a?.pais || "Brasil"),
+    cep: text(a?.cep),
+    rua: text(a?.rua),
+    numero: text(a?.numero),
+    complemento: text(a?.complemento),
+    cidade: text(a?.cidade),
+    bairro: text(a?.bairro),
+    data_nascimento: nascimento,
     cpf: text(a?.cpf),
     responsavel_nome: text(a?.responsavel_nome) || objValue(a?.responsavel, "nome") || text(a?.responsavel),
     responsavel_cpf: text(a?.responsavel_cpf) || objValue(a?.responsavel, "cpf"),
@@ -111,7 +181,7 @@ function fromAluno(a?: AlunoData): Form {
     vip_aulas_total: text(a?.vip_aulas_total || ""),
     vip_aulas_restantes: text(a?.vip_aulas_restantes || ""),
     observacoes: text(a?.observacoes),
-    login: text(a?.login),
+    login: text(a?.login || a?.usuario),
     senha: text(a?.senha),
     status: text(a?.status || "Ativo"),
   };
@@ -129,8 +199,9 @@ function credentialMessage(form: Form) {
 }
 
 function whatsappUrl(phone: string, message: string) {
-  const digits = phone.replace(/\D/g, "");
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  let phoneDigits = digits(phone);
+  if (phoneDigits.length === 10 || phoneDigits.length === 11) phoneDigits = `55${phoneDigits}`;
+  return phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}` : "";
 }
 
 function mailtoUrl(email: string, form: Form) {
@@ -164,7 +235,20 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   }, []);
 
   function update<K extends keyof Form>(field: K, value: Form[K]) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === "data_nascimento") next.idade = calcAge(String(value));
+      return next;
+    });
+    setErro("");
+  }
+
+  function preencherAcessoAutomatico() {
+    setForm((prev) => ({
+      ...prev,
+      login: autoLogin(prev.data_nascimento),
+      senha: autoPassword(prev.cpf),
+    }));
     setErro("");
   }
 
@@ -203,6 +287,18 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       livro: form.livro.trim(),
       book: form.livro.trim(),
       modulo: form.modulo,
+      matricula: form.matricula.trim(),
+      rg: form.rg.trim(),
+      genero: form.genero,
+      idade: form.idade,
+      cidade_natal: form.cidade_natal.trim(),
+      pais: form.pais.trim(),
+      cep: form.cep.trim(),
+      rua: form.rua.trim(),
+      numero: form.numero.trim(),
+      complemento: form.complemento.trim(),
+      cidade: form.cidade.trim(),
+      bairro: form.bairro.trim(),
       valor_professor_aula: teacherClassValueByModule(form.modulo),
       vip_tipo_plano: vip ? form.vip_tipo_plano : "",
       vip_aulas_total: vip ? Number(form.vip_aulas_total || planTotal || 0) : 0,
@@ -222,6 +318,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       celular: form.telefone.trim(),
       email: form.email.trim(),
       login: form.login.trim().toLowerCase(),
+      usuario: form.login.trim().toLowerCase(),
       senha: form.senha.trim(),
     };
     const res = await fetch("/api/alunos", {
@@ -235,6 +332,8 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       setErro((d as { error?: string }).error || "Erro ao salvar.");
       return;
     }
+    const accessLink = whatsappUrl(form.responsavel_telefone || form.telefone, credentialMessage({ ...form, login: payload.login, senha: payload.senha }));
+    if (accessLink && payload.login && payload.senha) window.open(accessLink, "_blank", "noopener,noreferrer");
     onSaved();
   }
 
@@ -247,7 +346,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
     setSavingCred(true);
     setCredFeedback("");
     const res = await fetch("/api/alunos/credenciais", {
-      method: "POST",
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: registroId, login: form.login, senha: form.senha }),
     });
@@ -281,6 +380,18 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
             <div className="form-group form-group-span2">
               <label className="form-label">Nome completo *</label>
               <input className="form-input" placeholder="Nome do aluno" value={form.nome} onChange={(e) => update("nome", e.target.value)} autoFocus />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Matricula</label>
+              <input className="form-input" placeholder="Automatica se vazio" value={form.matricula} onChange={(e) => update("matricula", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}>
+                <option>Ativo</option>
+                <option>Inativo</option>
+                <option>Em atencao</option>
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">Turma</label>
@@ -335,8 +446,33 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
               <input className="form-input" placeholder="DD/MM/AAAA" value={form.data_nascimento} onChange={(e) => update("data_nascimento", e.target.value)} />
             </div>
             <div className="form-group">
+              <label className="form-label">Idade</label>
+              <input className="form-input" value={form.idade} onChange={(e) => update("idade", e.target.value)} placeholder="Calculada pela data" />
+            </div>
+            <div className="form-group">
               <label className="form-label">CPF do aluno</label>
               <input className="form-input" placeholder="000.000.000-00" value={form.cpf} onChange={(e) => update("cpf", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">RG</label>
+              <input className="form-input" placeholder="RG do aluno" value={form.rg} onChange={(e) => update("rg", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Genero</label>
+              <select className="form-input" value={form.genero} onChange={(e) => update("genero", e.target.value)}>
+                <option value="">Nao informado</option>
+                <option>Feminino</option>
+                <option>Masculino</option>
+                <option>Outro</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cidade natal</label>
+              <input className="form-input" value={form.cidade_natal} onChange={(e) => update("cidade_natal", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Pais</label>
+              <input className="form-input" value={form.pais} onChange={(e) => update("pais", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Responsavel</label>
@@ -362,9 +498,33 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
               <label className="form-label">E-mail do aluno</label>
               <input className="form-input" type="email" placeholder="Opcional" value={form.email} onChange={(e) => update("email", e.target.value)} />
             </div>
+            <div className="form-group">
+              <label className="form-label">CEP</label>
+              <input className="form-input" placeholder="00000-000" value={form.cep} onChange={(e) => update("cep", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Rua</label>
+              <input className="form-input" value={form.rua} onChange={(e) => update("rua", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Numero</label>
+              <input className="form-input" value={form.numero} onChange={(e) => update("numero", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Complemento</label>
+              <input className="form-input" value={form.complemento} onChange={(e) => update("complemento", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Bairro</label>
+              <input className="form-input" value={form.bairro} onChange={(e) => update("bairro", e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cidade</label>
+              <input className="form-input" value={form.cidade} onChange={(e) => update("cidade", e.target.value)} />
+            </div>
             <div className="form-group form-group-span2">
-              <label className="form-label">Endereco</label>
-              <input className="form-input" placeholder="Rua, numero, bairro, cidade" value={form.endereco} onChange={(e) => update("endereco", e.target.value)} />
+              <label className="form-label">Endereco completo / observacao de endereco</label>
+              <input className="form-input" placeholder="Complemento livre do endereco antigo" value={form.endereco} onChange={(e) => update("endereco", e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Dia de vencimento</label>
@@ -378,20 +538,11 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
               <label className="form-label">Valor da mensalidade</label>
               <input className="form-input" inputMode="decimal" placeholder="Ex: 350,00" value={form.valor_mensalidade} onChange={(e) => update("valor_mensalidade", e.target.value)} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Status</label>
-              <select className="form-input" value={form.status} onChange={(e) => update("status", e.target.value)}>
-                <option>Ativo</option>
-                <option>Inativo</option>
-                <option>Em atencao</option>
-              </select>
-            </div>
             <div className="form-group form-group-span2">
               <label className="form-label">Observacoes</label>
               <textarea className="form-input form-textarea" rows={3} value={form.observacoes} onChange={(e) => update("observacoes", e.target.value)} />
             </div>
-            {isEdit && (
-              <>
+            <>
                 <div className="form-group">
                   <label className="form-label">Login do aluno</label>
                   <input className="form-input" placeholder="login do portal" value={form.login} onChange={(e) => update("login", e.target.value)} />
@@ -403,9 +554,12 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                 <div className="form-group form-group-span2">
                   <label className="form-label">Enviar acesso ao responsavel</label>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button className="btn btn-primary btn-sm" type="button" onClick={salvarCredenciais} disabled={savingCred}>
-                      {savingCred ? "Salvando..." : "Salvar login/senha"}
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={preencherAcessoAutomatico}>
+                      Gerar login/senha automatico
                     </button>
+                    {isEdit && <button className="btn btn-primary btn-sm" type="button" onClick={salvarCredenciais} disabled={savingCred}>
+                      {savingCred ? "Salvando..." : "Salvar login/senha"}
+                    </button>}
                     <a
                       className={`btn btn-secondary btn-sm${!form.login || !form.senha || !form.responsavel_telefone ? " disabled" : ""}`}
                       href={credWhatsappLink || (form.login && form.senha && form.responsavel_telefone ? whatsappUrl(form.responsavel_telefone, credentialMessage(form)) : "#")}
@@ -421,10 +575,9 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                       Enviar login e senha por e-mail
                     </a>
                   </div>
-                  <div className="form-help">{credFeedback || "Clique em Salvar login/senha antes de enviar quando mudar o acesso."}</div>
+                  <div className="form-help">{credFeedback || "Ao salvar cadastro com WhatsApp preenchido, o sistema abre a mensagem pronta de acesso."}</div>
                 </div>
-              </>
-            )}
+            </>
           </div>
           {erro && <div className="form-error">{erro}</div>}
         </div>

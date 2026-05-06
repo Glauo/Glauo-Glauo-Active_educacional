@@ -77,6 +77,22 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
     setTimeout(() => window.location.reload(), 1200);
   }
 
+  async function repararSistema() {
+    if (!confirm("Executar reparo agora? Isso remove dados pesados de PDF do banco e tenta recriar turmas sumidas sem apagar alunos.")) return;
+    setBackupLoading(true);
+    setFeedback(null);
+    const res = await fetch("/api/admin/repair", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    setBackupLoading(false);
+    if (!res.ok) {
+      setFeedback({ tipo: "erro", msg: String((data as { error?: string }).error || "Erro ao reparar sistema.") });
+      return;
+    }
+    const actions = Array.isArray((data as { actions?: unknown[] }).actions) ? (data as { actions: unknown[] }).actions : [];
+    setFeedback({ tipo: "ok", msg: actions.length ? `Reparo concluido: ${actions.join(", ")}` : "Reparo concluido. Nenhum ajuste pendente encontrado." });
+    setTimeout(() => window.location.reload(), 1500);
+  }
+
   return (
     <>
       {/* Header fixo com botão salvar */}
@@ -111,6 +127,9 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
           <button className="btn btn-secondary" type="button" onClick={() => backupInputRef.current?.click()} disabled={backupLoading}>
             <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 3a2 2 0 012-2h7.586A2 2 0 0114 1.586L17.414 5A2 2 0 0118 6.414V17a2 2 0 01-2 2H5a2 2 0 01-2-2V3zm8 0H5v14h11V8h-5V3zm-1 7a1 1 0 011 1v2.586l.293-.293a1 1 0 111.414 1.414l-2 2a1 1 0 01-1.414 0l-2-2a1 1 0 111.414-1.414l.293.293V11a1 1 0 011-1z" clipRule="evenodd" /></svg>
             {backupLoading ? "Importando..." : "Importar bkup"}
+          </button>
+          <button className="btn btn-danger" type="button" onClick={repararSistema} disabled={backupLoading}>
+            Reparar sistema
           </button>
           <button className="btn btn-primary" onClick={salvarTudo} disabled={saving}>
             <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>

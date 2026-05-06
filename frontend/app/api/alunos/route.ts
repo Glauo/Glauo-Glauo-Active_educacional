@@ -9,6 +9,19 @@ function text(value: unknown) {
   return String(value || "").trim();
 }
 
+function digits(value: unknown) {
+  return text(value).replace(/\D/g, "");
+}
+
+function nextMatricula(alunos: Record<string, unknown>[]) {
+  let max = 0;
+  for (const aluno of alunos) {
+    const n = Number(digits(aluno.matricula));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return String(max + 1).padStart(4, "0");
+}
+
 function normalizeAluno(body: Record<string, unknown>) {
   const modulo = text(body.modulo || body.modalidade);
   const vip = isVipModule(modulo);
@@ -18,6 +31,7 @@ function normalizeAluno(body: Record<string, unknown>) {
       ? body.responsavel as Record<string, unknown>
       : {};
   const responsavelNome = text(body.responsavel_nome || responsavel.nome || body.responsavel);
+  const login = text(body.login || body.usuario).toLowerCase();
   return {
     ...body,
     nome: text(body.nome || body.name),
@@ -26,6 +40,21 @@ function normalizeAluno(body: Record<string, unknown>) {
     livro: text(body.livro || body.book),
     book: text(body.livro || body.book),
     modulo,
+    matricula: text(body.matricula),
+    usuario: login,
+    login,
+    senha: text(body.senha),
+    rg: text(body.rg),
+    genero: text(body.genero || body.sexo),
+    idade: text(body.idade),
+    cidade_natal: text(body.cidade_natal),
+    pais: text(body.pais || "Brasil"),
+    cep: text(body.cep),
+    rua: text(body.rua),
+    numero: text(body.numero),
+    complemento: text(body.complemento),
+    cidade: text(body.cidade),
+    bairro: text(body.bairro),
     valor_professor_aula: teacherClassValueByModule(modulo),
     vip_tipo_plano: vip ? text(body.vip_tipo_plano || "Pacote 10 aulas") : "",
     vip_aulas_total: vip ? Number(body.vip_aulas_total || vipTotalDefault || 0) : 0,
@@ -61,6 +90,7 @@ export async function POST(req: NextRequest) {
     const alunos = await dbList<Record<string, unknown>>(KEY);
     const normalized = normalizeAluno(body);
     if (!text(normalized.nome)) return NextResponse.json({ error: "Nome do aluno e obrigatorio." }, { status: 400 });
+    if (!text(normalized.matricula)) normalized.matricula = nextMatricula(alunos);
 
     const novo = {
       ...normalized,

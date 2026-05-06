@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BOOK_LEVELS } from "@/lib/course-modules";
 
@@ -31,6 +31,15 @@ type TurmaData = {
   total_aulas_vip?: string | number;
   aulas_realizadas_vip?: string | number;
   observacoes?: string;
+  [k: string]: unknown;
+};
+
+type ProfessorOption = {
+  id?: string;
+  nome?: string;
+  name?: string;
+  usuario?: string;
+  login?: string;
   [k: string]: unknown;
 };
 
@@ -105,9 +114,21 @@ function fromTurma(t?: TurmaData): Form {
 function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: () => void; onSaved: () => void }) {
   const isEdit = Boolean(turma?.id);
   const [form, setForm] = useState<Form>(fromTurma(turma));
+  const [professores, setProfessores] = useState<ProfessorOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
   const isVip = form.modulo.toLowerCase().includes("vip");
+  const professorOptions = useMemo(() => {
+    const nomes = professores.map((p) => String(p.nome || p.name || p.usuario || p.login || "").trim()).filter(Boolean);
+    return Array.from(new Set(["Sem Professor", ...nomes, form.professor].filter(Boolean)));
+  }, [professores, form.professor]);
+
+  useEffect(() => {
+    fetch("/api/professores")
+      .then((res) => res.json())
+      .then((data) => setProfessores(Array.isArray(data?.professores) ? data.professores : []))
+      .catch(() => setProfessores([]));
+  }, []);
 
   function update<K extends keyof Form>(field: K, value: Form[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -191,7 +212,10 @@ function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: (
             </div>
             <div className="form-group">
               <label className="form-label">Professor</label>
-              <input className="form-input" placeholder="Sem Professor ou nome do professor" value={form.professor} onChange={(e) => update("professor", e.target.value)} />
+              <select className="form-input" value={form.professor || "Sem Professor"} onChange={(e) => update("professor", e.target.value)}>
+                {professorOptions.map((p) => <option key={p}>{p}</option>)}
+              </select>
+              <div className="form-help">Puxa automaticamente os professores cadastrados.</div>
             </div>
             <div className="form-group">
               <label className="form-label">Livro / Nivel</label>
