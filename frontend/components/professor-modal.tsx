@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 type ProfessorData = {
@@ -50,6 +50,8 @@ type Form = {
   endereco: string;
   observacoes: string;
   status: string;
+  login: string;
+  senha: string;
 };
 
 function digits(value: string) {
@@ -84,6 +86,32 @@ function autoPassword(cpf: string) {
   return digits(cpf).slice(0, 5);
 }
 
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
+function whatsappUrl(phone: string, message: string) {
+  let phoneDigits = digits(phone);
+  if (phoneDigits.length === 10 || phoneDigits.length === 11) phoneDigits = `55${phoneDigits}`;
+  return phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}` : "";
+}
+
+function accessMessage(form: Form) {
+  return [
+    `Ola, ${form.nome || "professor"}!`,
+    "Seu acesso ao painel do professor Active Educacional foi atualizado.",
+    "",
+    `Login: ${form.login}`,
+    `Senha: ${form.senha}`,
+    "",
+    "Portal: https://activeeducacional.tech/login",
+  ].join("\n");
+}
+
+function mailtoUrl(email: string, form: Form) {
+  return `mailto:${email}?subject=${encodeURIComponent("Acesso ao painel do professor")}&body=${encodeURIComponent(accessMessage(form))}`;
+}
+
 function fromProf(p?: ProfessorData): Form {
   return {
     nome: String(p?.nome || p?.name || ""),
@@ -103,16 +131,19 @@ function fromProf(p?: ProfessorData): Form {
     endereco: String(p?.endereco || ""),
     observacoes: String(p?.observacoes || ""),
     status: String(p?.status || "Ativo"),
+    login: String(p?.usuario || p?.login || autoLogin(toInputDate(p?.data_nascimento))),
+    senha: String(p?.senha || autoPassword(String(p?.cpf || ""))),
   };
 }
 
 function ProfessorModal({ professor, onClose, onSaved }: { professor?: ProfessorData; onClose: () => void; onSaved: () => void }) {
-  const isEdit = Boolean(professor?.id);
+  const registroId = text(professor?.id || professor?.nome || professor?.name);
+  const isEdit = Boolean(registroId);
   const [form, setForm] = useState<Form>(fromProf(professor));
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
-  const login = useMemo(() => autoLogin(form.data_nascimento), [form.data_nascimento]);
-  const senha = useMemo(() => autoPassword(form.cpf), [form.cpf]);
+  const [sendFeedback, setSendFeedback] = useState("");
+  const [sendWhatsappLink, setSendWhatsappLink] = useState("");
 
   function update<K extends keyof Form>(field: K, value: Form[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -120,11 +151,21 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
   }
 
   async function excluir() {
-    if (!confirm(`Excluir o professor "${professor?.nome}"? As turmas dele ficarao como Sem Professor.`)) return;
+    if (!registroId) return;
+    if (!confirm(`Excluir o professor "${form.nome || professor?.nome}"? As turmas dele ficarao como Sem Professor.`)) return;
     setSaving(true);
-    await fetch(`/api/professores?id=${encodeURIComponent(String(professor!.id || professor!.nome))}`, { method: "DELETE" });
+    await fetch(`/api/professores?id=${encodeURIComponent(registroId)}`, { method: "DELETE" });
     setSaving(false);
     onSaved();
+  }
+
+  function preencherAcessoAutomatico() {
+    setForm((prev) => ({
+      ...prev,
+      login: autoLogin(prev.data_nascimento),
+      senha: autoPassword(prev.cpf),
+    }));
+    setErro("");
   }
 
   async function salvar() {
@@ -132,17 +173,18 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
       setErro("O nome do professor e obrigatorio.");
       return;
     }
-    if (digits(form.cpf).length < 5) {
-      setErro("CPF precisa ter pelo menos 5 digitos para gerar senha automatica.");
+    if (!form.login.trim()) {
+      setErro("Informe o login do professor.");
       return;
     }
-    if (!login || !senha) {
-      setErro("Informe data de nascimento e CPF para gerar login e senha.");
+    if (form.senha.trim().length < 4) {
+      setErro("Senha precisa ter pelo menos 4 caracteres.");
       return;
     }
     setSaving(true);
+    setSendFeedback("");
     const payload = {
-      ...(isEdit ? { id: professor!.id || professor!.nome } : {}),
+      ...(isEdit ? { id: registroId } : {}),
       ...form,
       nome: form.nome.trim(),
       area: form.area,
@@ -153,9 +195,9 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
       whatsapp: form.celular.trim(),
       data_nascimento: toPtDate(form.data_nascimento),
       cpf: form.cpf.trim(),
-      usuario: login,
-      login,
-      senha,
+      usuario: form.login.trim().toLowerCase(),
+      login: form.login.trim().toLowerCase(),
+      senha: form.senha.trim(),
     };
     const res = await fetch("/api/professores", {
       method: isEdit ? "PUT" : "POST",
@@ -168,7 +210,12 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
       setErro((d as { error?: string }).error || "Erro ao salvar.");
       return;
     }
-    onSaved();
+    const nextForm = { ...form, login: payload.login, senha: payload.senha };
+    const whatsapp = whatsappUrl(form.celular, accessMessage(nextForm));
+    setSendWhatsappLink(whatsapp);
+    setSendFeedback(whatsapp ? "Professor salvo. Abrindo WhatsApp com login e senha." : "Professor salvo. Cadastre um WhatsApp para enviar o acesso automaticamente.");
+    if (whatsapp) window.open(whatsapp, "_blank", "noopener,noreferrer");
+    setTimeout(() => onSaved(), whatsapp ? 1200 : 700);
   }
 
   return (
@@ -221,11 +268,35 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
             </div>
             <div className="form-group">
               <label className="form-label">Login do professor</label>
-              <input className="form-input" value={login} disabled />
+              <input className="form-input" value={form.login} onChange={(e) => update("login", e.target.value)} placeholder="login manual" />
             </div>
             <div className="form-group">
               <label className="form-label">Senha do professor</label>
-              <input className="form-input" value={senha} disabled />
+              <input className="form-input" value={form.senha} onChange={(e) => update("senha", e.target.value)} placeholder="senha manual" />
+              <div className="form-help">O ADM pode digitar manualmente ou gerar pela data/CPF.</div>
+            </div>
+            <div className="form-group form-group-span2">
+              <label className="form-label">Envio de acesso</label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={preencherAcessoAutomatico}>
+                  Gerar login/senha automatico
+                </button>
+                <a
+                  className={`btn btn-secondary btn-sm${!form.login || !form.senha || !form.celular ? " disabled" : ""}`}
+                  href={sendWhatsappLink || (form.login && form.senha && form.celular ? whatsappUrl(form.celular, accessMessage(form)) : "#")}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Enviar por WhatsApp
+                </a>
+                <a
+                  className={`btn btn-secondary btn-sm${!form.login || !form.senha || !form.email ? " disabled" : ""}`}
+                  href={form.login && form.senha && form.email ? mailtoUrl(form.email, form) : "#"}
+                >
+                  Enviar por e-mail
+                </a>
+              </div>
+              <div className="form-help">{sendFeedback || "Ao salvar, o sistema abre automaticamente o WhatsApp com o login e a senha."}</div>
             </div>
             <div className="form-group">
               <label className="form-label">Tipo de contrato</label>
@@ -274,7 +345,7 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
               <textarea className="form-input form-textarea" rows={3} value={form.observacoes} onChange={(e) => update("observacoes", e.target.value)} />
             </div>
           </div>
-          <div style={{ marginTop: 12 }} className="form-success">Login = data de nascimento completa. Senha = 5 primeiros digitos do CPF.</div>
+          <div style={{ marginTop: 12 }} className="form-success">Login e senha podem ser preenchidos manualmente pelo ADM. Use o botao automatico quando quiser seguir o padrao antigo.</div>
           {erro && <div className="form-error">{erro}</div>}
         </div>
 

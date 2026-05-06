@@ -18,12 +18,20 @@ async function syncProfessorUser(professor: Record<string, unknown>, oldLogin?: 
   if (!usuario || !senha) return false;
 
   const users = await dbList<Record<string, unknown>>("users.json");
-  const idx = users.findIndex((u) => lower(u.usuario) === lower(oldLogin || usuario) || lower(u.usuario) === lower(usuario));
+  const professorId = text(professor.id || professor.nome);
+  const professorNome = text(professor.nome);
+  const idx = users.findIndex((u) =>
+    lower(u.usuario) === lower(oldLogin || usuario) ||
+    lower(u.usuario) === lower(usuario) ||
+    text(u.professor_id) === professorId ||
+    text(u.pessoa) === professorNome
+  );
   const record = {
+    professor_id: professorId,
     usuario,
     senha,
     perfil: "Professor",
-    pessoa: text(professor.nome),
+    pessoa: professorNome,
     email: lower(professor.email),
     celular: text(professor.celular || professor.telefone || professor.whatsapp),
   };
@@ -81,6 +89,17 @@ export async function PUT(req: NextRequest) {
 
     const oldNome = text(professores[idx].nome);
     const oldLogin = text(professores[idx].usuario || professores[idx].login);
+    const newLogin = lower(updates.usuario || updates.login);
+    if (newLogin) {
+      const users = await dbList<Record<string, unknown>>("users.json");
+      const targetRef = text(professores[idx].id || professores[idx].nome);
+      const conflict = users.find((u) =>
+        lower(u.usuario) === newLogin &&
+        text(u.professor_id) !== targetRef &&
+        text(u.pessoa) !== oldNome
+      );
+      if (conflict) return NextResponse.json({ error: "Este login ja esta em uso por outro usuario." }, { status: 409 });
+    }
     professores[idx] = { ...professores[idx], ...updates, updated_at: new Date().toISOString() };
 
     const writes: Promise<boolean>[] = [dbSet(KEY, professores), syncProfessorUser(professores[idx], oldLogin)];

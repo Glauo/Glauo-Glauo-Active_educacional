@@ -147,6 +147,7 @@ function faturasDoAluno(aluno: Aluno, recebimentos: Recebimento[]) {
 }
 
 function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
+  const alunoRef = text(aluno.id || aluno.nome || aluno.name || aluno.login);
   const [login, setLogin] = useState(text(aluno.login));
   const [senha, setSenha] = useState(text(aluno.senha));
   const [saving, setSaving] = useState(false);
@@ -164,7 +165,7 @@ function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
     const res = await fetch("/api/alunos/credenciais", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: aluno.id, login, senha }),
+      body: JSON.stringify({ id: alunoRef, login, senha }),
     });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
@@ -192,7 +193,7 @@ function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
       </div>
       {feedback && <div className={feedback.includes("sucesso") ? "form-success" : "form-error"} style={{ marginTop: 10 }}>{feedback}</div>}
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !aluno.id}>{saving ? "Salvando..." : "Alterar senha/login"}</button>
+        <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !alunoRef}>{saving ? "Salvando..." : "Alterar senha/login"}</button>
         {whatsappLink && <a className="btn btn-secondary btn-sm" href={whatsappLink} target="_blank" rel="noreferrer">Enviar WhatsApp</a>}
         <a className="btn btn-secondary btn-sm" href="/alunos/credenciais">Gerenciar todos</a>
       </div>
