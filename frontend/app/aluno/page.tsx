@@ -267,7 +267,15 @@ export default async function AlunoHomePage() {
                         <td>{String(f.vencimento || f.data_vencimento || "-")}</td>
                         <td>{(parseFloat(String(f.valor || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
                         <td><span className={`badge badge-${pago ? "success" : "warning"}`}><span className="badge-dot" />{String(f.status || "Pendente")}</span></td>
-                        <td><a className="btn btn-secondary btn-sm" href={`/api/financeiro/boleto?id=${String(f.id)}`} target="_blank" rel="noreferrer">Baixar boleto</a></td>
+                        <td>
+                          {String(f.boleto_pdf_url || "") ? (
+                            <a className="btn btn-secondary btn-sm" href={String(f.boleto_pdf_url)} target="_blank" rel="noreferrer">Baixar boleto</a>
+                          ) : (String(f.boleto_status || f.gerar_boleto || "").toString().length > 1) ? (
+                            <a className="btn btn-secondary btn-sm" href={`/api/financeiro/boleto?id=${String(f.id)}`} target="_blank" rel="noreferrer">Baixar boleto</a>
+                          ) : (
+                            <span className="muted" style={{ fontSize: "0.8rem" }}>—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}

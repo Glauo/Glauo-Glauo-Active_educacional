@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { teacherClassValueByModule } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
 
@@ -28,6 +29,10 @@ function moneyValue(value: unknown) {
 
 function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function classModule(turma?: Row) {
+  return text(turma?.modulo || turma?.tipo_aula || turma?.modalidade || turma?.nivel);
 }
 
 function canSeeAll(role: string) {
@@ -72,7 +77,8 @@ export function TeacherClassPanel({
   const teacher = professores.find((p) => sameName(p.nome || p.name, selected?.professor)) || {};
   const livro = text(selected?.livro || selected?.book);
   const ultimaLicao = text(selected?.ultima_licao || selected?.licao_atual || selected?.ultima_aula);
-  const valorAula = moneyValue(selected?.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
+  const modulo = classModule(selected);
+  const valorAula = teacherClassValueByModule(modulo) || moneyValue(selected?.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
   const alunosTurma = alunos.filter((a) => sameName(a.turma || a.classe, className(selected || {})));
   const presencasOk = alunosTurma.length === 0 || alunosTurma.every((a) => presentes[text(a.id || a.login || a.nome || a.name)] !== undefined);
 
@@ -147,6 +153,10 @@ export function TeacherClassPanel({
           <div className="form-group">
             <label className="form-label">Livro automatico</label>
             <input className="form-input" value={livro || "Livro nao informado"} readOnly />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Modulo</label>
+            <input className="form-input" value={modulo || "Modulo nao informado"} readOnly />
           </div>
           <div className="form-group">
             <label className="form-label">Valor da aula</label>

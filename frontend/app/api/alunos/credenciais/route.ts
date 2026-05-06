@@ -3,7 +3,41 @@ import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
 
-type Aluno = { id?: string; nome?: string; name?: string; login?: string; senha?: string; turma?: string; [k: string]: unknown };
+type Aluno = { id?: string; nome?: string; name?: string; login?: string; senha?: string; turma?: string; classe?: string; celular?: string; telefone?: string; whatsapp?: string; responsavel?: unknown; responsavel_telefone?: string; responsavel_email?: string; [k: string]: unknown };
+
+function text(value: unknown) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const row = value as Record<string, unknown>;
+    return String(row.nome || row.name || row.celular || row.telefone || row.whatsapp || row.email || "").trim();
+  }
+  return String(value || "").trim();
+}
+
+function phoneFromStudent(aluno: Aluno) {
+  const responsavel = aluno.responsavel && typeof aluno.responsavel === "object" && !Array.isArray(aluno.responsavel)
+    ? aluno.responsavel as Record<string, unknown>
+    : {};
+  return text(aluno.celular || aluno.whatsapp || aluno.telefone || aluno.responsavel_telefone || responsavel.celular || responsavel.telefone || responsavel.whatsapp);
+}
+
+function whatsappUrl(phone: unknown, message: string) {
+  let digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
+}
+
+function credentialMessage(aluno: Aluno, login: string, senha: string) {
+  const nome = text(aluno.nome || aluno.name || "Aluno");
+  return [
+    `Olá, ${nome}!`,
+    "Seu acesso ao portal do aluno Active Educacional foi atualizado.",
+    "",
+    `Login: ${login}`,
+    `Senha: ${senha}`,
+    "",
+    "Acesse pelo portal da escola. Se tiver dificuldade, fale com a secretaria.",
+  ].join("\n");
+}
 
 export async function GET() {
   const session = await getSession();
@@ -16,9 +50,10 @@ export async function GET() {
   const lista = alunos.map((a) => ({
     id: a.id,
     nome: a.nome || a.name,
-    turma: a.turma,
+    turma: a.turma || a.classe,
     login: a.login || null,
     senha: a.senha || null,
+    telefone: phoneFromStudent(a),
     temAcesso: Boolean(a.login && a.senha)
   }));
   return NextResponse.json(lista);
@@ -60,7 +95,14 @@ export async function PUT(req: NextRequest) {
   alunos[idx] = { ...alunos[idx], login: loginTrimmed, senha: String(senha) };
   await dbSet("students.json", alunos);
 
-  return NextResponse.json({ ok: true, login: loginTrimmed });
+  const message = credentialMessage(alunos[idx], loginTrimmed, String(senha));
+  return NextResponse.json({
+    ok: true,
+    login: loginTrimmed,
+    telefone: phoneFromStudent(alunos[idx]),
+    whatsapp_url: whatsappUrl(phoneFromStudent(alunos[idx]), message),
+    whatsapp_message: message,
+  });
 }
 
 export async function DELETE(req: NextRequest) {

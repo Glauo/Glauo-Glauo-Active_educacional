@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BOOK_LEVELS } from "@/lib/course-modules";
 
 type TurmaData = {
   id?: string;
@@ -64,7 +65,7 @@ const MODULOS = [
 ];
 
 const DIAS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
-const LIVROS = ["Livro 1", "Livro 2", "Livro 3", "Livro 4", "Livro 5", "Express Teens", "Express Adults", "Business Adults", "Inteligencia Emocional", "Jovens Empreendedores"];
+const LIVROS = [...BOOK_LEVELS];
 
 function splitDias(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);

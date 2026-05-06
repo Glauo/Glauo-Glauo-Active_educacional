@@ -1,8 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isVipModule, teacherClassValueByModule, vipPlanTotal } from "@/lib/course-modules";
 
 const KEY = "students.json";
+
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
+function normalizeAluno(body: Record<string, unknown>) {
+  const modulo = text(body.modulo || body.modalidade);
+  const vip = isVipModule(modulo);
+  const vipTotalDefault = vipPlanTotal(body.vip_tipo_plano);
+  const responsavel =
+    body.responsavel && typeof body.responsavel === "object" && !Array.isArray(body.responsavel)
+      ? body.responsavel as Record<string, unknown>
+      : {};
+  const responsavelNome = text(body.responsavel_nome || responsavel.nome || body.responsavel);
+  return {
+    ...body,
+    nome: text(body.nome || body.name),
+    turma: text(body.turma || body.classe),
+    classe: text(body.turma || body.classe),
+    livro: text(body.livro || body.book),
+    book: text(body.livro || body.book),
+    modulo,
+    valor_professor_aula: teacherClassValueByModule(modulo),
+    vip_tipo_plano: vip ? text(body.vip_tipo_plano || "Pacote 10 aulas") : "",
+    vip_aulas_total: vip ? Number(body.vip_aulas_total || vipTotalDefault || 0) : 0,
+    vip_aulas_restantes: vip ? Number(body.vip_aulas_restantes || body.vip_aulas_total || vipTotalDefault || 0) : 0,
+    responsavel: {
+      nome: responsavelNome,
+      cpf: text(body.responsavel_cpf || responsavel.cpf),
+      celular: text(body.responsavel_telefone || responsavel.celular || responsavel.telefone || body.telefone),
+      telefone: text(body.responsavel_telefone || responsavel.telefone || responsavel.celular || body.telefone),
+      email: text(body.responsavel_email || responsavel.email),
+    },
+    responsavel_nome: responsavelNome,
+    responsavel_cpf: text(body.responsavel_cpf || responsavel.cpf),
+    responsavel_telefone: text(body.responsavel_telefone || responsavel.telefone || responsavel.celular || body.telefone),
+    responsavel_email: text(body.responsavel_email || responsavel.email),
+  };
+}
 
 export async function GET() {
   const session = await getSession();
@@ -19,9 +59,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const alunos = await dbList<Record<string, unknown>>(KEY);
+    const normalized = normalizeAluno(body);
+    if (!text(normalized.nome)) return NextResponse.json({ error: "Nome do aluno e obrigatorio." }, { status: 400 });
 
     const novo = {
-      ...body,
+      ...normalized,
       id: body.id || crypto.randomUUID(),
       created_at: new Date().toISOString()
     };
@@ -49,7 +91,7 @@ export async function PUT(req: NextRequest) {
     const idx = alunos.findIndex((a) => a.id === id || a.nome === id);
     if (idx === -1) return NextResponse.json({ error: "Aluno não encontrado." }, { status: 404 });
 
-    alunos[idx] = { ...alunos[idx], ...updates, updated_at: new Date().toISOString() };
+    alunos[idx] = { ...alunos[idx], ...normalizeAluno(updates), updated_at: new Date().toISOString() };
     await dbSet(KEY, alunos);
     return NextResponse.json({ ok: true, aluno: alunos[idx] });
   } catch (err) {

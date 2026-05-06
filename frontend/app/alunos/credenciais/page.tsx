@@ -8,6 +8,7 @@ type AlunoCredencial = {
   nome: string;
   turma: string;
   login: string | null;
+  telefone?: string;
   temAcesso: boolean;
 };
 
@@ -18,12 +19,20 @@ type EditState = {
   confirmar: string;
 };
 
+type SaveResponse = {
+  error?: string;
+  login?: string;
+  whatsapp_url?: string;
+  whatsapp_message?: string;
+};
+
 export default function CredenciaisPage() {
   const [alunos, setAlunos] = useState<AlunoCredencial[]>([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState<EditState | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [feedback, setFeedback] = useState<{ tipo: "ok" | "erro"; msg: string } | null>(null);
+  const [whatsappLink, setWhatsappLink] = useState("");
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
@@ -45,12 +54,14 @@ export default function CredenciaisPage() {
 
   function abrirEditor(a: AlunoCredencial) {
     setFeedback(null);
+    setWhatsappLink("");
     setEditando({ id: a.id, login: a.login || "", senha: "", confirmar: "" });
   }
 
   function cancelar() {
     setEditando(null);
     setFeedback(null);
+    setWhatsappLink("");
   }
 
   async function salvar() {
@@ -79,6 +90,7 @@ export default function CredenciaisPage() {
 
     setSalvando(true);
     setFeedback(null);
+    setWhatsappLink("");
 
     const res = await fetch("/api/alunos/credenciais", {
       method: "PUT",
@@ -86,7 +98,7 @@ export default function CredenciaisPage() {
       body: JSON.stringify({ id: editando.id, login: editando.login, senha: editando.senha })
     });
 
-    const data = await res.json();
+    const data = await res.json() as SaveResponse;
     setSalvando(false);
 
     if (!res.ok) {
@@ -94,13 +106,14 @@ export default function CredenciaisPage() {
       return;
     }
 
-    setFeedback({ tipo: "ok", msg: `Acesso configurado com sucesso para login: ${data.login}` });
+    const savedLogin = data.login || editando.login.trim().toLowerCase();
+    setFeedback({ tipo: "ok", msg: `Acesso configurado com sucesso para login: ${savedLogin}` });
+    setWhatsappLink(data.whatsapp_url || "");
     setAlunos((prev) =>
       prev.map((a) =>
-        a.id === editando.id ? { ...a, login: data.login, temAcesso: true } : a
+        a.id === editando.id ? { ...a, login: savedLogin, temAcesso: true } : a
       )
     );
-    setEditando(null);
   }
 
   async function removerAcesso(a: AlunoCredencial) {
@@ -332,6 +345,19 @@ export default function CredenciaisPage() {
                 </div>
               )}
 
+              {feedback?.tipo === "ok" && (
+                <div style={{
+                  background: "rgba(34,197,94,0.08)",
+                  border: "1px solid rgba(34,197,94,0.25)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "12px 14px",
+                  color: "var(--green-700)",
+                  fontSize: "0.875rem"
+                }}>
+                  {feedback.msg}
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button
                   className="btn btn-secondary"
@@ -350,6 +376,11 @@ export default function CredenciaisPage() {
                   {salvando ? "Salvando…" : "Salvar acesso"}
                 </button>
               </div>
+              {whatsappLink && (
+                <a className="btn btn-secondary" href={whatsappLink} target="_blank" rel="noreferrer" style={{ justifyContent: "center" }}>
+                  Enviar login e senha por WhatsApp
+                </a>
+              )}
             </div>
           </div>
         </div>

@@ -138,6 +138,15 @@ const navSections = [
         )
       },
       {
+        href: "/condojob",
+        label: "CondoJob",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h5v-4h2v4h5a2 2 0 002-2V5a2 2 0 00-2-2H4zm1 3h2v2H5V6zm3 0h2v2H8V6zm3 0h2v2h-2V6zm3 0h1v2h-1V6zM5 10h2v2H5v-2zm3 0h2v2H8v-2zm3 0h2v2h-2v-2zm3 0h1v2h-1v-2z" clipRule="evenodd" />
+          </svg>
+        )
+      },
+      {
         href: "/configuracoes",
         label: "Configurações",
         icon: (
@@ -171,7 +180,7 @@ function canSeeNavItem(userRole: string, href: string) {
   const role = userRole.toLowerCase();
   if (role.includes("admin") || role.includes("coord") || role.includes("dire")) return true;
   if (role.includes("comercial")) {
-    return ["/", "/alunos", "/financeiro", "/agenda"].includes(href);
+    return ["/", "/alunos", "/financeiro", "/agenda", "/condojob"].includes(href);
   }
   if (role.includes("prof")) {
     return ["/", "/agenda", "/turmas", "/mural", "/licoes", "/desafios", "/notas", "/biblioteca"].includes(href);

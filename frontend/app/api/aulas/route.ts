@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { isAdminOrCoordinator, isTeacher, sameName } from "@/lib/roles";
+import { isVipModule, teacherClassValueByModule } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
 
@@ -10,6 +11,7 @@ const TEACHERS_KEY = "teachers.json";
 const SESSIONS_KEY = "class_sessions.json";
 const PAYABLES_KEY = "payables.json";
 const ATTENDANCE_KEY = "attendance.json";
+const STUDENTS_KEY = "students.json";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -17,6 +19,15 @@ function text(value: unknown) {
 
 function moneyValue(value: unknown) {
   const n = parseFloat(String(value || "").replace(/[^\d.,-]/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function classModule(turma: Row) {
+  return text(turma.modulo || turma.tipo_aula || turma.modalidade || turma.nivel);
+}
+
+function toInt(value: unknown) {
+  const n = parseInt(String(value || "0"), 10);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -62,12 +73,13 @@ export async function POST(req: NextRequest) {
     const turmaRef = text(body.turmaId || body.turma || body.turmaNome);
     if (!turmaRef) return NextResponse.json({ error: "Turma obrigatória." }, { status: 400 });
 
-    const [turmas, professores, aulas, despesas, frequencias] = await Promise.all([
+    const [turmas, professores, aulas, despesas, frequencias, alunos] = await Promise.all([
       dbList<Row>(CLASSES_KEY),
       dbList<Row>(TEACHERS_KEY),
       dbList<Row>(SESSIONS_KEY),
       dbList<Row>(PAYABLES_KEY),
-      dbList<Row>(ATTENDANCE_KEY)
+      dbList<Row>(ATTENDANCE_KEY),
+      dbList<Row>(STUDENTS_KEY)
     ]);
 
     const turma = findClass(turmas, turmaRef);
@@ -75,10 +87,11 @@ export async function POST(req: NextRequest) {
     if (!canUseClass(session, turma)) return NextResponse.json({ error: "Sem permissão para esta turma." }, { status: 403 });
 
     const turmaId = classId(turma);
-    const professor = text(turma.professor || body.professor || session.pessoa);
-    const teacher: Row = professores.find((p) => sameName(teacherName(p), professor)) || {};
-    const livro = text(turma.livro || turma.book || body.livro);
-    const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
+      const professor = text(turma.professor || body.professor || session.pessoa);
+      const teacher: Row = professores.find((p) => sameName(teacherName(p), professor)) || {};
+      const livro = text(turma.livro || turma.book || body.livro);
+      const modulo = classModule(turma);
+      const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
 
     if (action === "open") {
       const aberta = aulas.find((a) => a.status === "aberta" && text(a.turma_id) === turmaId);
@@ -91,6 +104,7 @@ export async function POST(req: NextRequest) {
         professor,
         professor_telefone: text(teacher.telefone || teacher.whatsapp || teacher.celular),
         professor_email: text(teacher.email),
+        modulo,
         livro,
         licao_inicio: text(body.licao_inicio) || licaoAtual,
         status: "aberta",
@@ -122,8 +136,11 @@ export async function POST(req: NextRequest) {
       if (!tarefa) return NextResponse.json({ error: "Informe a tarefa de casa." }, { status: 400 });
       if (presencas.some((p) => typeof p.presente !== "boolean")) return NextResponse.json({ error: "Marque presenca ou falta de todos os alunos." }, { status: 400 });
 
-      const valorAula = moneyValue(body.valor_aula || turma.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
+      const modulo = classModule(turma);
+      const valorPorModulo = teacherClassValueByModule(modulo);
+      const valorAula = valorPorModulo || moneyValue(body.valor_aula || turma.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
       const base = aulas[idx];
+      const vipConsumidos: Row[] = [];
       const fechada = {
         ...base,
         status: "fechada",
@@ -133,6 +150,8 @@ export async function POST(req: NextRequest) {
         presencas,
         observacoes: text(body.observacoes),
         valor_aula: valorAula,
+        modulo,
+        vip_consumed_students: vipConsumidos,
         fechada_por: session.pessoa || session.usuario,
         fim: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -166,6 +185,22 @@ export async function POST(req: NextRequest) {
         tarefa,
         data: new Date().toISOString()
       }));
+      const nextAlunos = alunos.map((aluno) => {
+        const alunoTurma = text(aluno.turma || aluno.classe);
+        const alunoModulo = text(aluno.modulo || aluno.modalidade || modulo);
+        if (!sameName(alunoTurma, className(turma)) || !isVipModule(alunoModulo)) return aluno;
+        const total = Math.max(0, toInt(aluno.vip_aulas_total));
+        const restantesAtuais = Math.max(0, toInt(aluno.vip_aulas_restantes || total));
+        if (restantesAtuais <= 0) return { ...aluno, vip_aulas_total: total, vip_aulas_restantes: 0 };
+        const restantes = Math.max(0, restantesAtuais - 1);
+        vipConsumidos.push({
+          aluno: text(aluno.nome || aluno.name),
+          anteriores: restantesAtuais,
+          restantes,
+          total,
+        });
+        return { ...aluno, vip_aulas_total: total, vip_aulas_restantes: restantes };
+      });
       const alreadyPayable = despesas.some((d) => text(d.aula_id) === aulaFechadaId);
       const descricao = `Aula dada - ${className(turma)} - ${livro || "Livro não informado"} - lição ${text(base.licao_inicio) || "início"} até ${licaoFim}`;
       const payable = {
@@ -179,12 +214,17 @@ export async function POST(req: NextRequest) {
         professor_telefone: text(teacher.telefone || teacher.whatsapp || teacher.celular),
         professor_email: text(teacher.email),
         turma: className(turma),
+        modulo,
         livro,
         licao_inicio: text(base.licao_inicio),
         licao_fim: licaoFim,
         descricao,
         valor: valorAula,
+        valor_unitario: valorAula,
         vencimento: new Date().toISOString().slice(0, 10),
+        data_vencimento: new Date().toISOString().slice(0, 10),
+        data_aula: new Date().toISOString().slice(0, 10),
+        vip_consumed_students: vipConsumidos,
         status: "Pendente",
         created_at: new Date().toISOString()
       };
@@ -193,7 +233,8 @@ export async function POST(req: NextRequest) {
         dbSet(SESSIONS_KEY, nextAulas),
         dbSet(CLASSES_KEY, nextTurmas),
         dbSet(PAYABLES_KEY, alreadyPayable ? despesas : [...despesas, payable]),
-        dbSet(ATTENDANCE_KEY, [...frequencias, ...registrosFrequencia])
+        dbSet(ATTENDANCE_KEY, [...frequencias, ...registrosFrequencia]),
+        dbSet(STUDENTS_KEY, nextAlunos)
       ]);
 
       return NextResponse.json({ ok: true, aula: fechada, financeiro: alreadyPayable ? null : payable });

@@ -40,7 +40,20 @@ export async function POST(req: NextRequest) {
     const key = tipo === "despesas" ? "payables.json" : "receivables.json";
 
     const lancamentos = await dbList<Record<string, unknown>>(key);
-    const novo = { ...data, id: data.id || crypto.randomUUID(), created_at: new Date().toISOString(), created_by: session.pessoa || session.usuario };
+    const id = text(data.id) || crypto.randomUUID();
+    const boletoUpdate = data.gerar_boleto ? {
+      boleto_status: "Gerado",
+      boleto_codigo: text(data.boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
+      boleto_gerado_em: new Date().toISOString(),
+      status: data.status || "Boleto gerado",
+    } : {};
+    const novo = {
+      ...data,
+      ...boletoUpdate,
+      id,
+      created_at: new Date().toISOString(),
+      created_by: session.pessoa || session.usuario
+    };
     lancamentos.push(novo);
     await dbSet(key, lancamentos);
     await audit({

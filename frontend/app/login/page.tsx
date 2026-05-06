@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-const UNIDADES = ["Matriz", "Unidade Centro", "Unidade Norte", "Unidade Sul", "Outra"];
+const UNIDADES = ["Mister Wiz", "CondoJob"];
 
 const features = [
   {
@@ -36,9 +36,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
-  const [unidade, setUnidade] = useState("Matriz");
-  const [outra, setOutra] = useState("");
-  const [error, setError] = useState("");
+  const [unidade, setUnidade] = useState("Mister Wiz");
+const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -46,7 +45,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    const unit = unidade === "Outra" ? outra.trim() || "Outra" : unidade;
+    const unit = unidade;
 
     try {
       const res = await fetch("/api/auth", {
@@ -161,21 +160,8 @@ export default function LoginPage() {
               </select>
             </div>
 
-            {unidade === "Outra" && (
-              <div className="form-group">
-                <label className="form-label" htmlFor="outra">Nome da unidade</label>
-                <input
-                  id="outra"
-                  type="text"
-                  className="form-input"
-                  placeholder="Digite o nome da unidade"
-                  value={outra}
-                  onChange={(e) => setOutra(e.target.value)}
-                />
-              </div>
-            )}
 
-            <div className="form-group">
+<div className="form-group">
               <label className="form-label" htmlFor="usuario">Usuário</label>
               <input
                 id="usuario"

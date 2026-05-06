@@ -7,12 +7,16 @@ import { AlunosSearchTable } from "@/components/alunos-search-table";
 import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Aluno = { id?: string; nome?: string; name?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
+type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; [k: string]: unknown };
 
 export default async function AlunosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const alunos = await dbList<Aluno>("students.json");
+  const [alunos, recebimentos] = await Promise.all([
+    dbList<Aluno>("students.json"),
+    dbList<Recebimento>("receivables.json"),
+  ]);
 
   const ativos = alunos.filter((a) => {
     const s = String(a.status || a.situacao || "ativo").toLowerCase();
@@ -83,7 +87,7 @@ export default async function AlunosPage() {
           </div>
         </div>
       ) : (
-        <AlunosSearchTable alunos={alunos} canManageAccess={isAdminOrCoordinator(session)} />
+        <AlunosSearchTable alunos={alunos} recebimentos={recebimentos} canManageAccess={isAdminOrCoordinator(session)} />
       )}
     </AppShell>
   );

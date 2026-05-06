@@ -126,7 +126,10 @@ function groupByMes(items: Lancamento[]): { key: string; label: string; items: L
 function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
   const [loading, setLoading] = useState(false);
   const id = String(lancamento.id || "");
-  const msg = `Boleto Ativo Educacional\nAluno: ${String(lancamento.aluno || lancamento.nome || "")}\nReferencia: ${String(lancamento.descricao || "")}\nValor: ${formatBRL(parseValor(lancamento.valor))}\nVencimento: ${String(lancamento.vencimento || lancamento.data_vencimento || "")}\nLink: ${typeof window !== "undefined" ? window.location.origin : ""}/api/financeiro/boleto?id=${id}`;
+  const boletoLink = lancamento.boleto_pdf_url
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}${String(lancamento.boleto_pdf_url)}`
+    : `${typeof window !== "undefined" ? window.location.origin : ""}/api/financeiro/boleto?id=${id}`;
+  const msg = `Boleto Ativo Educacional\nAluno: ${String(lancamento.aluno || lancamento.nome || "")}\nReferencia: ${String(lancamento.descricao || "")}\nValor: ${formatBRL(parseValor(lancamento.valor_parcela || lancamento.valor))}\nVencimento: ${String(lancamento.vencimento || lancamento.data_vencimento || "")}\nLink: ${boletoLink}`;
 
   async function gerar() {
     if (!id) return;
@@ -142,6 +145,7 @@ function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
 
   return (
     <>
+      {lancamento.boleto_pdf_url && <a className="btn btn-secondary btn-sm" href={String(lancamento.boleto_pdf_url)} target="_blank" rel="noreferrer">Abrir PDF</a>}
       <button className="btn btn-secondary btn-sm" onClick={gerar} disabled={loading}>{loading ? "Gerando..." : "Boleto PDF"}</button>
       <a className="btn btn-secondary btn-sm" href={whatsappUrl(lancamento.telefone || lancamento.whatsapp, msg)} target="_blank" rel="noreferrer">WhatsApp</a>
     </>

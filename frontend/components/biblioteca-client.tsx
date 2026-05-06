@@ -36,6 +36,7 @@ export function BibliotecaClient({ livros, videos, materiais }: { livros: Livro[
             <p className="section-subtitle">{livrosFiltrados.length} de {livros.length} títulos</p>
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <AdicionarLivroBtn />
             {categorias.length > 1 && (
               <select
                 className="filter-select"
