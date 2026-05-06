@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inflateRawSync } from "node:zlib";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { getSession } from "@/lib/auth";
 import { dbGet, dbSet } from "@/lib/db";
 import { isAdminOrCoordinator } from "@/lib/roles";
@@ -53,6 +55,55 @@ function filenameDate() {
 function canManageBackup(perfil: string) {
   const p = perfil.toLowerCase();
   return p.includes("dire") || isAdminOrCoordinator({ perfil });
+}
+
+function safeFilename(value: unknown, fallback: string) {
+  const name = String(value || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return name || fallback;
+}
+
+async function saveImportedPdf(base64: string, filename: string) {
+  const uploadDir = path.join(process.cwd(), "public", "uploads", "livros");
+  await mkdir(uploadDir, { recursive: true });
+  const cleanBase64 = base64.includes(",") ? base64.split(",").pop() || "" : base64;
+  const buffer = Buffer.from(cleanBase64, "base64");
+  if (!buffer.length) return "";
+  const safeName = `${Date.now()}-${safeFilename(filename, "livro.pdf")}`;
+  await writeFile(path.join(uploadDir, safeName), buffer);
+  return `/uploads/livros/${safeName}`;
+}
+
+async function normalizeBackupValue(key: string, value: unknown) {
+  if (value === null || value === undefined) return undefined;
+
+  if (key === "books.json" && Array.isArray(value)) {
+    const normalized = [];
+    for (const [index, row] of value.entries()) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        normalized.push(row);
+        continue;
+      }
+      const livro = { ...row } as Record<string, unknown>;
+      const fileB64 = typeof livro.file_b64 === "string" ? livro.file_b64 : "";
+      if (fileB64.length > 1000 && !livro.url && !livro.file_path) {
+        const url = await saveImportedPdf(fileB64, String(livro.file_name || livro.titulo || `livro-${index + 1}.pdf`)).catch(() => "");
+        if (url) {
+          livro.url = url;
+          livro.file_path = url;
+        }
+      }
+      delete livro.file_b64;
+      normalized.push(livro);
+    }
+    return normalized;
+  }
+
+  return value;
 }
 
 function findEndOfCentralDirectory(buffer: Buffer) {
@@ -126,7 +177,8 @@ export async function GET() {
 
   const data: Record<string, unknown> = {};
   for (const key of BACKUP_KEYS) {
-    data[key] = await dbGet(key);
+    const value = await dbGet(key);
+    if (value !== null && value !== undefined) data[key] = value;
   }
 
   const backup = {
@@ -165,9 +217,15 @@ export async function POST(req: NextRequest) {
   }
 
   let restored = 0;
+  const skipped: string[] = [];
   for (const key of BACKUP_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
-    await dbSet(key, data[key]);
+    const value = await normalizeBackupValue(key, data[key]);
+    if (value === undefined) {
+      skipped.push(key);
+      continue;
+    }
+    await dbSet(key, value);
     restored += 1;
   }
 
@@ -177,11 +235,12 @@ export async function POST(req: NextRequest) {
     tipo: "importacao",
     arquivo: file.name,
     restaurados: restored,
+    ignorados: skipped,
     usuario: session.usuario,
     perfil: session.perfil,
     created_at: new Date().toISOString(),
   });
   await dbSet("backup_audit.json", audit.slice(0, 200));
 
-  return NextResponse.json({ ok: true, restored });
+  return NextResponse.json({ ok: true, restored, skipped });
 }
