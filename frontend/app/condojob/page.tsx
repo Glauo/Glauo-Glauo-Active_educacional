@@ -1,41 +1,34 @@
-import { BookOpen, FileCheck2, GraduationCap, Trophy, Users, WalletCards } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 const modulos = [
   {
-    icon: BookOpen,
     titulo: "Cursos",
     descricao: "Criacao e gestao de cursos com aulas, carga horaria, nota minima e controle de matriculas.",
     itens: ["Nome e descricao do curso", "Carga horaria", "Nota minima para certificado", "Preco ou gratuito"]
   },
   {
-    icon: Users,
     titulo: "Alunos",
     descricao: "Cadastro, matricula e acompanhamento de alunos por curso com historico de progresso.",
     itens: ["Matricula por curso", "Progresso de aulas", "Status de conclusao", "Historico de acesso"]
   },
   {
-    icon: FileCheck2,
     titulo: "Atividades",
     descricao: "Envio de atividades pelos alunos e correcao pela coordenacao com nota e feedback.",
     itens: ["Submissao de atividade", "Aguardando correcao", "Nota e feedback", "Status de aprovacao"]
   },
   {
-    icon: Trophy,
     titulo: "Certificados",
     descricao: "Emissao automatica de certificados ao concluir curso com nota acima do minimo exigido.",
     itens: ["Conclusao do curso", "Nota acima do minimo", "Emissao automatica", "Download disponivel"]
   },
   {
-    icon: WalletCards,
     titulo: "Financeiro",
     descricao: "Controle de pagamentos vinculados a matriculas, com status e historico por aluno.",
     itens: ["Pagamentos por aluno", "Status de matricula", "Historico financeiro", "Relatorio de receita"]
   },
   {
-    icon: GraduationCap,
     titulo: "Documentos",
     descricao: "Upload e gestao de documentos por aluno, com visualizacao e download pela coordenacao.",
     itens: ["Upload de documento", "Tipo e descricao", "Visualizacao pelo aluno", "Gestao pela coordenacao"]
@@ -79,16 +72,12 @@ export default async function CondoJobPage() {
       </div>
 
       <section className="metric-grid">
-        {modulos.map((m) => {
-          const Icon = m.icon;
-          return (
-            <div className="metric" key={m.titulo}>
-              <div className="metric-icon"><Icon size={19} /></div>
-              <strong>{m.titulo}</strong>
-              <span className="muted">Modulo ativo</span>
-            </div>
-          );
-        })}
+        {modulos.map((m) => (
+          <div className="metric" key={m.titulo}>
+            <strong>{m.titulo}</strong>
+            <span className="muted">Modulo ativo</span>
+          </div>
+        ))}
       </section>
 
       <div className="split-grid">
@@ -136,21 +125,16 @@ export default async function CondoJobPage() {
           </div>
         </div>
         <div className="education-card-grid">
-          {modulos.map((m) => {
-            const Icon = m.icon;
-            return (
-              <article className="education-card" key={m.titulo}>
-                <span className="status-pill">Modulo ativo</span>
-                <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Icon size={16} />{m.titulo}
-                </h3>
-                <p>{m.descricao}</p>
-                <div className="tag-row">
-                  {m.itens.map((item) => <span key={item}>{item}</span>)}
-                </div>
-              </article>
-            );
-          })}
+          {modulos.map((m) => (
+            <article className="education-card" key={m.titulo}>
+              <span className="status-pill">Modulo ativo</span>
+              <h3>{m.titulo}</h3>
+              <p>{m.descricao}</p>
+              <div className="tag-row">
+                {m.itens.map((item) => <span key={item}>{item}</span>)}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
     </AppShell>
