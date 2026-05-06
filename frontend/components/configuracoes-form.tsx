@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type SistemaConfig = { nome_escola?: string; cnpj?: string; telefone?: string; email_contato?: string; endereco?: string; cidade?: string; estado?: string; cep?: string; [k: string]: unknown };
 type SmtpConfig = { host?: string; port?: number | string; user?: string; from_name?: string; enabled?: boolean; [k: string]: unknown };
@@ -27,7 +27,9 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
   const [boleto, setBoleto] = useState<BoletoConfig>(b0);
   const [smtpSenha, setSmtpSenha] = useState("");
   const [saving, setSaving] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ tipo: "ok" | "erro"; msg: string } | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   function sys(field: keyof SistemaConfig, value: string) { setSistema((p) => ({ ...p, [field]: value })); }
   function mtp(field: keyof SmtpConfig, value: string | boolean) { setSmtp((p) => ({ ...p, [field]: value })); }
@@ -48,6 +50,33 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
     setTimeout(() => setFeedback(null), 4000);
   }
 
+  function baixarBackup() {
+    window.location.href = "/api/backup";
+  }
+
+  async function importarBackup(file: File | null) {
+    if (!file) return;
+    if (!confirm("Importar este bkup vai substituir os dados atuais do sistema pelas informacoes do arquivo. Deseja continuar?")) {
+      if (backupInputRef.current) backupInputRef.current.value = "";
+      return;
+    }
+
+    setBackupLoading(true);
+    setFeedback(null);
+    const formData = new FormData();
+    formData.append("backup", file);
+    const res = await fetch("/api/backup", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    setBackupLoading(false);
+    if (backupInputRef.current) backupInputRef.current.value = "";
+    if (!res.ok) {
+      setFeedback({ tipo: "erro", msg: String((data as { error?: string }).error || "Erro ao importar bkup.") });
+      return;
+    }
+    setFeedback({ tipo: "ok", msg: `Bkup importado com sucesso. ${String((data as { restored?: number }).restored || 0)} bases restauradas.` });
+    setTimeout(() => window.location.reload(), 1200);
+  }
+
   return (
     <>
       {/* Header fixo com botão salvar */}
@@ -58,6 +87,13 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
           <p className="page-description">Parâmetros gerais do sistema, integrações e permissões por perfil.</p>
         </div>
         <div className="page-actions">
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json,.zip,application/json,application/zip"
+            style={{ display: "none" }}
+            onChange={(e) => void importarBackup(e.target.files?.[0] || null)}
+          />
           {feedback && (
             <div style={{
               padding: "10px 16px", borderRadius: "var(--radius-md)", fontSize: "0.875rem", fontWeight: 600,
@@ -68,6 +104,14 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
               {feedback.tipo === "ok" ? "✓ " : "✗ "}{feedback.msg}
             </div>
           )}
+          <button className="btn btn-secondary" type="button" onClick={baixarBackup} disabled={backupLoading}>
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            Fazer bkup
+          </button>
+          <button className="btn btn-secondary" type="button" onClick={() => backupInputRef.current?.click()} disabled={backupLoading}>
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 3a2 2 0 012-2h7.586A2 2 0 0114 1.586L17.414 5A2 2 0 0118 6.414V17a2 2 0 01-2 2H5a2 2 0 01-2-2V3zm8 0H5v14h11V8h-5V3zm-1 7a1 1 0 011 1v2.586l.293-.293a1 1 0 111.414 1.414l-2 2a1 1 0 01-1.414 0l-2-2a1 1 0 111.414-1.414l.293.293V11a1 1 0 011-1z" clipRule="evenodd" /></svg>
+            {backupLoading ? "Importando..." : "Importar bkup"}
+          </button>
           <button className="btn btn-primary" onClick={salvarTudo} disabled={saving}>
             <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
             {saving ? "Salvando…" : "Salvar alterações"}
@@ -222,7 +266,7 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
               <a href="/api/alunos" target="_blank" className="btn btn-secondary btn-sm">
                 <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                Exportar dados
+                Exportar alunos
               </a>
               <button className="btn btn-danger btn-sm" style={{ marginLeft: "auto" }}
                 onClick={() => { if (confirm("Limpar todos os logs do Wiz? Esta ação não pode ser desfeita.")) alert("Funcionalidade disponível via API: DELETE /api/wiz"); }}>

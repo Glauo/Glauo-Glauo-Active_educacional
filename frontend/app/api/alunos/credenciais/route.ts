@@ -39,6 +39,11 @@ function credentialMessage(aluno: Aluno, login: string, senha: string) {
   ].join("\n");
 }
 
+function sameStudent(aluno: Aluno, id: string) {
+  const ref = text(id).toLowerCase();
+  return [aluno.id, aluno.nome, aluno.name].some((value) => text(value).toLowerCase() === ref);
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session || !isAdminOrCoordinator(session)) {
@@ -82,12 +87,12 @@ export async function PUT(req: NextRequest) {
   const alunos = await dbList<Aluno>("students.json");
 
   // Verifica se o login já está em uso por outro aluno
-  const conflito = alunos.find((a) => a.login === loginTrimmed && a.id !== id);
+  const conflito = alunos.find((a) => a.login === loginTrimmed && !sameStudent(a, id));
   if (conflito) {
     return NextResponse.json({ error: "Este login já está em uso por outro aluno." }, { status: 409 });
   }
 
-  const idx = alunos.findIndex((a) => a.id === id || String(a.id) === String(id));
+  const idx = alunos.findIndex((a) => sameStudent(a, id));
   if (idx === -1) {
     return NextResponse.json({ error: "Aluno não encontrado." }, { status: 404 });
   }
@@ -116,7 +121,7 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
 
   const alunos = await dbList<Aluno>("students.json");
-  const idx = alunos.findIndex((a) => a.id === id || String(a.id) === id);
+  const idx = alunos.findIndex((a) => sameStudent(a, id));
   if (idx === -1) return NextResponse.json({ error: "Aluno não encontrado." }, { status: 404 });
 
   // Remove credenciais mas mantém o registro do aluno

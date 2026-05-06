@@ -138,7 +138,8 @@ function mailtoUrl(email: string, form: Form) {
 }
 
 function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: () => void; onSaved: () => void }) {
-  const isEdit = Boolean(aluno?.id);
+  const registroId = text(aluno?.id || aluno?.nome || aluno?.name);
+  const isEdit = Boolean(registroId);
   const [form, setForm] = useState<Form>(fromAluno(aluno));
   const [turmas, setTurmas] = useState<TurmaOption[]>([]);
   const [saving, setSaving] = useState(false);
@@ -179,9 +180,10 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   }
 
   async function excluir() {
-    if (!confirm(`Excluir o aluno "${text(aluno?.nome)}"? Esta acao nao pode ser desfeita.`)) return;
+    if (!registroId) return;
+    if (!confirm(`Excluir o aluno "${form.nome || text(aluno?.nome || aluno?.name)}"? Esta acao nao pode ser desfeita.`)) return;
     setSaving(true);
-    await fetch(`/api/alunos?id=${encodeURIComponent(text(aluno?.id || aluno?.nome))}`, { method: "DELETE" });
+    await fetch(`/api/alunos?id=${encodeURIComponent(registroId)}`, { method: "DELETE" });
     setSaving(false);
     onSaved();
   }
@@ -193,7 +195,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
     }
     setSaving(true);
     const payload = {
-      ...(isEdit ? { id: aluno!.id || aluno!.nome } : {}),
+      ...(isEdit ? { id: registroId } : {}),
       ...form,
       nome: form.nome.trim(),
       turma: form.turma.trim(),
@@ -237,7 +239,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   }
 
   async function salvarCredenciais() {
-    if (!isEdit || !aluno?.id) return;
+    if (!isEdit || !registroId) return;
     if (!form.login.trim() || form.senha.trim().length < 4) {
       setCredFeedback("Informe login e senha com pelo menos 4 caracteres.");
       return;
@@ -247,7 +249,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
     const res = await fetch("/api/alunos/credenciais", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: aluno.id, login: form.login, senha: form.senha }),
+      body: JSON.stringify({ id: registroId, login: form.login, senha: form.senha }),
     });
     setSavingCred(false);
     const data = await res.json().catch(() => ({}));
@@ -428,7 +430,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
         </div>
 
         <div className="modal-footer">
-          {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
+          {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir aluno</button>}
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="btn btn-primary" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Cadastrar aluno"}</button>
         </div>
