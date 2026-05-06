@@ -252,6 +252,7 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     className={`nav-item${isActive ? " active" : ""}`}
                     onClick={() => setMobileOpen(false)}
                   >

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getSchoolClasses } from "@/lib/school-data";
 
 const KEY = "classes.json";
 
@@ -12,7 +13,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
-  const turmas = await dbList(KEY);
+  const turmas = await getSchoolClasses();
   return NextResponse.json({ turmas });
 }
 

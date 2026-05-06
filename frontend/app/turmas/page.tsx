@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/app-shell";
-import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovaTurmaBtn, EditarTurmaBtn } from "@/components/turma-modal";
+import { getSchoolClasses } from "@/lib/school-data";
 
 type Turma = { id?: string; nome?: string; name?: string; professor?: string; modulo?: string; tipo_aula?: string; modalidade?: string; livro?: string; book?: string; status?: string; situacao?: string; ultima_licao?: string; ultima_aula?: string; horario?: string; dias?: string; link_zoom?: string; valor_aula?: string | number; total_aulas_vip?: string | number; aulas_realizadas_vip?: string | number; [k: string]: unknown };
 
@@ -17,7 +17,7 @@ export default async function TurmasPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const turmas = await dbList<Turma>("classes.json");
+  const turmas = await getSchoolClasses() as Turma[];
 
   const ativas = turmas.filter((t) => {
     const s = String(t.status || t.situacao || "ativa").toLowerCase();

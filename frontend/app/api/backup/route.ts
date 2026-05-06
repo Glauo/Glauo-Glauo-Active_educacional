@@ -48,6 +48,15 @@ const BACKUP_KEYS = [
   "backup_audit.json",
 ];
 
+const PROTECTED_NON_EMPTY_KEYS = new Set([
+  "students.json",
+  "classes.json",
+  "teachers.json",
+  "users.json",
+  "receivables.json",
+  "books.json",
+]);
+
 function filenameDate() {
   return new Date().toISOString().replace(/\D/g, "").slice(0, 14);
 }
@@ -224,6 +233,13 @@ export async function POST(req: NextRequest) {
     if (value === undefined) {
       skipped.push(key);
       continue;
+    }
+    if (PROTECTED_NON_EMPTY_KEYS.has(key) && Array.isArray(value) && value.length === 0) {
+      const current = await dbGet<unknown[]>(key);
+      if (Array.isArray(current) && current.length > 0) {
+        skipped.push(key);
+        continue;
+      }
     }
     await dbSet(key, value);
     restored += 1;
