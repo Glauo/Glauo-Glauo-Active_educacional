@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { dbList } from "@/lib/db";
+import { dbListWithoutKeys } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoAlunoBtn } from "@/components/aluno-modal";
@@ -9,13 +9,25 @@ import { isAdminOrCoordinator } from "@/lib/roles";
 type Aluno = { id?: string; nome?: string; name?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
 type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; [k: string]: unknown };
 
+const HEAVY_KEYS = [
+  "boleto_pdf_b64",
+  "file_b64",
+  "pdf_b64",
+  "base64",
+  "arquivo_b64",
+  "foto_b64",
+  "imagem_b64",
+  "documento_b64",
+  "anexo_b64",
+];
+
 export default async function AlunosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const [alunos, recebimentos] = await Promise.all([
-    dbList<Aluno>("students.json"),
-    dbList<Recebimento>("receivables.json"),
+    dbListWithoutKeys<Aluno>("students.json", HEAVY_KEYS),
+    dbListWithoutKeys<Recebimento>("receivables.json", HEAVY_KEYS),
   ]);
 
   const ativos = alunos.filter((a) => {

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
+import { sendWhatsApp } from "@/lib/whatsapp";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -16,6 +17,26 @@ function safeFileName(value: string) {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
+}
+
+function money(value: unknown) {
+  const n = Number.parseFloat(text(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function boletoMessage(lancamento: Record<string, unknown>, origin: string) {
+  const id = text(lancamento.id);
+  const link = id ? `${origin}/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}` : origin;
+  return [
+    "Ola! Seu boleto/fatura da Active Educacional foi salvo.",
+    "",
+    `Aluno: ${text(lancamento.aluno || lancamento.nome)}`,
+    `Referencia: ${text(lancamento.descricao)}`,
+    `Valor: ${money(lancamento.valor_parcela || lancamento.valor)}`,
+    `Vencimento: ${text(lancamento.vencimento || lancamento.data_vencimento)}`,
+    "",
+    `Acesse o boleto: ${link}`,
+  ].join("\n");
 }
 
 export async function POST(req: NextRequest) {
@@ -33,13 +54,20 @@ export async function POST(req: NextRequest) {
     }
 
     const id = crypto.randomUUID();
+    const buffer = Buffer.from(await file.arrayBuffer());
     const uploadsDir = path.join(process.cwd(), "public", "uploads", "boletos");
-    await mkdir(uploadsDir, { recursive: true });
     const base = safeFileName(file.name || `${id}.pdf`) || `${id}.pdf`;
     const filename = `${Date.now()}-${base.endsWith(".pdf") ? base : `${base}.pdf`}`;
-    await writeFile(path.join(uploadsDir, filename), Buffer.from(await file.arrayBuffer()));
+    let publicUrl = "";
+    try {
+      await mkdir(uploadsDir, { recursive: true });
+      await writeFile(path.join(uploadsDir, filename), buffer);
+      publicUrl = `/uploads/boletos/${filename}`;
+    } catch (err) {
+      console.warn("[boleto-upload] arquivo publico nao persistiu; usando base64 no lancamento", err);
+    }
 
-    const boletoUrl = `/uploads/boletos/${filename}`;
+    const boletoUrl = `/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}`;
     const vencimento = text(form.get("vencimento"));
     const novo = {
       id,
@@ -64,6 +92,9 @@ export async function POST(req: NextRequest) {
       parcela_total: 1,
       boleto_status: "Importado",
       boleto_pdf_url: boletoUrl,
+      boleto_pdf_public_url: publicUrl,
+      boleto_pdf_b64: buffer.toString("base64"),
+      boleto_pdf_mime: "application/pdf",
       boleto_pdf_nome: file.name || filename,
       boleto_importado_em: new Date().toISOString(),
       notification_status: {
@@ -77,6 +108,13 @@ export async function POST(req: NextRequest) {
 
     const recebimentos = await dbList<Record<string, unknown>>("receivables.json");
     await dbSet("receivables.json", [...recebimentos, novo]);
+
+    if (text(form.get("enviar_whatsapp")) === "true") {
+      const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
+      novo.notification_status.whatsapp = result.ok ? "enviado_wapi" : result.status;
+      const atualizados = await dbList<Record<string, unknown>>("receivables.json");
+      await dbSet("receivables.json", atualizados.map((item) => item.id === id ? novo : item));
+    }
 
     const log = await dbList<Record<string, unknown>>("finance_audit.json");
     await dbSet("finance_audit.json", [

@@ -44,15 +44,9 @@ const fluxo = [
   "Aluno acessa certificado, documentos e historico financeiro no painel."
 ];
 
-function canAccess(perfil: string) {
-  const role = perfil.toLowerCase();
-  return role.includes("admin") || role.includes("coord") || role.includes("dire") || role.includes("comercial");
-}
-
 export default async function CondoJobPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canAccess(session.perfil)) redirect("/");
 
   const userName = session.pessoa || session.usuario;
 

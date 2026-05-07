@@ -67,7 +67,7 @@ export function dashboardForPerfil(perfil?: string) {
   const p = normalize(perfil);
   if (p.includes("aluno")) return "/aluno";
   if (p.includes("prof")) return "/agenda";
-  if (p.includes("comercial")) return "/financeiro";
+  if (p.includes("comercial")) return "/comercial";
   if (p.includes("coord")) return "/";
   if (p.includes("admin") || p.includes("dire")) return "/";
   return "/";

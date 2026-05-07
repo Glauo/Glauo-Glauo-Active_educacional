@@ -250,7 +250,7 @@ function LancamentoModal({
     const erros: string[] = [];
     const links: { whatsapp: string; email: string; label: string }[] = [];
 
-    let boletoPdfUrl = "";
+    let boletoPdfData: Record<string, string> = {};
     if (boletoPdf) {
       const fd = new FormData();
       fd.set("arquivo_pdf", boletoPdf);
@@ -262,7 +262,12 @@ function LancamentoModal({
         return;
       }
       const upData = await upRes.json();
-      boletoPdfUrl = upData.url || "";
+      boletoPdfData = {
+        boleto_pdf_url: text(upData.url),
+        boleto_pdf_b64: text(upData.b64),
+        boleto_pdf_mime: text(upData.mime || "application/pdf"),
+        boleto_pdf_nome: text(upData.nome || boletoPdf.name),
+      };
     }
 
     if (isEdit) {
@@ -287,7 +292,13 @@ function LancamentoModal({
         categoria: form.categoria,
         observacoes: form.observacoes,
         gerar_boleto: form.gerar_boleto,
-        ...(boletoPdfUrl ? { boleto_pdf_url: boletoPdfUrl, boleto_pdf_nome: boletoPdf?.name, boleto_status: "Importado", status: "Boleto importado" } : {}),
+        ...(boletoPdfData.boleto_pdf_b64 || boletoPdfData.boleto_pdf_url ? { ...boletoPdfData, boleto_status: "Importado", status: "Boleto importado" } : {}),
+        enviar_whatsapp: form.enviar_whatsapp,
+        enviar_email: form.enviar_email,
+        notification_status: {
+          email: form.enviar_email ? "link_gerado" : "nao_enviado",
+          whatsapp: form.enviar_whatsapp ? "link_gerado" : "nao_enviado",
+        },
       };
       const res = await fetch("/api/financeiro", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       setSaving(false);
@@ -333,7 +344,9 @@ function LancamentoModal({
         parcela: parcelaTxt,
         observacoes: form.observacoes,
         gerar_boleto: form.gerar_boleto,
-        ...(boletoPdfUrl ? { boleto_pdf_url: boletoPdfUrl, boleto_pdf_nome: boletoPdf?.name, boleto_status: "Importado" } : {}),
+        ...(boletoPdfData.boleto_pdf_b64 || boletoPdfData.boleto_pdf_url ? { ...boletoPdfData, boleto_status: "Importado" } : {}),
+        enviar_whatsapp: form.enviar_whatsapp,
+        enviar_email: form.enviar_email,
         notification_status: {
           email: form.enviar_email ? "link_gerado" : "nao_enviado",
           whatsapp: form.enviar_whatsapp ? "link_gerado" : "nao_enviado",

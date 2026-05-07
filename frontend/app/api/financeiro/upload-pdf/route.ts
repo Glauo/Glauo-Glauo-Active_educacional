@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth";
 function safeFileName(value: string) {
   return value
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
@@ -27,13 +27,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Envie apenas arquivo PDF." }, { status: 400 });
     }
 
+    const buffer = Buffer.from(await file.arrayBuffer());
     const uploadsDir = path.join(process.cwd(), "public", "uploads", "boletos");
-    await mkdir(uploadsDir, { recursive: true });
     const base = safeFileName(file.name || "boleto.pdf") || "boleto.pdf";
     const filename = `${Date.now()}-${base.endsWith(".pdf") ? base : `${base}.pdf`}`;
-    await writeFile(path.join(uploadsDir, filename), Buffer.from(await file.arrayBuffer()));
+    let url = "";
 
-    return NextResponse.json({ ok: true, url: `/uploads/boletos/${filename}`, nome: file.name });
+    try {
+      await mkdir(uploadsDir, { recursive: true });
+      await writeFile(path.join(uploadsDir, filename), buffer);
+      url = `/uploads/boletos/${filename}`;
+    } catch (err) {
+      console.warn("[upload-pdf] arquivo publico nao persistiu; usando base64 no lancamento", err);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      url,
+      nome: file.name,
+      b64: buffer.toString("base64"),
+      mime: "application/pdf",
+    });
   } catch (err) {
     console.error("[upload-pdf POST]", err);
     return NextResponse.json({ error: "Erro ao salvar arquivo PDF." }, { status: 500 });

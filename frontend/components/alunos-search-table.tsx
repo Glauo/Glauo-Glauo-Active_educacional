@@ -146,6 +146,13 @@ function faturasDoAluno(aluno: Aluno, recebimentos: Recebimento[]) {
     .sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento)));
 }
 
+function faturaKeys(aluno: Aluno) {
+  return [
+    `nome:${text(aluno.nome || aluno.name).toLowerCase()}`,
+    `login:${text(aluno.login).toLowerCase()}`,
+  ].filter((key) => !key.endsWith(":"));
+}
+
 function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
   const alunoRef = text(aluno.id || aluno.nome || aluno.name || aluno.login);
   const [login, setLogin] = useState(text(aluno.login));
@@ -201,14 +208,13 @@ function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
   );
 }
 
-function AlunoDrawer({ aluno, recebimentos, onClose, canManageAccess }: { aluno: Aluno; recebimentos: Recebimento[]; onClose: () => void; canManageAccess: boolean }) {
+function AlunoDrawer({ aluno, faturas, onClose, canManageAccess }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void; canManageAccess: boolean }) {
   const nome = text(aluno.nome || aluno.name || "Aluno");
   const turma = text(aluno.turma || aluno.classe || "-");
   const livro = text(aluno.livro || aluno.book || "-");
   const modulo = text(aluno.modulo || aluno.modalidade || "-");
   const vip = vipLabel(aluno);
   const status = text(aluno.status || aluno.situacao || "Ativo");
-  const faturas = faturasDoAluno(aluno, recebimentos);
   const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
   const financeiro = text(aluno.status_financeiro || aluno.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
   const responsavel = text(aluno.responsavel_nome || aluno.responsavel || "-");
@@ -326,6 +332,35 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
   const [filtroTurma, setFiltroTurma] = useState("Todas");
   const [alunoSelecionado, setAlunoSelecionado] = useState<Aluno | null>(null);
 
+  const faturasPorAluno = useMemo(() => {
+    const map = new Map<string, Recebimento[]>();
+    for (const r of recebimentos) {
+      const keys = [
+        `nome:${text(r.aluno || r.nome).toLowerCase()}`,
+        `login:${text(r.aluno_login).toLowerCase()}`,
+      ].filter((key) => !key.endsWith(":"));
+      for (const key of keys) {
+        const list = map.get(key) || [];
+        list.push(r);
+        map.set(key, list);
+      }
+    }
+    for (const [key, list] of map) {
+      map.set(key, [...list].sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento))));
+    }
+    return map;
+  }, [recebimentos]);
+
+  function getFaturas(aluno: Aluno) {
+    const found = new Map<string, Recebimento>();
+    for (const key of faturaKeys(aluno)) {
+      for (const f of faturasPorAluno.get(key) || []) {
+        found.set(text(f.id) || `${text(f.descricao)}-${text(f.vencimento || f.data_vencimento)}-${text(f.valor)}`, f);
+      }
+    }
+    return Array.from(found.values());
+  }
+
   const turmas = useMemo(() => {
     const set = new Set(alunos.map((a) => text(a.turma || a.classe)).filter(Boolean));
     return ["Todas", ...Array.from(set).sort()];
@@ -338,7 +373,7 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
       const resp = text(a.responsavel_nome || a.responsavel).toLowerCase();
       const modulo = text(a.modulo || a.modalidade).toLowerCase();
       const status = text(a.status || a.situacao || "Ativo");
-      const faturas = faturasDoAluno(a, recebimentos);
+      const faturas = getFaturas(a);
       const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
       const financeiro = text(a.status_financeiro || a.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
 
@@ -353,12 +388,12 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
 
       return matchBusca && matchStatus && matchFinanceiro && matchTurma;
     });
-  }, [alunos, recebimentos, busca, filtroStatus, filtroFinanceiro, filtroTurma]);
+  }, [alunos, busca, filtroStatus, filtroFinanceiro, filtroTurma, faturasPorAluno]);
 
   return (
     <>
       {alunoSelecionado && (
-        <AlunoDrawer aluno={alunoSelecionado} recebimentos={recebimentos} canManageAccess={canManageAccess} onClose={() => setAlunoSelecionado(null)} />
+        <AlunoDrawer aluno={alunoSelecionado} faturas={getFaturas(alunoSelecionado)} canManageAccess={canManageAccess} onClose={() => setAlunoSelecionado(null)} />
       )}
 
       <div className="card">
@@ -425,7 +460,7 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
                   const vip = vipLabel(a);
                   const livro = text(a.livro || a.book || "-");
                   const status = text(a.status || a.situacao || "Ativo");
-                  const faturas = faturasDoAluno(a, recebimentos);
+                  const faturas = getFaturas(a);
                   const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
                   const financeiro = text(a.status_financeiro || a.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
                   const hue = (nome.charCodeAt(0) * 137) % 360;

@@ -231,6 +231,38 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
           </div>
         </div>
 
+        {/* WhatsApp W-API */}
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Integração</div>
+              <h3 className="section-title">WhatsApp W-API</h3>
+            </div>
+            <span className={`badge badge-${sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN ? "success" : "warning"}`}>
+              <span className="badge-dot" />{sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN ? "Configurado" : "Pendente"}
+            </span>
+          </div>
+          <div className="card-body">
+            <div className="form-grid">
+              <div className="form-group form-group-span2">
+                <label className="form-label">URL base da W-API</label>
+                <input className="form-input" value={String(sistema.WAPI_BASE_URL || "")} onChange={(e) => sys("WAPI_BASE_URL", e.target.value)} placeholder="https://sua-wapi.com.br" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Token / API Key</label>
+                <input className="form-input" type="password" value={String(sistema.WAPI_TOKEN || "")} onChange={(e) => sys("WAPI_TOKEN", e.target.value)} placeholder="Token da W-API" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Instância</label>
+                <input className="form-input" value={String(sistema.WAPI_INSTANCE_ID || "")} onChange={(e) => sys("WAPI_INSTANCE_ID", e.target.value)} placeholder="ID/nome da instancia" />
+              </div>
+              <div className="form-group form-group-span2">
+                <div className="form-help">Ao salvar, boletos importados e faturas marcadas para envio disparam automaticamente pelo backend. O link manual continua aparecendo como fallback.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Boleto */}
         <div className="card">
           <div className="card-header">

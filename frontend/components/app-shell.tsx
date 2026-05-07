@@ -120,6 +120,24 @@ const navSections = [
         )
       },
       {
+        href: "/comercial",
+        label: "Comercial",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 2a1 1 0 000 2h7a1 1 0 100-2H5zm0 4a1 1 0 100 2h4a1 1 0 100-2H5z" />
+          </svg>
+        )
+      },
+      {
+        href: "/atendimento",
+        label: "Atendimento",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M18 10c0 3.314-3.582 6-8 6a9.77 9.77 0 01-3.468-.616L2 17l1.42-3.314C2.521 12.65 2 11.38 2 10c0-3.314 3.582-6 8-6s8 2.686 8 6z" />
+          </svg>
+        )
+      },
+      {
         href: "/estoque",
         label: "Estoque",
         icon: (
@@ -180,7 +198,7 @@ function canSeeNavItem(userRole: string, href: string) {
   const role = userRole.toLowerCase();
   if (role.includes("admin") || role.includes("coord") || role.includes("dire")) return true;
   if (role.includes("comercial")) {
-    return ["/", "/alunos", "/financeiro", "/agenda", "/condojob"].includes(href);
+    return ["/", "/alunos", "/financeiro", "/agenda", "/condojob", "/comercial", "/atendimento"].includes(href);
   }
   if (role.includes("prof")) {
     return ["/", "/agenda", "/turmas", "/mural", "/licoes", "/desafios", "/notas", "/biblioteca"].includes(href);

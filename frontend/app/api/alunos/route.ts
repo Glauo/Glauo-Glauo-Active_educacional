@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dbList, dbSet } from "@/lib/db";
+import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isVipModule, teacherClassValueByModule, vipPlanTotal } from "@/lib/course-modules";
 
 const KEY = "students.json";
+const HEAVY_KEYS = ["file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -77,7 +78,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
-  const alunos = await dbList(KEY);
+  const alunos = await dbListWithoutKeys(KEY, HEAVY_KEYS);
   return NextResponse.json({ alunos });
 }
 

@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { dbList } from "@/lib/db";
+import { dbList, dbListWithoutKeys } from "@/lib/db";
 import { dashboardForPerfil, getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
@@ -7,6 +7,7 @@ type Aluno = Record<string, unknown>;
 type Turma = Record<string, unknown>;
 type Professor = Record<string, unknown>;
 type Recebimento = { status?: string; vencimento?: string; valor?: number | string; [k: string]: unknown };
+const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -44,10 +45,10 @@ export default async function DashboardPage() {
   if (dashboard !== "/") redirect(dashboard);
 
   const [alunos, turmas, professores, recebimentos, agenda] = await Promise.all([
-    dbList<Aluno>("students.json"),
+    dbListWithoutKeys<Aluno>("students.json", HEAVY_KEYS),
     dbList<Turma>("classes.json"),
     dbList<Professor>("teachers.json"),
-    dbList<Recebimento>("receivables.json"),
+    dbListWithoutKeys<Recebimento>("receivables.json", HEAVY_KEYS),
     dbList<Record<string, unknown>>("agenda.json")
   ]);
 

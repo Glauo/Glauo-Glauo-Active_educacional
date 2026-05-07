@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dbList, dbSet } from "@/lib/db";
+import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { sendWhatsApp } from "@/lib/whatsapp";
 
 function text(value: unknown) {
   return String(value || "").trim();
 }
+
+const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function isPaid(value: unknown) {
   const status = text(value).toLowerCase();
@@ -19,6 +22,36 @@ async function audit(entry: Record<string, unknown>) {
   ]);
 }
 
+function money(value: unknown) {
+  const n = Number.parseFloat(text(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function boletoMessage(lancamento: Record<string, unknown>, origin: string) {
+  const id = text(lancamento.id);
+  const pdfUrl = text(lancamento.boleto_pdf_url);
+  const link = pdfUrl
+    ? (pdfUrl.startsWith("http") ? pdfUrl : `${origin}${pdfUrl}`)
+    : `${origin}/api/financeiro/boleto?id=${encodeURIComponent(id)}`;
+  return [
+    "Ola! Seu boleto/fatura da Active Educacional foi salvo.",
+    "",
+    `Aluno: ${text(lancamento.aluno || lancamento.nome)}`,
+    `Referencia: ${text(lancamento.descricao)}`,
+    `Parcela: ${text(lancamento.parcela) || "1"}`,
+    `Valor: ${money(lancamento.valor_parcela || lancamento.valor)}`,
+    `Vencimento: ${text(lancamento.vencimento || lancamento.data_vencimento)}`,
+    "",
+    `Acesse o boleto: ${link}`,
+  ].join("\n");
+}
+
+function shouldSendWhatsApp(data: Record<string, unknown>) {
+  return data.enviar_whatsapp === true ||
+    text(data.enviar_whatsapp).toLowerCase() === "true" ||
+    text((data.notification_status as Record<string, unknown> | undefined)?.whatsapp) === "link_gerado";
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
@@ -26,7 +59,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tipo = searchParams.get("tipo") || "recebimentos";
   const key = tipo === "despesas" ? "payables.json" : "receivables.json";
-  const lancamentos = await dbList(key);
+  const lancamentos = searchParams.get("include_pdf") === "true" ? await dbList(key) : await dbListWithoutKeys(key, HEAVY_KEYS);
   return NextResponse.json({ lancamentos });
 }
 
@@ -41,6 +74,11 @@ export async function POST(req: NextRequest) {
 
     const lancamentos = await dbList<Record<string, unknown>>(key);
     const id = text(data.id) || crypto.randomUUID();
+    const pdfUpdate = text(data.boleto_pdf_b64) ? {
+      boleto_status: "Importado",
+      boleto_pdf_url: `/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}`,
+      boleto_pdf_mime: text(data.boleto_pdf_mime) || "application/pdf",
+    } : {};
     const boletoUpdate = data.gerar_boleto ? {
       boleto_status: "Gerado",
       boleto_codigo: text(data.boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
@@ -50,12 +88,19 @@ export async function POST(req: NextRequest) {
     const novo = {
       ...data,
       ...boletoUpdate,
+      ...pdfUpdate,
       id,
       created_at: new Date().toISOString(),
       created_by: session.pessoa || session.usuario
     };
     lancamentos.push(novo);
     await dbSet(key, lancamentos);
+    if (tipo !== "despesas" && shouldSendWhatsApp(data)) {
+      const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
+      const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+      novo.notification_status = notificationStatus;
+      await dbSet(key, lancamentos.map((item) => item.id === id ? novo : item));
+    }
     await audit({
       acao: "criar_lancamento",
       tipo,
@@ -92,6 +137,11 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Lancamento pago so pode voltar para aberto por estorno auditado." }, { status: 409 });
     }
 
+    const pdfUpdate = text(updates.boleto_pdf_b64) ? {
+      boleto_status: "Importado",
+      boleto_pdf_url: `/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}`,
+      boleto_pdf_mime: text(updates.boleto_pdf_mime) || "application/pdf",
+    } : {};
     const boletoUpdate = updates.gerar_boleto ? {
       boleto_status: "Gerado",
       boleto_codigo: text(lancamentos[idx].boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
@@ -113,6 +163,7 @@ export async function PUT(req: NextRequest) {
       ...lancamentos[idx],
       ...updates,
       ...boletoUpdate,
+      ...pdfUpdate,
       ...estornoUpdate,
       updated_at: new Date().toISOString(),
       updated_by: session.pessoa || session.usuario,
@@ -140,6 +191,11 @@ export async function PUT(req: NextRequest) {
     }
 
     await Promise.all(writes);
+    if (tipo !== "despesas" && shouldSendWhatsApp(updates)) {
+      const result = await sendWhatsApp(lancamentos[idx].telefone || lancamentos[idx].whatsapp, boletoMessage(lancamentos[idx], new URL(req.url).origin), session);
+      lancamentos[idx].notification_status = { ...(lancamentos[idx].notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+      await dbSet(key, lancamentos);
+    }
     await audit({
       acao: isReversal ? "estornar_baixa" : willBePaid && !wasPaid ? "baixar_pagamento" : updates.gerar_boleto ? "gerar_boleto" : "editar_lancamento",
       tipo,

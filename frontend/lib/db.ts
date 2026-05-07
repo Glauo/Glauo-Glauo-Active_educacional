@@ -76,6 +76,35 @@ export async function dbList<T = unknown>(key: string): Promise<T[]> {
   return Array.isArray(result) ? result : [];
 }
 
+export async function dbListWithoutKeys<T = unknown>(key: string, keys: string[]): Promise<T[]> {
+  const pool = getPool();
+  if (!pool || keys.length === 0) {
+    const items = await dbList<Record<string, unknown>>(key);
+    return items.map((item) => {
+      const next = { ...item };
+      for (const k of keys) delete next[k];
+      return next as T;
+    });
+  }
+
+  try {
+    const res = await pool.query<{ value: T[] }>(
+      `SELECT COALESCE(jsonb_agg(elem - $2::text[]), '[]'::jsonb) AS value
+       FROM active_kv, jsonb_array_elements(value) elem
+       WHERE key = $1`,
+      [normalizeKey(key), keys]
+    );
+    return Array.isArray(res.rows[0]?.value) ? res.rows[0].value : [];
+  } catch {
+    const items = await dbList<Record<string, unknown>>(key);
+    return items.map((item) => {
+      const next = { ...item };
+      for (const k of keys) delete next[k];
+      return next as T;
+    });
+  }
+}
+
 export function isDbAvailable(): boolean {
   return getPool() !== null;
 }

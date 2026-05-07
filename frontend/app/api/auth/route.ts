@@ -17,7 +17,10 @@ export async function POST(req: NextRequest) {
 
     const token = await signToken(user);
 
-    const res = NextResponse.json({ ok: true, user, redirectTo: dashboardForPerfil(user.perfil) });
+    const redirectTo = String(user.unit || "").toLowerCase().includes("condojob")
+      ? "/condojob"
+      : dashboardForPerfil(user.perfil);
+    const res = NextResponse.json({ ok: true, user, redirectTo });
     res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

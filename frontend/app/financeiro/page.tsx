@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { dbList } from "@/lib/db";
+import { dbList, dbListWithoutKeys } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ImportarBoletoPdfBtn, NovoLancamentoBtn } from "@/components/financeiro-modal";
@@ -8,6 +8,7 @@ import { FinanceiroCommandCenter } from "@/components/financeiro-command-center"
 import { isAdminOrCoordinator } from "@/lib/roles";
 
 type Lancamento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; tipo?: string; codigo?: string; [k: string]: unknown };
+const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function parseValor(v: unknown): number {
   return parseFloat(String(v || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
@@ -23,9 +24,9 @@ export default async function FinanceiroPage() {
   if (!session) redirect("/login");
 
   const [recebimentos, despesas, alunos, professores, fornecedores, fechamentos] = await Promise.all([
-    dbList<Lancamento>("receivables.json"),
+    dbListWithoutKeys<Lancamento>("receivables.json", HEAVY_KEYS),
     dbList<Lancamento>("payables.json"),
-    dbList<Record<string, unknown>>("students.json"),
+    dbListWithoutKeys<Record<string, unknown>>("students.json", HEAVY_KEYS),
     dbList<Record<string, unknown>>("teachers.json"),
     dbList<Record<string, unknown>>("fornecedores.json"),
     dbList<Record<string, unknown>>("professor_fechamentos.json"),
