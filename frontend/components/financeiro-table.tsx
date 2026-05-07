@@ -43,6 +43,10 @@ function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function valorParcela(lancamento: Lancamento) {
+  return parseValor(lancamento.valor_parcela ?? lancamento.valor ?? 0);
+}
+
 function statusBadge(s: string) {
   const l = s.toLowerCase();
   if (l.includes("pago") || l.includes("baixado") || l.includes("liquidado")) return "success";
@@ -162,7 +166,7 @@ function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
 function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose: () => void }) {
   const nome = String(lancamento.aluno || lancamento.nome || "Pagante");
   const descricao = String(lancamento.descricao || "");
-  const valor = parseValor(lancamento.valor);
+  const valor = valorParcela(lancamento);
   const dataBaixa = lancamento.data_baixa
     ? fmtDate(String(lancamento.data_baixa))
     : new Date().toLocaleDateString("pt-BR");
@@ -471,7 +475,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
   }), [recebimentos, busca, filtroStatus, filtroPeriodo]);
 
   const grupos = useMemo(() => groupByMes(filtrados), [filtrados]);
-  const totalGeral = filtrados.reduce((s, r) => s + parseValor(r.valor), 0);
+  const totalGeral = filtrados.reduce((s, r) => s + valorParcela(r), 0);
 
   return (
     <>
@@ -503,8 +507,8 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
         <div className="card"><div className="card-body"><div className="empty-state"><div className="empty-title">Nenhum lançamento encontrado</div><p className="empty-desc">Ajuste os filtros para ver mais resultados.</p></div></div></div>
       ) : (
         grupos.map((grupo) => {
-          const recebido = grupo.items.filter((r) => statusBadge(String(r.status || r.situacao || "")) === "success").reduce((s, r) => s + parseValor(r.valor), 0);
-          const pendente = grupo.items.filter((r) => statusBadge(String(r.status || r.situacao || "")) !== "success").reduce((s, r) => s + parseValor(r.valor), 0);
+          const recebido = grupo.items.filter((r) => statusBadge(String(r.status || r.situacao || "")) === "success").reduce((s, r) => s + valorParcela(r), 0);
+          const pendente = grupo.items.filter((r) => statusBadge(String(r.status || r.situacao || "")) !== "success").reduce((s, r) => s + valorParcela(r), 0);
           return (
             <div key={grupo.key} className="card" style={{ marginBottom: 4 }}>
               {/* Cabeçalho do mês */}
@@ -554,7 +558,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                             </div>
                           </td>
                           <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
-                          <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(parseValor(r.valor))}</span></td>
+	                          <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(valorParcela(r))}</span></td>
                           <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
                           <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
@@ -862,7 +866,7 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
     .sort((a, b) => b.dias - a.dias), [recebimentos, busca]);
 
   const grupos = useMemo(() => groupByMes(atrasados), [atrasados]);
-  const total = atrasados.reduce((s, r) => s + parseValor(r.valor), 0);
+  const total = atrasados.reduce((s, r) => s + valorParcela(r), 0);
   const doisOuMais = Object.values(atrasados.reduce((acc: Record<string, number>, r) => {
     const aluno = String(r.aluno || r.nome || "Nao identificado");
     acc[aluno] = (acc[aluno] || 0) + 1;
@@ -898,7 +902,7 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
         <div className="card"><div className="card-body"><div className="empty-state"><div className="empty-title">Sem inadimplência no filtro</div><p className="empty-desc">Quando houver boleto vencido, aparecerá aqui agrupado por mês de vencimento.</p></div></div></div>
       ) : (
         grupos.map((grupo) => {
-          const totalGrupo = grupo.items.reduce((s, r) => s + parseValor(r.valor), 0);
+          const totalGrupo = grupo.items.reduce((s, r) => s + valorParcela(r), 0);
           return (
             <div key={grupo.key} className="card" style={{ marginBottom: 4 }}>
               {/* Cabeçalho do mês */}
@@ -923,12 +927,12 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                   <tbody>
                     {grupo.items.map((r, i) => {
                       const aluno = String(r.aluno || r.nome || `Aluno ${i + 1}`);
-                      const msg = `Olá! Identificamos pendência financeira de ${aluno}: ${String(r.descricao || "mensalidade")} no valor de ${formatBRL(parseValor(r.valor))}, vencida há ${r.dias} dia(s). Podemos ajudar com o pagamento ou negociação?`;
+                      const msg = `Olá! Identificamos pendência financeira de ${aluno}: ${String(r.descricao || "mensalidade")} no valor de ${formatBRL(valorParcela(r))}, vencida há ${r.dias} dia(s). Podemos ajudar com o pagamento ou negociação?`;
                       return (
                         <tr key={String(r.id || i)}>
                           <td><div className="table-name-cell"><span className="table-name-primary">{aluno}</span><span className="table-name-secondary">{String(r.descricao || "")}</span></div></td>
                           <td>{String(extra(r, "turma") || "—")}</td>
-                          <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(parseValor(r.valor))}</td>
+                          <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(valorParcela(r))}</td>
                           <td><span className={`badge badge-${faixa(r.dias as number)}`}><span className="badge-dot" />{r.dias as number} dias</span></td>
                           <td>{String(extra(r, "responsavel") || "—")}</td>
                           <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><a className="btn btn-secondary btn-sm" href={whatsappUrl(extra(r, "telefone") || extra(r, "whatsapp"), msg)} target="_blank" rel="noreferrer">WhatsApp</a><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
@@ -962,8 +966,8 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
       const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const entry = addEntry(chave, d);
       const s = String(r.status || r.situacao || "").toLowerCase();
-      if (s.includes("pago") || s.includes("baixado") || s.includes("liquidado")) entry.recebido += parseValor(r.valor);
-      else entry.aReceber += parseValor(r.valor);
+      if (s.includes("pago") || s.includes("baixado") || s.includes("liquidado")) entry.recebido += valorParcela(r);
+      else entry.aReceber += valorParcela(r);
     }
 
     for (const d of despesas) {

@@ -18,6 +18,9 @@ function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function valorParcela(lancamento: Lancamento) {
+  return parseValor(lancamento.valor_parcela ?? lancamento.valor ?? 0);
+}
 
 export default async function FinanceiroPage() {
   const session = await getSession();
@@ -41,7 +44,7 @@ export default async function FinanceiroPage() {
 
   for (const r of recebimentos) {
     const s = String(r.status || r.situacao || "").toLowerCase();
-    const val = parseValor(r.valor);
+    const val = valorParcela(r);
     if (s.includes("pago") || s.includes("baixado") || s.includes("liquidado")) {
       totalPago += val;
     } else {
