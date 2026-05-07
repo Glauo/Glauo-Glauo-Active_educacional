@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { isAdminOrCoordinator, isTeacher, sameName } from "@/lib/roles";
-import { isVipModule, teacherClassValueByModule } from "@/lib/course-modules";
+import { isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPackageStats } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
 
@@ -189,8 +189,9 @@ export async function POST(req: NextRequest) {
         const alunoTurma = text(aluno.turma || aluno.classe);
         const alunoModulo = text(aluno.modulo || aluno.modalidade || modulo);
         if (!sameName(alunoTurma, className(turma)) || !isVipModule(alunoModulo)) return aluno;
-        const total = Math.max(0, toInt(aluno.vip_aulas_total));
-        const restantesAtuais = Math.max(0, toInt(aluno.vip_aulas_restantes || total));
+        const pacote = vipPackageStats({ ...aluno, modulo: alunoModulo });
+        const total = pacote?.total || VIP_DEFAULT_TOTAL;
+        const restantesAtuais = pacote?.restantes ?? Math.max(0, toInt(aluno.vip_aulas_restantes || total));
         if (restantesAtuais <= 0) return { ...aluno, vip_aulas_total: total, vip_aulas_restantes: 0 };
         const restantes = Math.max(0, restantesAtuais - 1);
         vipConsumidos.push({

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { HomeworkSubmitForm, MuralConfirmButton } from "@/components/school-modules-client";
 import { tagBadge, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
 import { StudentLogoutBtn } from "@/components/student-logout-btn";
+import { vipPackageStats } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
 
@@ -177,6 +178,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
   const pontos = conclusoes.reduce((sum, item) => sum + (Number(item.pontos) || 0), 0);
   const nome = text(session.pessoa || perfil?.nome || perfil?.name || session.usuario);
   const turma = text(perfil?.turma || perfil?.classe || session.unit);
+  const pacoteVip = perfil ? vipPackageStats(perfil) : null;
   const menu: { id: Tab; label: string; badge?: number }[] = [
     { id: "inicio", label: "Início" },
     { id: "mural", label: "Comunicados", badge: muralNaoLido },
@@ -200,6 +202,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
           <div className="student-avatar">{initials(nome)}</div>
           <strong>{nome}</strong>
           <span>{turma || "Aluno"}</span>
+          {pacoteVip && <small>{pacoteVip.dadas}/{pacoteVip.total} aulas VIP dadas | {pacoteVip.restantes} restantes</small>}
         </div>
         <nav className="student-nav">
           {menu.map((item) => (
@@ -224,7 +227,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
               <div><span>Comunicados não lidos</span><strong>{muralNaoLido}</strong></div>
               <div><span>Tarefas pendentes</span><strong>{pendentes}</strong></div>
               <div><span>Débitos em aberto</span><strong>{totalDebitos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></div>
-              <div><span>Pontos em desafios</span><strong>{pontos}</strong></div>
+              <div><span>{pacoteVip ? "Aulas VIP restantes" : "Pontos em desafios"}</span><strong>{pacoteVip ? `${pacoteVip.restantes}/${pacoteVip.total}` : pontos}</strong></div>
             </section>
             <section className="student-grid">
               <div className="student-panel"><div className="student-section-head"><div><span>Hoje</span><h2>Próximas aulas</h2></div></div>{agenda.slice(0, 4).length ? agenda.slice(0, 4).map((a, i) => <div className="student-list-row" key={text(a.id) || i}><strong>{text(a.titulo || a.descricao || "Aula")}</strong><span>{dateLabel(a.data || a.date)} {text(a.horario || a.hora)}</span></div>) : <Empty title="Nenhuma aula na agenda" desc="Quando houver aula/evento, aparece aqui." />}</div>

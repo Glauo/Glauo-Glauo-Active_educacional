@@ -22,6 +22,8 @@ export const BOOK_LEVELS = [
   "Livro 6",
 ] as const;
 
+export const VIP_DEFAULT_TOTAL = 10;
+
 function normalized(value: unknown) {
   return String(value || "")
     .trim()
@@ -47,9 +49,28 @@ export function isVipModule(moduleName: unknown) {
 
 export function vipPlanTotal(planName: unknown) {
   const plan = normalized(planName);
-  if (plan.includes("10")) return 10;
+  if (plan.includes("10")) return VIP_DEFAULT_TOTAL;
   if (plan.includes("avulsa") || plan.includes("avulso")) return 1;
-  return 0;
+  return VIP_DEFAULT_TOTAL;
+}
+
+function toInt(value: unknown) {
+  const n = parseInt(String(value || "0"), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function vipPackageStats(aluno: Record<string, unknown>) {
+  const modulo = aluno.modulo || aluno.modalidade || aluno.tipo_aula || aluno.vip_tipo_plano;
+  const hasExplicitCounter = toInt(aluno.vip_aulas_total) > 0 || toInt(aluno.vip_aulas_restantes) > 0;
+  const hasVipPlan = isVipModule(aluno.vip_tipo_plano);
+  if (!isVipModule(modulo) && !hasVipPlan && !hasExplicitCounter) return null;
+
+  const planTotal = vipPlanTotal(aluno.vip_tipo_plano || "Pacote 10 aulas");
+  const total = Math.max(1, toInt(aluno.vip_aulas_total) || planTotal || VIP_DEFAULT_TOTAL);
+  const restantes = Math.min(total, Math.max(0, toInt(aluno.vip_aulas_restantes || total)));
+  const dadas = Math.max(0, total - restantes);
+
+  return { total, dadas, restantes };
 }
 
 export function formatModuleValue(moduleName: unknown) {

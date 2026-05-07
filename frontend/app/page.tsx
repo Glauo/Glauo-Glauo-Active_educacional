@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { dbList, dbListWithoutKeys } from "@/lib/db";
 import { dashboardForPerfil, getSession } from "@/lib/auth";
+import { vipPackageStats } from "@/lib/course-modules";
 import { redirect } from "next/navigation";
 
 type Aluno = Record<string, unknown>;
@@ -58,6 +59,18 @@ export default async function DashboardPage() {
   });
 
   const { totalAberto, inadimplentes, vencemHoje } = calcStats(recebimentos);
+  const alunosVip = alunosAtivos
+    .map((aluno) => ({ aluno, pacote: vipPackageStats(aluno) }))
+    .filter((item): item is { aluno: Aluno; pacote: { total: number; dadas: number; restantes: number } } => Boolean(item.pacote));
+  const vipResumo = alunosVip.reduce(
+    (acc, item) => ({
+      total: acc.total + item.pacote.total,
+      dadas: acc.dadas + item.pacote.dadas,
+      restantes: acc.restantes + item.pacote.restantes,
+    }),
+    { total: 0, dadas: 0, restantes: 0 }
+  );
+  const alunosVipAtencao = [...alunosVip].sort((a, b) => a.pacote.restantes - b.pacote.restantes).slice(0, 5);
 
   const turmasAtivas = turmas.filter((t) => {
     const s = String(t.status || t.situacao || "ativa").toLowerCase();
@@ -98,7 +111,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Métricas principais */}
-      <div className="metric-grid metric-grid-4">
+      <div className="metric-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
         <div className="metric-card metric-card-blue">
           <div className="metric-icon metric-icon-blue">
             <svg viewBox="0 0 20 20" fill="currentColor">
@@ -146,6 +159,19 @@ export default async function DashboardPage() {
       </div>
 
       {/* Conteúdo principal */}
+      <div className="metric-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", marginTop: 16 }}>
+        <div className="metric-card metric-card-blue">
+          <div className="metric-icon metric-icon-blue">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V7.414A2 2 0 0017.414 6L15 3.586A2 2 0 0013.586 3H4zm4 8a1 1 0 100-2 1 1 0 000 2zm3-1a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zm-3 4a1 1 0 100-2 1 1 0 000 2zm3-1a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div className="metric-label">Pacotes VIP</div>
+          <div className="metric-value">{vipResumo.restantes}</div>
+          <div className="metric-note">{vipResumo.dadas}/{vipResumo.total} aulas dadas | {alunosVip.length} alunos VIP</div>
+        </div>
+      </div>
+
       <div className="content-grid grid-2-1">
         {/* Agenda do dia */}
         <div className="card card-raised">
@@ -237,6 +263,30 @@ export default async function DashboardPage() {
           </div>
 
           {/* Ações rápidas */}
+          <div className="card">
+            <div className="card-body">
+              <div className="section-eyebrow">VIP</div>
+              <h3 className="section-title" style={{ marginBottom: "16px" }}>Controle de pacotes</h3>
+              {alunosVipAtencao.length === 0 ? (
+                <p className="text-muted text-sm">Nenhum aluno VIP ativo.</p>
+              ) : (
+                <div className="spotlight-list">
+                  {alunosVipAtencao.map(({ aluno, pacote }, i) => (
+                    <div className="spotlight-row" key={String(aluno.id || aluno.nome || i)}>
+                      <span className="spotlight-label">
+                        {String(aluno.nome || aluno.name || `Aluno ${i + 1}`)}
+                        <small className="text-muted" style={{ display: "block", marginTop: 2 }}>{pacote.dadas}/{pacote.total} dadas</small>
+                      </span>
+                      <span className={`badge badge-${pacote.restantes <= 2 ? "warning" : "info"}`}>
+                        {pacote.restantes} restantes
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="card card-hero">
             <div className="card-body">
               <div className="section-eyebrow">Atalhos</div>

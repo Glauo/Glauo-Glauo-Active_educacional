@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { isVipModule, teacherClassValueByModule, vipPlanTotal } from "@/lib/course-modules";
+import { isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
 
 const KEY = "students.json";
 const HEAVY_KEYS = ["file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -26,7 +26,7 @@ function nextMatricula(alunos: Record<string, unknown>[]) {
 function normalizeAluno(body: Record<string, unknown>) {
   const modulo = text(body.modulo || body.modalidade);
   const vip = isVipModule(modulo);
-  const vipTotalDefault = vipPlanTotal(body.vip_tipo_plano);
+  const vipTotalDefault = vipPlanTotal(body.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
   const responsavel =
     body.responsavel && typeof body.responsavel === "object" && !Array.isArray(body.responsavel)
       ? body.responsavel as Record<string, unknown>
@@ -58,8 +58,8 @@ function normalizeAluno(body: Record<string, unknown>) {
     bairro: text(body.bairro),
     valor_professor_aula: teacherClassValueByModule(modulo),
     vip_tipo_plano: vip ? text(body.vip_tipo_plano || "Pacote 10 aulas") : "",
-    vip_aulas_total: vip ? Number(body.vip_aulas_total || vipTotalDefault || 0) : 0,
-    vip_aulas_restantes: vip ? Number(body.vip_aulas_restantes || body.vip_aulas_total || vipTotalDefault || 0) : 0,
+    vip_aulas_total: vip ? Number(body.vip_aulas_total || vipTotalDefault) : 0,
+    vip_aulas_restantes: vip ? Number(body.vip_aulas_restantes || body.vip_aulas_total || vipTotalDefault) : 0,
     responsavel: {
       nome: responsavelNome,
       cpf: text(body.responsavel_cpf || responsavel.cpf),

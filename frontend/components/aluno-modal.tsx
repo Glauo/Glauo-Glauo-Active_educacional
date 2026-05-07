@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, teacherClassValueByModule, vipPlanTotal } from "@/lib/course-modules";
+import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
 
 type AlunoData = {
   id?: string;
@@ -219,7 +219,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   const [credFeedback, setCredFeedback] = useState("");
   const [credWhatsappLink, setCredWhatsappLink] = useState("");
   const vip = isVipModule(form.modulo);
-  const planTotal = vipPlanTotal(form.vip_tipo_plano);
+  const planTotal = vipPlanTotal(form.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
   const turmaOptions = useMemo(() => {
     const names = turmas.map((t) => text(t.nome || t.name)).filter(Boolean);
     const unique = Array.from(new Set(["Sem Turma", ...names, form.turma].filter(Boolean)));
@@ -238,6 +238,11 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
     setForm((prev) => {
       const next = { ...prev, [field]: value };
       if (field === "data_nascimento") next.idade = calcAge(String(value));
+      if (field === "modulo" && isVipModule(value) && !prev.vip_aulas_total && !prev.vip_aulas_restantes) {
+        next.vip_tipo_plano = prev.vip_tipo_plano || "Pacote 10 aulas";
+        next.vip_aulas_total = String(VIP_DEFAULT_TOTAL);
+        next.vip_aulas_restantes = String(VIP_DEFAULT_TOTAL);
+      }
       return next;
     });
     setErro("");
@@ -301,8 +306,8 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       bairro: form.bairro.trim(),
       valor_professor_aula: teacherClassValueByModule(form.modulo),
       vip_tipo_plano: vip ? form.vip_tipo_plano : "",
-      vip_aulas_total: vip ? Number(form.vip_aulas_total || planTotal || 0) : 0,
-      vip_aulas_restantes: vip ? Number(form.vip_aulas_restantes || form.vip_aulas_total || planTotal || 0) : 0,
+      vip_aulas_total: vip ? Number(form.vip_aulas_total || planTotal) : 0,
+      vip_aulas_restantes: vip ? Number(form.vip_aulas_restantes || form.vip_aulas_total || planTotal) : 0,
       responsavel: {
         nome: form.responsavel_nome.trim(),
         cpf: form.responsavel_cpf.trim(),

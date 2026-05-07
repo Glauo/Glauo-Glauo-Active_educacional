@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { EditarAlunoBtn } from "./aluno-modal";
+import { vipPackageStats } from "@/lib/course-modules";
 
 type Aluno = {
   id?: string;
@@ -89,17 +90,10 @@ function credentialMessage(aluno: Aluno, login: string, senha: string) {
   ].join("\n");
 }
 
-function toInt(value: unknown) {
-  const n = parseInt(String(value || "0"), 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function vipLabel(aluno: Aluno) {
-  const total = toInt(aluno.vip_aulas_total);
-  const restantes = Math.max(0, toInt(aluno.vip_aulas_restantes || total));
-  if (!total) return "";
-  const dadas = Math.max(0, total - restantes);
-  return `${dadas}/${total} aulas dadas | ${restantes} restantes`;
+  const pacote = vipPackageStats(aluno);
+  if (!pacote) return "";
+  return `${pacote.dadas}/${pacote.total} aulas dadas | ${pacote.restantes} restantes`;
 }
 
 function fmtDate(v: unknown) {
