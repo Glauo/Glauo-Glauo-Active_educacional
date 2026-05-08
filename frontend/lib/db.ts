@@ -26,13 +26,21 @@ function createPool(): Pool | null {
 
   if (!url) return null;
 
+  const normalizedUrl = url.startsWith("postgres://")
+    ? url.replace("postgres://", "postgresql://")
+    : url;
+
+  // Respect sslmode=disable in the connection URL (e.g. internal Docker networks).
+  const sslDisabled = /[?&]sslmode=disable/i.test(url);
+  const ssl = sslDisabled
+    ? false
+    : process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false;
+
   return new Pool({
-    connectionString: url.startsWith("postgres://")
-      ? url.replace("postgres://", "postgresql://")
-      : url,
-    ssl: process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
+    connectionString: normalizedUrl,
+    ssl,
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
