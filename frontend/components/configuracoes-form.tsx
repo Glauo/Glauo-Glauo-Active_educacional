@@ -78,7 +78,7 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
   }
 
   async function repararSistema() {
-    if (!confirm("Executar reparo agora? Isso remove dados pesados de PDF do banco e tenta recriar turmas sumidas sem apagar alunos.")) return;
+    if (!confirm("Executar reparo agora? Isso remove parcelas duplicadas, limpa dados pesados de PDF do banco e tenta recriar turmas sumidas sem apagar alunos.")) return;
     setBackupLoading(true);
     setFeedback(null);
     const res = await fetch("/api/admin/repair", { method: "POST" });
