@@ -45,6 +45,11 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { try { if ("serviceWorker" in navigator) { navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((reg) => reg.unregister())); } if ("caches" in window) { caches.keys().then((keys) => keys.filter((key) => key.startsWith("ativo-edu-")).forEach((key) => caches.delete(key))); } } catch (_) {} })();`,
+          }}
+        />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
