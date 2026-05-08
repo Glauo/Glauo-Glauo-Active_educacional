@@ -47,7 +47,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(() => { try { if ("serviceWorker" in navigator) { navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((reg) => reg.unregister())); } if ("caches" in window) { caches.keys().then((keys) => keys.filter((key) => key.startsWith("ativo-edu-")).forEach((key) => caches.delete(key))); } } catch (_) {} })();`,
+            __html: `(() => { try { const clearCaches = () => "caches" in window ? caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("ativo-edu-")).map((key) => caches.delete(key)))) : Promise.resolve(); const unregister = () => "serviceWorker" in navigator ? navigator.serviceWorker.getRegistrations().then((regs) => Promise.all(regs.map((reg) => reg.unregister()))) : Promise.resolve(); Promise.all([clearCaches(), unregister()]).then(() => { if ("serviceWorker" in navigator && navigator.serviceWorker.controller) { const key = "active_sw_cleanup_reload"; const last = Number(sessionStorage.getItem(key) || "0"); if (Date.now() - last > 15000) { sessionStorage.setItem(key, String(Date.now())); window.location.reload(); } } }); } catch (_) {} })();`,
           }}
         />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
