@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { BaixaBtn, EditarLancamentoBtn, EstornoBtn } from "./financeiro-modal";
 import { FinanceiroFornecedores } from "./financeiro-fornecedores";
 import { FinanceiroProfessorFechamento } from "./financeiro-professor-fechamento";
@@ -452,9 +453,13 @@ function RelatorioDetalhadoProfModal({
 
 /* ── Tab: Recebimentos (agrupado por mês) ── */
 function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
+  const router = useRouter();
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroPeriodo, setFiltroPeriodo] = useState("Todos");
+  const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState("");
 
   function isMesAtual(v: string) { const d = parseBRDate(v), n = new Date(); return !isNaN(d.getTime()) && d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }
   function isMesPassado(v: string) { const d = parseBRDate(v), n = new Date(), mp = new Date(n.getFullYear(), n.getMonth() - 1, 1); return !isNaN(d.getTime()) && d.getMonth() === mp.getMonth() && d.getFullYear() === mp.getFullYear(); }
@@ -476,6 +481,42 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
 
   const grupos = useMemo(() => groupByMes(filtrados), [filtrados]);
   const totalGeral = filtrados.reduce((s, r) => s + valorParcela(r), 0);
+  const idsExcluiveis = useMemo(() => filtrados
+    .filter((r) => r.id && statusBadge(String(r.status || r.situacao || "")) !== "success")
+    .map((r) => String(r.id)), [filtrados]);
+  const selecionadosValidos = selecionados.filter((id) => idsExcluiveis.includes(id));
+  const todosSelecionados = idsExcluiveis.length > 0 && idsExcluiveis.every((id) => selecionados.includes(id));
+
+  function toggleSelecionado(id: string) {
+    setSelecionados((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+    setErroExclusao("");
+  }
+
+  function toggleTodos() {
+    setSelecionados(todosSelecionados ? [] : idsExcluiveis);
+    setErroExclusao("");
+  }
+
+  async function excluirSelecionados() {
+    const ids = selecionadosValidos;
+    if (ids.length === 0) return;
+    const msg = ids.length === 1
+      ? "Excluir a parcela selecionada? Esta acao nao pode ser desfeita."
+      : `Excluir ${ids.length} parcelas selecionadas? Esta acao nao pode ser desfeita.`;
+    if (!confirm(msg)) return;
+
+    setExcluindo(true);
+    setErroExclusao("");
+    const res = await fetch(`/api/financeiro?tipo=recebimentos&ids=${encodeURIComponent(ids.join(","))}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    setExcluindo(false);
+    if (!res.ok) {
+      setErroExclusao(String(data.error || "Erro ao excluir parcelas selecionadas."));
+      return;
+    }
+    setSelecionados([]);
+    router.refresh();
+  }
 
   return (
     <>
@@ -488,6 +529,12 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
             </div>
           </div>
           <div className="toolbar-right">
+            <button className="btn btn-secondary btn-sm" onClick={toggleTodos} disabled={idsExcluiveis.length === 0}>
+              {todosSelecionados ? "Limpar selecao" : "Selecionar abertas"}
+            </button>
+            <button className="btn btn-danger btn-sm" onClick={excluirSelecionados} disabled={excluindo || selecionadosValidos.length === 0}>
+              {excluindo ? "Excluindo..." : `Excluir selecionadas${selecionadosValidos.length ? ` (${selecionadosValidos.length})` : ""}`}
+            </button>
             <select className="filter-select" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
               <option value="Todos">Todos os status</option>
               <option>Em aberto</option>
@@ -501,6 +548,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
             </select>
           </div>
         </div>
+        {erroExclusao && <div className="form-error" style={{ margin: "0 20px 16px" }}>{erroExclusao}</div>}
       </div>
 
       {grupos.length === 0 ? (
@@ -548,9 +596,22 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                       const venc = String(r.vencimento || r.data_vencimento || "—");
                       const status = String(r.status || r.situacao || "Pendente");
                       const atrasado = venc !== "—" && statusBadge(status) !== "success" && parseBRDate(venc) < new Date();
+                      const id = String(r.id || "");
+                      const podeExcluir = Boolean(id) && statusBadge(status) !== "success";
                       return (
                         <tr key={String(r.id || i)}>
                           <td>
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                              <input
+                                type="checkbox"
+                                aria-label={`Selecionar ${nome}`}
+                                checked={id ? selecionados.includes(id) : false}
+                                onChange={() => id && toggleSelecionado(id)}
+                                disabled={!podeExcluir}
+                                title={podeExcluir ? "Selecionar para excluir" : "Parcelas pagas exigem estorno"}
+                              />
+                              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 700 }}>Selecionar</span>
+                            </label>
                             <div className="table-name-cell">
                               <span className="table-name-primary">{nome}</span>
                               {r.codigo && <span className="table-name-secondary">{String(r.codigo)}</span>}

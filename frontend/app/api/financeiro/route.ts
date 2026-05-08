@@ -217,23 +217,31 @@ export async function DELETE(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
+  const idsParam = searchParams.get("ids");
   const tipo = searchParams.get("tipo") || "recebimentos";
-  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+  const ids = (idsParam ? idsParam.split(",") : [id]).map((item) => text(item)).filter(Boolean);
+  if (ids.length === 0) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
   const key = tipo === "despesas" ? "payables.json" : "receivables.json";
   const lancamentos = await dbList<Record<string, unknown>>(key);
-  const target = lancamentos.find((l) => l.id === id);
-  if (target && isPaid(target.status)) {
+  const selected = lancamentos.filter((l) => ids.includes(text(l.id)));
+  const paid = selected.filter((l) => isPaid(l.status));
+  if (paid.length > 0) {
     return NextResponse.json({ error: "Lancamento pago nao pode ser excluido. Use estorno/cancelamento auditado." }, { status: 409 });
   }
-  const filtered = lancamentos.filter((l) => l.id !== id);
+  const selectedIds = new Set(ids);
+  const filtered = lancamentos.filter((l) => !selectedIds.has(text(l.id)));
   await dbSet(key, filtered);
-  await audit({
-    acao: "excluir_lancamento",
-    tipo,
-    lancamento_id: id,
-    usuario: session.pessoa || session.usuario,
-    perfil: session.perfil,
-    antes: target || null,
-  });
-  return NextResponse.json({ ok: true });
+  const deleted = lancamentos.filter((l) => selectedIds.has(text(l.id)));
+  for (const target of deleted) {
+    await audit({
+      acao: ids.length > 1 ? "excluir_lancamentos_em_lote" : "excluir_lancamento",
+      tipo,
+      lancamento_id: target.id,
+      usuario: session.pessoa || session.usuario,
+      perfil: session.perfil,
+      antes: target,
+      total_selecionado: ids.length,
+    });
+  }
+  return NextResponse.json({ ok: true, deleted: deleted.length });
 }
