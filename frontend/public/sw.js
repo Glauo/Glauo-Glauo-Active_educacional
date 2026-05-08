@@ -1,9 +1,7 @@
-const CACHE_VERSION = 'ativo-edu-v1';
+const CACHE_VERSION = 'ativo-edu-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 
 const STATIC_ASSETS = [
-  '/',
   '/login',
   '/manifest.json',
   '/logo.png',
@@ -24,7 +22,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k !== STATIC_CACHE && k !== DYNAMIC_CACHE)
+          .filter((k) => k.startsWith('ativo-edu-') && k !== STATIC_CACHE)
           .map((k) => caches.delete(k))
       )
     ).then(() => self.clients.claim())
@@ -36,21 +34,12 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET and API requests (always network for API)
+  // Dados e paginas do sistema precisam ser sempre atuais.
   if (request.method !== 'GET') return;
   if (url.pathname.startsWith('/api/')) return;
 
-  // For navigation requests: network first, fallback to cache
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          const clone = res.clone();
-          caches.open(DYNAMIC_CACHE).then((c) => c.put(request, clone));
-          return res;
-        })
-        .catch(() => caches.match(request).then((r) => r || caches.match('/')))
-    );
+    event.respondWith(fetch(request));
     return;
   }
 
