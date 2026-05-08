@@ -4,17 +4,17 @@ import { useEffect } from "react";
 
 export function PWARegister() {
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      if ("caches" in window) {
-        caches
-          .keys()
-          .then((keys) => Promise.all(keys.filter((key) => key.startsWith("ativo-edu-") && !key.startsWith("ativo-edu-v3")).map((key) => caches.delete(key))))
-          .catch(() => {});
-      }
+    if ("caches" in window) {
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.filter((key) => key.startsWith("ativo-edu-")).map((key) => caches.delete(key))))
+        .catch(() => {});
+    }
 
+    if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/sw.js")
-        .then((registration) => registration.update())
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
         .catch(() => {});
     }
   }, []);

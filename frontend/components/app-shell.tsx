@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useState } from "react";
 
@@ -267,16 +266,15 @@ export function AppShell({
                     ? pathname === "/"
                     : pathname.startsWith(item.href);
                 return (
-                  <Link
+                  <a
                     key={item.href}
                     href={item.href}
-                    prefetch={false}
                     className={`nav-item${isActive ? " active" : ""}`}
                     onClick={() => setMobileOpen(false)}
                   >
                     {item.icon}
                     <span className="nav-label">{item.label}</span>
-                  </Link>
+                  </a>
                 );
               })}
             </div>
