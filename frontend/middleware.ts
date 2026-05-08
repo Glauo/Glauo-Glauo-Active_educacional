@@ -6,7 +6,7 @@ const SECRET = new TextEncoder().encode(
 );
 
 const PUBLIC_PATHS = ["/login", "/aluno/login", "/limpar-cache", "/api/auth"];
-const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js"];
+const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js", "/limpar-cache.html"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
