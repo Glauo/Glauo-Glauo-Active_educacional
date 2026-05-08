@@ -986,19 +986,48 @@ def _db_try_recover_session():
 
     now_ts = time.time()
     last_attempt = float(st.session_state.get("_db_recovery_attempt_at", 0.0) or 0.0)
-    if (now_ts - last_attempt) < 3:
+    if (now_ts - last_attempt) < 60:
         return False
     st.session_state["_db_recovery_attempt_at"] = now_ts
 
     if not _db_load_cache():
         return False
 
+    # Antes de resetar, sincroniza ao DB qualquer dado salvo localmente durante a indisponibilidade.
+    _RECOVERY_SYNC_MAP = [
+        ("students", "students"), ("teachers", "teachers"), ("classes", "classes"),
+        ("receivables", "receivables"), ("payables", "payables"), ("users", "users"),
+        ("messages", "messages"), ("videos", "videos"), ("materials", "materials"),
+        ("grades", "grades"), ("fee_templates", "fee_templates"),
+        ("agenda", "agenda"), ("class_sessions", "class_sessions"),
+        ("inventory", "inventory"), ("inventory_moves", "inventory_moves"),
+        ("certificates", "certificates"), ("books", "books"),
+        ("material_orders", "material_orders"), ("challenges", "challenges"),
+        ("challenge_completions", "challenge_completions"),
+        ("activities", "activities"), ("activity_submissions", "activity_submissions"),
+        ("sales_leads", "sales_leads"), ("sales_agenda", "sales_agenda"),
+        ("sales_payments", "sales_payments"), ("email_log", "email_log"),
+        ("chatbot_active_log", "chatbot_log"),
+    ]
+    sources = st.session_state.get("_data_sources", {}) or {}
+    synced_keys = []
+    for db_key, sess_key in _RECOVERY_SYNC_MAP:
+        if sources.get(db_key, "") == "db_unavailable":
+            session_data = st.session_state.get(sess_key)
+            if isinstance(session_data, list) and session_data:
+                try:
+                    _db_set(db_key, session_data)
+                    synced_keys.append(db_key)
+                except Exception:
+                    pass
+
     st.session_state["_data_sources"] = {}
     st.session_state["_active_users_loaded"] = False
     st.session_state["_active_runtime_loaded"] = False
-    st.session_state["_db_recovered_notice"] = (
-        "Conexao com banco restabelecida. Dados recarregados do armazenamento persistente."
-    )
+    notice = "Conexao com banco restabelecida. Dados recarregados do armazenamento persistente."
+    if synced_keys:
+        notice += f" Dados locais sincronizados: {', '.join(synced_keys)}."
+    st.session_state["_db_recovered_notice"] = notice
     return True
 
 def _load_latest_backup_list(path):
@@ -13427,7 +13456,6 @@ def sidebar_menu(title, options, key):
         option_label = f"{icon}  {option}"
         if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
             st.session_state[key] = option
-            st.rerun()
     return st.session_state[key]
 
 def sidebar_menu_grouped(title, sections, key):
@@ -13474,7 +13502,6 @@ def sidebar_menu_grouped(title, sections, key):
             option_label = f"{icon}  {option}"
             if st.button(option_label, key=f"{key}_{option}", type="primary" if active else "secondary"):
                 st.session_state[key] = option
-                st.rerun()
     return st.session_state[key]
 
 STUDENT_IMPORT_COLUMNS = [
