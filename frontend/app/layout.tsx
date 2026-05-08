@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PWARegister } from "@/components/pwa-register";
+import { AppRecovery } from "@/components/app-recovery";
 
 export const metadata: Metadata = {
   title: {
@@ -54,6 +55,7 @@ export default function RootLayout({
       </head>
       <body>
         <PWARegister />
+        <AppRecovery />
         {children}
       </body>
     </html>

@@ -21,6 +21,79 @@ const HEAVY_KEYS = [
   "anexo_b64",
 ];
 
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
+function normalize(value: unknown) {
+  return text(value).toLowerCase();
+}
+
+function isPaid(value: unknown) {
+  const status = normalize(value);
+  return status.includes("pago") || status.includes("baixado") || status.includes("liquidado");
+}
+
+function dateValue(value: unknown) {
+  const raw = text(value);
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1])).getTime();
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function faturaKeys(aluno: Aluno) {
+  return [
+    `nome:${normalize(aluno.nome || aluno.name)}`,
+    `login:${normalize(aluno.login)}`,
+  ].filter((key) => !key.endsWith(":"));
+}
+
+function slimRecebimentos(alunos: Aluno[], recebimentos: Recebimento[]) {
+  const alunoKeys = new Set(alunos.flatMap(faturaKeys));
+  const byKey = new Map<string, Recebimento[]>();
+
+  for (const item of recebimentos) {
+    const keys = [
+      `nome:${normalize(item.aluno || item.nome)}`,
+      `login:${normalize(item.aluno_login)}`,
+    ].filter((key) => alunoKeys.has(key));
+
+    const slim: Recebimento = {
+      id: item.id,
+      aluno: item.aluno,
+      nome: item.nome,
+      aluno_login: text(item.aluno_login),
+      descricao: item.descricao,
+      valor: text(item.valor_parcela ?? item.valor),
+      vencimento: item.vencimento || item.data_vencimento,
+      data_vencimento: item.data_vencimento || item.vencimento,
+      status: item.status,
+      situacao: item.situacao,
+    };
+
+    for (const key of keys) {
+      byKey.set(key, [...(byKey.get(key) || []), slim]);
+    }
+  }
+
+  const result = new Map<string, Recebimento>();
+  for (const list of byKey.values()) {
+    const sorted = [...list].sort((a, b) => {
+      const paidDiff = Number(isPaid(a.status || a.situacao)) - Number(isPaid(b.status || b.situacao));
+      if (paidDiff !== 0) return paidDiff;
+      return dateValue(b.vencimento || b.data_vencimento) - dateValue(a.vencimento || a.data_vencimento);
+    });
+    const abertas = sorted.filter((item) => !isPaid(item.status || item.situacao));
+    const recentes = sorted.filter((item) => isPaid(item.status || item.situacao)).slice(0, 6);
+    for (const item of [...abertas, ...recentes].slice(0, 20)) {
+      result.set(text(item.id) || `${text(item.aluno || item.nome)}-${text(item.descricao)}-${text(item.vencimento)}-${text(item.valor)}`, item);
+    }
+  }
+
+  return Array.from(result.values());
+}
+
 export default async function AlunosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -29,6 +102,7 @@ export default async function AlunosPage() {
     dbListWithoutKeys<Aluno>("students.json", HEAVY_KEYS),
     dbListWithoutKeys<Recebimento>("receivables.json", HEAVY_KEYS),
   ]);
+  const recebimentosLeves = slimRecebimentos(alunos, recebimentos);
 
   const ativos = alunos.filter((a) => {
     const s = String(a.status || a.situacao || "ativo").toLowerCase();
@@ -99,7 +173,7 @@ export default async function AlunosPage() {
           </div>
         </div>
       ) : (
-        <AlunosSearchTable alunos={alunos} recebimentos={recebimentos} canManageAccess={isAdminOrCoordinator(session)} />
+        <AlunosSearchTable alunos={alunos} recebimentos={recebimentosLeves} canManageAccess={isAdminOrCoordinator(session)} />
       )}
     </AppShell>
   );

@@ -8,7 +8,7 @@ export function PWARegister() {
       if ("caches" in window) {
         caches
           .keys()
-          .then((keys) => Promise.all(keys.filter((key) => key.startsWith("ativo-edu-v1")).map((key) => caches.delete(key))))
+          .then((keys) => Promise.all(keys.filter((key) => key.startsWith("ativo-edu-") && !key.startsWith("ativo-edu-v3")).map((key) => caches.delete(key))))
           .catch(() => {});
       }
 
