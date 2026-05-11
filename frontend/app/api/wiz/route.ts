@@ -490,8 +490,172 @@ async function logMessage(data: Row, actor: string) {
   return { ok: true, message: `Envio preparado para ${item.destinatario}`, item };
 }
 
+function findInPrompt(items: Row[], prompt: string, fields: string[]): Row | null {
+  const normPrompt = normalize(prompt);
+  let best: Row | null = null;
+  let bestLen = 0;
+  for (const item of items) {
+    for (const field of fields) {
+      const name = normalize(item[field]);
+      if (name && name.length >= 3 && normPrompt.includes(name) && name.length > bestLen) {
+        best = item;
+        bestLen = name.length;
+      }
+    }
+  }
+  return best;
+}
+
+function extractDate(prompt: string): string {
+  const norm = lower(prompt);
+  const today = new Date();
+  const iso = prompt.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const br = prompt.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (br) {
+    const y = br[3] ? (br[3].length === 2 ? `20${br[3]}` : br[3]) : today.getFullYear().toString();
+    return `${y}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+  }
+  if (norm.includes("ontem")) { const d = new Date(today); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); }
+  const weekdays = [["domingo","dom"],["segunda","seg"],["terca","ter"],["quarta","qua"],["quinta","qui"],["sexta","sex"],["sabado","sab"]];
+  for (let i = 0; i < weekdays.length; i++) {
+    if (weekdays[i].some((d) => norm.includes(d))) {
+      const d = new Date(today);
+      const diff = (d.getDay() - i + 7) % 7;
+      d.setDate(d.getDate() - (diff === 0 ? 7 : diff));
+      return d.toISOString().slice(0, 10);
+    }
+  }
+  return today.toISOString().slice(0, 10);
+}
+
+async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
+  const [turmas, professores, sessions, payables] = await Promise.all([
+    dbList<Row>("classes.json"),
+    dbList<Row>("teachers.json"),
+    dbList<Row>("class_sessions.json"),
+    dbList<Row>("payables.json"),
+  ]);
+
+  const turmaFound = findInPrompt(turmas, prompt, ["nome", "name", "turma"]);
+  if (!turmaFound) {
+    return { ok: false, message: "Nao consegui identificar a turma no texto. Informe o nome exato da turma, ex: 'turma Chicago'." };
+  }
+
+  const profFound = findInPrompt(professores, prompt, ["nome", "name"]);
+  const professorName = profFound
+    ? text(profFound.nome || profFound.name)
+    : text(turmaFound.professor);
+  if (!professorName) {
+    return { ok: false, message: "Nao consegui identificar o professor. Informe o nome do professor, ex: 'professora Maria'." };
+  }
+  const teacher = profFound || professores.find((p) => normalize(text(p.nome || p.name)) === normalize(professorName)) || {};
+
+  const dataAula = extractDate(prompt);
+
+  const normP = normalize(prompt);
+  const licaoMatch = normP.match(/li[cç][aã]o\s+([a-z0-9 ]+?)(?=\s+(?:ate|a |ao |,|$))/);
+  const licaoInicio = licaoMatch ? licaoMatch[1].trim() : "";
+  const fimMatch = normP.match(/(?:ate|parou\s+(?:em|na|no|na))\s+([a-z0-9 ]+?)(?=\s|$)/);
+  const licaoFim = fimMatch ? fimMatch[1].trim() : (licaoInicio || "Ver registro");
+
+  const materiaMatch = prompt.match(/(?:conte[uú]do|mat[eé]ria)[:\s]+([^,\n.]+)/i);
+  const materia = materiaMatch ? materiaMatch[1].trim() : "Aula registrada pelo Assistente Wiz";
+  const tarefaMatch = prompt.match(/(?:tarefa|dever|li[cç][aã]o de casa)[:\s]+([^,\n.]+)/i);
+  const tarefa = tarefaMatch ? tarefaMatch[1].trim() : "Verificar com o professor";
+
+  const turmaId = text(turmaFound.id || turmaFound.nome || turmaFound.name);
+  const turmaName = text(turmaFound.nome || turmaFound.name);
+  const modulo = text(turmaFound.modulo || turmaFound.tipo_aula || turmaFound.modalidade || turmaFound.nivel);
+  const livro = text(turmaFound.livro || turmaFound.book);
+  const valorAula = teacherClassValueByModule(modulo) ||
+    parseMoney((teacher as Row).valor_aula || (teacher as Row).valor_hora || (teacher as Row).valor || turmaFound.valor_aula || "0");
+
+  const aulaId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const aula: Row = {
+    id: aulaId,
+    turma_id: turmaId,
+    turma: turmaName,
+    professor: professorName,
+    professor_telefone: text((teacher as Row).telefone || (teacher as Row).whatsapp || (teacher as Row).celular),
+    professor_email: text((teacher as Row).email),
+    modulo,
+    livro,
+    licao_inicio: licaoInicio || "Ver registro",
+    licao_fim: licaoFim,
+    status: "fechada",
+    data_aula: dataAula,
+    materia,
+    tarefa,
+    presencas: [],
+    observacoes: "Registrado pelo Assistente Wiz",
+    valor_aula: valorAula,
+    vip_consumed_students: [],
+    aberta_por: actor,
+    fechada_por: actor,
+    inicio: now,
+    fim: now,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const payable: Row = {
+    id: crypto.randomUUID(),
+    aula_id: aulaId,
+    tipo_origem: "aula_professor",
+    categoria: "Professor",
+    aluno: professorName,
+    nome: professorName,
+    professor: professorName,
+    professor_telefone: text((teacher as Row).telefone || (teacher as Row).whatsapp || (teacher as Row).celular),
+    professor_email: text((teacher as Row).email),
+    turma: turmaName,
+    modulo,
+    livro,
+    licao_inicio: licaoInicio || "Ver registro",
+    licao_fim: licaoFim,
+    descricao: `Aula dada - ${turmaName} - ${livro || "Livro nao informado"} - ${dataAula}`,
+    valor: valorAula,
+    valor_unitario: valorAula,
+    vencimento: dataAula,
+    data_vencimento: dataAula,
+    data_aula: dataAula,
+    status: "Pendente",
+    created_at: now,
+  };
+
+  const updatedTurmas = turmas.map((t) =>
+    text(t.id || t.nome || t.name) === turmaId || text(t.nome || t.name) === turmaName
+      ? { ...t, ultima_licao: licaoFim, ultima_aula: now, aula_aberta_id: "", aula_status: "Fechada" }
+      : t
+  );
+
+  await Promise.all([
+    dbSet("class_sessions.json", [...sessions, aula]),
+    dbSet("payables.json", [...payables, payable]),
+    dbSet("classes.json", updatedTurmas),
+  ]);
+
+  const valorFmt = valorAula > 0 ? `R$ ${money(valorAula)}` : "sem valor cadastrado";
+  return {
+    ok: true,
+    message: `Aula registrada com sucesso!\nProfessor: ${professorName}\nTurma: ${turmaName}\nData: ${dataAula}${licaoFim !== "Ver registro" ? `\nLicao: ate ${licaoFim}` : ""}\nFinanceiro gerado: ${valorFmt} (status: Pendente)`,
+  };
+}
+
+function isClassRegistration(norm: string): boolean {
+  const hasAula = norm.includes("aula") || norm.includes("aulas");
+  if (!hasAula) return false;
+  if (norm.includes("cadastr") || norm.includes("registr") || norm.includes("lanc")) return true;
+  if (norm.includes("professor") || norm.includes("professora") || norm.match(/\bprof\b/)) return true;
+  return false;
+}
+
 function suggestFromPrompt(prompt: string) {
   const norm = lower(prompt);
+  if (isClassRegistration(norm)) return "record_teacher_class";
   if ((norm.includes("massa") || norm.includes("todos") || norm.includes("turma")) && (norm.includes("whatsapp") || norm.includes("email") || norm.includes("mensagem"))) return "send_bulk_message";
   if ((norm.includes("senha") || norm.includes("login") || norm.includes("acesso")) && norm.includes("prof")) return "reset_teacher_access";
   if (norm.includes("senha") || norm.includes("login") || norm.includes("acesso")) return "reset_student_access";
@@ -501,16 +665,17 @@ function suggestFromPrompt(prompt: string) {
   if (norm.includes("trabalho") || norm.includes("desafio")) return "create_work";
   if (norm.includes("aluno") && (norm.includes("cadastr") || norm.includes("criar"))) return "create_student";
   if (norm.includes("receb") || norm.includes("boleto") || norm.includes("mensalidade") || norm.includes("financeiro")) return "create_financial";
-  if (norm.includes("agenda") || norm.includes("aula") || norm.includes("evento")) return "create_agenda";
+  if (norm.includes("agenda") || norm.includes("evento")) return "create_agenda";
   return "answer";
 }
 
-async function answer(prompt: string) {
+async function answer(prompt: string, actor: string): Promise<Row> {
   const action = suggestFromPrompt(prompt);
+  if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
   return {
     ok: true,
     message: action === "answer"
-      ? "Sou o Professor Wiz operacional do Active: posso cadastrar aluno, criar comunicado, gerar tarefa, criar trabalho, lancar recebimento, enviar mensagens, atualizar login/senha, responder aluno e agendar evento. Diga a acao com dados objetivos."
+      ? "Sou o Professor Wiz operacional do Active: posso registrar aula de professor, cadastrar aluno, criar comunicado, gerar tarefa, criar trabalho, lancar recebimento, enviar mensagens, atualizar login/senha, responder aluno e agendar evento. Diga a acao com dados objetivos, ex: 'Registrar aula da professora Maria na turma Chicago ontem, licao Unit 5'."
       : `Parece uma solicitacao de ${action}. Use o formulario rapido correspondente ou envie os dados completos para executar.`,
     suggested_action: action,
   };
@@ -539,7 +704,7 @@ export async function POST(req: NextRequest) {
   const actor = session.pessoa || session.usuario;
 
   let result: Row;
-  if (action === "answer") result = await answer(text(data.prompt || body.prompt));
+  if (action === "answer") result = await answer(text(data.prompt || body.prompt), actor);
   else if (action === "create_wall_post") result = await createWallPost(data, actor);
   else if (action === "create_homework") result = await createHomework(data, actor);
   else if (action === "create_work") result = await createWork(data, actor);
@@ -551,6 +716,7 @@ export async function POST(req: NextRequest) {
   else if (action === "reset_student_access") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await resetStudentAccess(data, actor, session) : { ok: false, message: "Perfil sem permissao para alterar acesso de aluno." };
   else if (action === "reset_teacher_access") result = canAdmin(session.perfil) ? await resetTeacherAccess(data, actor, session) : { ok: false, message: "Perfil sem permissao para alterar acesso de professor." };
   else if (action === "answer_student") result = await answerStudent(data, actor, session);
+  else if (action === "record_teacher_class") result = canAdmin(session.perfil) ? await recordTeacherClass(text(data.prompt || body.prompt), actor) : { ok: false, message: "Perfil sem permissao para registrar aulas." };
   else result = { ok: false, message: "Acao do Wiz nao reconhecida." };
 
   await audit(action, data, result, actor, session.perfil);

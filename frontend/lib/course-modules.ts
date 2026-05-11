@@ -44,7 +44,7 @@ export function teacherClassValueByModule(moduleName: unknown) {
 }
 
 export function isVipModule(moduleName: unknown) {
-  return normalized(moduleName).includes("vip");
+  return normalized(moduleName) === "vip";
 }
 
 export function vipPlanTotal(planName: unknown) {
@@ -60,10 +60,9 @@ function toInt(value: unknown) {
 }
 
 export function vipPackageStats(aluno: Record<string, unknown>) {
-  const modulo = aluno.modulo || aluno.modalidade || aluno.tipo_aula || aluno.vip_tipo_plano;
-  const hasExplicitCounter = toInt(aluno.vip_aulas_total) > 0 || toInt(aluno.vip_aulas_restantes) > 0;
+  const modulo = aluno.modulo || aluno.modalidade || aluno.tipo_aula;
   const hasVipPlan = isVipModule(aluno.vip_tipo_plano);
-  if (!isVipModule(modulo) && !hasVipPlan && !hasExplicitCounter) return null;
+  if (!isVipModule(modulo) && !hasVipPlan) return null;
 
   const planTotal = vipPlanTotal(aluno.vip_tipo_plano || "Pacote 10 aulas");
   const total = Math.max(1, toInt(aluno.vip_aulas_total) || planTotal || VIP_DEFAULT_TOTAL);

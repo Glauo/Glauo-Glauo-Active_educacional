@@ -2,7 +2,7 @@ import type { SessionUser } from "./auth";
 
 export function isAdminOrCoordinator(session: Pick<SessionUser, "perfil"> | null) {
   const perfil = String(session?.perfil || "").toLowerCase();
-  return perfil.includes("admin") || perfil.includes("coord");
+  return perfil.includes("admin") || perfil.includes("coord") || perfil.includes("dire") || perfil.includes("gestor");
 }
 
 export function isTeacher(session: Pick<SessionUser, "perfil"> | null) {

@@ -1044,7 +1044,7 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
   const totais = meses.reduce((a, m) => ({ rec: a.rec + m.recebido, ar: a.ar + m.aReceber, dep: a.dep + m.totalDespesas }), { rec: 0, ar: 0, dep: 0 });
 
   return (
-    <>
+    <div id="relatorio-financeiro-print">
       <div className="metric-grid metric-grid-3">
         <div className="metric-card metric-card-green">
           <div className="metric-icon metric-icon-green"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>
@@ -1107,7 +1107,7 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
