@@ -87,11 +87,14 @@ export async function POST(req: NextRequest) {
     if (!canUseClass(session, turma)) return NextResponse.json({ error: "Sem permissão para esta turma." }, { status: 403 });
 
     const turmaId = classId(turma);
-      const professor = text(turma.professor || body.professor || session.pessoa);
-      const teacher: Row = professores.find((p) => sameName(teacherName(p), professor)) || {};
-      const livro = text(turma.livro || turma.book || body.livro);
-      const modulo = classModule(turma);
-      const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
+    // Admin may pass a professor override; otherwise use turma professor or session user
+    const professor = text(body.professor || turma.professor || session.pessoa);
+    const teacher: Row = professores.find((p) => sameName(teacherName(p), professor)) || {};
+    const livro = text(turma.livro || turma.book || body.livro);
+    const modulo = classModule(turma);
+    const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
+    // Manual date (admin may set a past date); defaults to today
+    const dataAulaISO = text(body.data_aula) || new Date().toISOString().slice(0, 10);
 
     if (action === "open") {
       const aberta = aulas.find((a) => a.status === "aberta" && text(a.turma_id) === turmaId);
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest) {
         livro,
         licao_inicio: text(body.licao_inicio) || licaoAtual,
         status: "aberta",
+        data_aula: dataAulaISO,
         aberta_por: session.pessoa || session.usuario,
         inicio: new Date().toISOString(),
         created_at: new Date().toISOString()
@@ -222,9 +226,9 @@ export async function POST(req: NextRequest) {
         descricao,
         valor: valorAula,
         valor_unitario: valorAula,
-        vencimento: new Date().toISOString().slice(0, 10),
-        data_vencimento: new Date().toISOString().slice(0, 10),
-        data_aula: new Date().toISOString().slice(0, 10),
+        vencimento: dataAulaISO,
+        data_vencimento: dataAulaISO,
+        data_aula: text(base.data_aula) || dataAulaISO,
         vip_consumed_students: vipConsumidos,
         status: "Pendente",
         created_at: new Date().toISOString()

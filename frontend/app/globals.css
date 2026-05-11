@@ -2283,11 +2283,55 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @media print {
-  .sidebar, .topbar, .page-header, .tab-bar, .toolbar, .btn, button { display: none !important; }
-  #recibo-print { display: block !important; visibility: visible !important; }
-  .modal-overlay { background: none; }
-  .modal-box { box-shadow: none; border: none; }
-  .card { box-shadow: none !important; break-inside: avoid; }
+  /* Ocultar tudo; só mostrar o alvo de impressão */
+  body * { visibility: hidden !important; }
+
+  /* ── Recibo de pagamento ── */
+  #recibo-print, #recibo-print * { visibility: visible !important; }
+  #recibo-print {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 24px 32px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 9999 !important;
+  }
+
+  /* ── Relatório detalhado de professor ── */
+  #relatorio-professor-print, #relatorio-professor-print * { visibility: visible !important; }
+  #relatorio-professor-print {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 16px 24px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 9999 !important;
+    overflow: visible !important;
+  }
+
+  /* ── Fechamento de professor ── */
+  #fechamento-print, #fechamento-print * { visibility: visible !important; }
+  #fechamento-print {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 16px 24px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 9999 !important;
+    overflow: visible !important;
+  }
+
+  /* Botões e nav nunca aparecem na impressão */
+  .btn, button, .modal-close { display: none !important; visibility: hidden !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
