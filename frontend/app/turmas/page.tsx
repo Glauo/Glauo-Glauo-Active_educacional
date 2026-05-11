@@ -131,9 +131,9 @@ export default async function TurmasPage() {
                           <span className="entity-card-row-value">Link cadastrado</span>
                         </div>
                       )}
-                      {modulo.toLowerCase().includes("vip") && (
+                      {modulo === "Vip" && (
                         <div className="entity-card-row">
-                          <span className="entity-card-row-label">Saldo VIP</span>
+                          <span className="entity-card-row-label">Saldo aulas VIP</span>
                           <span className="entity-card-row-value">{Math.max(0, totalVip - feitasVip)} de {totalVip || "—"}</span>
                         </div>
                       )}

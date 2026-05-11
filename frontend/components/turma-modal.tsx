@@ -117,7 +117,9 @@ function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: (
   const [professores, setProfessores] = useState<ProfessorOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
-  const isVip = form.modulo.toLowerCase().includes("vip");
+  // VIP lesson package (avulsa) only for the pure "Vip" module.
+  // Intensivo Vip + all online turmas are paid monthly — no lesson balance.
+  const isVip = form.modulo === "Vip";
   const professorOptions = useMemo(() => {
     const nomes = professores.map((p) => String(p.nome || p.name || p.usuario || p.login || "").trim()).filter(Boolean);
     return Array.from(new Set(["Sem Professor", ...nomes, form.professor].filter(Boolean)));
@@ -269,11 +271,11 @@ function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: (
                   <label className="form-label">Tipo do plano VIP</label>
                   <select className="form-input" value={form.plano_vip} onChange={(e) => update("plano_vip", e.target.value)}>
                     <option value="">Selecione</option>
-                    <option>VIP avulsa</option>
-                    <option>Pacote 4 aulas</option>
-                    <option>Pacote 8 aulas</option>
-                    <option>Pacote 12 aulas</option>
-                    <option>Intensivo VIP online</option>
+                    <option>Avulsa (sem pacote)</option>
+                    <option>Pacote 5 aulas</option>
+                    <option>Pacote 10 aulas</option>
+                    <option>Pacote 15 aulas</option>
+                    <option>Pacote 20 aulas</option>
                   </select>
                 </div>
                 <div className="form-group">
