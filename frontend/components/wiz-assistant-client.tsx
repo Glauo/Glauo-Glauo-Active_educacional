@@ -49,6 +49,10 @@ const actions = [
   { id: "create_financial", label: "Recebimento", desc: "Lança parcelas e boleto." },
   { id: "create_agenda", label: "Agenda", desc: "Agenda evento/aula." },
   { id: "prepare_message", label: "Envio", desc: "Prepara mensagem para WhatsApp/e-mail." },
+  { id: "send_bulk_message", label: "Envio em massa", desc: "Envia WhatsApp via WAPI e prepara e-mail." },
+  { id: "reset_student_access", label: "Senha aluno", desc: "Gera login/senha e envia ao aluno." },
+  { id: "reset_teacher_access", label: "Senha professor", desc: "Atualiza acesso do professor e envia WhatsApp." },
+  { id: "answer_student", label: "Responder aluno", desc: "Registra resposta e envia ao WhatsApp do aluno." },
 ];
 
 export function WizAssistantClient({
@@ -123,6 +127,18 @@ export function WizAssistantClient({
     }
     if (active === "create_agenda") {
       return { titulo: form.titulo, descricao: form.mensagem, turma: form.turma, data: form.prazo, professor: form.nome };
+    }
+    if (active === "send_bulk_message") {
+      return { publico: "alunos", turma: form.turma, assunto: form.titulo, mensagem: form.mensagem, enviar_whatsapp: true, enviar_email: true };
+    }
+    if (active === "reset_student_access") {
+      return { aluno: form.nome, telefone: form.telefone, email: form.email };
+    }
+    if (active === "reset_teacher_access") {
+      return { professor: form.nome, telefone: form.telefone, email: form.email };
+    }
+    if (active === "answer_student") {
+      return { aluno: form.nome, pergunta: form.titulo, resposta: form.mensagem, telefone: form.telefone };
     }
     return { destinatario: form.nome || form.turma, assunto: form.titulo, mensagem: form.mensagem, canal: "WhatsApp e e-mail" };
   }
@@ -213,19 +229,19 @@ export function WizAssistantClient({
             </div>
 
             <div className="form-grid">
-              {["create_wall_post", "create_homework", "create_work", "create_agenda", "prepare_message"].includes(active) && (
+              {["create_wall_post", "create_homework", "create_work", "create_agenda", "prepare_message", "send_bulk_message", "answer_student"].includes(active) && (
                 <div className="form-group form-group-span2">
                   <label className="form-label">Título / assunto</label>
                   <input className="form-input" value={form.titulo} onChange={(e) => update("titulo", e.target.value)} />
                 </div>
               )}
-              {["create_wall_post", "create_homework", "create_work", "create_agenda", "prepare_message"].includes(active) && (
+              {["create_wall_post", "create_homework", "create_work", "create_agenda", "prepare_message", "send_bulk_message", "answer_student"].includes(active) && (
                 <div className="form-group form-group-span2">
                   <label className="form-label">Mensagem / instruções / contexto</label>
                   <textarea className="form-input form-textarea" rows={3} value={form.mensagem} onChange={(e) => update("mensagem", e.target.value)} />
                 </div>
               )}
-              {["create_wall_post", "create_homework", "create_work", "create_student", "create_agenda", "prepare_message"].includes(active) && (
+              {["create_wall_post", "create_homework", "create_work", "create_student", "create_agenda", "prepare_message", "send_bulk_message"].includes(active) && (
                 <div className="form-group">
                   <label className="form-label">Turma</label>
                   <select className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)}>
@@ -252,13 +268,13 @@ export function WizAssistantClient({
                   <input className="form-input" type="date" value={form.prazo} onChange={(e) => update("prazo", e.target.value)} />
                 </div>
               )}
-              {["create_student", "create_financial", "create_agenda", "prepare_message"].includes(active) && (
+              {["create_student", "create_financial", "create_agenda", "prepare_message", "reset_student_access", "reset_teacher_access", "answer_student"].includes(active) && (
                 <div className="form-group">
                   <label className="form-label">{active === "create_agenda" ? "Professor" : "Aluno / destinatário"}</label>
                   <input className="form-input" value={form.nome} onChange={(e) => update("nome", e.target.value)} />
                 </div>
               )}
-              {["create_student", "create_financial"].includes(active) && (
+              {["create_student", "create_financial", "reset_student_access", "reset_teacher_access", "answer_student"].includes(active) && (
                 <>
                   <div className="form-group">
                     <label className="form-label">WhatsApp</label>
