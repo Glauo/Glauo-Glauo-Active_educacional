@@ -801,30 +801,34 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
 
   async function darBaixa() {
     setLoading(true);
-    const res = await fetch("/api/financeiro", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: lancamento.id,
-        tipo,
-        status: "Pago",
-        data_baixa: form.data_baixa,
-        valor_pago: form.valor_pago,
-        forma_pagamento: form.forma_pagamento,
-        banco_destino: form.banco_destino,
-        observacao_baixa: form.observacao_baixa,
-      })
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(String(data.error || "Erro ao registrar baixa."));
-      return;
+    try {
+      const res = await fetchWithTimeout("/api/financeiro", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [lancamento.id],
+          tipo,
+          data_baixa: form.data_baixa,
+          valor_pago: form.valor_pago,
+          forma_pagamento: form.forma_pagamento,
+          banco_destino: form.banco_destino,
+          observacao_baixa: form.observacao_baixa,
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(String(data.error || "Erro ao registrar baixa."));
+        return;
+      }
+      setOpen(false);
+      setAviso(true);
+      setTimeout(() => setAviso(false), 3500);
+      router.refresh();
+    } catch (err) {
+      alert(err instanceof DOMException && err.name === "AbortError" ? "Tempo esgotado ao registrar baixa." : "Erro de conexao ao registrar baixa.");
+    } finally {
+      setLoading(false);
     }
-    setOpen(false);
-    setAviso(true);
-    setTimeout(() => setAviso(false), 3500);
-    router.refresh();
   }
 
   return (

@@ -304,6 +304,7 @@ export async function PATCH(req: NextRequest) {
     const formaPagamento = text(body.forma_pagamento) || "PIX";
     const bancoDestino = text(body.banco_destino);
     const observacao = text(body.observacao_baixa);
+    const valorPago = text(body.valor_pago);
     const actor = session.pessoa || session.usuario;
     const now = new Date().toISOString();
 
@@ -321,7 +322,7 @@ export async function PATCH(req: NextRequest) {
         ...l,
         status: "Pago",
         data_baixa: dataBaixa,
-        valor_pago: l.valor_pago || l.valor,
+        valor_pago: valorPago || l.valor_pago || l.valor_parcela || l.valor,
         forma_pagamento: formaPagamento,
         banco_destino: bancoDestino,
         observacao_baixa: observacao,
@@ -336,7 +337,7 @@ export async function PATCH(req: NextRequest) {
         pessoa: l.aluno || l.nome || l.professor,
         descricao: l.descricao,
         valor: l.valor,
-        valor_pago: l.valor,
+        valor_pago: valorPago || l.valor_parcela || l.valor,
         forma_pagamento: formaPagamento,
         data: now,
         autenticidade: `AE-${text(l.id).slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
@@ -353,7 +354,7 @@ export async function PATCH(req: NextRequest) {
     ]);
 
     await audit({
-      acao: "baixa_em_massa_professor",
+      acao: ids.length > 1 ? "baixa_em_massa" : "baixar_pagamento",
       tipo,
       ids,
       usuario: actor,

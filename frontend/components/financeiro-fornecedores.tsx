@@ -321,11 +321,16 @@ export function FinanceiroFornecedores({
 
   async function baixarDespesa(despesa: Despesa) {
     if (!confirm("Registrar baixa desta despesa?")) return;
-    await fetch("/api/financeiro", {
-      method: "PUT",
+    const res = await fetch("/api/financeiro", {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: despesa.id, tipo: "despesas", status: "Pago", data_baixa: hoje() }),
+      body: JSON.stringify({ ids: [despesa.id], tipo: "despesas", data_baixa: hoje() }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(String(data.error || "Erro ao registrar baixa."));
+      return;
+    }
     router.refresh();
   }
 
