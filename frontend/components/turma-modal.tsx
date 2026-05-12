@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BOOK_LEVELS } from "@/lib/course-modules";
+import { BOOK_LEVELS, COURSE_MODULES } from "@/lib/course-modules";
 
 type TurmaData = {
   id?: string;
@@ -62,16 +62,7 @@ type Form = {
   observacoes: string;
 };
 
-const MODULOS = [
-  "Aula em turma Online",
-  "Aula em turma Vip",
-  "Teens Completo",
-  "Vip",
-  "Intensivo vip online",
-  "Presencial em turma",
-  "Online em turma",
-  "Kids completo presencial",
-];
+const MODULOS = [...COURSE_MODULES];
 
 const DIAS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
 const LIVROS = [...BOOK_LEVELS];
@@ -93,7 +84,7 @@ function fromTurma(t?: TurmaData): Form {
   const horaFim = String(t?.hora_fim || "").slice(0, 5);
   return {
     nome: String(t?.nome || t?.name || ""),
-    modulo: String(t?.modulo || t?.tipo_aula || t?.modalidade || "Aula em turma Online"),
+    modulo: String(t?.modulo || t?.tipo_aula || t?.modalidade || "Aula em Turma"),
     professor: String(t?.professor || "Sem Professor"),
     livro: String(t?.livro || t?.book || ""),
     ultima_licao: String(t?.ultima_licao || t?.ultima_aula || ""),

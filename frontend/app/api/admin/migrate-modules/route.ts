@@ -1,0 +1,121 @@
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { dbList, dbSet } from "@/lib/db";
+import { migrateModule, isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+
+type Row = Record<string, unknown>;
+
+function text(v: unknown) { return String(v || "").trim(); }
+function num(v: unknown) { return Number(v) || 0; }
+
+function canAdmin(perfil: string) {
+  const r = perfil.toLowerCase();
+  return r.includes("admin") || r.includes("coord") || r.includes("dire") || r.includes("gestor");
+}
+
+function migrateStudent(s: Row): { record: Row; changed: boolean; from: string; to: string } {
+  const oldModule = text(s.modulo || s.modalidade);
+  const newModule = migrateModule(oldModule);
+  const isVip = isVipModule(newModule);
+
+  const vipTotal = isVip
+    ? Math.max(num(s.vip_aulas_total) || vipPlanTotal(s.vip_tipo_plano || "Pacote 10 aulas"), 1)
+    : 0;
+  const vipRestantes = isVip
+    ? Math.max(0, num(s.vip_aulas_restantes) || vipTotal)
+    : 0;
+
+  const record: Row = {
+    ...s,
+    modulo: newModule,
+    valor_professor_aula: teacherClassValueByModule(newModule),
+    vip_tipo_plano: isVip ? text(s.vip_tipo_plano || "Pacote 10 aulas") : "",
+    vip_aulas_total: isVip ? vipTotal : 0,
+    vip_aulas_restantes: isVip ? vipRestantes : 0,
+  };
+
+  if (oldModule !== newModule) {
+    record.modulo_legado = oldModule;
+    record.migrado_em = new Date().toISOString();
+  }
+
+  return { record, changed: oldModule !== newModule, from: oldModule, to: newModule };
+}
+
+function migrateClass(c: Row): { record: Row; changed: boolean; from: string; to: string } {
+  const oldModule = text(c.modulo || c.tipo_aula || c.modalidade);
+  const newModule = migrateModule(oldModule);
+  const record: Row = {
+    ...c,
+    modulo: newModule,
+    valor_aula: teacherClassValueByModule(newModule) || num(c.valor_aula),
+  };
+  if (oldModule !== newModule) record.modulo_legado = oldModule;
+  return { record, changed: oldModule !== newModule, from: oldModule, to: newModule };
+}
+
+export async function POST() {
+  const session = await getSession();
+  if (!session || !canAdmin(session.perfil)) {
+    return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
+  }
+
+  const [students, classes] = await Promise.all([
+    dbList<Row>("students.json"),
+    dbList<Row>("classes.json"),
+  ]);
+
+  const studentResults = students.map(migrateStudent);
+  const classResults = classes.map(migrateClass);
+
+  const migratedStudents = studentResults.map((r) => r.record);
+  const migratedClasses = classResults.map((r) => r.record);
+
+  await Promise.all([
+    dbSet("students.json", migratedStudents),
+    dbSet("classes.json", migratedClasses),
+  ]);
+
+  const studentChanges = studentResults.filter((r) => r.changed);
+  const classChanges = classResults.filter((r) => r.changed);
+
+  const summary = {
+    ok: true,
+    total_alunos: students.length,
+    alunos_migrados: studentChanges.length,
+    total_turmas: classes.length,
+    turmas_migradas: classChanges.length,
+    detalhes_alunos: studentChanges.map((r) => ({ de: r.from, para: r.to })),
+    detalhes_turmas: classChanges.map((r) => ({ de: r.from, para: r.to })),
+    novos_modulos: ["Aula em Turma", "Aula Teens Presencial", "Aula VIP Particular", "Aula Intensivo VIP", "Reposição de Aula"],
+    vip_default: VIP_DEFAULT_TOTAL,
+    executado_por: session.pessoa || session.usuario,
+    executado_em: new Date().toISOString(),
+  };
+
+  return NextResponse.json(summary);
+}
+
+export async function GET() {
+  const session = await getSession();
+  if (!session || !canAdmin(session.perfil)) {
+    return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
+  }
+  const [students, classes] = await Promise.all([
+    dbList<Row>("students.json"),
+    dbList<Row>("classes.json"),
+  ]);
+  const preview = {
+    alunos: students.map((s) => ({
+      nome: text(s.nome || s.name),
+      modulo_atual: text(s.modulo || s.modalidade),
+      modulo_novo: migrateModule(s.modulo || s.modalidade),
+    })),
+    turmas: classes.map((c) => ({
+      nome: text(c.nome || c.name),
+      modulo_atual: text(c.modulo || c.tipo_aula || c.modalidade),
+      modulo_novo: migrateModule(c.modulo || c.tipo_aula || c.modalidade),
+    })),
+  };
+  return NextResponse.json(preview);
+}
