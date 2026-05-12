@@ -104,11 +104,17 @@ export default async function AlunosPage() {
     dbListWithoutKeys<Record<string, unknown>>("attendance.json", HEAVY_KEYS),
   ]);
   const recebimentosLeves = slimRecebimentos(alunos, recebimentos);
-  // Slim frequencias: keep only relevant fields
   const frequencias = todasFrequencias.map((f) => ({
-    id: f.id, aluno: f.aluno, aluno_id: f.aluno_id, turma: f.turma,
-    presente: f.presente, falta: f.falta, data: f.data,
-    materia: f.materia, licao_inicio: f.licao_inicio, licao_fim: f.licao_fim,
+    id: f.id as string | undefined,
+    aluno: f.aluno as string | undefined,
+    aluno_id: f.aluno_id as string | undefined,
+    turma: f.turma as string | undefined,
+    presente: f.presente as boolean | undefined,
+    falta: f.falta as boolean | undefined,
+    data: f.data as string | undefined,
+    materia: f.materia as string | undefined,
+    licao_inicio: f.licao_inicio as string | undefined,
+    licao_fim: f.licao_fim as string | undefined,
   }));
 
   const ativos = alunos.filter((a) => {
