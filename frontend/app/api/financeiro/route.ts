@@ -53,6 +53,12 @@ function shouldSendWhatsApp(data: Record<string, unknown>) {
     text((data.notification_status as Record<string, unknown> | undefined)?.whatsapp) === "link_gerado";
 }
 
+function runNotification(task: Promise<unknown>, label: string) {
+  void task.catch((err) => {
+    console.error(`[financeiro notificacao ${label}]`, err);
+  });
+}
+
 function shouldSendEmail(data: Record<string, unknown>) {
   return data.enviar_email === true ||
     text(data.enviar_email).toLowerCase() === "true" ||
@@ -102,17 +108,23 @@ export async function POST(req: NextRequest) {
     };
     lancamentos.push(novo);
     await dbSet(key, lancamentos);
+    const origin = new URL(req.url).origin;
     if (tipo !== "despesas" && shouldSendWhatsApp(data)) {
-      const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
-      const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
-      novo.notification_status = notificationStatus;
-      await dbSet(key, lancamentos.map((item) => item.id === id ? novo : item));
+      runNotification((async () => {
+        const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>(key);
+        const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+        await dbSet(key, atualizados.map((item) => item.id === id ? { ...item, notification_status: notificationStatus } : item));
+      })(), "whatsapp");
     }
     if (tipo !== "despesas" && shouldSendEmail(data)) {
-      const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, new URL(req.url).origin), session);
-      const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
-      novo.notification_status = notificationStatus;
-      await dbSet(key, lancamentos.map((item) => item.id === id ? novo : item));
+      runNotification((async () => {
+        const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>(key);
+        const current = atualizados.find((item) => item.id === id) || novo;
+        const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
+        await dbSet(key, atualizados.map((item) => item.id === id ? { ...item, notification_status: notificationStatus } : item));
+      })(), "email");
     }
     await audit({
       acao: "criar_lancamento",
@@ -204,15 +216,26 @@ export async function PUT(req: NextRequest) {
     }
 
     await Promise.all(writes);
+    const origin = new URL(req.url).origin;
     if (tipo !== "despesas" && shouldSendWhatsApp(updates)) {
-      const result = await sendWhatsApp(lancamentos[idx].telefone || lancamentos[idx].whatsapp, boletoMessage(lancamentos[idx], new URL(req.url).origin), session);
-      lancamentos[idx].notification_status = { ...(lancamentos[idx].notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
-      await dbSet(key, lancamentos);
+      const lancamento = { ...lancamentos[idx] };
+      runNotification((async () => {
+        const result = await sendWhatsApp(lancamento.telefone || lancamento.whatsapp, boletoMessage(lancamento, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>(key);
+        const current = atualizados.find((item) => item.id === id) || lancamento;
+        const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+        await dbSet(key, atualizados.map((item) => item.id === id ? { ...item, notification_status: notificationStatus } : item));
+      })(), "whatsapp");
     }
     if (tipo !== "despesas" && shouldSendEmail(updates)) {
-      const result = await sendEmail(lancamentos[idx].email, `Boleto Active Educacional - ${text(lancamentos[idx].descricao) || text(lancamentos[idx].aluno)}`, boletoMessage(lancamentos[idx], new URL(req.url).origin), session);
-      lancamentos[idx].notification_status = { ...(lancamentos[idx].notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
-      await dbSet(key, lancamentos);
+      const lancamento = { ...lancamentos[idx] };
+      runNotification((async () => {
+        const result = await sendEmail(lancamento.email, `Boleto Active Educacional - ${text(lancamento.descricao) || text(lancamento.aluno)}`, boletoMessage(lancamento, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>(key);
+        const current = atualizados.find((item) => item.id === id) || lancamento;
+        const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
+        await dbSet(key, atualizados.map((item) => item.id === id ? { ...item, notification_status: notificationStatus } : item));
+      })(), "email");
     }
     await audit({
       acao: isReversal ? "estornar_baixa" : willBePaid && !wasPaid ? "baixar_pagamento" : updates.gerar_boleto ? "gerar_boleto" : "editar_lancamento",

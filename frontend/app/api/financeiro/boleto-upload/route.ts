@@ -40,6 +40,12 @@ function boletoMessage(lancamento: Record<string, unknown>, origin: string) {
   ].join("\n");
 }
 
+function runNotification(task: Promise<unknown>, label: string) {
+  void task.catch((err) => {
+    console.error(`[boleto-upload notificacao ${label}]`, err);
+  });
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
@@ -110,17 +116,28 @@ export async function POST(req: NextRequest) {
     const recebimentos = await dbList<Record<string, unknown>>("receivables.json");
     await dbSet("receivables.json", [...recebimentos, novo]);
 
+    const origin = new URL(req.url).origin;
     if (text(form.get("enviar_whatsapp")) === "true") {
-      const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
-      novo.notification_status.whatsapp = result.ok ? "enviado_wapi" : result.status;
-      const atualizados = await dbList<Record<string, unknown>>("receivables.json");
-      await dbSet("receivables.json", atualizados.map((item) => item.id === id ? novo : item));
+      runNotification((async () => {
+        const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>("receivables.json");
+        const current = atualizados.find((item) => item.id === id) || novo;
+        await dbSet("receivables.json", atualizados.map((item) => item.id === id ? {
+          ...item,
+          notification_status: { ...(current.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status },
+        } : item));
+      })(), "whatsapp");
     }
     if (text(form.get("enviar_email")) === "true") {
-      const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, new URL(req.url).origin), session);
-      novo.notification_status.email = result.ok ? "enviado_smtp" : result.status;
-      const atualizados = await dbList<Record<string, unknown>>("receivables.json");
-      await dbSet("receivables.json", atualizados.map((item) => item.id === id ? novo : item));
+      runNotification((async () => {
+        const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, origin), session);
+        const atualizados = await dbList<Record<string, unknown>>("receivables.json");
+        const current = atualizados.find((item) => item.id === id) || novo;
+        await dbSet("receivables.json", atualizados.map((item) => item.id === id ? {
+          ...item,
+          notification_status: { ...(current.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status },
+        } : item));
+      })(), "email");
     }
 
     const log = await dbList<Record<string, unknown>>("finance_audit.json");

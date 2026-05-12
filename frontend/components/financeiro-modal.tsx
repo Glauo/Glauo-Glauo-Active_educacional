@@ -118,6 +118,16 @@ function mailtoUrl(email: string, subject: string, body: string) {
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function boletoMessage(lancamento: LancamentoData, origin = "") {
   const id = text(lancamento.id);
   const pdfUrl = text(lancamento.boleto_pdf_url);
@@ -250,25 +260,25 @@ function LancamentoModal({
     const erros: string[] = [];
     const links: { whatsapp: string; email: string; label: string }[] = [];
 
-    let boletoPdfData: Record<string, string> = {};
-    if (boletoPdf) {
-      const fd = new FormData();
-      fd.set("arquivo_pdf", boletoPdf);
-      const upRes = await fetch("/api/financeiro/upload-pdf", { method: "POST", body: fd });
-      if (!upRes.ok) {
-        const d = await upRes.json().catch(() => ({}));
-        setSaving(false);
-        setErro(String(d.error || "Erro ao fazer upload do boleto PDF."));
-        return;
+    try {
+      let boletoPdfData: Record<string, string> = {};
+      if (boletoPdf) {
+        const fd = new FormData();
+        fd.set("arquivo_pdf", boletoPdf);
+        const upRes = await fetchWithTimeout("/api/financeiro/upload-pdf", { method: "POST", body: fd });
+        if (!upRes.ok) {
+          const d = await upRes.json().catch(() => ({}));
+          setErro(String(d.error || "Erro ao fazer upload do boleto PDF."));
+          return;
+        }
+        const upData = await upRes.json();
+        boletoPdfData = {
+          boleto_pdf_url: text(upData.url),
+          boleto_pdf_b64: text(upData.b64),
+          boleto_pdf_mime: text(upData.mime || "application/pdf"),
+          boleto_pdf_nome: text(upData.nome || boletoPdf.name),
+        };
       }
-      const upData = await upRes.json();
-      boletoPdfData = {
-        boleto_pdf_url: text(upData.url),
-        boleto_pdf_b64: text(upData.b64),
-        boleto_pdf_mime: text(upData.mime || "application/pdf"),
-        boleto_pdf_nome: text(upData.nome || boletoPdf.name),
-      };
-    }
 
     if (isEdit) {
       const payload = {
@@ -300,8 +310,7 @@ function LancamentoModal({
           whatsapp: form.enviar_whatsapp ? "link_gerado" : "nao_enviado",
         },
       };
-      const res = await fetch("/api/financeiro", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      setSaving(false);
+      const res = await fetchWithTimeout("/api/financeiro", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setErro(String(d.error || "Erro ao salvar.")); return; }
       const data = await res.json().catch(() => ({}));
       const item = data.lancamento || payload;
@@ -352,7 +361,7 @@ function LancamentoModal({
           whatsapp: form.enviar_whatsapp ? "link_gerado" : "nao_enviado",
         },
       };
-      const res = await fetch("/api/financeiro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await fetchWithTimeout("/api/financeiro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         erros.push(String(d.error || `Erro na parcela ${i + 1}.`));
@@ -372,6 +381,11 @@ function LancamentoModal({
     if (erros.length) { setErro(erros.join(" | ")); return; }
     setSavedLinks(links);
     onSaved();
+    } catch (err) {
+      setErro(err instanceof DOMException && err.name === "AbortError" ? "Tempo esgotado ao salvar. Verifique sua conexao e tente novamente." : "Erro de conexao ao salvar.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -628,20 +642,25 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
     Object.entries(form).forEach(([key, value]) => payload.set(key, String(value)));
 
     setSaving(true);
-    const res = await fetch("/api/financeiro/boleto-upload", { method: "POST", body: payload });
-    setSaving(false);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setErro(String(data.error || "Erro ao importar boleto PDF."));
-      return;
+    try {
+      const res = await fetchWithTimeout("/api/financeiro/boleto-upload", { method: "POST", body: payload });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErro(String(data.error || "Erro ao importar boleto PDF."));
+        return;
+      }
+      const item = data.lancamento as LancamentoData;
+      const msg = boletoMessage(item, window.location.origin);
+      setLinks({
+        whatsapp: form.enviar_whatsapp ? whatsappUrl(form.aluno_telefone || item.telefone || item.whatsapp, msg) : "",
+        email: form.enviar_email ? mailtoUrl(text(form.aluno_email || item.email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
+      });
+      router.refresh();
+    } catch (err) {
+      setErro(err instanceof DOMException && err.name === "AbortError" ? "Tempo esgotado ao importar boleto. Tente novamente." : "Erro de conexao ao importar boleto.");
+    } finally {
+      setSaving(false);
     }
-    const item = data.lancamento as LancamentoData;
-    const msg = boletoMessage(item, window.location.origin);
-    setLinks({
-      whatsapp: form.enviar_whatsapp ? whatsappUrl(form.aluno_telefone || item.telefone || item.whatsapp, msg) : "",
-      email: form.enviar_email ? mailtoUrl(text(form.aluno_email || item.email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
-    });
-    router.refresh();
   }
 
   return (
