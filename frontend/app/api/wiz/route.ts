@@ -539,7 +539,8 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
 
   const turmaFound = findInPrompt(turmas, prompt, ["nome", "name", "turma"]);
   if (!turmaFound) {
-    return { ok: false, message: "Nao consegui identificar a turma no texto. Informe o nome exato da turma, ex: 'turma Chicago'." };
+    const nomes = turmas.slice(0, 8).map((t) => text(t.nome || t.name)).filter(Boolean).join(", ");
+    return { ok: false, message: `Nao consegui identificar a turma. Informe o nome exato, ex: 'turma Chicago'.\nTurmas cadastradas: ${nomes || "nenhuma"}` };
   }
 
   const profFound = findInPrompt(professores, prompt, ["nome", "name"]);
@@ -547,7 +548,8 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
     ? text(profFound.nome || profFound.name)
     : text(turmaFound.professor);
   if (!professorName) {
-    return { ok: false, message: "Nao consegui identificar o professor. Informe o nome do professor, ex: 'professora Maria'." };
+    const nomes = professores.slice(0, 8).map((p) => text(p.nome || p.name)).filter(Boolean).join(", ");
+    return { ok: false, message: `Nao consegui identificar o professor. Informe o nome, ex: 'professora Maria'.\nProfessores cadastrados: ${nomes || "nenhum"}` };
   }
   const teacher = profFound || professores.find((p) => normalize(text(p.nome || p.name)) === normalize(professorName)) || {};
 
@@ -650,6 +652,7 @@ function isClassRegistration(norm: string): boolean {
   if (!hasAula) return false;
   if (norm.includes("cadastr") || norm.includes("registr") || norm.includes("lanc")) return true;
   if (norm.includes("professor") || norm.includes("professora") || norm.match(/\bprof\b/)) return true;
+  if (norm.includes("deu aula") || norm.includes("deram aula") || norm.includes("ministrou") || norm.includes("teve aula")) return true;
   return false;
 }
 
