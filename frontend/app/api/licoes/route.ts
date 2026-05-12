@@ -1,0 +1,106 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { dbList, dbSet } from "@/lib/db";
+import { canManageSchoolContent, homeworkTotal, normalizeList, nowIso, text, type Homework, type HomeworkQuestion } from "@/lib/school-modules";
+
+const KEY = "activities.json";
+
+function normalizeQuestions(body: Homework): HomeworkQuestion[] {
+  const source = Array.isArray(body.questions) ? body.questions : [];
+  if (source.length === 0) {
+    return [{
+      id: crypto.randomUUID(),
+      tipo: "aberta",
+      enunciado: "Descreva o que voce aprendeu no conteudo indicado.",
+      pontos: Number(body.peso) || 10,
+    }];
+  }
+  return source.map((question, index) => ({
+    id: text(question.id) || crypto.randomUUID(),
+    tipo: question.tipo || "aberta",
+    enunciado: text(question.enunciado) || `Questao ${index + 1}`,
+    opcoes: normalizeList(question.opcoes),
+    correta_idx: question.correta_idx === null || question.correta_idx === undefined ? null : Number(question.correta_idx),
+    correta_texto: text(question.correta_texto),
+    pontos: Number(question.pontos) || 1,
+    feedback: text(question.feedback),
+  }));
+}
+
+export async function GET() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
+  const activities = await dbList<Homework>(KEY);
+  return NextResponse.json(activities);
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session || !canManageSchoolContent(session)) {
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
+  }
+  const body = (await req.json()) as Homework;
+  const titulo = text(body.titulo);
+  if (!titulo) return NextResponse.json({ error: "Titulo da licao e obrigatorio." }, { status: 400 });
+  const questions = normalizeQuestions(body);
+  const item: Homework = {
+    ...body,
+    id: text(body.id) || crypto.randomUUID(),
+    tipo: "Licao de Casa",
+    titulo,
+    descricao: text(body.descricao || body.instrucoes),
+    disciplina: text(body.disciplina || "Geral"),
+    turma: text(body.turma || "Todas") || "Todas",
+    turmas: normalizeList(body.turmas),
+    aluno: text(body.aluno),
+    alunos: normalizeList(body.alunos),
+    livro: text(body.livro),
+    capitulo: text(body.capitulo),
+    aula_referencia: text(body.aula_referencia),
+    habilidade: text(body.habilidade),
+    due_date: text(body.due_date),
+    peso: Number(body.peso) || homeworkTotal({ questions }),
+    questions,
+    allow_resubmission: Boolean(body.allow_resubmission),
+    status: text(body.status || "Ativa"),
+    autor: session.pessoa || session.usuario,
+    created_at: nowIso(),
+    notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
+  };
+  const activities = await dbList<Homework>(KEY);
+  await dbSet(KEY, [...activities, item]);
+  return NextResponse.json(item, { status: 201 });
+}
+
+export async function PUT(req: NextRequest) {
+  const session = await getSession();
+  if (!session || !canManageSchoolContent(session)) {
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
+  }
+  const body = (await req.json()) as Homework;
+  const id = text(body.id);
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+  const activities = await dbList<Homework>(KEY);
+  const idx = activities.findIndex((item) => text(item.id) === id);
+  if (idx === -1) return NextResponse.json({ error: "Nao encontrado" }, { status: 404 });
+  activities[idx] = {
+    ...activities[idx],
+    ...body,
+    questions: body.questions ? normalizeQuestions(body) : activities[idx].questions,
+    updated_at: nowIso(),
+  };
+  await dbSet(KEY, activities);
+  return NextResponse.json(activities[idx]);
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session || !canManageSchoolContent(session)) {
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
+  }
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+  const activities = await dbList<Homework>(KEY);
+  await dbSet(KEY, activities.filter((item) => text(item.id) !== id));
+  return NextResponse.json({ ok: true });
+}

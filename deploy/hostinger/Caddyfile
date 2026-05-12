@@ -3,6 +3,15 @@
 }
 
 {$DOMAIN} {
-  reverse_proxy app:8501
+  handle_path /wapi/webhook* {
+    reverse_proxy wizbot:8787
+  }
+
+  handle_path /health/wiz* {
+    reverse_proxy wizbot:8787
+  }
+
+  # Next.js frontend
+  reverse_proxy frontend:3000
   encode gzip
 }

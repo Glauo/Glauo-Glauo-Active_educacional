@@ -1,0 +1,15 @@
+﻿{
+    "on_teacher_created":  true,
+    "auto_daily_backup":  false,
+    "on_grade_approved":  true,
+    "on_user_created":  true,
+    "on_student_created":  true,
+    "on_class_link_updated":  true,
+    "notify_whatsapp":  true,
+    "on_news_posted":  true,
+    "on_agenda_created":  true,
+    "enabled":  true,
+    "notify_email":  true,
+    "on_financial_created":  true,
+    "mister_wiz_paused":  true
+}

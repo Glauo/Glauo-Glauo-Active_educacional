@@ -1,0 +1,256 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { HomeworkSubmitForm, MuralConfirmButton } from "@/components/school-modules-client";
+import { tagBadge, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
+import { StudentLogoutBtn } from "@/components/student-logout-btn";
+import { vipPackageStats } from "@/lib/course-modules";
+
+type Row = Record<string, unknown>;
+
+type Props = {
+  session: { usuario: string; pessoa: string; unit?: string };
+  perfil?: Row | null;
+  muralPosts: WallPost[];
+  licoes: Homework[];
+  entregas: HomeworkSubmission[];
+  notas: Row[];
+  faturas: Row[];
+  desafios: Row[];
+  conclusoes: Row[];
+  agenda: Row[];
+  faltas: number;
+};
+
+type Tab = "inicio" | "mural" | "agenda" | "financeiro" | "notas" | "licoes" | "desafios" | "chat" | "wiz";
+
+function parseMoney(value: unknown) {
+  return Number.parseFloat(text(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+function money(value: unknown) {
+  return parseMoney(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function dateLabel(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "-";
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) return raw.slice(0, 10);
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? raw : d.toLocaleDateString("pt-BR");
+}
+
+function dateTimeLabel(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "-";
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? raw : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function valueOfInstallment(row: Row) {
+  return row.valor_parcela ?? row.valor ?? row.valor_total ?? 0;
+}
+
+function statusBadge(status: unknown) {
+  const s = text(status).toLowerCase();
+  if (s.includes("pago") || s.includes("baixado") || s.includes("corrig")) return "success";
+  if (s.includes("atras") || s.includes("venc")) return "danger";
+  if (s.includes("pend") || s.includes("aguard")) return "warning";
+  return "neutral";
+}
+
+function initials(name: string) {
+  return name.split(" ").map((part) => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "AL";
+}
+
+function isOpenInvoice(row: Row) {
+  const s = text(row.status || row.situacao).toLowerCase();
+  return !s.includes("pago") && !s.includes("baixado") && !s.includes("liquidado");
+}
+
+function boletoHref(row: Row) {
+  const id = text(row.id);
+  if (text(row.boleto_pdf_url)) return text(row.boleto_pdf_url);
+  if (id && text(row.boleto_status || row.gerar_boleto)) return `/api/financeiro/boleto?id=${encodeURIComponent(id)}`;
+  return "";
+}
+
+function Empty({ title, desc }: { title: string; desc: string }) {
+  return <div className="student-empty"><strong>{title}</strong><span>{desc}</span></div>;
+}
+
+function StudentChat() {
+  const [messages, setMessages] = useState<Row[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+  const [status, setStatus] = useState("");
+
+  async function load() {
+    const res = await fetch("/api/aluno/chat", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    setMessages(Array.isArray(data.messages) ? data.messages : []);
+    setLoaded(true);
+  }
+
+  async function send() {
+    if (!mensagem.trim()) return;
+    setStatus("Enviando...");
+    const res = await fetch("/api/aluno/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensagem }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(text(data.error) || "Erro ao enviar mensagem.");
+      return;
+    }
+    setMensagem("");
+    setStatus("Mensagem enviada para o professor/coordenação.");
+    setMessages(Array.isArray(data.messages) ? data.messages : []);
+  }
+
+  if (!loaded) {
+    void load();
+  }
+
+  return (
+    <div className="student-panel">
+      <div className="student-section-head"><div><span>Atendimento</span><h2>Chat com professor</h2></div></div>
+      <div className="student-chat-list">
+        {messages.length === 0 ? <Empty title="Nenhuma mensagem ainda" desc="Envie sua dúvida para o professor ou coordenação." /> : messages.map((msg, index) => (
+          <div className={`student-chat-msg ${text(msg.origem) === "aluno" ? "student-chat-own" : ""}`} key={text(msg.id) || index}>
+            <strong>{text(msg.autor || msg.aluno || "Mensagem")}</strong>
+            <p>{text(msg.mensagem)}</p>
+            <small>{dateTimeLabel(msg.data)}</small>
+          </div>
+        ))}
+      </div>
+      <div className="student-chat-compose">
+        <textarea className="form-input form-textarea" rows={3} value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Digite sua dúvida para o professor..." />
+        <button className="btn btn-primary" onClick={send}>Enviar mensagem</button>
+      </div>
+      {status && <div className={status.includes("Erro") ? "form-error" : "form-success"}>{status}</div>}
+    </div>
+  );
+}
+
+function StudentWiz() {
+  const [pergunta, setPergunta] = useState("");
+  const [resposta, setResposta] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function ask() {
+    if (!pergunta.trim()) return;
+    setLoading(true);
+    const res = await fetch("/api/aluno/wiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pergunta }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setLoading(false);
+    setResposta(text(data.resposta || data.error || "Não consegui responder agora."));
+  }
+
+  return (
+    <div className="student-panel">
+      <div className="student-section-head"><div><span>IA Wiz</span><h2>Pesquisa de inglês</h2></div></div>
+      <div className="student-wiz-box">
+        <p>Use a Wiz apenas para tirar dúvidas de inglês: vocabulário, gramática, frases, pronúncia, tradução e exercícios.</p>
+        <textarea className="form-input form-textarea" rows={4} value={pergunta} onChange={(e) => setPergunta(e.target.value)} placeholder="Ex: Qual a diferença entre simple past e present perfect?" />
+        <button className="btn btn-primary" onClick={ask} disabled={loading}>{loading ? "Pesquisando..." : "Perguntar para Wiz"}</button>
+        {resposta && <div className="student-wiz-answer">{resposta}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function StudentPortalClient({ session, perfil, muralPosts, licoes, entregas, notas, faturas, desafios, conclusoes, agenda, faltas }: Props) {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("inicio");
+  const entregasPorLicao = useMemo(() => new Map(entregas.map((entrega) => [text(entrega.activity_id), entrega])), [entregas]);
+  const debitos = faturas.filter(isOpenInvoice);
+  const totalDebitos = debitos.reduce((sum, item) => sum + parseMoney(valueOfInstallment(item)), 0);
+  const pendentes = licoes.filter((licao) => !entregasPorLicao.has(text(licao.id))).length;
+  const muralNaoLido = muralPosts.filter((post) => post.requer_confirmacao && !(post.confirmacoes || []).some((item) => item.usuario === session.usuario)).length;
+  const pontos = conclusoes.reduce((sum, item) => sum + (Number(item.pontos) || 0), 0);
+  const nome = text(session.pessoa || perfil?.nome || perfil?.name || session.usuario);
+  const turma = text(perfil?.turma || perfil?.classe || session.unit);
+  const pacoteVip = perfil ? vipPackageStats(perfil) : null;
+  const menu: { id: Tab; label: string; badge?: number }[] = [
+    { id: "inicio", label: "Início" },
+    { id: "mural", label: "Comunicados", badge: muralNaoLido },
+    { id: "agenda", label: "Agenda de aulas" },
+    { id: "financeiro", label: "Financeiro", badge: debitos.length },
+    { id: "notas", label: "Notas" },
+    { id: "licoes", label: "Tarefas", badge: pendentes },
+    { id: "desafios", label: "Desafios" },
+    { id: "chat", label: "Chat" },
+    { id: "wiz", label: "IA Wiz" },
+  ];
+
+  return (
+    <div className="student-shell">
+      <aside className="student-sidebar">
+        <div className="student-brand">
+          <img src="/logo.png" alt="Ativo Educacional" />
+          <div><strong>Ativo Educacional</strong><span>Portal do aluno</span></div>
+        </div>
+        <div className="student-profile">
+          <div className="student-avatar">{initials(nome)}</div>
+          <strong>{nome}</strong>
+          <span>{turma || "Aluno"}</span>
+          {pacoteVip && <small>{pacoteVip.dadas}/{pacoteVip.total} aulas VIP dadas | {pacoteVip.restantes} restantes</small>}
+        </div>
+        <nav className="student-nav">
+          {menu.map((item) => (
+            <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
+              <span>{item.label}</span>
+              {Boolean(item.badge) && <small>{item.badge}</small>}
+            </button>
+          ))}
+        </nav>
+        <StudentLogoutBtn />
+      </aside>
+
+      <main className="student-main">
+        <header className="student-top">
+          <div><span>Bem-vindo(a)</span><h1>{nome}</h1></div>
+          <button className="btn btn-secondary" onClick={() => router.refresh()}>Atualizar dados</button>
+        </header>
+
+        {tab === "inicio" && (
+          <>
+            <section className="student-metrics">
+              <div><span>Comunicados não lidos</span><strong>{muralNaoLido}</strong></div>
+              <div><span>Tarefas pendentes</span><strong>{pendentes}</strong></div>
+              <div><span>Débitos em aberto</span><strong>{totalDebitos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></div>
+              <div><span>{pacoteVip ? "Aulas VIP restantes" : "Pontos em desafios"}</span><strong>{pacoteVip ? `${pacoteVip.restantes}/${pacoteVip.total}` : pontos}</strong></div>
+            </section>
+            <section className="student-grid">
+              <div className="student-panel"><div className="student-section-head"><div><span>Hoje</span><h2>Próximas aulas</h2></div></div>{agenda.slice(0, 4).length ? agenda.slice(0, 4).map((a, i) => <div className="student-list-row" key={text(a.id) || i}><strong>{text(a.titulo || a.descricao || "Aula")}</strong><span>{dateLabel(a.data || a.date)} {text(a.horario || a.hora)}</span></div>) : <Empty title="Nenhuma aula na agenda" desc="Quando houver aula/evento, aparece aqui." />}</div>
+              <div className="student-panel"><div className="student-section-head"><div><span>Financeiro</span><h2>Parcelas abertas</h2></div></div>{debitos.slice(0, 4).length ? debitos.slice(0, 4).map((f, i) => <div className="student-list-row" key={text(f.id) || i}><strong>{text(f.descricao || "Mensalidade")}</strong><span>{money(valueOfInstallment(f))} - vence {dateLabel(f.vencimento || f.data_vencimento)}</span></div>) : <Empty title="Nada em aberto" desc="Você não tem parcelas pendentes." />}</div>
+            </section>
+          </>
+        )}
+
+        {tab === "mural" && <section className="student-panel"><div className="student-section-head"><div><span>Mural</span><h2>Comunicados</h2></div></div>{muralPosts.length ? muralPosts.map((post) => <article className="student-card" key={text(post.id || post.titulo)}><div className="student-card-tags"><span className={`badge badge-${tagBadge(text(post.tipo_post || post.tipo))}`}><span className="badge-dot" />{text(post.tipo_post || post.tipo || "Aviso")}</span>{post.fixado && <span className="badge badge-gold">Fixado</span>}</div><h3>{text(post.titulo || "Comunicado")}</h3><p>{text(post.mensagem)}</p><small>{text(post.autor || "Escola")} - {dateLabel(post.publicado_em || post.data)}</small>{(post.requer_confirmacao || (post.enquete_opcoes || []).length > 0) && <MuralConfirmButton post={post} compact />}</article>) : <Empty title="Sem comunicados" desc="Nenhum comunicado publicado para você." />}</section>}
+
+        {tab === "agenda" && <section className="student-panel"><div className="student-section-head"><div><span>Agenda</span><h2>Aulas e eventos</h2></div></div>{agenda.length ? <table className="data-table"><thead><tr><th>Data</th><th>Horário</th><th>Aula/evento</th><th>Professor</th></tr></thead><tbody>{agenda.map((a, i) => <tr key={text(a.id) || i}><td>{dateLabel(a.data || a.date)}</td><td>{text(a.horario || a.hora || "-")}</td><td>{text(a.titulo || a.descricao || "Aula")}</td><td>{text(a.professor || "-")}</td></tr>)}</tbody></table> : <Empty title="Sem agenda" desc="Nenhuma aula ou evento encontrado para sua turma." />}</section>}
+
+        {tab === "financeiro" && <section className="student-panel"><div className="student-section-head"><div><span>Financeiro</span><h2>Boletos e parcelas</h2></div></div>{faturas.length ? <table className="data-table"><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Boleto</th></tr></thead><tbody>{faturas.map((f, i) => { const href = boletoHref(f); return <tr key={text(f.id) || i}><td>{text(f.descricao || f.categoria || "Mensalidade")}</td><td>{dateLabel(f.vencimento || f.data_vencimento)}</td><td>{money(valueOfInstallment(f))}</td><td><span className={`badge badge-${statusBadge(f.status || f.situacao)}`}><span className="badge-dot" />{text(f.status || "Pendente")}</span></td><td>{href ? <a className="btn btn-secondary btn-sm" href={href} target="_blank" rel="noreferrer">Baixar boleto</a> : "-"}</td></tr>; })}</tbody></table> : <Empty title="Sem faturas" desc="Nenhuma parcela encontrada para seu cadastro." />}</section>}
+
+        {tab === "notas" && <section className="student-panel"><div className="student-section-head"><div><span>Boletim</span><h2>Notas e frequência</h2></div><span className="badge badge-warning">{faltas} faltas</span></div>{notas.length ? <table className="data-table"><thead><tr><th>Atividade</th><th>Nota</th><th>Status</th><th>Data</th></tr></thead><tbody>{notas.map((n, i) => <tr key={text(n.id) || i}><td>{text(n.titulo || n.desafio || "Atividade")}</td><td><span className="badge badge-gold">{Number(n.nota || n.score || 0).toFixed(1)}</span></td><td>{text(n.status || "Corrigido")}</td><td>{dateLabel(n.data || n.created_at)}</td></tr>)}</tbody></table> : <Empty title="Sem notas publicadas" desc="As notas aparecem após correção do professor." />}</section>}
+
+        {tab === "licoes" && <section className="student-panel"><div className="student-section-head"><div><span>Tarefas</span><h2>Lições de casa</h2></div></div>{licoes.length ? licoes.map((licao) => <article className="student-card" key={text(licao.id)}><div className="student-card-tags"><span className="badge badge-info">{text(licao.disciplina || "Inglês")}</span><span className={`badge badge-${statusBadge(entregasPorLicao.get(text(licao.id))?.status || "Pendente")}`}>{text(entregasPorLicao.get(text(licao.id))?.status || "Pendente")}</span></div><h3>{text(licao.titulo)}</h3><p>{text(licao.descricao)}</p><small>Prazo: {dateTimeLabel(licao.due_date)}</small><HomeworkSubmitForm homework={licao} submission={entregasPorLicao.get(text(licao.id))} /></article>) : <Empty title="Sem tarefas abertas" desc="Quando o professor publicar, aparece aqui." />}</section>}
+
+        {tab === "desafios" && <section className="student-panel"><div className="student-section-head"><div><span>Desafios</span><h2>Atividades e ranking</h2></div></div>{desafios.length ? <table className="data-table"><thead><tr><th>Desafio</th><th>Pontos</th><th>Status</th></tr></thead><tbody>{desafios.map((d, i) => { const id = text(d.id || d.titulo || d.title); const done = conclusoes.some((c) => text(c.desafio_id) === id); return <tr key={id || i}><td>{text(d.titulo || d.title || "Desafio")}</td><td>{Number(d.pontos || 0)} pts</td><td><span className={`badge badge-${done ? "success" : "neutral"}`}>{done ? "Concluído" : "Pendente"}</span></td></tr>; })}</tbody></table> : <Empty title="Sem desafios" desc="Nenhum desafio publicado para sua turma." />}</section>}
+
+        {tab === "chat" && <StudentChat />}
+        {tab === "wiz" && <StudentWiz />}
+      </main>
+    </div>
+  );
+}
