@@ -341,22 +341,28 @@ function AlunoDrawer({
     if (!baixaFatura?.id) return;
     setSaving(true);
     setMsg("");
-    const res = await fetch("/api/financeiro", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: baixaFatura.id, tipo: "recebimentos", status: "Pago", data_baixa: baixaData, valor_pago: baixaValor || text(baixaFatura.valor_parcela ?? baixaFatura.valor), forma_pagamento: baixaForma }),
-    });
-    setSaving(false);
-    if (res.ok) {
-      setBaixaFatura(null);
-      setBaixaValor("");
-      setMsg("Pagamento registrado!");
-      setIsError(false);
-      router.refresh();
-    } else {
-      const d = await res.json().catch(() => ({}));
-      setMsg(d.error || "Erro ao registrar baixa.");
+    try {
+      const res = await fetch("/api/financeiro", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [baixaFatura.id], tipo: "recebimentos", data_baixa: baixaData, valor_pago: baixaValor || text(baixaFatura.valor_parcela ?? baixaFatura.valor), forma_pagamento: baixaForma }),
+      });
+      if (res.ok) {
+        setBaixaFatura(null);
+        setBaixaValor("");
+        setMsg("Pagamento registrado!");
+        setIsError(false);
+        router.refresh();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setMsg(d.error || "Erro ao registrar baixa.");
+        setIsError(true);
+      }
+    } catch {
+      setMsg("Erro de conexao ao registrar baixa.");
       setIsError(true);
+    } finally {
+      setSaving(false);
     }
   }
 
