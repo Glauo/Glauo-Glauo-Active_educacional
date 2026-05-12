@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { teacherClassValueByModule } from "@/lib/course-modules";
 import { sendWhatsApp } from "@/lib/whatsapp";
+import { sendEmail } from "@/lib/email";
 
 type Row = Record<string, unknown>;
 type WizSession = NonNullable<Awaited<ReturnType<typeof getSession>>>;
@@ -60,6 +61,14 @@ function teacherPhone(row: Row) {
 
 function teacherEmail(row: Row) {
   return text(row.email);
+}
+
+function userPhone(row: Row) {
+  return text(row.whatsapp || row.telefone || row.celular || row.phone);
+}
+
+function userEmail(row: Row) {
+  return text(row.email || row.usuario_email);
 }
 
 function credentialMessage(kind: "aluno" | "professor", nome: string, login: string, senha: string) {

@@ -245,3 +245,87 @@ export async function DELETE(req: NextRequest) {
   }
   return NextResponse.json({ ok: true, deleted: deleted.length });
 }
+
+// Bulk baixa — marks multiple payables as Pago in a single atomic write
+export async function PATCH(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
+
+  try {
+    const body = await req.json() as Record<string, unknown>;
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map((v) => text(v)).filter(Boolean);
+    if (ids.length === 0) return NextResponse.json({ error: "ids obrigatorio." }, { status: 400 });
+
+    const tipo = text(body.tipo) || "despesas";
+    const key = tipo === "despesas" ? "payables.json" : "receivables.json";
+    const dataHoje = new Date().toISOString().slice(0, 10);
+    const dataBaixa = text(body.data_baixa) || dataHoje;
+    const formaPagamento = text(body.forma_pagamento) || "PIX";
+    const bancoDestino = text(body.banco_destino);
+    const observacao = text(body.observacao_baixa);
+    const actor = session.pessoa || session.usuario;
+    const now = new Date().toISOString();
+
+    const lancamentos = await dbList<Record<string, unknown>>(key);
+    const idsSet = new Set(ids);
+    const recibosNovos: Record<string, unknown>[] = [];
+    let baixados = 0;
+    let jaPageos = 0;
+
+    const updated = lancamentos.map((l) => {
+      if (!idsSet.has(text(l.id))) return l;
+      if (isPaid(l.status)) { jaPageos++; return l; }
+      baixados++;
+      const novo = {
+        ...l,
+        status: "Pago",
+        data_baixa: dataBaixa,
+        valor_pago: l.valor_pago || l.valor,
+        forma_pagamento: formaPagamento,
+        banco_destino: bancoDestino,
+        observacao_baixa: observacao,
+        baixa_em_massa: true,
+        updated_at: now,
+        updated_by: actor,
+      };
+      recibosNovos.push({
+        id: crypto.randomUUID(),
+        lancamento_id: l.id,
+        tipo,
+        pessoa: l.aluno || l.nome || l.professor,
+        descricao: l.descricao,
+        valor: l.valor,
+        valor_pago: l.valor,
+        forma_pagamento: formaPagamento,
+        data: now,
+        autenticidade: `AE-${text(l.id).slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+        gerado_automaticamente: true,
+        baixa_em_massa: true,
+      });
+      return novo;
+    });
+
+    const recibosExistentes = await dbList<Record<string, unknown>>("receipts.json");
+    await Promise.all([
+      dbSet(key, updated),
+      dbSet("receipts.json", [...recibosExistentes, ...recibosNovos]),
+    ]);
+
+    await audit({
+      acao: "baixa_em_massa_professor",
+      tipo,
+      ids,
+      usuario: actor,
+      perfil: session.perfil,
+      baixados,
+      ja_pagos: jaPageos,
+      forma_pagamento: formaPagamento,
+      data_baixa: dataBaixa,
+    });
+
+    return NextResponse.json({ ok: true, baixados, ja_pagos: jaPageos, total: ids.length });
+  } catch (err) {
+    console.error("[financeiro PATCH]", err);
+    return NextResponse.json({ error: "Erro na baixa em massa." }, { status: 500 });
+  }
+}
