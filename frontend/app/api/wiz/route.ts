@@ -559,7 +559,7 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
   const licaoMatch = normP.match(/li[cç][aã]o\s+([a-z0-9 ]+?)(?=\s+(?:ate|a |ao |,|$))/);
   const licaoInicio = licaoMatch ? licaoMatch[1].trim() : "";
   const fimMatch = normP.match(/(?:ate|parou\s+(?:em|na|no|na))\s+([a-z0-9 ]+?)(?=\s|$)/);
-  const licaoFim = fimMatch ? fimMatch[1].trim() : (licaoInicio || "Ver registro");
+  const licaoFim = fimMatch ? fimMatch[1].trim() : licaoInicio;
 
   const materiaMatch = prompt.match(/(?:conte[uú]do|mat[eé]ria)[:\s]+([^,\n.]+)/i);
   const materia = materiaMatch ? materiaMatch[1].trim() : "Aula registrada pelo Assistente Wiz";
@@ -585,7 +585,7 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
     professor_email: text((teacher as Row).email),
     modulo,
     livro,
-    licao_inicio: licaoInicio || "Ver registro",
+    licao_inicio: licaoInicio,
     licao_fim: licaoFim,
     status: "fechada",
     data_aula: dataAula,
@@ -616,7 +616,7 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
     turma: turmaName,
     modulo,
     livro,
-    licao_inicio: licaoInicio || "Ver registro",
+    licao_inicio: licaoInicio,
     licao_fim: licaoFim,
     descricao: `Aula dada - ${turmaName} - ${livro || "Livro nao informado"} - ${dataAula}`,
     valor: valorAula,
@@ -643,7 +643,7 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
   const valorFmt = valorAula > 0 ? `R$ ${money(valorAula)}` : "sem valor cadastrado";
   return {
     ok: true,
-    message: `Aula registrada com sucesso!\nProfessor: ${professorName}\nTurma: ${turmaName}\nData: ${dataAula}${licaoFim !== "Ver registro" ? `\nLicao: ate ${licaoFim}` : ""}\nFinanceiro gerado: ${valorFmt} (status: Pendente)`,
+    message: `Aula registrada com sucesso!\nProfessor: ${professorName}\nTurma: ${turmaName}\nData: ${dataAula}${licaoFim ? `\nLicao: ate ${licaoFim}` : ""}\nFinanceiro gerado: ${valorFmt} (status: Pendente)`,
   };
 }
 
