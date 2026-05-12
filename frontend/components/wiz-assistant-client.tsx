@@ -12,7 +12,30 @@ type Message = {
   ts: string;
 };
 
-function text(value: unknown) {
+const QUICK_ACTIONS = [
+  {
+    label: "Registrar aula",
+    icon: "📝",
+    template: "Registrar aula da professora [Nome] na turma [Nome da Turma] hoje, lição [ex: Unit 5]",
+  },
+  {
+    label: "Novo aluno",
+    icon: "👤",
+    template: "Cadastrar aluno [Nome Completo] na turma [Nome da Turma], livro [Livro 1], telefone [Telefone]",
+  },
+  {
+    label: "Comunicado",
+    icon: "📢",
+    template: "Criar comunicado: [Título] — [Mensagem] para todos os alunos",
+  },
+  {
+    label: "Tarefa",
+    icon: "📋",
+    template: "Criar tarefa de inglês para turma [Nome da Turma], conteúdo: [Conteúdo], 5 questões",
+  },
+];
+
+function str(value: unknown) {
   return String(value || "").trim();
 }
 
@@ -36,9 +59,50 @@ function ChatBubble({ msg }: { msg: Message }) {
     <div className={`chat-row ${isUser ? "chat-row-user" : "chat-row-wiz"}`}>
       {!isUser && <WizIcon />}
       <div className={`chat-bubble ${isUser ? "chat-bubble-user" : "chat-bubble-wiz"}`}>
-        <p className="chat-text">{msg.text}</p>
+        <p className="chat-text" style={{ whiteSpace: "pre-wrap" }}>{msg.text}</p>
         <span className="chat-time">{msg.ts}</span>
       </div>
+    </div>
+  );
+}
+
+function RefPanel({ turmas, professores }: { turmas: Row[]; professores: Row[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", padding: "8px 16px", background: "var(--bg-secondary)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: 4, padding: 0 }}
+      >
+        <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: 14, height: 14 }}>
+          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+        </svg>
+        {open ? "Ocultar" : "Ver"} turmas e professores disponíveis
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Turmas ({turmas.length})</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {turmas.map((t, i) => (
+                <span key={i} style={{ fontSize: "0.72rem", background: "var(--bg-hover)", borderRadius: 4, padding: "2px 6px", color: "var(--text-secondary)" }}>
+                  {str(t.nome || t.name)}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Professores ({professores.length})</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {professores.map((p, i) => (
+                <span key={i} style={{ fontSize: "0.72rem", background: "var(--bg-hover)", borderRadius: 4, padding: "2px 6px", color: "var(--text-secondary)" }}>
+                  {str(p.nome || p.name)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -59,7 +123,7 @@ export function WizAssistantClient({
     {
       id: "welcome",
       role: "wiz",
-      text: `Olá! Sou o Wiz, assistente operacional do Ativo Educacional. Posso cadastrar alunos, criar tarefas, lançar cobranças, enviar mensagens, agendar aulas e muito mais. Como posso ajudar?`,
+      text: `Olá! Sou o Wiz, assistente operacional do Ativo Educacional.\n\nPosso registrar aulas de professores, cadastrar alunos, criar tarefas, lançar cobranças, enviar comunicados e muito mais.\n\nUse os atalhos abaixo ou descreva o que precisa fazer.`,
       ts: now(),
     },
   ]);
@@ -69,14 +133,24 @@ export function WizAssistantClient({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const todayLogs = logs.filter((log) => {
-    const date = text(log.data || log.date);
+    const date = str(log.data || log.date);
     return date && new Date(date).toDateString() === new Date().toDateString();
   });
-  const successLogs = logs.filter((log) => text(log.status).toLowerCase().includes("conclu"));
+  const successLogs = logs.filter((log) => str(log.status).toLowerCase().includes("conclu"));
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  function applyQuickAction(template: string) {
+    setInput(template);
+    setTimeout(() => {
+      const ta = inputRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }, 50);
+  }
 
   async function send() {
     const prompt = input.trim();
@@ -94,7 +168,7 @@ export function WizAssistantClient({
         body: JSON.stringify({ action: "answer", data: { prompt } }),
       });
       const json = await res.json().catch(() => ({}));
-      const reply = text(json.message || json.error || (res.ok ? "Feito." : "Erro ao processar a solicitação."));
+      const reply = str(json.message || json.error || (res.ok ? "Feito." : "Erro ao processar a solicitação."));
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: reply, ts: now() }]);
       if (res.ok) router.refresh();
     } catch {
@@ -139,7 +213,7 @@ export function WizAssistantClient({
 
       <div className="content-grid grid-2-1">
         {/* Chat */}
-        <div className="card wiz-chat-card">
+        <div className="card wiz-chat-card" style={{ display: "flex", flexDirection: "column" }}>
           <div className="card-header" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <WizIcon />
@@ -149,6 +223,29 @@ export function WizAssistantClient({
               </div>
             </div>
             <span className="badge badge-success"><span className="badge-dot" />Online</span>
+          </div>
+
+          {/* Quick action chips */}
+          <div style={{ display: "flex", gap: 8, padding: "10px 16px", flexWrap: "wrap", borderBottom: "1px solid var(--border)", background: "var(--bg-secondary)", flexShrink: 0 }}>
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action.label}
+                onClick={() => applyQuickAction(action.template)}
+                disabled={loading}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  background: "var(--bg-card)", border: "1px solid var(--border)",
+                  borderRadius: 20, padding: "5px 12px", cursor: "pointer",
+                  fontSize: "0.78rem", fontWeight: 600, color: "var(--text-primary)",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+              >
+                <span>{action.icon}</span>
+                {action.label}
+              </button>
+            ))}
           </div>
 
           <div className="wiz-chat-messages">
@@ -168,12 +265,14 @@ export function WizAssistantClient({
             <div ref={bottomRef} />
           </div>
 
+          <RefPanel turmas={turmas} professores={professores} />
+
           <div className="wiz-input-bar">
             <textarea
               ref={inputRef}
               className="wiz-input"
-              rows={1}
-              placeholder="Digite o que precisa fazer... (Enter para enviar)"
+              rows={2}
+              placeholder={`Ex: Registrar aula da professora Ana na turma Chicago hoje, lição Unit 5\nEnter para enviar · Shift+Enter nova linha`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKey}
@@ -210,15 +309,15 @@ export function WizAssistantClient({
             ) : (
               <div className="spotlight-list">
                 {logs.slice(-15).reverse().map((log, index) => (
-                  <div className="spotlight-row" key={text(log.id) || index}>
+                  <div className="spotlight-row" key={str(log.id) || index}>
                     <span className="spotlight-label">
-                      {text(log.acao || log.action)}
+                      {str(log.acao || log.action)}
                       <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 500 }}>
-                        {text(log.resultado).slice(0, 80)}
+                        {str(log.resultado).slice(0, 80)}
                       </span>
                     </span>
-                    <span className={`badge badge-${text(log.status).includes("erro") ? "danger" : "success"}`}>
-                      <span className="badge-dot" />{text(log.status || "ok")}
+                    <span className={`badge badge-${str(log.status).includes("erro") ? "danger" : "success"}`}>
+                      <span className="badge-dot" />{str(log.status || "ok")}
                     </span>
                   </div>
                 ))}
