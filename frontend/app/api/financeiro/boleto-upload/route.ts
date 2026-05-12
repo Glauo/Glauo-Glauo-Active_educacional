@@ -4,6 +4,7 @@ import path from "path";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { sendWhatsApp } from "@/lib/whatsapp";
+import { sendEmail } from "@/lib/email";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -112,6 +113,12 @@ export async function POST(req: NextRequest) {
     if (text(form.get("enviar_whatsapp")) === "true") {
       const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
       novo.notification_status.whatsapp = result.ok ? "enviado_wapi" : result.status;
+      const atualizados = await dbList<Record<string, unknown>>("receivables.json");
+      await dbSet("receivables.json", atualizados.map((item) => item.id === id ? novo : item));
+    }
+    if (text(form.get("enviar_email")) === "true") {
+      const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, new URL(req.url).origin), session);
+      novo.notification_status.email = result.ok ? "enviado_smtp" : result.status;
       const atualizados = await dbList<Record<string, unknown>>("receivables.json");
       await dbSet("receivables.json", atualizados.map((item) => item.id === id ? novo : item));
     }

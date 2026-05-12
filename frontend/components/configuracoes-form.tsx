@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 type SistemaConfig = { nome_escola?: string; cnpj?: string; telefone?: string; email_contato?: string; endereco?: string; cidade?: string; estado?: string; cep?: string; [k: string]: unknown };
-type SmtpConfig = { host?: string; port?: number | string; user?: string; from_name?: string; enabled?: boolean; [k: string]: unknown };
+type SmtpConfig = { host?: string; port?: number | string; user?: string; from_name?: string; from_email?: string; tls?: string | boolean; enabled?: boolean; [k: string]: unknown };
 type BoletoConfig = { banco?: string; agencia?: string; conta?: string; cedente?: string; carteira?: string; instrucoes?: string; dias_vencimento?: number | string; [k: string]: unknown };
 
 type Props = { sistema: SistemaConfig; smtp: SmtpConfig; boleto: BoletoConfig };
@@ -227,6 +227,17 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
                 <label className="form-label">Nome do remetente</label>
                 <input className="form-input" value={String(smtp.from_name || "")} onChange={(e) => mtp("from_name", e.target.value)} placeholder="Active Educacional" />
               </div>
+              <div className="form-group">
+                <label className="form-label">E-mail remetente</label>
+                <input className="form-input" type="email" value={String(smtp.from_email || smtp.from || "")} onChange={(e) => mtp("from_email", e.target.value)} placeholder="financeiro@active.edu.br" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Segurança</label>
+                <select className="form-input" value={String(smtp.tls ?? "1")} onChange={(e) => mtp("tls", e.target.value)}>
+                  <option value="1">STARTTLS / TLS ativo</option>
+                  <option value="0">Sem TLS</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -238,8 +249,8 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
               <div className="section-eyebrow">Integração</div>
               <h3 className="section-title">WhatsApp W-API</h3>
             </div>
-            <span className={`badge badge-${sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN ? "success" : "warning"}`}>
-              <span className="badge-dot" />{sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN ? "Configurado" : "Pendente"}
+            <span className={`badge badge-${sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN && sistema.WAPI_INSTANCE_ID ? "success" : "warning"}`}>
+              <span className="badge-dot" />{sistema.WAPI_BASE_URL && sistema.WAPI_TOKEN && sistema.WAPI_INSTANCE_ID ? "Configurado" : "Pendente"}
             </span>
           </div>
           <div className="card-body">
@@ -257,7 +268,7 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
                 <input className="form-input" value={String(sistema.WAPI_INSTANCE_ID || "")} onChange={(e) => sys("WAPI_INSTANCE_ID", e.target.value)} placeholder="ID/nome da instancia" />
               </div>
               <div className="form-group form-group-span2">
-                <div className="form-help">Ao salvar, boletos importados e faturas marcadas para envio disparam automaticamente pelo backend. O link manual continua aparecendo como fallback.</div>
+                <div className="form-help">Preencha URL, token e instância. Ao salvar, boletos, credenciais, respostas e envios em massa disparam automaticamente pelo backend. O link manual continua aparecendo como fallback.</div>
               </div>
             </div>
           </div>
