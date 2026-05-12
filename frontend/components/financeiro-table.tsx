@@ -756,6 +756,112 @@ function DespesasTab({ despesas }: { despesas: Lancamento[] }) {
   );
 }
 
+/* ── Baixa em massa para um professor ── */
+function BaixaMassaBtn({ profNome, aulas, onDone }: { profNome: string; aulas: Lancamento[]; onDone: () => void }) {
+  const router = useRouter();
+  const pendentes = aulas.filter((a) => statusBadge(String(a.status || "")) !== "success");
+  const totalPendente = pendentes.reduce((s, a) => s + parseValor(a.valor), 0);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState("");
+  const [form, setForm] = useState({
+    data_baixa: new Date().toISOString().slice(0, 10),
+    forma_pagamento: "PIX",
+    banco_destino: "",
+    observacao_baixa: "",
+  });
+
+  if (pendentes.length === 0) return null;
+
+  async function confirmar() {
+    setSaving(true);
+    setErro("");
+    try {
+      const res = await fetch("/api/financeiro", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: pendentes.map((a) => String(a.id)).filter(Boolean),
+          tipo: "despesas",
+          ...form,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErro(String(data.error || "Erro ao processar.")); setSaving(false); return; }
+      setOpen(false);
+      onDone();
+      router.refresh();
+    } catch { setErro("Erro de conexão. Tente novamente."); }
+    setSaving(false);
+  }
+
+  return (
+    <>
+      <button
+        className="btn btn-success btn-sm"
+        onClick={() => setOpen(true)}
+        title={`Pagar ${pendentes.length} aulas pendentes de ${profNome}`}
+        style={{ background: "var(--green-700)", color: "#fff", border: "none" }}
+      >
+        Pagar tudo ({pendentes.length})
+      </button>
+      {open && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
+          <div className="modal-box" style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Baixa em massa — {profNome}</div>
+                <div className="modal-subtitle">{pendentes.length} aulas pendentes · Total: {formatBRL(totalPendente)}</div>
+              </div>
+              <button className="modal-close" onClick={() => setOpen(false)}>
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              {/* Resumo */}
+              <div style={{ padding: "12px 16px", background: "rgba(5,150,105,0.06)", border: "1.5px solid rgba(5,150,105,0.2)", borderRadius: "var(--radius-md)", marginBottom: 20 }}>
+                <div style={{ fontWeight: 700, color: "var(--green-700)", marginBottom: 6 }}>Confirmação de pagamento</div>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                  Todas as <strong>{pendentes.length} aulas pendentes</strong> de <strong>{profNome}</strong> serão marcadas como <strong>Pagas</strong>.
+                  <br />Valor total: <strong style={{ color: "var(--green-700)" }}>{formatBRL(totalPendente)}</strong>
+                </div>
+              </div>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-label">Data do pagamento</label>
+                  <input className="form-input" type="date" value={form.data_baixa} onChange={(e) => setForm((p) => ({ ...p, data_baixa: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Forma de pagamento</label>
+                  <select className="form-input" value={form.forma_pagamento} onChange={(e) => setForm((p) => ({ ...p, forma_pagamento: e.target.value }))}>
+                    <option>PIX</option><option>Boleto</option><option>Dinheiro</option>
+                    <option>Cartao</option><option>TED</option><option>Cheque</option>
+                  </select>
+                </div>
+                <div className="form-group form-group-span2">
+                  <label className="form-label">Banco / conta destino</label>
+                  <input className="form-input" placeholder="Ex: Nubank, Conta 001" value={form.banco_destino} onChange={(e) => setForm((p) => ({ ...p, banco_destino: e.target.value }))} />
+                </div>
+                <div className="form-group form-group-span2">
+                  <label className="form-label">Observação</label>
+                  <textarea className="form-input form-textarea" rows={2} placeholder="Opcional" value={form.observacao_baixa} onChange={(e) => setForm((p) => ({ ...p, observacao_baixa: e.target.value }))} />
+                </div>
+              </div>
+              {erro && <div className="form-error" style={{ marginTop: 8 }}>{erro}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setOpen(false)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={confirmar} disabled={saving} style={{ background: "var(--green-700)", borderColor: "var(--green-700)" }}>
+                {saving ? "Processando..." : `Confirmar pagamento — ${formatBRL(totalPendente)}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ── Tab: Pagamento Professores (por nome do professor) ── */
 function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
   const [professor, setProfessor] = useState("todos");
@@ -860,6 +966,7 @@ function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
                       >
                         Relatório
                       </button>
+                      <BaixaMassaBtn profNome={profNome} aulas={aulas} onDone={() => { /* router.refresh() called inside */ }} />
                       {telefone && (
                         <a
                           className="btn btn-secondary btn-sm"
