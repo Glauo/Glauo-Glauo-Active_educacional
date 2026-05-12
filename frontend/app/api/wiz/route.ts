@@ -155,59 +155,59 @@ async function createWallPost(data: Row, actor: string) {
   return { ok: true, message: `Comunicado criado: ${post.titulo}`, item: post };
 }
 
-async function logEmail(destinatario: string, assunto: string, mensagem: string, actor: string) {
-  const logs = await dbList<Row>("email_log.json");
-  await dbSet("email_log.json", [
-    ...logs,
-    {
-      id: crypto.randomUUID(),
-      data: new Date().toISOString(),
-      canal: "email",
-      destinatario,
-      assunto,
-      mensagem,
-      origem: "Assistente Wiz",
-      status: "preparado",
-      usuario: actor,
-    },
-  ]);
-}
-
 async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
   const mensagem = text(data.mensagem || data.texto);
   if (!mensagem) return { ok: false, message: "Mensagem e obrigatoria para envio em massa." };
 
   const publico = lower(data.publico || data.destinatarios || "alunos");
   const assunto = text(data.assunto || data.titulo || "Mensagem Active Educacional");
-  const source = publico.includes("prof") ? await dbList<Row>("teachers.json") : await dbList<Row>("students.json");
+  const [students, teachers, users] = await Promise.all([
+    dbList<Row>("students.json"),
+    dbList<Row>("teachers.json"),
+    dbList<Row>("users.json"),
+  ]);
+  const source = publico.includes("todos")
+    ? [...students, ...teachers, ...users]
+    : publico.includes("prof")
+      ? teachers
+      : publico.includes("usu")
+        ? users
+        : students;
   const recipients = filterRecipients(source, data.turma);
   const enviarWhatsApp = data.enviar_whatsapp !== false;
   const enviarEmail = data.enviar_email !== false;
   let whatsappOk = 0;
   let whatsappFalha = 0;
-  let emails = 0;
+  let emailOk = 0;
+  let emailFalha = 0;
+  const seenWhats = new Set<string>();
+  const seenEmail = new Set<string>();
 
   for (const item of recipients) {
-    const phone = publico.includes("prof") ? teacherPhone(item) : studentPhone(item);
-    const email = publico.includes("prof") ? teacherEmail(item) : studentEmail(item);
-    if (enviarWhatsApp && phone) {
+    const phone = teacherPhone(item) || studentPhone(item) || userPhone(item);
+    const email = teacherEmail(item) || studentEmail(item) || userEmail(item);
+    if (enviarWhatsApp && phone && !seenWhats.has(phone)) {
+      seenWhats.add(phone);
       const sent = await sendWhatsApp(phone, mensagem, session);
       if (sent.ok) whatsappOk += 1;
       else whatsappFalha += 1;
     }
-    if (enviarEmail && email) {
-      await logEmail(email, assunto, mensagem, actor);
-      emails += 1;
+    if (enviarEmail && email && !seenEmail.has(email)) {
+      seenEmail.add(email);
+      const sent = await sendEmail(email, assunto, mensagem, session);
+      if (sent.ok) emailOk += 1;
+      else emailFalha += 1;
     }
   }
 
   return {
     ok: true,
-    message: `Envio em massa processado: ${recipients.length} destinatario(s), WhatsApp ${whatsappOk} enviado(s), ${whatsappFalha} falha(s), ${emails} e-mail(s) preparado(s).`,
+    message: `Envio em massa processado por ${actor}: ${recipients.length} destinatario(s), WhatsApp ${whatsappOk} enviado(s), ${whatsappFalha} falha(s), e-mail ${emailOk} enviado(s), ${emailFalha} falha(s).`,
     total: recipients.length,
     whatsapp_enviados: whatsappOk,
     whatsapp_falhas: whatsappFalha,
-    emails_preparados: emails,
+    emails_enviados: emailOk,
+    emails_falhas: emailFalha,
   };
 }
 
@@ -368,16 +368,16 @@ async function resetStudentAccess(data: Row, actor: string, session: WizSession)
   const phone = text(data.telefone || data.whatsapp) || studentPhone(student);
   const email = text(data.email) || studentEmail(student);
   const whatsapp = phone ? await sendWhatsApp(phone, message, session) : { ok: false, status: "sem telefone" };
-  if (email) await logEmail(email, "Acesso Active Educacional", message, actor);
+  const emailResult = email ? await sendEmail(email, "Acesso Active Educacional", message, session) : { ok: false, status: "sem email" };
 
   return {
     ok: true,
-    message: `Acesso do aluno atualizado. WhatsApp: ${whatsapp.status}.`,
+    message: `Acesso do aluno atualizado. WhatsApp: ${whatsapp.status}. E-mail: ${emailResult.status}.`,
     aluno: nome,
     login,
     senha,
     whatsapp_status: whatsapp.status,
-    email_preparado: Boolean(email),
+    email_status: emailResult.status,
   };
 }
 
@@ -421,16 +421,16 @@ async function resetTeacherAccess(data: Row, actor: string, session: WizSession)
   const phone = text(data.telefone || data.whatsapp) || teacherPhone(teacher);
   const email = text(data.email) || teacherEmail(teacher);
   const whatsapp = phone ? await sendWhatsApp(phone, message, session) : { ok: false, status: "sem telefone" };
-  if (email) await logEmail(email, "Acesso Active Educacional", message, actor);
+  const emailResult = email ? await sendEmail(email, "Acesso Active Educacional", message, session) : { ok: false, status: "sem email" };
 
   return {
     ok: true,
-    message: `Acesso do professor atualizado. WhatsApp: ${whatsapp.status}.`,
+    message: `Acesso do professor atualizado. WhatsApp: ${whatsapp.status}. E-mail: ${emailResult.status}.`,
     professor: nome,
     login,
     senha,
     whatsapp_status: whatsapp.status,
-    email_preparado: Boolean(email),
+    email_status: emailResult.status,
   };
 }
 
@@ -681,9 +681,28 @@ function suggestFromPrompt(prompt: string) {
   return "answer";
 }
 
-async function answer(prompt: string, actor: string): Promise<Row> {
+function bulkDataFromPrompt(prompt: string) {
+  const norm = lower(prompt);
+  const publico = norm.includes("prof") ? "professores" : norm.includes("usuario") || norm.includes("usuário") ? "usuarios" : norm.includes("aluno") ? "alunos" : norm.includes("todos") ? "todos" : "alunos";
+  const msgMatch = prompt.match(/(?:mensagem|enviar|mandar|avisar)[:\s-]+(.+)$/i);
+  const mensagem = text(msgMatch?.[1]) || prompt;
+  return {
+    publico,
+    turma: norm.includes("todos") ? "Todas" : "",
+    assunto: "Mensagem do Professor Wiz",
+    mensagem,
+    enviar_whatsapp: true,
+    enviar_email: true,
+  };
+}
+
+async function answer(prompt: string, actor: string, session: WizSession): Promise<Row> {
   const action = suggestFromPrompt(prompt);
   if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
+  if (action === "send_bulk_message") {
+    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("comercial")) return { ok: false, message: "Perfil sem permissao para envio em massa." };
+    return sendBulkMessage(bulkDataFromPrompt(prompt), actor, session);
+  }
   return {
     ok: true,
     message: action === "answer"
@@ -716,7 +735,7 @@ export async function POST(req: NextRequest) {
   const actor = session.pessoa || session.usuario;
 
   let result: Row;
-  if (action === "answer") result = await answer(text(data.prompt || body.prompt), actor);
+  if (action === "answer") result = await answer(text(data.prompt || body.prompt), actor, session);
   else if (action === "create_wall_post") result = await createWallPost(data, actor);
   else if (action === "create_homework") result = await createHomework(data, actor);
   else if (action === "create_work") result = await createWork(data, actor);

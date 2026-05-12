@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendWhatsApp } from "@/lib/whatsapp";
+import { sendEmail } from "@/lib/email";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -52,6 +53,12 @@ function shouldSendWhatsApp(data: Record<string, unknown>) {
     text((data.notification_status as Record<string, unknown> | undefined)?.whatsapp) === "link_gerado";
 }
 
+function shouldSendEmail(data: Record<string, unknown>) {
+  return data.enviar_email === true ||
+    text(data.enviar_email).toLowerCase() === "true" ||
+    text((data.notification_status as Record<string, unknown> | undefined)?.email) === "link_gerado";
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
@@ -98,6 +105,12 @@ export async function POST(req: NextRequest) {
     if (tipo !== "despesas" && shouldSendWhatsApp(data)) {
       const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, new URL(req.url).origin), session);
       const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+      novo.notification_status = notificationStatus;
+      await dbSet(key, lancamentos.map((item) => item.id === id ? novo : item));
+    }
+    if (tipo !== "despesas" && shouldSendEmail(data)) {
+      const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, new URL(req.url).origin), session);
+      const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
       novo.notification_status = notificationStatus;
       await dbSet(key, lancamentos.map((item) => item.id === id ? novo : item));
     }
@@ -194,6 +207,11 @@ export async function PUT(req: NextRequest) {
     if (tipo !== "despesas" && shouldSendWhatsApp(updates)) {
       const result = await sendWhatsApp(lancamentos[idx].telefone || lancamentos[idx].whatsapp, boletoMessage(lancamentos[idx], new URL(req.url).origin), session);
       lancamentos[idx].notification_status = { ...(lancamentos[idx].notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
+      await dbSet(key, lancamentos);
+    }
+    if (tipo !== "despesas" && shouldSendEmail(updates)) {
+      const result = await sendEmail(lancamentos[idx].email, `Boleto Active Educacional - ${text(lancamentos[idx].descricao) || text(lancamentos[idx].aluno)}`, boletoMessage(lancamentos[idx], new URL(req.url).origin), session);
+      lancamentos[idx].notification_status = { ...(lancamentos[idx].notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
       await dbSet(key, lancamentos);
     }
     await audit({
