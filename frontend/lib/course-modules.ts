@@ -1,14 +1,10 @@
+// Official module types — Mister Wiz definition
 export const COURSE_MODULES = [
-  "Ingles em turma online",
-  "Turma presencial",
-  "Intensivo Vip",
-  "Aulas Vip",
-  "Teens Completo",
-  "Reposicoes",
-  "Aula em turma Online",
-  "Aula em turma Vip",
-  "Vip",
-  "Intensivo vip online",
+  "Aula em Turma",
+  "Aula Teens Presencial",
+  "Aula VIP Particular",
+  "Aula Intensivo VIP",
+  "Reposição de Aula",
 ] as const;
 
 export const BOOK_LEVELS = [
@@ -29,25 +25,67 @@ function normalized(value: unknown) {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[̀-ͯ]/g, "");
 }
 
-export function teacherClassValueByModule(moduleName: unknown) {
-  const module = normalized(moduleName);
-  if (!module) return 0;
-  if (module.includes("repos")) return 50;
-  if (module.includes("intensivo") && module.includes("vip")) return 30;
-  if (module.includes("teens") || module.includes("tens")) return 100;
-  if (module.includes("aulas vip") || module === "vip") return 50;
-  if (module.includes("turma") || module.includes("presencial") || module.includes("online")) return 100;
+// Maps every legacy module name to a new canonical module name
+const LEGACY_MAP: Record<string, string> = {
+  "ingles em turma online":   "Aula em Turma",
+  "turma presencial":         "Aula em Turma",
+  "aula em turma online":     "Aula em Turma",
+  "presencial em turma":      "Aula em Turma",
+  "online em turma":          "Aula em Turma",
+  "kids completo presencial": "Aula em Turma",
+  "teens completo":           "Aula Teens Presencial",
+  "intensivo vip":            "Aula Intensivo VIP",
+  "intensivo vip online":     "Aula Intensivo VIP",
+  "aula em turma vip":        "Aula Intensivo VIP",
+  "vip":                      "Aula VIP Particular",
+  "aulas vip":                "Aula VIP Particular",
+  "aula vip particular":      "Aula VIP Particular",
+  "reposicoes":               "Reposição de Aula",
+  "reposicao":                "Reposição de Aula",
+  "reposicao de aula":        "Reposição de Aula",
+  "repos":                    "Reposição de Aula",
+};
+
+export function migrateModule(moduleName: unknown): string {
+  const norm = normalized(moduleName);
+  if (!norm) return "Aula em Turma";
+  if (LEGACY_MAP[norm]) return LEGACY_MAP[norm];
+  // Fuzzy fallbacks for unknown legacy names
+  if (norm.includes("repos")) return "Reposição de Aula";
+  if (norm.includes("teens") || norm.includes("tens")) return "Aula Teens Presencial";
+  if (norm.includes("intensivo")) return "Aula Intensivo VIP";
+  if (norm === "vip" || (norm.includes("vip") && !norm.includes("intensivo") && !norm.includes("em turma"))) return "Aula VIP Particular";
+  if (norm.includes("turma") || norm.includes("online") || norm.includes("presencial")) return "Aula em Turma";
+  return "Aula em Turma";
+}
+
+// Teacher pay per class:
+//   Aula em Turma         -> R$ 100
+//   Aula Teens Presencial -> R$ 100
+//   Aula VIP Particular   -> R$  50
+//   Aula Intensivo VIP    -> R$  30
+//   Reposicao de Aula     -> R$  50
+export function teacherClassValueByModule(moduleName: unknown): number {
+  const m = normalized(moduleName);
+  if (!m) return 0;
+  if (m.includes("repos")) return 50;
+  if (m.includes("intensivo")) return 30; // must come before generic "vip"
+  if (m.includes("teens")) return 100;
+  if (m.includes("vip")) return 50;
+  if (m.includes("turma")) return 100;
   return 0;
 }
 
-export function isVipModule(moduleName: unknown) {
-  return normalized(moduleName) === "vip";
+// Only "Aula VIP Particular" triggers the lesson-package counter
+export function isVipModule(moduleName: unknown): boolean {
+  const m = normalized(moduleName);
+  return m === "aula vip particular" || m === "vip particular";
 }
 
-export function vipPlanTotal(planName: unknown) {
+export function vipPlanTotal(planName: unknown): number {
   const plan = normalized(planName);
   if (plan.includes("10")) return VIP_DEFAULT_TOTAL;
   if (plan.includes("avulsa") || plan.includes("avulso")) return 1;
@@ -72,7 +110,7 @@ export function vipPackageStats(aluno: Record<string, unknown>) {
   return { total, dadas, restantes };
 }
 
-export function formatModuleValue(moduleName: unknown) {
+export function formatModuleValue(moduleName: unknown): string {
   const value = teacherClassValueByModule(moduleName);
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

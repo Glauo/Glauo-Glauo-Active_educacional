@@ -151,7 +151,7 @@ function fromAluno(a?: AlunoData): Form {
   return {
     nome: text(a?.nome || a?.name),
     turma: text(a?.turma || a?.classe),
-    modulo: text(a?.modulo || a?.modalidade || "Ingles em turma online"),
+    modulo: text(a?.modulo || a?.modalidade || "Aula em Turma"),
     livro: text(a?.livro || a?.book),
     matricula: text(a?.matricula),
     rg: text(a?.rg),

@@ -71,6 +71,33 @@ function fmtDate(v: string) {
   return d.toLocaleDateString("pt-BR");
 }
 
+function printWindow(elementId: string, title = "Relatório — Ativo Educacional") {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const w = window.open("", "_blank", "width=960,height=700");
+  if (!w) { window.print(); return; }
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="utf-8"><title>${title}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1e293b;background:#fff;padding:24px 32px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:#0f172a!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+th{padding:9px 12px;text-align:left;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+td{padding:9px 12px}
+tbody tr:nth-child(even){background:#f8fafc}
+tbody tr{border-bottom:1px solid #e2e8f0}
+tfoot tr:first-child{border-top:2px solid #0f172a}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;text-transform:uppercase}
+.badge-success{background:rgba(5,150,105,.12);color:#065f46}
+.badge-warning{background:rgba(234,179,8,.12);color:#92400e}
+@page{margin:15mm;size:A4}
+@media print{body{padding:0}}
+</style></head><body>${el.innerHTML}</body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 400);
+}
+
 function diasAtraso(lancamento: Lancamento) {
   const venc = String(lancamento.vencimento || lancamento.data_vencimento || "");
   const d = parseBRDate(venc);
@@ -179,7 +206,7 @@ function ReciboModal({ lancamento, onClose }: { lancamento: Lancamento; onClose:
         <div className="modal-header">
           <div className="modal-title">Recibo de Pagamento</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>
+            <button className="btn btn-secondary btn-sm" onClick={() => printWindow("recibo-print", "Recibo — Ativo Educacional")}>
               <svg viewBox="0 0 20 20" fill="currentColor" width={14} height={14}>
                 <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a1 1 0 001 1h8a1 1 0 001-1v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a1 1 0 00-1-1H6a1 1 0 00-1 1zm2 0h6v3H7V4zm0 8H6v4h8v-4h-7v1a1 1 0 102 0v-1z" clipRule="evenodd" />
               </svg>
@@ -277,7 +304,7 @@ function RelatorioDetalhadoProfModal({
         <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div className="modal-title">Relatório de Pagamento — Professor</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm" onClick={() => printWindow("relatorio-professor-print", `Relatório — ${professor}`)}>
               <svg viewBox="0 0 20 20" fill="currentColor" width={14} height={14} style={{ marginRight: 4 }}>
                 <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a1 1 0 001 1h8a1 1 0 001-1v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a1 1 0 00-1-1H6a1 1 0 00-1 1zm2 0h6v3H7V4zm0 8H6v4h8v-4h-7v1a1 1 0 102 0v-1z" clipRule="evenodd" />
               </svg>
@@ -1072,7 +1099,7 @@ function RelatorioTab({ recebimentos, despesas }: { recebimentos: Lancamento[]; 
             <h3 className="section-title">Resumo mensal</h3>
             <p className="section-subtitle">{meses.length} meses com movimentação</p>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>Imprimir / PDF</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => printWindow("relatorio-financeiro-print", "Relatório Financeiro — Ativo Educacional")}>Imprimir / PDF</button>
         </div>
         <div className="card-body" style={{ paddingTop: 12 }}>
           {meses.length === 0 ? (

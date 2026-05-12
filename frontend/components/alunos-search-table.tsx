@@ -92,6 +92,30 @@ function whatsappUrl(phone: unknown, message: string) {
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
 }
 
+function printWindow(elementId: string, title = "Relatório — Ativo Educacional") {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const w = window.open("", "_blank", "width=960,height=700");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="utf-8"><title>${title}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1e293b;background:#fff;padding:24px 32px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:#0f172a!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+th{padding:9px 12px;text-align:left;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+td{padding:9px 12px}
+tbody tr:nth-child(even){background:#f8fafc}
+tbody tr{border-bottom:1px solid #e2e8f0}
+tfoot tr:first-child{border-top:2px solid #0f172a}
+@page{margin:15mm;size:A4}
+@media print{body{padding:0}}
+</style></head><body>${el.innerHTML}</body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.print(); } catch { /**/ } }, 400);
+}
+
 function faturaKeys(aluno: Aluno) {
   return [
     `nome:${text(aluno.nome || aluno.name).toLowerCase()}`,
@@ -117,7 +141,7 @@ function ReciboInline({ fatura, aluno, onClose }: { fatura: Recebimento; aluno: 
         <div className="modal-header">
           <div className="modal-title">Recibo de Pagamento</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimir</button>
+            <button className="btn btn-primary btn-sm" onClick={() => printWindow("recibo-print", "Recibo — Ativo Educacional")}>Imprimir</button>
             <button className="modal-close" onClick={onClose}>
               <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
             </button>
@@ -163,7 +187,7 @@ function RelatorioAlunoModal({ aluno, faturas, onClose }: { aluno: Aluno; fatura
         <div className="modal-header">
           <div className="modal-title">Relatório Financeiro do Aluno</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimir / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={() => printWindow("relatorio-professor-print", `Relatório — ${nome}`)}>Imprimir / PDF</button>
             {telefone && (
               <a className="btn btn-secondary btn-sm" href={whatsappUrl(telefone, `Relatório financeiro de ${nome}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nSaldo: ${formatBRL(total - totalPago)}`)} target="_blank" rel="noreferrer">WhatsApp</a>
             )}
