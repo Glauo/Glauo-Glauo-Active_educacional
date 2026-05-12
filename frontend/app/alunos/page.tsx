@@ -98,11 +98,18 @@ export default async function AlunosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [alunos, recebimentos] = await Promise.all([
+  const [alunos, recebimentos, todasFrequencias] = await Promise.all([
     dbListWithoutKeys<Aluno>("students.json", HEAVY_KEYS),
     dbListWithoutKeys<Recebimento>("receivables.json", HEAVY_KEYS),
+    dbListWithoutKeys<Record<string, unknown>>("attendance.json", HEAVY_KEYS),
   ]);
   const recebimentosLeves = slimRecebimentos(alunos, recebimentos);
+  // Slim frequencias: keep only relevant fields
+  const frequencias = todasFrequencias.map((f) => ({
+    id: f.id, aluno: f.aluno, aluno_id: f.aluno_id, turma: f.turma,
+    presente: f.presente, falta: f.falta, data: f.data,
+    materia: f.materia, licao_inicio: f.licao_inicio, licao_fim: f.licao_fim,
+  }));
 
   const ativos = alunos.filter((a) => {
     const s = String(a.status || a.situacao || "ativo").toLowerCase();
@@ -173,7 +180,7 @@ export default async function AlunosPage() {
           </div>
         </div>
       ) : (
-        <AlunosSearchTable alunos={alunos} recebimentos={recebimentosLeves} canManageAccess={isAdminOrCoordinator(session)} />
+        <AlunosSearchTable alunos={alunos} recebimentos={recebimentosLeves} frequencias={frequencias} canManageAccess={isAdminOrCoordinator(session)} />
       )}
     </AppShell>
   );

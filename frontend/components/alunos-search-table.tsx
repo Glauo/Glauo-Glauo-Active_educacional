@@ -1,66 +1,50 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { EditarAlunoBtn } from "./aluno-modal";
+import { useRouter } from "next/navigation";
 import { vipPackageStats } from "@/lib/course-modules";
+import { EditarAlunoBtn } from "./aluno-modal";
 
 type Aluno = {
-  id?: string;
-  nome?: string;
-  name?: string;
-  turma?: string;
-  classe?: string;
-  livro?: string;
-  book?: string;
-  modulo?: string;
-  modalidade?: string;
-  vip_tipo_plano?: string;
-  vip_aulas_total?: string | number;
-  vip_aulas_restantes?: string | number;
-  status?: string;
-  situacao?: string;
-  status_financeiro?: string;
-  situacao_financeira?: string;
-  responsavel?: unknown;
-  responsavel_nome?: string;
-  responsavel_telefone?: string;
-  responsavel_email?: string;
-  telefone?: string;
-  whatsapp?: string;
-  phone?: string;
-  email?: string;
-  login?: string;
-  senha?: string;
-  data_nascimento?: string;
-  nascimento?: string;
-  cpf?: string;
-  endereco?: string;
-  address?: string;
-  observacoes?: string;
-  obs?: string;
+  id?: string; nome?: string; name?: string; matricula?: string;
+  turma?: string; classe?: string; livro?: string; book?: string;
+  modulo?: string; modalidade?: string; vip_tipo_plano?: string;
+  vip_aulas_total?: string | number; vip_aulas_restantes?: string | number;
+  status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string;
+  responsavel?: unknown; responsavel_nome?: string; responsavel_telefone?: string;
+  responsavel_email?: string; telefone?: string; whatsapp?: string; phone?: string;
+  email?: string; login?: string; senha?: string; data_nascimento?: string;
+  nascimento?: string; cpf?: string; rg?: string; genero?: string; idade?: string;
+  endereco?: string; address?: string; rua?: string; numero?: string;
+  complemento?: string; bairro?: string; cidade?: string; cep?: string;
+  cidade_natal?: string; pais?: string; observacoes?: string; obs?: string;
   [k: string]: unknown;
 };
 
 type Recebimento = {
-  id?: string;
-  aluno?: string;
-  nome?: string;
-  aluno_login?: string;
-  descricao?: string;
-  valor?: string | number;
-  vencimento?: string;
-  data_vencimento?: string;
-  status?: string;
-  situacao?: string;
-  [k: string]: unknown;
+  id?: string; aluno?: string; nome?: string; aluno_login?: string;
+  descricao?: string; valor?: string | number; valor_parcela?: string | number;
+  vencimento?: string; data_vencimento?: string; data_baixa?: string;
+  status?: string; situacao?: string; forma_pagamento?: string;
+  boleto_pdf_url?: string; [k: string]: unknown;
 };
 
-function text(value: unknown) {
+type Frequencia = {
+  id?: string; aluno?: string; aluno_id?: string; turma?: string;
+  presente?: boolean; falta?: boolean; data?: string; materia?: string;
+  licao_inicio?: string; licao_fim?: string; [k: string]: unknown;
+};
+
+type DrawerTab = "perfil" | "financeiro" | "pedagogico";
+
+function text(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const row = value as Record<string, unknown>;
-    return String(row.nome || row.name || row.celular || row.telefone || row.email || "").trim();
+    const extracted = row.nome || row.name || row.celular || row.telefone || row.email;
+    return extracted ? String(extracted).trim() : "";
   }
-  return String(value || "").trim();
+  const s = String(value || "").trim();
+  return s === "[object Object]" ? "" : s;
 }
 
 function parseValor(v: unknown) {
@@ -71,37 +55,21 @@ function formatBRL(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function whatsappUrl(phone: unknown, message: string) {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
-  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
-}
-
-function credentialMessage(aluno: Aluno, login: string, senha: string) {
-  const nome = text(aluno.nome || aluno.name || "Aluno");
-  return [
-    `Olá, ${nome}!`,
-    "Seu acesso ao portal do aluno Active Educacional foi atualizado.",
-    "",
-    `Login: ${login}`,
-    `Senha: ${senha}`,
-    "",
-    "Acesse pelo portal da escola. Se tiver dificuldade, fale com a secretaria.",
-  ].join("\n");
-}
-
-function vipLabel(aluno: Aluno) {
-  const pacote = vipPackageStats(aluno);
-  if (!pacote) return "";
-  return `${pacote.dadas}/${pacote.total} aulas dadas | ${pacote.restantes} restantes`;
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function fmtDate(v: unknown) {
   const raw = text(v);
-  if (!raw) return "-";
+  if (!raw || raw === "-") return "-";
   if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) return raw.slice(0, 10);
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? raw : d.toLocaleDateString("pt-BR");
+}
+
+function isPago(f: Recebimento) {
+  const s = text(f.status || f.situacao).toLowerCase();
+  return s.includes("pago") || s.includes("baixado") || s.includes("liquidado");
 }
 
 function statusBadge(s: string) {
@@ -114,131 +82,314 @@ function statusBadge(s: string) {
 function financBadge(s: string) {
   const l = s.toLowerCase();
   if (l.includes("atraso") || l.includes("vencido") || l.includes("inadim")) return "danger";
-  if (l.includes("pendent") || l.includes("boleto")) return "warning";
+  if (l.includes("pendent") || l.includes("boleto") || l.includes("aberto")) return "warning";
   return "success";
 }
 
-function DetailRow({ label, value }: { label: string; value?: string }) {
-  if (!value || value === "-") return null;
-  return (
-    <div className="drawer-detail-row">
-      <span className="drawer-detail-label">{label}</span>
-      <span className="drawer-detail-value">{value}</span>
-    </div>
-  );
-}
-
-function faturasDoAluno(aluno: Aluno, recebimentos: Recebimento[]) {
-  const nome = text(aluno.nome || aluno.name).toLowerCase();
-  const login = text(aluno.login).toLowerCase();
-  return recebimentos
-    .filter((r) => {
-      const alunoRec = text(r.aluno || r.nome).toLowerCase();
-      const loginRec = text(r.aluno_login).toLowerCase();
-      return (nome && alunoRec === nome) || (login && loginRec === login);
-    })
-    .sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento)));
+function whatsappUrl(phone: unknown, message: string) {
+  let digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
 }
 
 function faturaKeys(aluno: Aluno) {
   return [
     `nome:${text(aluno.nome || aluno.name).toLowerCase()}`,
     `login:${text(aluno.login).toLowerCase()}`,
-  ].filter((key) => !key.endsWith(":"));
+  ].filter((k) => !k.endsWith(":"));
 }
 
-function AcessoAlunoBox({ aluno }: { aluno: Aluno }) {
-  const alunoRef = text(aluno.id || aluno.nome || aluno.name || aluno.login);
-  const [login, setLogin] = useState(text(aluno.login));
-  const [senha, setSenha] = useState(text(aluno.senha));
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [whatsappLink, setWhatsappLink] = useState("");
+function vipLabel(aluno: Aluno) {
+  const p = vipPackageStats(aluno);
+  if (!p) return "";
+  return `${p.dadas}/${p.total} dadas · ${p.restantes} restantes`;
+}
 
-  async function salvar() {
-    setFeedback("");
-    setWhatsappLink("");
-    if (!login.trim() || senha.length < 4) {
-      setFeedback("Informe login e senha com pelo menos 4 caracteres.");
-      return;
-    }
-    setSaving(true);
-    const res = await fetch("/api/alunos/credenciais", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: alunoRef, login, senha }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setSaving(false);
-    if (!res.ok) {
-      setFeedback(data.error || "Erro ao alterar acesso.");
-      return;
-    }
-    setFeedback("Acesso atualizado com sucesso.");
-    const fallbackPhone = text(aluno.celular || aluno.whatsapp || aluno.telefone || aluno.responsavel_telefone || aluno.responsavel);
-    setWhatsappLink(data.whatsapp_url || whatsappUrl(fallbackPhone, credentialMessage(aluno, login, senha)));
-  }
-
+/* ── Inline recibo ── */
+function ReciboInline({ fatura, aluno, onClose }: { fatura: Recebimento; aluno: Aluno; onClose: () => void }) {
+  const nome = text(aluno.nome || aluno.name || "Aluno");
+  const valor = parseValor(fatura.valor_parcela ?? fatura.valor);
+  const dataBaixa = fatura.data_baixa ? fmtDate(fatura.data_baixa) : new Date().toLocaleDateString("pt-BR");
+  const recNum = text(fatura.id || Date.now()).slice(-6).toUpperCase();
   return (
-    <div className="drawer-section">
-      <div className="drawer-section-title">Acesso do aluno</div>
-      <div className="form-grid">
-        <div className="form-group">
-          <label className="form-label">Login</label>
-          <input className="form-input" value={login} onChange={(e) => setLogin(e.target.value)} />
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 480 }}>
+        <div className="modal-header">
+          <div className="modal-title">Recibo de Pagamento</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimir</button>
+            <button className="modal-close" onClick={onClose}>
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            </button>
+          </div>
         </div>
-        <div className="form-group">
-          <label className="form-label">Senha</label>
-          <input className="form-input" value={senha} onChange={(e) => setSenha(e.target.value)} />
+        <div className="modal-body" id="recibo-print">
+          <div style={{ textAlign: "center", paddingBottom: 16, marginBottom: 16, borderBottom: "2px solid var(--border)" }}>
+            <div style={{ fontWeight: 800, fontSize: "1.25rem", color: "var(--navy-900)" }}>Ativo Educacional</div>
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Recibo de Pagamento</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 20px", marginBottom: 16 }}>
+            <div><div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Recibo nº</div><div style={{ fontWeight: 700, fontFamily: "monospace" }}>{recNum}</div></div>
+            <div><div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Data</div><div style={{ fontWeight: 700 }}>{dataBaixa}</div></div>
+            <div style={{ gridColumn: "span 2" }}><div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Recebemos de</div><div style={{ fontWeight: 700, fontSize: "1rem" }}>{nome}</div></div>
+            <div style={{ gridColumn: "span 2" }}><div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Referente a</div><div style={{ color: "var(--text-secondary)" }}>{text(fatura.descricao || "Mensalidade / Serviços Educacionais")}</div></div>
+          </div>
+          <div style={{ padding: "16px 20px", background: "rgba(5,150,105,0.06)", borderRadius: "var(--radius-lg)", border: "2px solid rgba(5,150,105,0.15)", textAlign: "center", marginBottom: 16 }}>
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>Valor Recebido</div>
+            <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--green-700)" }}>{formatBRL(valor)}</div>
+          </div>
+          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 12, textAlign: "center", fontSize: "0.72rem", color: "var(--text-faint)" }}>
+            Ativo Educacional {new Date().getFullYear()} — Este recibo confirma o pagamento do valor acima.
+          </div>
         </div>
-      </div>
-      {feedback && <div className={feedback.includes("sucesso") ? "form-success" : "form-error"} style={{ marginTop: 10 }}>{feedback}</div>}
-      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !alunoRef}>{saving ? "Salvando..." : "Alterar senha/login"}</button>
-        {whatsappLink && <a className="btn btn-secondary btn-sm" href={whatsappLink} target="_blank" rel="noreferrer">Enviar WhatsApp</a>}
-        <a className="btn btn-secondary btn-sm" href="/alunos/credenciais">Gerenciar todos</a>
       </div>
     </div>
   );
 }
 
-function AlunoDrawer({ aluno, faturas, onClose, canManageAccess }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void; canManageAccess: boolean }) {
+/* ── Relatório do aluno ── */
+function RelatorioAlunoModal({ aluno, faturas, onClose }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void }) {
+  const nome = text(aluno.nome || aluno.name || "Aluno");
+  const total = faturas.reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
+  const totalPago = faturas.filter(isPago).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
+  const telefone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp);
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  const datas = faturas.map((f) => text(f.vencimento || f.data_vencimento)).filter(Boolean).sort();
+  const periodo = datas.length > 0 ? (datas.length === 1 ? fmtDate(datas[0]) : `${fmtDate(datas[0])} a ${fmtDate(datas[datas.length - 1])}`) : "";
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 760, width: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+        <div className="modal-header">
+          <div className="modal-title">Relatório Financeiro do Aluno</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimir / PDF</button>
+            {telefone && (
+              <a className="btn btn-secondary btn-sm" href={whatsappUrl(telefone, `Relatório financeiro de ${nome}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nSaldo: ${formatBRL(total - totalPago)}`)} target="_blank" rel="noreferrer">WhatsApp</a>
+            )}
+            <button className="modal-close" onClick={onClose}>
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+        <div className="modal-body" id="relatorio-professor-print" style={{ padding: "24px 28px" }}>
+          <div style={{ textAlign: "center", borderBottom: "3px solid var(--navy-900)", paddingBottom: 14, marginBottom: 20 }}>
+            <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "var(--navy-900)" }}>ATIVO EDUCACIONAL</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Extrato Financeiro do Aluno</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 20px", marginBottom: 20, padding: "14px 18px", background: "var(--surface-raised)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+            <div style={{ gridColumn: "span 2" }}><div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Aluno</div><div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{nome}</div></div>
+            <div><div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Emissão</div><div style={{ fontWeight: 600 }}>{hoje}</div></div>
+            <div style={{ gridColumn: "span 2" }}><div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Turma / Módulo</div><div style={{ fontWeight: 600 }}>{text(aluno.turma || aluno.classe || "-")} · {text(aluno.modulo || aluno.modalidade || "-")}</div></div>
+            {periodo && <div><div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Período</div><div style={{ fontWeight: 600 }}>{periodo}</div></div>}
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", marginBottom: 20 }}>
+            <thead>
+              <tr style={{ background: "var(--navy-900)", color: "#fff" }}>
+                {["Descrição","Vencimento","Valor","Status","Pago em"].map((h) => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {faturas.map((f, i) => (
+                <tr key={text(f.id || i)} style={{ background: i % 2 === 0 ? "transparent" : "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
+                  <td style={{ padding: "8px 12px" }}>{text(f.descricao || "Mensalidade")}</td>
+                  <td style={{ padding: "8px 12px", fontWeight: 600 }}>{fmtDate(f.vencimento || f.data_vencimento)}</td>
+                  <td style={{ padding: "8px 12px", fontWeight: 700 }}>{formatBRL(parseValor(f.valor_parcela ?? f.valor))}</td>
+                  <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 4, fontSize: "0.72rem", fontWeight: 700, background: isPago(f) ? "rgba(5,150,105,0.12)" : "rgba(245,158,11,0.12)", color: isPago(f) ? "var(--green-700)" : "var(--gold-700)" }}>{text(f.status || f.situacao || "Pendente")}</span></td>
+                  <td style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: "0.8rem" }}>{fmtDate(f.data_baixa) || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid var(--navy-900)" }}>
+                <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700 }}>Total</td>
+                <td style={{ padding: "10px 12px", fontWeight: 800, fontSize: "1rem" }}>{formatBRL(total)}</td>
+                <td colSpan={2} style={{ padding: "10px 12px" }}><span style={{ color: "var(--green-700)", fontWeight: 700 }}>Pago: {formatBRL(totalPago)}</span> · <span style={{ color: "var(--gold-700)", fontWeight: 700 }}>Em aberto: {formatBRL(total - totalPago)}</span></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Acesso do aluno ── */
+function AcessoBox({ aluno }: { aluno: Aluno }) {
+  const [login, setLogin] = useState(text(aluno.login));
+  const [senha, setSenha] = useState(text(aluno.senha));
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [whatsLink, setWhatsLink] = useState("");
+  const alunoRef = text(aluno.id || aluno.nome || aluno.name || aluno.login);
+
+  async function salvar() {
+    if (!login.trim() || senha.length < 4) { setFeedback("Login e senha (mín. 4 caracteres) são obrigatórios."); return; }
+    setSaving(true);
+    setFeedback("");
+    const res = await fetch("/api/alunos/credenciais", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: alunoRef, login, senha }) });
+    const d = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) { setFeedback(d.error || "Erro ao alterar acesso."); return; }
+    setFeedback("Acesso atualizado com sucesso.");
+    const phone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp || aluno.celular);
+    const msg = `Olá, ${text(aluno.nome || aluno.name)}! Seu acesso ao portal Active Educacional foi atualizado.\n\nLogin: ${login}\nSenha: ${senha}\n\nGuarde esses dados com segurança.`;
+    setWhatsLink(d.whatsapp_url || whatsappUrl(phone, msg));
+  }
+
+  return (
+    <div>
+      <div className="drawer-section-title">Acesso ao portal</div>
+      <div className="form-grid" style={{ marginBottom: 12 }}>
+        <div className="form-group"><label className="form-label">Login</label><input className="form-input" value={login} onChange={(e) => setLogin(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Senha</label><input className="form-input" value={senha} onChange={(e) => setSenha(e.target.value)} /></div>
+      </div>
+      {feedback && <div className={feedback.includes("sucesso") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>{feedback}</div>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !alunoRef}>{saving ? "Salvando..." : "Alterar acesso"}</button>
+        {whatsLink && <a className="btn btn-secondary btn-sm" href={whatsLink} target="_blank" rel="noreferrer">Enviar via WhatsApp</a>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Drawer principal ── */
+function AlunoDrawer({
+  aluno, faturas, frequencias, onClose, canManageAccess,
+}: {
+  aluno: Aluno; faturas: Recebimento[]; frequencias: Frequencia[];
+  onClose: () => void; canManageAccess: boolean;
+}) {
+  const router = useRouter();
+  const [tab, setTab] = useState<DrawerTab>("perfil");
+  const [reciboFatura, setReciboFatura] = useState<Recebimento | null>(null);
+  const [showRelatorio, setShowRelatorio] = useState(false);
+  const [baixaFatura, setBaixaFatura] = useState<Recebimento | null>(null);
+  const [baixaForma, setBaixaForma] = useState("PIX");
+  const [baixaData, setBaixaData] = useState(todayISO());
+  const [baixaValor, setBaixaValor] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [isError, setIsError] = useState(false);
+  const [showNovoLanc, setShowNovoLanc] = useState(false);
+  const [lancCategoria, setLancCategoria] = useState("Mensalidade");
+  const [lancDescricao, setLancDescricao] = useState("");
+  const [lancValor, setLancValor] = useState("");
+  const [lancVenc, setLancVenc] = useState(todayISO());
+  const [lancParcelas, setLancParcelas] = useState("1");
+
   const nome = text(aluno.nome || aluno.name || "Aluno");
   const turma = text(aluno.turma || aluno.classe || "-");
   const livro = text(aluno.livro || aluno.book || "-");
   const modulo = text(aluno.modulo || aluno.modalidade || "-");
-  const vip = vipLabel(aluno);
   const status = text(aluno.status || aluno.situacao || "Ativo");
-  const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
-  const financeiro = text(aluno.status_financeiro || aluno.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
   const responsavel = text(aluno.responsavel_nome || aluno.responsavel || "-");
-  const telefone = text(aluno.responsavel_telefone || aluno.telefone || aluno.phone || "-");
+  const telefone = text(aluno.responsavel_telefone || aluno.telefone || aluno.phone || aluno.celular || "-");
   const email = text(aluno.responsavel_email || aluno.email || "-");
-  const nascimento = text(aluno.data_nascimento || aluno.nascimento || "-");
-  const cpf = text(aluno.cpf || "-");
-  const enderecoCompleto = [
-    text(aluno.rua),
-    text(aluno.numero),
-    text(aluno.complemento),
-    text(aluno.bairro),
-    text(aluno.cidade),
-    text(aluno.cep),
-  ].filter(Boolean).join(", ");
-  const endereco = enderecoCompleto || text(aluno.endereco || aluno.address || "-");
-  const obs = text(aluno.observacoes || aluno.obs || "-");
+  const enderecoFull = [text(aluno.rua), text(aluno.numero), text(aluno.complemento), text(aluno.bairro), text(aluno.cidade), text(aluno.cep)].filter(Boolean).join(", ") || text(aluno.endereco || aluno.address || "-");
+  const vip = vipLabel(aluno);
   const hue = (nome.charCodeAt(0) * 137) % 360;
   const initials = nome.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+
+  const totalAberto = faturas.filter((f) => !isPago(f)).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
+  const totalPago = faturas.filter(isPago).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
+  const financeiro = text(aluno.status_financeiro || aluno.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
+
+  const faturasOrdenadas = useMemo(() => [...faturas].sort((a, b) => {
+    const pa = isPago(a) ? 1 : 0;
+    const pb = isPago(b) ? 1 : 0;
+    if (pa !== pb) return pa - pb;
+    return text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento));
+  }), [faturas]);
+
+  const freqAluno = useMemo(() => frequencias.filter((f) => {
+    const fn = text(f.aluno).toLowerCase();
+    const nl = nome.toLowerCase();
+    return fn === nl || fn.includes(nl.split(" ")[0].toLowerCase());
+  }), [frequencias, nome]);
+
+  const totalPresencas = freqAluno.filter((f) => Boolean(f.presente)).length;
+  const totalFaltas = freqAluno.filter((f) => Boolean(f.falta) || f.presente === false).length;
+
+  async function darBaixa() {
+    if (!baixaFatura?.id) return;
+    setSaving(true);
+    setMsg("");
+    const res = await fetch("/api/financeiro", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: baixaFatura.id, tipo: "recebimentos", status: "Pago", data_baixa: baixaData, valor_pago: baixaValor || text(baixaFatura.valor_parcela ?? baixaFatura.valor), forma_pagamento: baixaForma }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setBaixaFatura(null);
+      setBaixaValor("");
+      setMsg("Pagamento registrado!");
+      setIsError(false);
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setMsg(d.error || "Erro ao registrar baixa.");
+      setIsError(true);
+    }
+  }
+
+  async function criarLancamento() {
+    if (!lancValor.trim() || !lancVenc) { setMsg("Informe valor e vencimento."); setIsError(true); return; }
+    setSaving(true);
+    setMsg("");
+    const res = await fetch("/api/financeiro", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tipo_lancamento: "recebimentos",
+        aluno: nome,
+        aluno_login: text(aluno.login),
+        telefone: text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp),
+        email: text(aluno.responsavel_email || aluno.email),
+        descricao: lancDescricao || lancCategoria,
+        categoria: lancCategoria,
+        valor: lancValor,
+        vencimento: lancVenc,
+        parcelas: Number(lancParcelas) || 1,
+        status: "Pendente",
+      }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setMsg("Lançamento criado com sucesso!");
+      setIsError(false);
+      setShowNovoLanc(false);
+      setLancValor("");
+      setLancDescricao("");
+      setLancParcelas("1");
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setMsg(d.error || "Erro ao criar lançamento.");
+      setIsError(true);
+    }
+  }
+
+  const tabs: { id: DrawerTab; label: string }[] = [
+    { id: "perfil", label: "Perfil" },
+    { id: "financeiro", label: `Financeiro (${faturas.length})` },
+    { id: "pedagogico", label: "Pedagógico" },
+  ];
 
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer">
+      <div className="drawer drawer-wide">
+        {/* Header */}
         <div className="drawer-header">
           <div className="drawer-title-row">
-            <div className="avatar avatar-lg" style={{ background: `hsl(${hue},50%,42%)` }}>{initials}</div>
-            <div>
+            <div className="avatar avatar-lg" style={{ background: `hsl(${hue},50%,42%)`, flexShrink: 0 }}>{initials}</div>
+            <div style={{ minWidth: 0 }}>
               <h2 className="drawer-title">{nome}</h2>
-              <p className="drawer-subtitle">Turma {turma} | {livro}</p>
+              <p className="drawer-subtitle">{turma !== "-" ? `Turma ${turma}` : "Sem turma"} · {livro !== "-" ? livro : "Sem livro"}</p>
             </div>
           </div>
           <button className="drawer-close" onClick={onClose} aria-label="Fechar">
@@ -247,79 +398,303 @@ function AlunoDrawer({ aluno, faturas, onClose, canManageAccess }: { aluno: Alun
           <div className="drawer-badges">
             <span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span>
             <span className={`badge badge-${financBadge(financeiro)}`}><span className="badge-dot" />{financeiro}</span>
+            {totalAberto > 0 && <span className="badge badge-warning" style={{ fontVariantNumeric: "tabular-nums" }}>{formatBRL(totalAberto)} em aberto</span>}
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="drawer-tabs">
+          {tabs.map((t) => (
+            <button key={t.id} className={`drawer-tab${tab === t.id ? " drawer-tab-active" : ""}`} onClick={() => { setTab(t.id); setMsg(""); }}>
+              {t.label}
+            </button>
+          ))}
         </div>
 
         <div className="drawer-body">
-          <div className="drawer-section">
-            <div className="drawer-section-title">Dados pessoais</div>
-            <DetailRow label="Matricula" value={text(aluno.matricula || "-")} />
-            <DetailRow label="CPF" value={cpf} />
-            <DetailRow label="RG" value={text(aluno.rg || "-")} />
-            <DetailRow label="Genero" value={text(aluno.genero || "-")} />
-            <DetailRow label="Data de nascimento" value={nascimento} />
-            <DetailRow label="Idade" value={text(aluno.idade || "-")} />
-            <DetailRow label="Cidade natal" value={text(aluno.cidade_natal || "-")} />
-            <DetailRow label="Pais" value={text(aluno.pais || "-")} />
-            <DetailRow label="Endereco" value={endereco} />
-          </div>
+          {msg && <div className={isError ? "form-error" : "form-success"} style={{ margin: "0 0 14px" }}>{msg}</div>}
 
-          <div className="drawer-section">
-            <div className="drawer-section-title">Responsavel</div>
-            <DetailRow label="Nome" value={responsavel} />
-            <DetailRow label="Telefone" value={telefone} />
-            <DetailRow label="E-mail" value={email} />
-          </div>
+          {/* ── TAB: PERFIL ── */}
+          {tab === "perfil" && (
+            <>
+              <div className="drawer-section">
+                <div className="drawer-section-title">Dados pessoais</div>
+                {[
+                  ["Matrícula", text(aluno.matricula || "-")],
+                  ["CPF", text(aluno.cpf || "-")],
+                  ["RG", text(aluno.rg || "-")],
+                  ["Gênero", text(aluno.genero || "-")],
+                  ["Data de nascimento", fmtDate(aluno.data_nascimento || aluno.nascimento)],
+                  ["Idade", text(aluno.idade || "-")],
+                  ["Cidade natal", text(aluno.cidade_natal || "-")],
+                  ["Endereço", enderecoFull],
+                ].filter(([, v]) => v && v !== "-").map(([l, v]) => (
+                  <div key={l} className="drawer-detail-row"><span className="drawer-detail-label">{l}</span><span className="drawer-detail-value">{v}</span></div>
+                ))}
+              </div>
 
-          <div className="drawer-section">
-            <div className="drawer-section-title">Academico</div>
-            <DetailRow label="Turma" value={turma} />
-            <DetailRow label="Modulo" value={modulo} />
-            <DetailRow label="Plano VIP" value={text(aluno.vip_tipo_plano)} />
-            <DetailRow label="Aulas VIP" value={vip} />
-            <DetailRow label="Livro / Apostila" value={livro} />
-          </div>
+              <div className="drawer-section">
+                <div className="drawer-section-title">Responsável / Contato</div>
+                {[
+                  ["Nome", responsavel],
+                  ["Telefone / WhatsApp", telefone],
+                  ["E-mail", email],
+                ].filter(([, v]) => v && v !== "-").map(([l, v]) => (
+                  <div key={l} className="drawer-detail-row"><span className="drawer-detail-label">{l}</span><span className="drawer-detail-value">{v}</span></div>
+                ))}
+                {telefone !== "-" && (
+                  <a className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} href={whatsappUrl(telefone, `Olá, ${responsavel !== "-" ? responsavel : nome}! Mensagem do Active Educacional.`)} target="_blank" rel="noreferrer">
+                    WhatsApp responsável
+                  </a>
+                )}
+              </div>
 
-          <div className="drawer-section">
-            <div className="drawer-section-title">Boletos e faturas</div>
-            {faturas.length === 0 ? (
-              <p className="drawer-obs">Nenhuma fatura encontrada para este aluno.</p>
-            ) : (
-              <table className="data-table">
-                <thead><tr><th>Descricao</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Boleto</th></tr></thead>
-                <tbody>
-                  {faturas.map((f, i) => (
-                    <tr key={text(f.id || i)}>
-                      <td>{text(f.descricao || "Mensalidade")}</td>
-                      <td style={{ fontWeight: 700 }}>{fmtDate(f.vencimento || f.data_vencimento)}</td>
-                      <td>{formatBRL(parseValor(f.valor))}</td>
-                      <td><span className={`badge badge-${financBadge(text(f.status || f.situacao || "Pendente"))}`}><span className="badge-dot" />{text(f.status || f.situacao || "Pendente")}</span></td>
-                      <td>{f.id ? <a className="btn btn-secondary btn-sm" href={`/api/financeiro/boleto?id=${text(f.id)}`} target="_blank" rel="noreferrer">Abrir</a> : "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+              <div className="drawer-section">
+                <div className="drawer-section-title">Acadêmico</div>
+                {[
+                  ["Turma", turma],
+                  ["Módulo", modulo],
+                  ["Livro / Apostila", livro],
+                  ["Plano VIP", text(aluno.vip_tipo_plano || "-")],
+                  ["Saldo aulas VIP", vip],
+                ].filter(([, v]) => v && v !== "-").map(([l, v]) => (
+                  <div key={l} className="drawer-detail-row"><span className="drawer-detail-label">{l}</span><span className="drawer-detail-value">{v}</span></div>
+                ))}
+              </div>
 
-          {obs !== "-" && (
-            <div className="drawer-section">
-              <div className="drawer-section-title">Observacoes</div>
-              <p className="drawer-obs">{obs}</p>
-            </div>
+              {text(aluno.observacoes || aluno.obs) && (
+                <div className="drawer-section">
+                  <div className="drawer-section-title">Observações</div>
+                  <p className="drawer-obs">{text(aluno.observacoes || aluno.obs)}</p>
+                </div>
+              )}
+
+              {canManageAccess && (
+                <div className="drawer-section">
+                  <AcessoBox aluno={aluno} />
+                </div>
+              )}
+            </>
           )}
-          {canManageAccess && <AcessoAlunoBox aluno={aluno} />}
+
+          {/* ── TAB: FINANCEIRO ── */}
+          {tab === "financeiro" && (
+            <>
+              {/* Resumo */}
+              <div className="metric-grid metric-grid-3" style={{ marginBottom: 16 }}>
+                <div className="metric-card metric-card-gold" style={{ padding: "12px 14px" }}>
+                  <div className="metric-label" style={{ fontSize: "0.72rem" }}>Em aberto</div>
+                  <div className="metric-value" style={{ fontSize: "1.2rem" }}>{formatBRL(totalAberto)}</div>
+                </div>
+                <div className="metric-card metric-card-green" style={{ padding: "12px 14px" }}>
+                  <div className="metric-label" style={{ fontSize: "0.72rem" }}>Pago</div>
+                  <div className="metric-value" style={{ fontSize: "1.2rem" }}>{formatBRL(totalPago)}</div>
+                </div>
+                <div className="metric-card metric-card-blue" style={{ padding: "12px 14px" }}>
+                  <div className="metric-label" style={{ fontSize: "0.72rem" }}>Faturas</div>
+                  <div className="metric-value" style={{ fontSize: "1.2rem" }}>{faturas.length}</div>
+                </div>
+              </div>
+
+              {/* Ações globais */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                <button className="btn btn-primary btn-sm" onClick={() => { setShowNovoLanc(!showNovoLanc); setMsg(""); }}>
+                  {showNovoLanc ? "Cancelar lançamento" : "+ Novo lançamento"}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowRelatorio(true)}>
+                  Relatório / imprimir
+                </button>
+              </div>
+
+              {/* Form novo lançamento */}
+              {showNovoLanc && (
+                <div className="drawer-section" style={{ background: "var(--surface-raised)", borderRadius: "var(--radius-md)", padding: "16px", marginBottom: 16 }}>
+                  <div className="drawer-section-title">Novo lançamento para {nome}</div>
+                  <div className="form-grid" style={{ marginBottom: 12 }}>
+                    <div className="form-group">
+                      <label className="form-label">Categoria</label>
+                      <select className="form-input" value={lancCategoria} onChange={(e) => setLancCategoria(e.target.value)}>
+                        <option>Mensalidade</option><option>Material</option><option>Matrícula</option>
+                        <option>Taxa</option><option>Rematrícula</option><option>Outros</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Descrição</label>
+                      <input className="form-input" placeholder="Ex: Mensalidade junho 2026" value={lancDescricao} onChange={(e) => setLancDescricao(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Valor (R$)</label>
+                      <input className="form-input" inputMode="decimal" placeholder="450,00" value={lancValor} onChange={(e) => setLancValor(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">1º Vencimento</label>
+                      <input className="form-input" type="date" value={lancVenc} onChange={(e) => setLancVenc(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Parcelas</label>
+                      <select className="form-input" value={lancParcelas} onChange={(e) => setLancParcelas(e.target.value)}>
+                        {[1,2,3,4,5,6,7,8,9,10,11,12].map((n) => <option key={n} value={n}>{n}x</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={criarLancamento} disabled={saving}>{saving ? "Criando..." : "Criar lançamento"}</button>
+                </div>
+              )}
+
+              {/* Faturas */}
+              {faturasOrdenadas.length === 0 ? (
+                <div className="empty-state" style={{ padding: "24px 0" }}>
+                  <div className="empty-title">Nenhuma fatura encontrada</div>
+                  <p className="empty-desc">Use o botão "Novo lançamento" para criar uma cobrança.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {faturasOrdenadas.map((f, i) => {
+                    const pago = isPago(f);
+                    const valor = parseValor(f.valor_parcela ?? f.valor);
+                    const boletoUrl = text(f.boleto_pdf_url) || (f.id ? `/api/financeiro/boleto?id=${text(f.id)}` : "");
+                    const phone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp);
+                    const boletoMsg = `Olá! Segue boleto/fatura do Active Educacional.\n${text(f.descricao || "Mensalidade")}\nVencimento: ${fmtDate(f.vencimento || f.data_vencimento)}\nValor: ${formatBRL(valor)}`;
+                    return (
+                      <div key={text(f.id || i)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: pago ? "rgba(5,150,105,0.04)" : "var(--surface-raised)", borderRadius: "var(--radius-md)", border: `1px solid ${pago ? "rgba(5,150,105,0.15)" : "var(--border)"}` }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: 2 }}>{text(f.descricao || "Mensalidade")}</div>
+                          <div style={{ display: "flex", gap: 10, fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                            <span>Venc.: <strong>{fmtDate(f.vencimento || f.data_vencimento)}</strong></span>
+                            <span style={{ fontWeight: 700, color: pago ? "var(--green-700)" : "var(--navy-900)" }}>{formatBRL(valor)}</span>
+                          </div>
+                        </div>
+                        <span className={`badge badge-${pago ? "success" : financBadge(text(f.status || f.situacao || "Pendente"))}`} style={{ flexShrink: 0 }}>
+                          <span className="badge-dot" />{text(f.status || f.situacao || "Pendente")}
+                        </span>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          {!pago && (
+                            <button className="btn btn-primary btn-sm" style={{ fontSize: "0.72rem" }} onClick={() => { setBaixaFatura(f); setBaixaValor(text(f.valor_parcela ?? f.valor)); }}>
+                              Baixar
+                            </button>
+                          )}
+                          {pago && (
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--blue-600)" }} onClick={() => setReciboFatura(f)}>
+                              Recibo
+                            </button>
+                          )}
+                          {boletoUrl && (
+                            <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem" }} href={boletoUrl} target="_blank" rel="noreferrer">Boleto</a>
+                          )}
+                          {phone && (
+                            <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--green-700)" }} href={whatsappUrl(phone, boletoMsg)} target="_blank" rel="noreferrer">WhatsApp</a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Modal baixa */}
+              {baixaFatura && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setBaixaFatura(null)}>
+                  <div className="modal-box" style={{ maxWidth: 500 }}>
+                    <div className="modal-header">
+                      <div><div className="modal-title">Registrar pagamento</div><div className="modal-subtitle">{text(baixaFatura.descricao || "Mensalidade")} — {nome}</div></div>
+                      <button className="modal-close" onClick={() => setBaixaFatura(null)}><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
+                    </div>
+                    <div className="modal-body">
+                      <div className="form-grid">
+                        <div className="form-group"><label className="form-label">Valor pago (R$)</label><input className="form-input" inputMode="decimal" value={baixaValor} onChange={(e) => setBaixaValor(e.target.value)} /></div>
+                        <div className="form-group"><label className="form-label">Data do pagamento</label><input className="form-input" type="date" value={baixaData} onChange={(e) => setBaixaData(e.target.value)} /></div>
+                        <div className="form-group form-group-span2">
+                          <label className="form-label">Forma de pagamento</label>
+                          <select className="form-input" value={baixaForma} onChange={(e) => setBaixaForma(e.target.value)}>
+                            <option>PIX</option><option>Boleto</option><option>Dinheiro</option><option>Cartão</option><option>TED</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-secondary" onClick={() => setBaixaFatura(null)}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={darBaixa} disabled={saving}>{saving ? "Salvando..." : "Confirmar baixa"}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── TAB: PEDAGÓGICO ── */}
+          {tab === "pedagogico" && (
+            <>
+              <div className="drawer-section">
+                <div className="drawer-section-title">Situação acadêmica</div>
+                {[
+                  ["Turma", turma],
+                  ["Módulo", modulo],
+                  ["Livro atual", livro],
+                  ["Última lição", text(aluno.ultima_licao || aluno.licao_atual || "-")],
+                  ["Plano VIP", vip || text(aluno.vip_tipo_plano || "-")],
+                ].filter(([, v]) => v && v !== "-").map(([l, v]) => (
+                  <div key={l} className="drawer-detail-row"><span className="drawer-detail-label">{l}</span><span className="drawer-detail-value">{v}</span></div>
+                ))}
+              </div>
+
+              {freqAluno.length > 0 ? (
+                <div className="drawer-section">
+                  <div className="drawer-section-title">Frequência</div>
+                  <div className="metric-grid metric-grid-3" style={{ marginBottom: 14 }}>
+                    <div className="metric-card metric-card-green" style={{ padding: "10px 12px" }}>
+                      <div className="metric-label" style={{ fontSize: "0.72rem" }}>Presenças</div>
+                      <div className="metric-value" style={{ fontSize: "1.2rem" }}>{totalPresencas}</div>
+                    </div>
+                    <div className="metric-card metric-card-red" style={{ padding: "10px 12px" }}>
+                      <div className="metric-label" style={{ fontSize: "0.72rem" }}>Faltas</div>
+                      <div className="metric-value" style={{ fontSize: "1.2rem" }}>{totalFaltas}</div>
+                    </div>
+                    <div className="metric-card metric-card-blue" style={{ padding: "10px 12px" }}>
+                      <div className="metric-label" style={{ fontSize: "0.72rem" }}>Frequência</div>
+                      <div className="metric-value" style={{ fontSize: "1.2rem" }}>{freqAluno.length > 0 ? `${Math.round((totalPresencas / freqAluno.length) * 100)}%` : "-"}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {freqAluno.slice(-10).reverse().map((fr, i) => (
+                      <div key={text(fr.id || i)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: "var(--surface-raised)", borderRadius: "var(--radius-md)", fontSize: "0.82rem" }}>
+                        <span className={`badge badge-${fr.presente ? "success" : "danger"}`} style={{ flexShrink: 0 }}><span className="badge-dot" />{fr.presente ? "Presente" : "Falta"}</span>
+                        <span style={{ flex: 1 }}>{text(fr.materia || "Aula")} {fr.licao_inicio ? `· ${text(fr.licao_inicio)}` : ""}</span>
+                        <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>{fmtDate(fr.data)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="drawer-section">
+                  <div className="drawer-section-title">Frequência</div>
+                  <p className="drawer-obs">Nenhum registro de frequência encontrado para este aluno. Os registros são criados ao fechar aulas na aba Professores.</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
+        {/* Footer */}
         <div className="drawer-footer">
           <EditarAlunoBtn aluno={aluno} />
         </div>
       </div>
+
+      {reciboFatura && <ReciboInline fatura={reciboFatura} aluno={aluno} onClose={() => setReciboFatura(null)} />}
+      {showRelatorio && <RelatorioAlunoModal aluno={aluno} faturas={faturasOrdenadas} onClose={() => setShowRelatorio(false)} />}
     </>
   );
 }
 
-export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { alunos: Aluno[]; recebimentos: Recebimento[]; canManageAccess: boolean }) {
+/* ── Tabela principal ── */
+export function AlunosSearchTable({
+  alunos, recebimentos, frequencias = [], canManageAccess,
+}: {
+  alunos: Aluno[];
+  recebimentos: Recebimento[];
+  frequencias?: Frequencia[];
+  canManageAccess: boolean;
+}) {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroFinanceiro, setFiltroFinanceiro] = useState("Todos");
@@ -332,20 +707,17 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
       const keys = [
         `nome:${text(r.aluno || r.nome).toLowerCase()}`,
         `login:${text(r.aluno_login).toLowerCase()}`,
-      ].filter((key) => !key.endsWith(":"));
+      ].filter((k) => !k.endsWith(":"));
       for (const key of keys) {
         const list = map.get(key) || [];
         list.push(r);
         map.set(key, list);
       }
     }
-    for (const [key, list] of map) {
-      map.set(key, [...list].sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento))));
-    }
     return map;
   }, [recebimentos]);
 
-  function getFaturas(aluno: Aluno) {
+  function getFaturas(aluno: Aluno): Recebimento[] {
     const found = new Map<string, Recebimento>();
     for (const key of faturaKeys(aluno)) {
       for (const f of faturasPorAluno.get(key) || []) {
@@ -360,42 +732,48 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
     return ["Todas", ...Array.from(set).sort()];
   }, [alunos]);
 
-  const filtrados = useMemo(() => {
-    return alunos.filter((a) => {
-      const nome = text(a.nome || a.name).toLowerCase();
-      const turma = text(a.turma || a.classe).toLowerCase();
-      const resp = text(a.responsavel_nome || a.responsavel).toLowerCase();
-      const modulo = text(a.modulo || a.modalidade).toLowerCase();
-      const status = text(a.status || a.situacao || "Ativo");
-      const faturas = getFaturas(a);
-      const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
-      const financeiro = text(a.status_financeiro || a.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
-
-      const q = busca.toLowerCase();
-      const matchBusca = !busca || nome.includes(q) || turma.includes(q) || resp.includes(q) || modulo.includes(q);
-      const matchStatus = filtroStatus === "Todos" || status.toLowerCase().includes(filtroStatus.toLowerCase());
-      const matchFinanceiro = filtroFinanceiro === "Todos" ||
+  const filtrados = useMemo(() => alunos.filter((a) => {
+    const nome = text(a.nome || a.name).toLowerCase();
+    const turma = text(a.turma || a.classe).toLowerCase();
+    const resp = text(a.responsavel_nome || a.responsavel).toLowerCase();
+    const mod = text(a.modulo || a.modalidade).toLowerCase();
+    const status = text(a.status || a.situacao || "Ativo");
+    const faturas = getFaturas(a);
+    const totalAberto = faturas.filter((f) => !isPago(f)).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
+    const financeiro = text(a.status_financeiro || a.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
+    const q = busca.toLowerCase();
+    return (
+      (!busca || nome.includes(q) || turma.includes(q) || resp.includes(q) || mod.includes(q)) &&
+      (filtroStatus === "Todos" || status.toLowerCase().includes(filtroStatus.toLowerCase())) &&
+      (filtroFinanceiro === "Todos" ||
         (filtroFinanceiro === "Regular" && financBadge(financeiro) === "success") ||
         (filtroFinanceiro === "Inadimplente" && financBadge(financeiro) === "danger") ||
-        (filtroFinanceiro === "Pendente" && financBadge(financeiro) === "warning");
-      const matchTurma = filtroTurma === "Todas" || text(a.turma || a.classe) === filtroTurma;
-
-      return matchBusca && matchStatus && matchFinanceiro && matchTurma;
-    });
-  }, [alunos, busca, filtroStatus, filtroFinanceiro, filtroTurma, faturasPorAluno]);
+        (filtroFinanceiro === "Pendente" && financBadge(financeiro) === "warning")) &&
+      (filtroTurma === "Todas" || text(a.turma || a.classe) === filtroTurma)
+    );
+  }), [alunos, busca, filtroStatus, filtroFinanceiro, filtroTurma, faturasPorAluno]);
 
   return (
     <>
       {alunoSelecionado && (
-        <AlunoDrawer aluno={alunoSelecionado} faturas={getFaturas(alunoSelecionado)} canManageAccess={canManageAccess} onClose={() => setAlunoSelecionado(null)} />
+        <AlunoDrawer
+          aluno={alunoSelecionado}
+          faturas={getFaturas(alunoSelecionado)}
+          frequencias={frequencias}
+          canManageAccess={canManageAccess}
+          onClose={() => setAlunoSelecionado(null)}
+        />
       )}
 
+      {/* Filtros */}
       <div className="card">
         <div className="toolbar">
-          <div className="toolbar-left">
-            <div className="search-bar">
-              <span className="search-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg></span>
-              <input className="search-input" placeholder="Buscar por nome, turma, modulo ou responsavel..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <div className="toolbar-left" style={{ flex: 1 }}>
+            <div className="search-bar" style={{ flex: 1, maxWidth: 420 }}>
+              <span className="search-icon">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg>
+              </span>
+              <input className="search-input" placeholder="Buscar por nome, turma, módulo ou responsável..." value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
           </div>
           <div className="toolbar-right">
@@ -417,15 +795,18 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
         </div>
       </div>
 
+      {/* Tabela */}
       <div className="card">
         <div className="card-header">
           <div>
-            <div className="section-eyebrow">Lista</div>
-            <h3 className="section-title">Todos os alunos</h3>
-            <p className="section-subtitle">{filtrados.length === alunos.length ? `${alunos.length} registros` : `${filtrados.length} de ${alunos.length} (filtro ativo)`}</p>
+            <div className="section-eyebrow">Lista de alunos</div>
+            <h3 className="section-title">
+              {filtrados.length === alunos.length ? `${alunos.length} alunos` : `${filtrados.length} de ${alunos.length} alunos`}
+            </h3>
+            <p className="section-subtitle">Clique em um aluno para ver ficha completa, financeiro e pedagógico</p>
           </div>
         </div>
-        <div className="card-body" style={{ paddingTop: "12px" }}>
+        <div className="card-body" style={{ paddingTop: 12 }}>
           {filtrados.length === 0 ? (
             <div className="empty-state">
               <div className="empty-title">Nenhum aluno encontrado</div>
@@ -435,48 +816,52 @@ export function AlunosSearchTable({ alunos, recebimentos, canManageAccess }: { a
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Aluno</th>
-                  <th>Matricula</th>
+                  <th style={{ minWidth: 200 }}>Aluno</th>
                   <th>Turma</th>
-                  <th>Modulo</th>
-                  <th>VIP</th>
-                  <th>Livro</th>
-                  <th>Status</th>
-                  <th>Financeiro</th>
-                  <th>Acoes</th>
+                  <th>Módulo</th>
+                  <th>Situação</th>
+                  <th style={{ textAlign: "right" }}>Em aberto</th>
+                  <th>Editar</th>
                 </tr>
               </thead>
               <tbody>
                 {filtrados.map((a, i) => {
                   const nome = text(a.nome || a.name || `Aluno ${i + 1}`);
-                  const turma = text(a.turma || a.classe || "-");
-                  const modulo = text(a.modulo || a.modalidade || "-");
-                  const vip = vipLabel(a);
-                  const livro = text(a.livro || a.book || "-");
+                  const turma = text(a.turma || a.classe || "—");
+                  const modulo = text(a.modulo || a.modalidade || "—");
                   const status = text(a.status || a.situacao || "Ativo");
+                  const resp = text(a.responsavel_nome || a.responsavel);
                   const faturas = getFaturas(a);
-                  const totalAberto = faturas.filter((f) => financBadge(text(f.status || f.situacao || "Pendente")) !== "success").reduce((s, f) => s + parseValor(f.valor), 0);
+                  const totalAberto = faturas.filter((f) => !isPago(f)).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
                   const financeiro = text(a.status_financeiro || a.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
                   const hue = (nome.charCodeAt(0) * 137) % 360;
+                  const initials = nome.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+
                   return (
                     <tr key={text(a.id || i)} className="table-row-clickable" onClick={() => setAlunoSelecionado(a)}>
                       <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                          <div className="avatar avatar-sm" style={{ background: `hsl(${hue},50%,42%)` }}>{nome.slice(0, 2).toUpperCase()}</div>
-                          <div className="table-name-cell">
-                            <span className="table-name-primary">{nome}</span>
-                            {text(a.responsavel_nome || a.responsavel) && <span className="table-name-secondary">{text(a.responsavel_nome || a.responsavel)}</span>}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div className="avatar avatar-sm" style={{ background: `hsl(${hue},50%,42%)`, flexShrink: 0 }}>{initials}</div>
+                          <div>
+                            <div className="table-name-primary">{nome}</div>
+                            {resp && <div className="table-name-secondary">{resp}</div>}
                           </div>
                         </div>
                       </td>
-                      <td>{text(a.matricula || "-")}</td>
-                      <td>{turma}</td>
-                      <td>{modulo}</td>
-                      <td>{vip || "-"}</td>
-                      <td>{livro}</td>
-                      <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><span className={`badge badge-${financBadge(financeiro)}`}><span className="badge-dot" />{financeiro}</span></td>
-                      <td onClick={(e) => e.stopPropagation()}><EditarAlunoBtn aluno={a} /></td>
+                      <td style={{ fontWeight: 600 }}>{turma}</td>
+                      <td style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>{modulo}</td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span>
+                          <span className={`badge badge-${financBadge(financeiro)}`}><span className="badge-dot" />{financeiro}</span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: totalAberto > 0 ? "var(--gold-700)" : "var(--green-700)", fontVariantNumeric: "tabular-nums" }}>
+                        {totalAberto > 0 ? formatBRL(totalAberto) : "—"}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <EditarAlunoBtn aluno={a} />
+                      </td>
                     </tr>
                   );
                 })}
