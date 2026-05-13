@@ -1,15 +1,11 @@
 import { AppShell } from "@/components/app-shell";
+import { AutoWhatsAppButton } from "@/components/auto-whatsapp-button";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 function text(value: unknown) {
   return String(value || "").trim();
-}
-
-function phoneLink(value: unknown, message: string) {
-  const digits = text(value).replace(/\D/g, "");
-  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
 }
 
 function status(value: unknown) {
@@ -83,7 +79,7 @@ export default async function ComercialPage() {
                       <td>{interesse}</td>
                       <td><span className={`badge badge-${status(st)}`}><span className="badge-dot" />{st}</span></td>
                       <td>{text(lead.vendedor || lead.responsavel || lead.atendente) || "-"}</td>
-                      <td>{phoneLink(telefone, msg) ? <a className="btn btn-secondary btn-sm" href={phoneLink(telefone, msg)} target="_blank" rel="noreferrer">WhatsApp</a> : <span className="muted">-</span>}</td>
+                      <td>{telefone ? <AutoWhatsAppButton phone={telefone} message={msg} /> : <span className="muted">-</span>}</td>
                     </tr>
                   );
                 })}

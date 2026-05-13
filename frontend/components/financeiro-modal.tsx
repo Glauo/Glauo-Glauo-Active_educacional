@@ -110,8 +110,7 @@ function studentPhone(aluno?: AlunoOption) {
 }
 
 function whatsappUrl(phone: unknown, message: string) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  return "";
 }
 
 function mailtoUrl(email: string, subject: string, body: string) {
@@ -548,7 +547,6 @@ function LancamentoModal({
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {savedLinks.map((link, index) => (
                   <span key={`${link.label}-${index}`} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {link.whatsapp && <a className="btn btn-secondary btn-sm" href={link.whatsapp} target="_blank" rel="noreferrer">WhatsApp {link.label}</a>}
                     {link.email && <a className="btn btn-secondary btn-sm" href={link.email}>E-mail {link.label}</a>}
                   </span>
                 ))}
@@ -744,7 +742,6 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
                 <div className="alert alert-success" style={{ marginTop: 12 }}>
                   <div style={{ fontWeight: 800, marginBottom: 8 }}>Boleto salvo. Envie agora:</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {links.whatsapp && <a className="btn btn-secondary btn-sm" href={links.whatsapp} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>}
                     {links.email && <a className="btn btn-secondary btn-sm" href={links.email}>Enviar por e-mail</a>}
                   </div>
                 </div>

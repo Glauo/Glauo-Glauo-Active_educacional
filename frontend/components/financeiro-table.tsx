@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BaixaBtn, EditarLancamentoBtn, EstornoBtn } from "./financeiro-modal";
 import { FinanceiroFornecedores } from "./financeiro-fornecedores";
 import { FinanceiroProfessorFechamento } from "./financeiro-professor-fechamento";
+import { AutoWhatsAppButton } from "./auto-whatsapp-button";
 
 type Lancamento = {
   id?: string;
@@ -124,11 +125,10 @@ function professorLabel(d: Lancamento) {
 }
 
 function whatsappUrl(phone: unknown, message: string) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  return `https://wa.me/${digits || ""}?text=${encodeURIComponent(message)}`;
+  return "";
 }
 
-function AutoWhatsAppButton({ phone, message, label = "WhatsApp" }: { phone: unknown; message: string; label?: string }) {
+function LegacyAutoWhatsAppButton({ phone, message, label = "WhatsApp" }: { phone: unknown; message: string; label?: string }) {
   const [sending, setSending] = useState(false);
   const [fallback, setFallback] = useState("");
   const telefone = String(phone || "").trim();
@@ -161,7 +161,6 @@ function AutoWhatsAppButton({ phone, message, label = "WhatsApp" }: { phone: unk
       <button className="btn btn-secondary btn-sm" type="button" onClick={send} disabled={!telefone || sending}>
         {sending ? "Enviando..." : label}
       </button>
-      {fallback && <a className="btn btn-secondary btn-sm" href={fallback} target="_blank" rel="noreferrer">Manual</a>}
     </>
   );
 }

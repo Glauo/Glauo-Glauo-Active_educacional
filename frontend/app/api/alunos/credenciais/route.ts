@@ -22,9 +22,7 @@ function phoneFromStudent(aluno: Aluno) {
 }
 
 function whatsappUrl(phone: unknown, message: string) {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
-  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
+  return "";
 }
 
 function credentialMessage(aluno: Aluno, login: string, senha: string) {

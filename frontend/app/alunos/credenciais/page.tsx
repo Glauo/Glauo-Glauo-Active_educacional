@@ -115,7 +115,7 @@ export default function CredenciaisPage() {
         ? `Acesso configurado e enviado automaticamente por WhatsApp para login: ${savedLogin}`
         : `Acesso configurado. WhatsApp nao enviado: ${data.whatsapp_status || "verifique a WAPI"}.`,
     });
-    setWhatsappLink(data.whatsapp_enviado ? "" : data.whatsapp_url || "");
+    setWhatsappLink("");
     setAlunos((prev) =>
       prev.map((a) =>
         a.id === editando.id ? { ...a, login: savedLogin, temAcesso: true } : a
@@ -383,11 +383,6 @@ export default function CredenciaisPage() {
                   {salvando ? "Salvando…" : "Salvar acesso"}
                 </button>
               </div>
-              {whatsappLink && (
-                <a className="btn btn-secondary" href={whatsappLink} target="_blank" rel="noreferrer" style={{ justifyContent: "center" }}>
-                  Abrir WhatsApp manual
-                </a>
-              )}
             </div>
           </div>
         </div>

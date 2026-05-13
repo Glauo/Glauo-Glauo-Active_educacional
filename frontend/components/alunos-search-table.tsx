@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { vipPackageStats } from "@/lib/course-modules";
 import { EditarAlunoBtn } from "./aluno-modal";
+import { AutoWhatsAppButton } from "./auto-whatsapp-button";
 
 type Aluno = {
   id?: string; nome?: string; name?: string; matricula?: string;
@@ -88,12 +89,10 @@ function financBadge(s: string) {
 }
 
 function whatsappUrl(phone: unknown, message: string) {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
-  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
+  return "";
 }
 
-function AutoWhatsAppButton({ phone, message, label = "WhatsApp", className = "btn btn-secondary btn-sm", style }: { phone: unknown; message: string; label?: string; className?: string; style?: CSSProperties }) {
+function LegacyAutoWhatsAppButton({ phone, message, label = "WhatsApp", className = "btn btn-secondary btn-sm", style }: { phone: unknown; message: string; label?: string; className?: string; style?: CSSProperties }) {
   const [sending, setSending] = useState(false);
   const [fallback, setFallback] = useState("");
   const telefone = text(phone);
@@ -126,7 +125,6 @@ function AutoWhatsAppButton({ phone, message, label = "WhatsApp", className = "b
       <button className={className} style={style} type="button" onClick={send} disabled={!telefone || sending}>
         {sending ? "Enviando..." : label}
       </button>
-      {fallback && <a className={className} style={style} href={fallback} target="_blank" rel="noreferrer">Manual</a>}
     </>
   );
 }
@@ -283,7 +281,6 @@ function AcessoBox({ aluno }: { aluno: Aluno }) {
   const [senha, setSenha] = useState(text(aluno.senha));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [whatsLink, setWhatsLink] = useState("");
   const alunoRef = text(aluno.id || aluno.nome || aluno.name || aluno.login);
 
   async function salvar() {
@@ -294,10 +291,9 @@ function AcessoBox({ aluno }: { aluno: Aluno }) {
     const d = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) { setFeedback(d.error || "Erro ao alterar acesso."); return; }
-    setFeedback("Acesso atualizado com sucesso.");
+    setFeedback(d.whatsapp_enviado ? "Acesso atualizado e enviado automaticamente por WhatsApp." : `Acesso atualizado. WhatsApp nao enviado: ${d.whatsapp_status || "verifique a WAPI"}.`);
     const phone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp || aluno.celular);
     const msg = `Olá, ${text(aluno.nome || aluno.name)}! Seu acesso ao portal Active Educacional foi atualizado.\n\nLogin: ${login}\nSenha: ${senha}\n\nGuarde esses dados com segurança.`;
-    setWhatsLink(d.whatsapp_url || whatsappUrl(phone, msg));
   }
 
   return (
@@ -310,7 +306,6 @@ function AcessoBox({ aluno }: { aluno: Aluno }) {
       {feedback && <div className={feedback.includes("sucesso") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>{feedback}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn btn-primary btn-sm" onClick={salvar} disabled={saving || !alunoRef}>{saving ? "Salvando..." : "Alterar acesso"}</button>
-        {whatsLink && <a className="btn btn-secondary btn-sm" href={whatsLink} target="_blank" rel="noreferrer">Enviar via WhatsApp</a>}
       </div>
     </div>
   );
