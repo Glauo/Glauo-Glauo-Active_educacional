@@ -199,9 +199,7 @@ function credentialMessage(form: Form) {
 }
 
 function whatsappUrl(phone: string, message: string) {
-  let phoneDigits = digits(phone);
-  if (phoneDigits.length === 10 || phoneDigits.length === 11) phoneDigits = `55${phoneDigits}`;
-  return phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}` : "";
+  return "";
 }
 
 function mailtoUrl(email: string, form: Form) {
@@ -375,7 +373,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
     }
     const savedLogin = String(data.login || form.login).trim();
     update("login", savedLogin);
-    setCredWhatsappLink(String(data.whatsapp_url || whatsappUrl(form.responsavel_telefone, credentialMessage({ ...form, login: savedLogin }))));
+    setCredWhatsappLink("");
     setCredFeedback(data.whatsapp_enviado ? "Login e senha salvos e enviados automaticamente por WhatsApp." : `Login e senha salvos. WhatsApp nao enviado: ${String(data.whatsapp_status || "verifique a WAPI")}.`);
   }
 
@@ -586,7 +584,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                       const result = await sendWhatsAppAutomatico(form.responsavel_telefone, credentialMessage(form));
                       setSavingCred(false);
                       setCredFeedback(result.ok ? "Login e senha enviados automaticamente por WhatsApp." : `WhatsApp nao enviado: ${result.status || result.error || "verifique a WAPI"}.`);
-                      if (!result.ok) setCredWhatsappLink(whatsappUrl(form.responsavel_telefone, credentialMessage(form)));
+                      setCredWhatsappLink("");
                     }}
                     disabled={!form.login || !form.senha || !form.responsavel_telefone || savingCred}
                     >
@@ -600,7 +598,6 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                     </a>
                   </div>
                   <div className="form-help">{credFeedback || "Ao salvar cadastro com WhatsApp preenchido, o sistema envia automaticamente pela WAPI."}</div>
-                  {credWhatsappLink && <a className="btn btn-secondary btn-sm" href={credWhatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp manual</a>}
                 </div>
             </>
           </div>
