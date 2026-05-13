@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 
 const navSections = [
   {
@@ -193,8 +193,18 @@ type AppShellProps = {
   userUnit?: string;
 };
 
-function canSeeNavItem(userRole: string, href: string) {
+function routeBlocked(href: string, blockedRoutes: string[]) {
+  const target = href === "/" ? "/" : href.replace(/\/+$/, "");
+  return blockedRoutes.some((blocked) => {
+    const item = blocked === "/" ? "/" : blocked.replace(/\/+$/, "");
+    if (item === "/") return target === "/";
+    return target === item || target.startsWith(`${item}/`);
+  });
+}
+
+function canSeeNavItem(userRole: string, href: string, blockedRoutes: string[] = []) {
   const role = userRole.toLowerCase();
+  if (routeBlocked(href, blockedRoutes)) return false;
   if (role.includes("admin") || role.includes("coord") || role.includes("dire")) return true;
   if (role.includes("comercial")) {
     return ["/", "/alunos", "/financeiro", "/agenda", "/condojob", "/comercial", "/atendimento"].includes(href);
@@ -216,9 +226,28 @@ export function AppShell({
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [blockedRoutes, setBlockedRoutes] = useState<string[]>([]);
 
   const initials = userName.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
   const canManageAccess = userRole.toLowerCase().includes("admin") || userRole.toLowerCase().includes("coord");
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/me/access")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!alive || !data) return;
+        const blocked = Array.isArray(data.blockedRoutes) ? data.blockedRoutes : [];
+        setBlockedRoutes(blocked);
+        if (routeBlocked(pathname, blocked)) {
+          const modules = Array.isArray(data.modules) ? data.modules : [];
+          const firstAllowed = modules.find((item: { allowed?: boolean; path?: string }) => item.allowed && item.path)?.path;
+          router.replace(firstAllowed || "/login");
+        }
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [pathname, router]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -260,7 +289,7 @@ export function AppShell({
           {navSections.map((section) => (
             <div key={section.section}>
               <div className="nav-section-label">{section.section}</div>
-              {section.items.filter((item) => canSeeNavItem(userRole, item.href) && (item.href !== "/usuarios/credenciais" || canManageAccess)).map((item) => {
+              {section.items.filter((item) => canSeeNavItem(userRole, item.href, blockedRoutes) && (item.href !== "/usuarios/credenciais" || canManageAccess)).map((item) => {
                 const isActive =
                   item.href === "/"
                     ? pathname === "/"

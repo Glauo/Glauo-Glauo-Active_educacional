@@ -87,14 +87,18 @@ export async function POST(req: NextRequest) {
     if (!canUseClass(session, turma)) return NextResponse.json({ error: "Sem permissão para esta turma." }, { status: 403 });
 
     const turmaId = classId(turma);
-    // Admin may pass a professor override; otherwise use turma professor or session user
-    const professor = text(body.professor || turma.professor || session.pessoa);
+    const manager = isAdminOrCoordinator(session);
+    // Admin/Coordenador pode escolher professor; professor comum sempre registra como ele mesmo/da turma.
+    const professor = manager
+      ? text(body.professor || turma.professor || session.pessoa)
+      : text(turma.professor || session.pessoa || session.usuario);
     const teacher: Row = professores.find((p) => sameName(teacherName(p), professor)) || {};
     const livro = text(turma.livro || turma.book || body.livro);
     const modulo = classModule(turma);
     const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
-    // Manual date (admin may set a past date); defaults to today
-    const dataAulaISO = text(body.data_aula) || new Date().toISOString().slice(0, 10);
+    // Lancamento manual com data retroativa e troca de professor e exclusivo de Admin/Coordenador.
+    const today = new Date().toISOString().slice(0, 10);
+    const dataAulaISO = manager ? (text(body.data_aula) || today) : today;
 
     if (action === "open") {
       const aberta = aulas.find((a) => a.status === "aberta" && text(a.turma_id) === turmaId);
@@ -142,8 +146,9 @@ export async function POST(req: NextRequest) {
 
       const modulo = classModule(turma);
       const valorPorModulo = teacherClassValueByModule(modulo);
-      const valorAula = valorPorModulo || moneyValue(body.valor_aula || turma.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
+      const valorAula = valorPorModulo || moneyValue((manager ? body.valor_aula : undefined) || turma.valor_aula || teacher.valor_aula || teacher.valor_hora || teacher.valor);
       const base = aulas[idx];
+      const professorDaAula = manager ? professor : text(base.professor || turma.professor || session.pessoa || session.usuario);
       const vipConsumidos: Row[] = [];
       const fechada = {
         ...base,
@@ -177,7 +182,7 @@ export async function POST(req: NextRequest) {
         aula_id: aulaFechadaId,
         turma_id: turmaId,
         turma: className(turma),
-        professor,
+        professor: professorDaAula,
         aluno_id: text(p.aluno_id),
         aluno: text(p.aluno),
         presente: Boolean(p.presente),
@@ -213,9 +218,9 @@ export async function POST(req: NextRequest) {
         aula_id: aulaFechadaId,
         tipo_origem: "aula_professor",
         categoria: "Professor",
-        aluno: professor,
-        nome: professor,
-        professor,
+        aluno: professorDaAula,
+        nome: professorDaAula,
+        professor: professorDaAula,
         professor_telefone: text(teacher.telefone || teacher.whatsapp || teacher.celular),
         professor_email: text(teacher.email),
         turma: className(turma),

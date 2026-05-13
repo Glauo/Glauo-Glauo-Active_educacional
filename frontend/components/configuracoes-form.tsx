@@ -274,6 +274,24 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
           </div>
         </div>
 
+        {/* Controle de acessos */}
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-eyebrow">Seguranca</div>
+              <h3 className="section-title">Controle de acessos</h3>
+            </div>
+            <a className="btn btn-primary btn-sm" href="/usuarios/credenciais#permissoes">
+              Controlar acessos
+            </a>
+          </div>
+          <div className="card-body">
+            <p className="section-subtitle" style={{ margin: 0 }}>
+              Defina por usuario quais modulos aparecem no menu e quais acessos ficam bloqueados no painel.
+            </p>
+          </div>
+        </div>
+
         {/* Boleto */}
         <div className="card">
           <div className="card-header">
