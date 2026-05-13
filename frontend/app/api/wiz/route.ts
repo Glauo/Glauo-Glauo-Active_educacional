@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { teacherClassValueByModule } from "@/lib/course-modules";
@@ -108,6 +110,42 @@ function parseMoney(value: unknown) {
 
 function money(value: number) {
   return value.toFixed(2).replace(".", ",");
+}
+
+function safeFileName(value: string) {
+  return text(value || "material.pdf")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase() || "material.pdf";
+}
+
+function libraryKey(tipo: unknown) {
+  const t = lower(tipo || "livros");
+  if (t.includes("video")) return "videos.json";
+  if (t.includes("material") || t.includes("apostila") || t.includes("apoio")) return "materials.json";
+  return "books.json";
+}
+
+function uploadFolderForKey(key: string) {
+  return key === "materials.json" ? "materiais" : key === "videos.json" ? "videos" : "livros";
+}
+
+async function savePdfBase64(data: Row, key: string, id: string) {
+  const raw = text(data.pdf_base64 || data.arquivo_base64 || data.file_base64);
+  if (!raw) return {};
+  const clean = raw.includes(",") ? raw.split(",").pop() || "" : raw;
+  const buffer = Buffer.from(clean, "base64");
+  if (!buffer.length) throw new Error("PDF em base64 vazio.");
+  const folder = uploadFolderForKey(key);
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", folder);
+  await mkdir(uploadsDir, { recursive: true });
+  const original = safeFileName(text(data.pdf_nome || data.nome_arquivo || data.filename || `${id}.pdf`));
+  const filename = `${Date.now()}-${original.endsWith(".pdf") ? original : `${original}.pdf`}`;
+  await writeFile(path.join(uploadsDir, filename), buffer);
+  return { url: `/uploads/${folder}/${filename}`, pdf_nome: original, pdf_mime: "application/pdf" };
 }
 
 async function audit(action: string, payload: Row, result: Row, actor: string, perfil: string) {
@@ -379,6 +417,55 @@ async function resetStudentAccess(data: Row, actor: string, session: WizSession)
     whatsapp_status: whatsapp.status,
     email_status: emailResult.status,
   };
+}
+
+async function addLibraryMaterial(data: Row, actor: string) {
+  const titulo = text(data.titulo || data.title || data.nome || data.material);
+  if (!titulo) return { ok: false, message: "Titulo do material e obrigatorio para cadastrar na biblioteca." };
+
+  const key = libraryKey(data.tipo || data.categoria || data.secao);
+  if (key === "videos.json" && !text(data.url)) {
+    return { ok: false, message: "Para video, informe a URL do video." };
+  }
+
+  const id = text(data.id) || `wiz_bib_${Date.now()}`;
+  let pdfInfo: Row = {};
+  try {
+    pdfInfo = await savePdfBase64(data, key, id);
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : "Erro ao salvar PDF." };
+  }
+
+  const item = {
+    id,
+    titulo,
+    title: titulo,
+    autor: text(data.autor || data.editora || "Professor Wiz"),
+    nivel: text(data.nivel || data.livro || data.book || "Geral"),
+    turma: text(data.turma || "Todas") || "Todas",
+    tipo: key === "materials.json" ? text(data.tipo || "Apostila") : text(data.tipo || "Livro"),
+    categoria: text(data.categoria || data.nivel || data.livro || "Geral"),
+    descricao: text(data.descricao || data.observacao || "Material cadastrado pelo Professor Wiz."),
+    url: text(pdfInfo.url || data.url || data.link),
+    pdf_nome: text(pdfInfo.pdf_nome || data.pdf_nome || data.nome_arquivo),
+    origem: "Professor Wiz",
+    created_by: actor,
+    created_at: new Date().toISOString(),
+  };
+
+  if (!item.url && key !== "videos.json") {
+    return { ok: false, message: "Informe um link do PDF ou envie pdf_base64 para cadastrar o arquivo na biblioteca." };
+  }
+
+  const items = await dbList<Row>(key);
+  const existingIdx = items.findIndex((row) => normalize(row.titulo || row.title) === normalize(titulo) && normalize(row.turma || "Todas") === normalize(item.turma));
+  const next = existingIdx >= 0
+    ? items.map((row, index) => index === existingIdx ? { ...row, ...item, id: text(row.id) || id, updated_at: new Date().toISOString() } : row)
+    : [...items, item];
+  await dbSet(key, next);
+
+  const label = key === "materials.json" ? "material" : key === "videos.json" ? "video" : "livro";
+  return { ok: true, message: `${label} cadastrado na biblioteca: ${titulo}`, item };
 }
 
 async function resetTeacherAccess(data: Row, actor: string, session: WizSession) {
@@ -675,6 +762,7 @@ function suggestFromPrompt(prompt: string) {
   if (norm.includes("comunic") || norm.includes("aviso") || norm.includes("mensagem")) return "create_wall_post";
   if (norm.includes("tarefa") || norm.includes("licao") || norm.includes("lição") || norm.includes("homework")) return "create_homework";
   if (norm.includes("trabalho") || norm.includes("desafio")) return "create_work";
+  if ((norm.includes("biblioteca") || norm.includes("material") || norm.includes("pdf") || norm.includes("livro") || norm.includes("apostila")) && (norm.includes("adicionar") || norm.includes("cadastrar") || norm.includes("incluir") || norm.includes("publicar"))) return "add_library_material";
   if (norm.includes("aluno") && (norm.includes("cadastr") || norm.includes("criar"))) return "create_student";
   if (norm.includes("receb") || norm.includes("boleto") || norm.includes("mensalidade") || norm.includes("financeiro")) return "create_financial";
   if (norm.includes("agenda") || norm.includes("evento")) return "create_agenda";
@@ -696,6 +784,35 @@ function bulkDataFromPrompt(prompt: string) {
   };
 }
 
+function extractPromptField(prompt: string, names: string[]) {
+  const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const pattern = new RegExp(`(?:${escaped})\\s*[:=-]\\s*([^\\n,;]+)`, "i");
+  return text(prompt.match(pattern)?.[1]);
+}
+
+function libraryDataFromPrompt(prompt: string): Row {
+  const norm = lower(prompt);
+  const url = text(prompt.match(/https?:\/\/\S+/i)?.[0]).replace(/[),.;]+$/g, "");
+  const tipo = norm.includes("video")
+    ? "videos"
+    : norm.includes("apostila") || norm.includes("material")
+      ? "materiais"
+      : "livros";
+  const tituloFromField = extractPromptField(prompt, ["titulo", "título", "nome"]);
+  const tituloFromCadastrar = text(prompt.match(/(?:cadastrar|adicionar|incluir|publicar)\s+(?:material|livro|apostila|pdf)?\s*(?:na biblioteca)?\s*[:=-]?\s*([^,\n;]+)/i)?.[1]);
+  const titulo = tituloFromField || tituloFromCadastrar || text(prompt.replace(/https?:\/\/\S+/gi, "").split(/[,;\n]/)[0]).replace(/^(cadastrar|adicionar|incluir|publicar)\s+/i, "");
+
+  return {
+    titulo: titulo || "Material cadastrado pelo Wiz",
+    tipo,
+    turma: extractPromptField(prompt, ["turma", "classe"]) || "Todas",
+    nivel: extractPromptField(prompt, ["nivel", "nível", "livro"]),
+    categoria: extractPromptField(prompt, ["categoria"]),
+    descricao: extractPromptField(prompt, ["descricao", "descrição", "observacao", "observação"]),
+    url,
+  };
+}
+
 async function answer(prompt: string, actor: string, session: WizSession): Promise<Row> {
   const action = suggestFromPrompt(prompt);
   if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
@@ -703,10 +820,14 @@ async function answer(prompt: string, actor: string, session: WizSession): Promi
     if (!canAdmin(session.perfil) && !lower(session.perfil).includes("comercial")) return { ok: false, message: "Perfil sem permissao para envio em massa." };
     return sendBulkMessage(bulkDataFromPrompt(prompt), actor, session);
   }
+  if (action === "add_library_material") {
+    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("prof")) return { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
+    return addLibraryMaterial(libraryDataFromPrompt(prompt), actor);
+  }
   return {
     ok: true,
     message: action === "answer"
-      ? "Sou o Professor Wiz operacional do Active: posso registrar aula de professor, cadastrar aluno, criar comunicado, gerar tarefa, criar trabalho, lancar recebimento, enviar mensagens, atualizar login/senha, responder aluno e agendar evento. Diga a acao com dados objetivos, ex: 'Registrar aula da professora Maria na turma Chicago ontem, licao Unit 5'."
+      ? "Sou o Professor Wiz operacional do Active: posso registrar aula de professor, cadastrar aluno, criar comunicado, gerar tarefa, criar trabalho, cadastrar materiais PDF na biblioteca, lancar recebimento, enviar mensagens, atualizar login/senha, responder aluno e agendar evento. Diga a acao com dados objetivos, ex: 'Registrar aula da professora Maria na turma Chicago ontem, licao Unit 5'."
       : `Parece uma solicitacao de ${action}. Use o formulario rapido correspondente ou envie os dados completos para executar.`,
     suggested_action: action,
   };
@@ -739,6 +860,7 @@ export async function POST(req: NextRequest) {
   else if (action === "create_wall_post") result = await createWallPost(data, actor);
   else if (action === "create_homework") result = await createHomework(data, actor);
   else if (action === "create_work") result = await createWork(data, actor);
+  else if (action === "add_library_material") result = canAdmin(session.perfil) || lower(session.perfil).includes("prof") ? await addLibraryMaterial(data, actor) : { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
   else if (action === "create_student") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createStudent(data) : { ok: false, message: "Perfil sem permissao para cadastrar aluno." };
   else if (action === "create_financial") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createFinancial(data) : { ok: false, message: "Perfil sem permissao para financeiro." };
   else if (action === "create_agenda") result = await createAgenda(data, actor);
