@@ -107,21 +107,21 @@ const [error, setError] = useState("");
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Funcoes do sistema */}
         <div style={{ position: "relative" }}>
-          <div className="login-stats-label">Números da plataforma</div>
+          <div className="login-stats-label">Funcoes do sistema</div>
           <div className="login-stats">
             <div className="login-stat">
-              <div className="login-stat-value">312</div>
-              <div className="login-stat-label">Alunos ativos</div>
+              <div className="login-stat-value">Portal</div>
+              <div className="login-stat-label">Aluno, responsavel e professor</div>
             </div>
             <div className="login-stat">
-              <div className="login-stat-value">24</div>
-              <div className="login-stat-label">Turmas ativas</div>
+              <div className="login-stat-value">Financeiro</div>
+              <div className="login-stat-label">Boletos, parcelas e baixas</div>
             </div>
             <div className="login-stat">
-              <div className="login-stat-value">18</div>
-              <div className="login-stat-label">Professores</div>
+              <div className="login-stat-value">W-API</div>
+              <div className="login-stat-label">Envios automaticos por WhatsApp</div>
             </div>
           </div>
         </div>
