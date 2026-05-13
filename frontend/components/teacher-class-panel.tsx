@@ -252,7 +252,10 @@ export function TeacherClassPanel({
               type="date"
               value={dataAula}
               onChange={(e) => setDataAula(e.target.value)}
+              readOnly={!admin}
+              disabled={!admin}
             />
+            {!admin && <div className="form-help">Professor abre e fecha somente a aula do dia. Lancamento manual retroativo fica com ADM/Coordenador.</div>}
           </div>
 
           {/* Livro e módulo (readonly) */}
