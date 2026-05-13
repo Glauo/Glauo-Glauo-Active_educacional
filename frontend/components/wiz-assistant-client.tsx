@@ -33,6 +33,11 @@ const QUICK_ACTIONS = [
     icon: "📋",
     template: "Criar tarefa de inglês para turma [Nome da Turma], conteúdo: [Conteúdo], 5 questões",
   },
+  {
+    label: "Biblioteca PDF",
+    icon: "PDF",
+    template: "Cadastrar material PDF na biblioteca: titulo [Nome do material], tipo material, turma Todas, link [URL do PDF]",
+  },
 ];
 
 function str(value: unknown) {
