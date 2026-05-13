@@ -22,6 +22,8 @@ type EditState = {
 type SaveResponse = {
   error?: string;
   login?: string;
+  whatsapp_enviado?: boolean;
+  whatsapp_status?: string;
   whatsapp_url?: string;
   whatsapp_message?: string;
 };
@@ -107,8 +109,13 @@ export default function CredenciaisPage() {
     }
 
     const savedLogin = data.login || editando.login.trim().toLowerCase();
-    setFeedback({ tipo: "ok", msg: `Acesso configurado com sucesso para login: ${savedLogin}` });
-    setWhatsappLink(data.whatsapp_url || "");
+    setFeedback({
+      tipo: "ok",
+      msg: data.whatsapp_enviado
+        ? `Acesso configurado e enviado automaticamente por WhatsApp para login: ${savedLogin}`
+        : `Acesso configurado. WhatsApp nao enviado: ${data.whatsapp_status || "verifique a WAPI"}.`,
+    });
+    setWhatsappLink(data.whatsapp_enviado ? "" : data.whatsapp_url || "");
     setAlunos((prev) =>
       prev.map((a) =>
         a.id === editando.id ? { ...a, login: savedLogin, temAcesso: true } : a
@@ -378,7 +385,7 @@ export default function CredenciaisPage() {
               </div>
               {whatsappLink && (
                 <a className="btn btn-secondary" href={whatsappLink} target="_blank" rel="noreferrer" style={{ justifyContent: "center" }}>
-                  Enviar login e senha por WhatsApp
+                  Abrir WhatsApp manual
                 </a>
               )}
             </div>

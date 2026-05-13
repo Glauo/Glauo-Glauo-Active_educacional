@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { vipPackageStats } from "@/lib/course-modules";
@@ -90,6 +91,44 @@ function whatsappUrl(phone: unknown, message: string) {
   let digits = String(phone || "").replace(/\D/g, "");
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : "";
+}
+
+function AutoWhatsAppButton({ phone, message, label = "WhatsApp", className = "btn btn-secondary btn-sm", style }: { phone: unknown; message: string; label?: string; className?: string; style?: CSSProperties }) {
+  const [sending, setSending] = useState(false);
+  const [fallback, setFallback] = useState("");
+  const telefone = text(phone);
+
+  async function send() {
+    if (!telefone || sending) return;
+    setSending(true);
+    setFallback("");
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefone, mensagem: message }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setFallback(whatsappUrl(telefone, message));
+        alert(`WhatsApp nao enviado automaticamente: ${String(data.status || data.error || "verifique a WAPI")}`);
+      }
+    } catch {
+      setFallback(whatsappUrl(telefone, message));
+      alert("Erro ao enviar WhatsApp automatico.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <button className={className} style={style} type="button" onClick={send} disabled={!telefone || sending}>
+        {sending ? "Enviando..." : label}
+      </button>
+      {fallback && <a className={className} style={style} href={fallback} target="_blank" rel="noreferrer">Manual</a>}
+    </>
+  );
 }
 
 function printWindow(elementId: string, title = "Relatório — Ativo Educacional") {
@@ -188,9 +227,7 @@ function RelatorioAlunoModal({ aluno, faturas, onClose }: { aluno: Aluno; fatura
           <div className="modal-title">Relatório Financeiro do Aluno</div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary btn-sm" onClick={() => printWindow("relatorio-professor-print", `Relatório — ${nome}`)}>Imprimir / PDF</button>
-            {telefone && (
-              <a className="btn btn-secondary btn-sm" href={whatsappUrl(telefone, `Relatório financeiro de ${nome}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nSaldo: ${formatBRL(total - totalPago)}`)} target="_blank" rel="noreferrer">WhatsApp</a>
-            )}
+            {telefone && <AutoWhatsAppButton phone={telefone} message={`Relatório financeiro de ${nome}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nSaldo: ${formatBRL(total - totalPago)}`} />}
             <button className="modal-close" onClick={onClose}>
               <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
             </button>
@@ -472,11 +509,7 @@ function AlunoDrawer({
                 ].filter(([, v]) => v && v !== "-").map(([l, v]) => (
                   <div key={l} className="drawer-detail-row"><span className="drawer-detail-label">{l}</span><span className="drawer-detail-value">{v}</span></div>
                 ))}
-                {telefone !== "-" && (
-                  <a className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} href={whatsappUrl(telefone, `Olá, ${responsavel !== "-" ? responsavel : nome}! Mensagem do Active Educacional.`)} target="_blank" rel="noreferrer">
-                    WhatsApp responsável
-                  </a>
-                )}
+                {telefone !== "-" && <AutoWhatsAppButton phone={telefone} message={`Olá, ${responsavel !== "-" ? responsavel : nome}! Mensagem do Active Educacional.`} label="WhatsApp responsável" style={{ marginTop: 10 }} />}
               </div>
 
               <div className="drawer-section">
@@ -611,9 +644,7 @@ function AlunoDrawer({
                           {boletoUrl && (
                             <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem" }} href={boletoUrl} target="_blank" rel="noreferrer">Boleto</a>
                           )}
-                          {phone && (
-                            <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--green-700)" }} href={whatsappUrl(phone, boletoMsg)} target="_blank" rel="noreferrer">WhatsApp</a>
-                          )}
+                          {phone && <AutoWhatsAppButton phone={phone} message={boletoMsg} className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--green-700)" }} />}
                         </div>
                       </div>
                     );

@@ -128,6 +128,44 @@ function whatsappUrl(phone: unknown, message: string) {
   return `https://wa.me/${digits || ""}?text=${encodeURIComponent(message)}`;
 }
 
+function AutoWhatsAppButton({ phone, message, label = "WhatsApp" }: { phone: unknown; message: string; label?: string }) {
+  const [sending, setSending] = useState(false);
+  const [fallback, setFallback] = useState("");
+  const telefone = String(phone || "").trim();
+
+  async function send() {
+    if (!telefone || sending) return;
+    setSending(true);
+    setFallback("");
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefone, mensagem: message }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setFallback(whatsappUrl(telefone, message));
+        alert(`WhatsApp nao enviado automaticamente: ${String(data.status || data.error || "verifique a WAPI")}`);
+      }
+    } catch {
+      setFallback(whatsappUrl(telefone, message));
+      alert("Erro ao enviar WhatsApp automatico.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <button className="btn btn-secondary btn-sm" type="button" onClick={send} disabled={!telefone || sending}>
+        {sending ? "Enviando..." : label}
+      </button>
+      {fallback && <a className="btn btn-secondary btn-sm" href={fallback} target="_blank" rel="noreferrer">Manual</a>}
+    </>
+  );
+}
+
 function boletoPdfHref(lancamento: Lancamento) {
   if (lancamento.boleto_pdf_b64 && lancamento.id) return `/api/financeiro/boleto-pdf?id=${encodeURIComponent(String(lancamento.id))}`;
   return String(lancamento.boleto_pdf_url || "");
@@ -185,7 +223,7 @@ function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
     <>
       {pdfHref && <a className="btn btn-secondary btn-sm" href={pdfHref} target="_blank" rel="noreferrer">Abrir PDF</a>}
       <button className="btn btn-secondary btn-sm" onClick={gerar} disabled={loading}>{loading ? "Gerando..." : "Boleto PDF"}</button>
-      <a className="btn btn-secondary btn-sm" href={whatsappUrl(lancamento.telefone || lancamento.whatsapp, msg)} target="_blank" rel="noreferrer">WhatsApp</a>
+      <AutoWhatsAppButton phone={lancamento.telefone || lancamento.whatsapp} message={msg} />
     </>
   );
 }
@@ -310,16 +348,7 @@ function RelatorioDetalhadoProfModal({
               </svg>
               Imprimir / PDF
             </button>
-            {telefone && (
-              <a
-                className="btn btn-secondary btn-sm"
-                href={whatsappUrl(telefone, `Relatório de aulas — ${professor}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}`)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                WhatsApp
-              </a>
-            )}
+            {telefone && <AutoWhatsAppButton phone={telefone} message={`Relatório de aulas — ${professor}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}`} />}
             <button className="modal-close" onClick={onClose}>
               <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
             </button>
@@ -967,16 +996,7 @@ function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
                         Relatório
                       </button>
                       <BaixaMassaBtn profNome={profNome} aulas={aulas} onDone={() => { /* router.refresh() called inside */ }} />
-                      {telefone && (
-                        <a
-                          className="btn btn-secondary btn-sm"
-                          href={whatsappUrl(telefone, `Olá ${profNome}! Segue resumo do seu pagamento:\nAulas: ${aulas.length}\nTotal: ${formatBRL(totalProf)}\nPago: ${formatBRL(pagoProf)}\nEm aberto: ${formatBRL(totalProf - pagoProf)}`)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          WhatsApp
-                        </a>
-                      )}
+                      {telefone && <AutoWhatsAppButton phone={telefone} message={`Olá ${profNome}! Segue resumo do seu pagamento:\nAulas: ${aulas.length}\nTotal: ${formatBRL(totalProf)}\nPago: ${formatBRL(pagoProf)}\nEm aberto: ${formatBRL(totalProf - pagoProf)}`} />}
                     </div>
                   </div>
 
@@ -1130,7 +1150,7 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                           <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(valorParcela(r))}</td>
                           <td><span className={`badge badge-${faixa(r.dias as number)}`}><span className="badge-dot" />{r.dias as number} dias</span></td>
                           <td>{String(extra(r, "responsavel") || "—")}</td>
-                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><a className="btn btn-secondary btn-sm" href={whatsappUrl(extra(r, "telefone") || extra(r, "whatsapp"), msg)} target="_blank" rel="noreferrer">WhatsApp</a><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
+                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><AutoWhatsAppButton phone={extra(r, "telefone") || extra(r, "whatsapp")} message={msg} /><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
                       );
                     })}

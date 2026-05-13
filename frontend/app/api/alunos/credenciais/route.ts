@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
+import { sendWhatsApp } from "@/lib/whatsapp";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; senha?: string; turma?: string; classe?: string; celular?: string; telefone?: string; whatsapp?: string; responsavel?: unknown; responsavel_telefone?: string; responsavel_email?: string; [k: string]: unknown };
 
@@ -101,11 +102,15 @@ export async function PUT(req: NextRequest) {
   await dbSet("students.json", alunos);
 
   const message = credentialMessage(alunos[idx], loginTrimmed, String(senha));
+  const telefone = phoneFromStudent(alunos[idx]);
+  const whatsapp = telefone ? await sendWhatsApp(telefone, message, session) : { ok: false, status: "sem telefone" };
   return NextResponse.json({
     ok: true,
     login: loginTrimmed,
-    telefone: phoneFromStudent(alunos[idx]),
-    whatsapp_url: whatsappUrl(phoneFromStudent(alunos[idx]), message),
+    telefone,
+    whatsapp_status: whatsapp.status,
+    whatsapp_enviado: whatsapp.ok,
+    whatsapp_url: whatsappUrl(telefone, message),
     whatsapp_message: message,
   });
 }
