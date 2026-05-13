@@ -112,6 +112,15 @@ function mailtoUrl(email: string, form: Form) {
   return `mailto:${email}?subject=${encodeURIComponent("Acesso ao painel do professor")}&body=${encodeURIComponent(accessMessage(form))}`;
 }
 
+async function sendWhatsAppAutomatico(phone: string, message: string) {
+  const res = await fetch("/api/whatsapp/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ telefone: phone, mensagem: message }),
+  });
+  return res.json().catch(() => ({})) as Promise<{ ok?: boolean; status?: string; error?: string }>;
+}
+
 function fromProf(p?: ProfessorData): Form {
   return {
     nome: String(p?.nome || p?.name || ""),
@@ -213,9 +222,13 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
     const nextForm = { ...form, login: payload.login, senha: payload.senha };
     const whatsapp = whatsappUrl(form.celular, accessMessage(nextForm));
     setSendWhatsappLink(whatsapp);
-    setSendFeedback(whatsapp ? "Professor salvo. Abrindo WhatsApp com login e senha." : "Professor salvo. Cadastre um WhatsApp para enviar o acesso automaticamente.");
-    if (whatsapp) window.open(whatsapp, "_blank", "noopener,noreferrer");
-    setTimeout(() => onSaved(), whatsapp ? 1200 : 700);
+    if (form.celular) {
+      const result = await sendWhatsAppAutomatico(form.celular, accessMessage(nextForm));
+      setSendFeedback(result.ok ? "Professor salvo. Login e senha enviados automaticamente por WhatsApp." : `Professor salvo. WhatsApp nao enviado: ${result.status || result.error || "verifique a WAPI"}.`);
+    } else {
+      setSendFeedback("Professor salvo. Cadastre um WhatsApp para enviar o acesso automaticamente.");
+    }
+    setTimeout(() => onSaved(), 900);
   }
 
   return (
@@ -281,14 +294,21 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
                 <button className="btn btn-secondary btn-sm" type="button" onClick={preencherAcessoAutomatico}>
                   Gerar login/senha automatico
                 </button>
-                <a
+                <button
+                  type="button"
                   className={`btn btn-secondary btn-sm${!form.login || !form.senha || !form.celular ? " disabled" : ""}`}
-                  href={sendWhatsappLink || (form.login && form.senha && form.celular ? whatsappUrl(form.celular, accessMessage(form)) : "#")}
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={async () => {
+                    if (!form.login || !form.senha || !form.celular) return;
+                    setSaving(true);
+                    const result = await sendWhatsAppAutomatico(form.celular, accessMessage(form));
+                    setSaving(false);
+                    setSendFeedback(result.ok ? "Login e senha enviados automaticamente por WhatsApp." : `WhatsApp nao enviado: ${result.status || result.error || "verifique a WAPI"}.`);
+                    if (!result.ok) setSendWhatsappLink(whatsappUrl(form.celular, accessMessage(form)));
+                  }}
+                  disabled={!form.login || !form.senha || !form.celular || saving}
                 >
-                  Enviar por WhatsApp
-                </a>
+                  {saving ? "Enviando..." : "Enviar por WhatsApp"}
+                </button>
                 <a
                   className={`btn btn-secondary btn-sm${!form.login || !form.senha || !form.email ? " disabled" : ""}`}
                   href={form.login && form.senha && form.email ? mailtoUrl(form.email, form) : "#"}
@@ -296,7 +316,8 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
                   Enviar por e-mail
                 </a>
               </div>
-              <div className="form-help">{sendFeedback || "Ao salvar, o sistema abre automaticamente o WhatsApp com o login e a senha."}</div>
+              <div className="form-help">{sendFeedback || "Ao salvar, o sistema envia automaticamente o WhatsApp pela WAPI."}</div>
+              {sendWhatsappLink && <a className="btn btn-secondary btn-sm" href={sendWhatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp manual</a>}
             </div>
             <div className="form-group">
               <label className="form-label">Tipo de contrato</label>

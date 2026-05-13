@@ -317,7 +317,7 @@ function LancamentoModal({
       const msg = boletoMessage(item, window.location.origin);
       links.push({
         label: text(item.parcela) || "Parcela",
-        whatsapp: whatsappUrl(item.telefone || item.whatsapp || form.aluno_telefone, msg),
+        whatsapp: "",
         email: mailtoUrl(text(item.email || form.aluno_email), `Boleto Active Educacional - ${text(item.descricao)}`, msg),
       });
       setSavedLinks(links);
@@ -371,7 +371,7 @@ function LancamentoModal({
         const msg = boletoMessage(item, window.location.origin);
         links.push({
           label: `Parcela ${parcelaTxt}`,
-          whatsapp: form.enviar_whatsapp ? whatsappUrl(item.telefone || item.whatsapp || form.aluno_telefone, msg) : "",
+          whatsapp: "",
           email: form.enviar_email ? mailtoUrl(text(item.email || form.aluno_email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
         });
       }
@@ -652,7 +652,7 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
       const item = data.lancamento as LancamentoData;
       const msg = boletoMessage(item, window.location.origin);
       setLinks({
-        whatsapp: form.enviar_whatsapp ? whatsappUrl(form.aluno_telefone || item.telefone || item.whatsapp, msg) : "",
+        whatsapp: "",
         email: form.enviar_email ? mailtoUrl(text(form.aluno_email || item.email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
       });
       router.refresh();
