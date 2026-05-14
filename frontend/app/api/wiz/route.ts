@@ -148,6 +148,18 @@ async function savePdfBase64(data: Row, key: string, id: string) {
   return { url: `/uploads/${folder}/${filename}`, pdf_nome: original, pdf_mime: "application/pdf" };
 }
 
+async function savePdfFile(file: File | null, key: string, id: string) {
+  if (!(file instanceof File) || file.size === 0) return {};
+  if (file.type && file.type !== "application/pdf") throw new Error("Envie apenas arquivo PDF.");
+  const folder = uploadFolderForKey(key);
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", folder);
+  await mkdir(uploadsDir, { recursive: true });
+  const original = safeFileName(file.name || `${id}.pdf`);
+  const filename = `${Date.now()}-${original.endsWith(".pdf") ? original : `${original}.pdf`}`;
+  await writeFile(path.join(uploadsDir, filename), Buffer.from(await file.arrayBuffer()));
+  return { url: `/uploads/${folder}/${filename}`, pdf_nome: file.name || original, pdf_mime: "application/pdf" };
+}
+
 async function audit(action: string, payload: Row, result: Row, actor: string, perfil: string) {
   const log = await dbList<Row>("wiz_action_audit.json");
   const entry = {
@@ -419,7 +431,7 @@ async function resetStudentAccess(data: Row, actor: string, session: WizSession)
   };
 }
 
-async function addLibraryMaterial(data: Row, actor: string) {
+async function addLibraryMaterial(data: Row, actor: string, file: File | null = null) {
   const titulo = text(data.titulo || data.title || data.nome || data.material);
   if (!titulo) return { ok: false, message: "Titulo do material e obrigatorio para cadastrar na biblioteca." };
 
@@ -431,7 +443,7 @@ async function addLibraryMaterial(data: Row, actor: string) {
   const id = text(data.id) || `wiz_bib_${Date.now()}`;
   let pdfInfo: Row = {};
   try {
-    pdfInfo = await savePdfBase64(data, key, id);
+    pdfInfo = file instanceof File ? await savePdfFile(file, key, id) : await savePdfBase64(data, key, id);
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : "Erro ao salvar PDF." };
   }
@@ -850,9 +862,28 @@ export async function POST(req: NextRequest) {
   if (!session || !canOperate(session.perfil)) {
     return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
-  const body = await req.json() as Row;
-  const action = text(body.action || "answer");
-  const data = (body.data && typeof body.data === "object" ? body.data : body) as Row;
+  let body: Row = {};
+  let action = "answer";
+  let data: Row = {};
+  let attachedFile: File | null = null;
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await req.formData();
+    action = text(form.get("action") || "add_library_material");
+    attachedFile = form.get("arquivo_pdf") instanceof File ? form.get("arquivo_pdf") as File : null;
+    data = {};
+    for (const [key, value] of form.entries()) {
+      if (value instanceof File) continue;
+      data[key] = value;
+    }
+    const prompt = text(data.prompt);
+    if (prompt) data = { ...libraryDataFromPrompt(prompt), ...data };
+    if (!text(data.titulo) && attachedFile) data.titulo = attachedFile.name.replace(/\.pdf$/i, "");
+  } else {
+    body = await req.json() as Row;
+    action = text(body.action || "answer");
+    data = (body.data && typeof body.data === "object" ? body.data : body) as Row;
+  }
   const actor = session.pessoa || session.usuario;
 
   let result: Row;
@@ -860,7 +891,7 @@ export async function POST(req: NextRequest) {
   else if (action === "create_wall_post") result = await createWallPost(data, actor);
   else if (action === "create_homework") result = await createHomework(data, actor);
   else if (action === "create_work") result = await createWork(data, actor);
-  else if (action === "add_library_material") result = canAdmin(session.perfil) || lower(session.perfil).includes("prof") ? await addLibraryMaterial(data, actor) : { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
+  else if (action === "add_library_material") result = canAdmin(session.perfil) || lower(session.perfil).includes("prof") ? await addLibraryMaterial(data, actor, attachedFile) : { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
   else if (action === "create_student") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createStudent(data) : { ok: false, message: "Perfil sem permissao para cadastrar aluno." };
   else if (action === "create_financial") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createFinancial(data) : { ok: false, message: "Perfil sem permissao para financeiro." };
   else if (action === "create_agenda") result = await createAgenda(data, actor);

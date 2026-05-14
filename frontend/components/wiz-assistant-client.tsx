@@ -133,9 +133,11 @@ export function WizAssistantClient({
     },
   ]);
   const [input, setInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const todayLogs = logs.filter((log) => {
     const date = str(log.data || log.date);
@@ -157,21 +159,46 @@ export function WizAssistantClient({
     }, 50);
   }
 
+  function onFileChange(file: File | null) {
+    if (!file) return;
+    if (file.type && file.type !== "application/pdf") {
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: "Envie apenas arquivo PDF para a biblioteca.", ts: now() }]);
+      return;
+    }
+    setSelectedFile(file);
+    if (!input.trim()) {
+      setInput(`Cadastrar material PDF na biblioteca: titulo ${file.name.replace(/\.pdf$/i, "")}, tipo material, turma Todas`);
+    }
+  }
+
   async function send() {
     const prompt = input.trim();
-    if (!prompt || loading) return;
+    const file = selectedFile;
+    if ((!prompt && !file) || loading) return;
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", text: prompt, ts: now() };
+    const userMsg: Message = { id: crypto.randomUUID(), role: "user", text: file ? `${prompt || "Cadastrar material PDF na biblioteca"}\n[Anexo: ${file.name}]` : prompt, ts: now() };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setLoading(true);
 
     try {
-      const res = await fetch("/api/wiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "answer", data: { prompt } }),
-      });
+      let res: Response;
+      if (file) {
+        const form = new FormData();
+        form.append("action", "add_library_material");
+        form.append("prompt", prompt);
+        form.append("tipo", "material");
+        form.append("arquivo_pdf", file);
+        res = await fetch("/api/wiz", { method: "POST", body: form });
+      } else {
+        res = await fetch("/api/wiz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "answer", data: { prompt } }),
+        });
+      }
       const json = await res.json().catch(() => ({}));
       const reply = str(json.message || json.error || (res.ok ? "Feito." : "Erro ao processar a solicitação."));
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: reply, ts: now() }]);
@@ -273,6 +300,38 @@ export function WizAssistantClient({
           <RefPanel turmas={turmas} professores={professores} />
 
           <div className="wiz-input-bar">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              style={{ display: "none" }}
+              onChange={(e) => onFileChange(e.target.files?.[0] || null)}
+              disabled={loading}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              aria-label="Anexar PDF"
+              title="Anexar PDF"
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 14,
+                border: "1px solid var(--border)",
+                background: selectedFile ? "var(--primary-light)" : "var(--bg-card)",
+                color: selectedFile ? "var(--primary)" : "var(--text-secondary)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: loading ? "not-allowed" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: 18, height: 18 }}>
+                <path fillRule="evenodd" d="M8 4a3 3 0 016 0v8a5 5 0 01-10 0V5a1 1 0 012 0v7a3 3 0 106 0V4a1 1 0 10-2 0v8a1 1 0 11-2 0V4z" clipRule="evenodd" />
+              </svg>
+            </button>
             <textarea
               ref={inputRef}
               className="wiz-input"
@@ -286,7 +345,7 @@ export function WizAssistantClient({
             <button
               className="wiz-send-btn"
               onClick={send}
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && !selectedFile)}
               aria-label="Enviar"
             >
               <svg viewBox="0 0 20 20" fill="currentColor">
