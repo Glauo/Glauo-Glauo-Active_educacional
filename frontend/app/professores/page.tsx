@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isAdminOrCoordinator } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { NovoProfessorBtn, EditarProfessorBtn } from "@/components/professor-modal";
 import { TeacherClassPanel } from "@/components/teacher-class-panel";
@@ -20,6 +21,7 @@ export default async function ProfessoresPage() {
     const s = String(p.status || p.situacao || "ativo").toLowerCase();
     return !s.includes("inativ") && !s.includes("cancel");
   });
+  const manage = isAdminOrCoordinator(session);
 
   return (
     <AppShell breadcrumb="Professores" userName={session.pessoa || session.usuario} userRole={session.perfil}>
@@ -30,7 +32,7 @@ export default async function ProfessoresPage() {
           <p className="page-description">Equipe docente com dados completos, acesso, contato, pagamento e turmas vinculadas.</p>
         </div>
         <div className="page-actions">
-          <NovoProfessorBtn />
+          {manage && <NovoProfessorBtn />}
         </div>
       </div>
 
@@ -155,7 +157,7 @@ export default async function ProfessoresPage() {
                           <span className="badge-dot" />{status}
                         </span>
                       </td>
-                      <td><EditarProfessorBtn professor={p} /></td>
+                      <td>{manage && <EditarProfessorBtn professor={p} />}</td>
                     </tr>
                   );
                 })}

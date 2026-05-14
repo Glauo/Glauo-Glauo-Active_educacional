@@ -3,6 +3,7 @@ import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoEventoBtn, EditarEventoBtn } from "@/components/agenda-modal";
+import { TeacherClassPanel } from "@/components/teacher-class-panel";
 
 type Evento = { id?: string; titulo?: string; descricao?: string; turma?: string; professor?: string; horario?: string; hora?: string; time?: string; data?: string; date?: string; dia?: string; status?: string; tipo?: string; [k: string]: unknown };
 
@@ -26,6 +27,10 @@ export default async function AgendaPage() {
   if (!session) redirect("/login");
 
   const agenda = await dbList<Evento>("agenda.json");
+  const turmas = await dbList<Record<string, unknown>>("classes.json");
+  const aulas = await dbList<Record<string, unknown>>("class_sessions.json");
+  const alunos = await dbList<Record<string, unknown>>("students.json");
+  const professores = await dbList<Record<string, unknown>>("teachers.json");
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -97,6 +102,15 @@ export default async function AgendaPage() {
           <div className="metric-note">Aguardando confirmação</div>
         </div>
       </div>
+
+      <TeacherClassPanel
+        turmas={turmas}
+        aulas={aulas}
+        professores={professores}
+        alunos={alunos}
+        userName={session.pessoa || session.usuario}
+        userRole={session.perfil}
+      />
 
       <div className="content-grid grid-2-1">
         <div className="card">

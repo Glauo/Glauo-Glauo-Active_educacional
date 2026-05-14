@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isAdminOrCoordinator } from "@/lib/roles";
 
 const KEY = "teachers.json";
 
@@ -51,6 +52,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem cadastrar professores." }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem editar professores." }, { status: 403 });
 
   try {
     const { id, ...updates } = await req.json();
@@ -127,6 +130,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem excluir professores." }, { status: 403 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });

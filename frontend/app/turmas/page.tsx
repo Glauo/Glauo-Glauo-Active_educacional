@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { getSession } from "@/lib/auth";
+import { isAdminOrCoordinator } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { NovaTurmaBtn, EditarTurmaBtn } from "@/components/turma-modal";
 import { getSchoolClasses } from "@/lib/school-data";
@@ -18,6 +19,7 @@ export default async function TurmasPage() {
   if (!session) redirect("/login");
 
   const turmas = await getSchoolClasses() as Turma[];
+  const manage = isAdminOrCoordinator(session);
 
   const ativas = turmas.filter((t) => {
     const s = String(t.status || t.situacao || "ativa").toLowerCase();
@@ -38,7 +40,7 @@ export default async function TurmasPage() {
           <p className="page-description">Modulo de aula, professor, livro, agenda, link online e saldo VIP das turmas.</p>
         </div>
         <div className="page-actions">
-          <NovaTurmaBtn />
+          {manage && <NovaTurmaBtn />}
         </div>
       </div>
 
@@ -138,9 +140,11 @@ export default async function TurmasPage() {
                         </div>
                       )}
                     </div>
-                    <div style={{ marginTop: "12px" }}>
-                      <EditarTurmaBtn turma={t} />
-                    </div>
+                    {manage && (
+                      <div style={{ marginTop: "12px" }}>
+                        <EditarTurmaBtn turma={t} />
+                      </div>
+                    )}
                   </div>
                 );
               })}

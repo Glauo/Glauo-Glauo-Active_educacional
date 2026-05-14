@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { isAdminOrCoordinator } from "@/lib/roles";
 import { isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
 
 const KEY = "students.json";
@@ -85,6 +86,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem cadastrar alunos." }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -111,6 +113,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem editar alunos." }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -134,6 +137,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!isAdminOrCoordinator(session)) return NextResponse.json({ error: "Apenas coordenadores e administradores podem excluir alunos." }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
