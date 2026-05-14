@@ -11,6 +11,7 @@ venv/
 *.log
 *.flag
 tmp_*
+.codex_tmp/
 
 # Backups
 manual_backups/
@@ -21,6 +22,7 @@ _data_backups/
 # Next.js
 frontend/.next/
 frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
 frontend/.env.local
 frontend/.env*.local
 
