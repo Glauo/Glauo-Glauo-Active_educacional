@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 
 const navSections = [
   {
@@ -224,6 +224,8 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [blockedRoutes, setBlockedRoutes] = useState<string[]>([]);
@@ -238,16 +240,19 @@ export function AppShell({
       .then((data) => {
         if (!alive || !data) return;
         const blocked = Array.isArray(data.blockedRoutes) ? data.blockedRoutes : [];
-        setBlockedRoutes(blocked);
+        setBlockedRoutes((prev) => {
+          const same = prev.length === blocked.length && prev.every((r, i) => r === blocked[i]);
+          return same ? prev : blocked;
+        });
         if (routeBlocked(pathname, blocked)) {
           const modules = Array.isArray(data.modules) ? data.modules : [];
           const firstAllowed = modules.find((item: { allowed?: boolean; path?: string }) => item.allowed && item.path)?.path;
-          router.replace(firstAllowed || "/login");
+          routerRef.current.replace(firstAllowed || "/login");
         }
       })
       .catch(() => undefined);
     return () => { alive = false; };
-  }, [pathname, router]);
+  }, [pathname]);
 
   async function handleLogout() {
     setLoggingOut(true);
