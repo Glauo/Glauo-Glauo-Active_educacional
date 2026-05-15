@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { ModalPortal } from "@/components/modal-portal";
 
 type AlunoData = {
   id?: string;
@@ -378,6 +379,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   }
 
   return (
+    <ModalPortal>
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth: 920 }}>
         <div className="modal-header">
@@ -611,6 +613,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

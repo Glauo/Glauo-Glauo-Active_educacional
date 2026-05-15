@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ModalPortal } from "@/components/modal-portal";
 
 type ProfessorData = {
   id?: string;
@@ -229,6 +230,7 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
   }
 
   return (
+    <ModalPortal>
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth: 900 }}>
         <div className="modal-header">
@@ -373,6 +375,7 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
