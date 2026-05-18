@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { canManageSchoolContent, homeworkTotal, normalizeList, nowIso, text, type Homework, type HomeworkQuestion } from "@/lib/school-modules";
+import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
 
 const KEY = "activities.json";
 
@@ -67,7 +68,16 @@ export async function POST(req: NextRequest) {
     created_at: nowIso(),
     notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
   };
-  const activities = await dbList<Homework>(KEY);
+  const [activities, students] = await Promise.all([dbList<Homework>(KEY), dbList<Record<string, unknown>>("students.json")]);
+  const notification = await notifyStudentsAboutLaunch({
+    students,
+    item,
+    kind: "licao",
+    title: `Nova licao de casa: ${titulo}`,
+    body: `Voce recebeu uma nova licao de ${item.disciplina}. Prazo: ${text(item.due_date) || "consulte no portal"}.`,
+    session,
+  });
+  item.notification_status = notification;
   await dbSet(KEY, [...activities, item]);
   return NextResponse.json(item, { status: 201 });
 }
@@ -98,9 +108,20 @@ export async function DELETE(req: NextRequest) {
   if (!session || !canManageSchoolContent(session)) {
     return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
-  const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  const bulk = searchParams.get("bulk");
   const activities = await dbList<Homework>(KEY);
+
+  if (bulk === "today") {
+    const today = new Date().toISOString().slice(0, 10);
+    const kept = activities.filter((item) => !text(item.created_at).startsWith(today));
+    const deleted = activities.length - kept.length;
+    await dbSet(KEY, kept);
+    return NextResponse.json({ ok: true, deleted });
+  }
+
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
   await dbSet(KEY, activities.filter((item) => text(item.id) !== id));
   return NextResponse.json({ ok: true });
 }

@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { HomeworkCreateButton, HomeworkReviewForm } from "@/components/school-modules-client";
+import { HomeworkDeleteBtn, HomeworkDeleteTodayBtn, HomeworkEditBtn } from "@/components/homework-actions";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
 import { canManageSchoolContent, homeworkTotal, isHomeworkActivity, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
@@ -27,6 +28,9 @@ export default async function LicoesPage() {
   const entregas = submissions.filter((submission) => licoes.some((item) => text(item.id) === text(submission.activity_id)));
   const corrigidas = entregas.filter((submission) => text(submission.status).toLowerCase().includes("corrigido"));
   const pendentes = entregas.length - corrigidas.length;
+  const today = new Date().toISOString().slice(0, 10);
+  const licoesHoje = licoes.filter((l) => text(l.created_at).startsWith(today));
+  const turmaNames = turmas.map((t) => text(t.nome || t.name || "")).filter(Boolean);
 
   return (
     <AppShell breadcrumb="Licoes de Casa" userName={session.pessoa || session.usuario} userRole={session.perfil}>
@@ -53,13 +57,14 @@ export default async function LicoesPage() {
               <div className="section-eyebrow">Gestao</div>
               <h3 className="section-title">Licoes publicadas</h3>
             </div>
+            <HomeworkDeleteTodayBtn todayCount={licoesHoje.length} />
           </div>
           <div className="card-body" style={{ paddingTop: 12 }}>
             {licoes.length === 0 ? (
               <div className="empty-state"><div className="empty-title">Nenhuma licao criada</div><p className="empty-desc">Use Nova licao para publicar tarefa manual ou gerar questoes com Prof Wiz.</p></div>
             ) : (
               <table className="data-table">
-                <thead><tr><th>Licao</th><th>Turma</th><th>Disciplina</th><th>Prazo</th><th>Status</th><th>Entregas</th></tr></thead>
+                <thead><tr><th>Licao</th><th>Turma</th><th>Disciplina</th><th>Prazo</th><th>Status</th><th>Entregas</th><th>Acoes</th></tr></thead>
                 <tbody>
                   {licoes.map((licao) => {
                     const count = entregas.filter((submission) => text(submission.activity_id) === text(licao.id)).length;
@@ -71,6 +76,12 @@ export default async function LicoesPage() {
                         <td>{text(licao.due_date || "-")}</td>
                         <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
                         <td style={{ fontWeight: 700 }}>{count}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <HomeworkEditBtn licao={licao} turmas={turmaNames} />
+                            <HomeworkDeleteBtn licao={licao} />
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
