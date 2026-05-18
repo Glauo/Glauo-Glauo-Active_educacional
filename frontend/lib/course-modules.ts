@@ -109,8 +109,12 @@ export function vipPackageStats(aluno: Record<string, unknown>) {
 
   const planTotal = vipPlanTotal(aluno.vip_tipo_plano || "Pacote 10 aulas");
   const total = Math.max(1, toInt(aluno.vip_aulas_total) || planTotal || VIP_DEFAULT_TOTAL);
-  const restantes = Math.min(total, Math.max(0, toInt(aluno.vip_aulas_restantes || total)));
-  const dadas = Math.max(0, total - restantes);
+  const explicitDadas = toInt(aluno.vip_aulas_dadas ?? aluno.aulas_dadas_vip);
+  const rawRestantes = aluno.vip_aulas_restantes;
+  const restantes = rawRestantes === null || rawRestantes === undefined || rawRestantes === ""
+    ? Math.max(0, total - explicitDadas)
+    : Math.min(total, Math.max(0, toInt(rawRestantes)));
+  const dadas = Math.max(0, explicitDadas || (total - restantes));
 
   return { total, dadas, restantes };
 }
