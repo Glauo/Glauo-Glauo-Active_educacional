@@ -3,6 +3,7 @@ import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
 import { isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { applyGeneratedStudentCredentials, notifyStudentCredentials } from "@/lib/student-credentials";
 
 const KEY = "students.json";
 const HEAVY_KEYS = ["file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -43,9 +44,12 @@ function normalizeAluno(body: Record<string, unknown>) {
       : {};
   const responsavelNome = text(body.responsavel_nome || responsavel.nome || body.responsavel);
   const login = text(body.login || body.usuario).toLowerCase();
-  return {
+  const normalized = {
     ...body,
     nome: text(body.nome || body.name),
+    data_nascimento: text(body.data_nascimento || body.nascimento),
+    nascimento: text(body.data_nascimento || body.nascimento),
+    cpf: text(body.cpf),
     turma: text(body.turma || body.classe),
     classe: text(body.turma || body.classe),
     livro: text(body.livro || body.book),
@@ -84,6 +88,7 @@ function normalizeAluno(body: Record<string, unknown>) {
     responsavel_telefone: text(body.responsavel_telefone || responsavel.telefone || responsavel.celular || body.telefone),
     responsavel_email: text(body.responsavel_email || responsavel.email),
   };
+  return applyGeneratedStudentCredentials(normalized);
 }
 
 export async function GET() {
@@ -114,7 +119,8 @@ export async function POST(req: NextRequest) {
 
     alunos.push(novo);
     await dbSet(KEY, alunos);
-    return NextResponse.json({ ok: true, aluno: novo }, { status: 201 });
+    const notification_status = await notifyStudentCredentials(novo, session);
+    return NextResponse.json({ ok: true, aluno: novo, notification_status }, { status: 201 });
   } catch (err) {
     console.error("[alunos POST]", err);
     return NextResponse.json({ error: "Erro ao salvar aluno." }, { status: 500 });
@@ -138,7 +144,8 @@ export async function PUT(req: NextRequest) {
 
     alunos[idx] = { ...alunos[idx], ...normalizeAluno(updates), updated_at: new Date().toISOString() };
     await dbSet(KEY, alunos);
-    return NextResponse.json({ ok: true, aluno: alunos[idx] });
+    const notification_status = await notifyStudentCredentials(alunos[idx], session);
+    return NextResponse.json({ ok: true, aluno: alunos[idx], notification_status });
   } catch (err) {
     console.error("[alunos PUT]", err);
     return NextResponse.json({ error: "Erro ao atualizar aluno." }, { status: 500 });

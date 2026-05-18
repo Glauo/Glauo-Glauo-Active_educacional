@@ -2,9 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
-import { sendWhatsApp } from "@/lib/whatsapp";
+import {
+  applyGeneratedStudentCredentials,
+  notifyStudentCredentials,
+  studentCredentialMessage,
+  studentCredentialPhone,
+  type StudentCredentialRow,
+} from "@/lib/student-credentials";
 
-type Aluno = { id?: string; nome?: string; name?: string; login?: string; senha?: string; turma?: string; classe?: string; celular?: string; telefone?: string; whatsapp?: string; responsavel?: unknown; responsavel_telefone?: string; responsavel_email?: string; [k: string]: unknown };
+type Aluno = StudentCredentialRow & {
+  id?: string;
+  nome?: string;
+  name?: string;
+  login?: string;
+  senha?: string;
+  turma?: string;
+  classe?: string;
+};
 
 function text(value: unknown) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -15,27 +29,11 @@ function text(value: unknown) {
 }
 
 function phoneFromStudent(aluno: Aluno) {
-  const responsavel = aluno.responsavel && typeof aluno.responsavel === "object" && !Array.isArray(aluno.responsavel)
-    ? aluno.responsavel as Record<string, unknown>
-    : {};
-  return text(aluno.celular || aluno.whatsapp || aluno.telefone || aluno.responsavel_telefone || responsavel.celular || responsavel.telefone || responsavel.whatsapp);
+  return studentCredentialPhone(aluno);
 }
 
-function whatsappUrl(phone: unknown, message: string) {
+function whatsappUrl(_phone: unknown, _message: string) {
   return "";
-}
-
-function credentialMessage(aluno: Aluno, login: string, senha: string) {
-  const nome = text(aluno.nome || aluno.name || "Aluno");
-  return [
-    `Olá, ${nome}!`,
-    "Seu acesso ao portal do aluno Active Educacional foi atualizado.",
-    "",
-    `Login: ${login}`,
-    `Senha: ${senha}`,
-    "",
-    "Acesse pelo portal da escola. Se tiver dificuldade, fale com a secretaria.",
-  ].join("\n");
 }
 
 function sameStudent(aluno: Aluno, id: string) {
@@ -46,11 +44,10 @@ function sameStudent(aluno: Aluno, id: string) {
 export async function GET() {
   const session = await getSession();
   if (!session || !isAdminOrCoordinator(session)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
 
   const alunos = await dbList<Aluno>("students.json");
-  // Retorna alunos sem expor senhas
   const lista = alunos.map((a) => ({
     id: a.id,
     nome: a.nome || a.name,
@@ -58,7 +55,7 @@ export async function GET() {
     login: a.login || null,
     senha: a.senha || null,
     telefone: phoneFromStudent(a),
-    temAcesso: Boolean(a.login && a.senha)
+    temAcesso: Boolean(a.login && a.senha),
   }));
   return NextResponse.json(lista);
 }
@@ -66,49 +63,47 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const session = await getSession();
   if (!session || !isAdminOrCoordinator(session)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
 
-  const { id, login, senha } = await req.json() as { id: string; login: string; senha: string };
-
-  if (!id || !login || !senha) {
-    return NextResponse.json({ error: "id, login e senha são obrigatórios." }, { status: 400 });
-  }
-
-  const loginTrimmed = String(login).trim().toLowerCase();
-  if (loginTrimmed.length < 3) {
-    return NextResponse.json({ error: "Login deve ter pelo menos 3 caracteres." }, { status: 400 });
-  }
-  if (String(senha).length < 4) {
-    return NextResponse.json({ error: "Senha deve ter pelo menos 4 caracteres." }, { status: 400 });
-  }
+  const { id, login, senha } = await req.json() as { id: string; login?: string; senha?: string };
+  if (!id) return NextResponse.json({ error: "id obrigatorio." }, { status: 400 });
 
   const alunos = await dbList<Aluno>("students.json");
-
-  // Verifica se o login já está em uso por outro aluno
-  const conflito = alunos.find((a) => a.login === loginTrimmed && !sameStudent(a, id));
-  if (conflito) {
-    return NextResponse.json({ error: "Este login já está em uso por outro aluno." }, { status: 409 });
-  }
-
   const idx = alunos.findIndex((a) => sameStudent(a, id));
   if (idx === -1) {
-    return NextResponse.json({ error: "Aluno não encontrado." }, { status: 404 });
+    return NextResponse.json({ error: "Aluno nao encontrado." }, { status: 404 });
   }
 
-  alunos[idx] = { ...alunos[idx], login: loginTrimmed, senha: String(senha) };
+  const generated = applyGeneratedStudentCredentials({
+    ...alunos[idx],
+    login: login || alunos[idx].login,
+    senha: senha || alunos[idx].senha,
+  });
+  const loginFinal = text(generated.login).toLowerCase();
+  const senhaFinal = text(generated.senha);
+
+  if (loginFinal.length < 3) {
+    return NextResponse.json({ error: "Data de nascimento invalida para gerar o login." }, { status: 400 });
+  }
+  if (senhaFinal.length < 5) {
+    return NextResponse.json({ error: "CPF invalido para gerar a senha." }, { status: 400 });
+  }
+
+  alunos[idx] = { ...generated, login: loginFinal, usuario: loginFinal, senha: senhaFinal };
   await dbSet("students.json", alunos);
 
-  const message = credentialMessage(alunos[idx], loginTrimmed, String(senha));
-  const telefone = phoneFromStudent(alunos[idx]);
-  const whatsapp = telefone ? await sendWhatsApp(telefone, message, session) : { ok: false, status: "sem telefone" };
+  const notification = await notifyStudentCredentials(alunos[idx], session);
+  const message = studentCredentialMessage(alunos[idx], loginFinal, senhaFinal);
   return NextResponse.json({
     ok: true,
-    login: loginTrimmed,
-    telefone,
-    whatsapp_status: whatsapp.status,
-    whatsapp_enviado: whatsapp.ok,
-    whatsapp_url: whatsappUrl(telefone, message),
+    login: loginFinal,
+    telefone: notification.telefone,
+    whatsapp_status: notification.whatsapp,
+    whatsapp_enviado: notification.whatsapp_enviado,
+    email_status: notification.email,
+    email_enviado: notification.email_enviado,
+    whatsapp_url: whatsappUrl(notification.telefone, message),
     whatsapp_message: message,
   });
 }
@@ -116,21 +111,22 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session || !isAdminOrCoordinator(session)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
 
   const alunos = await dbList<Aluno>("students.json");
   const idx = alunos.findIndex((a) => sameStudent(a, id));
-  if (idx === -1) return NextResponse.json({ error: "Aluno não encontrado." }, { status: 404 });
+  if (idx === -1) return NextResponse.json({ error: "Aluno nao encontrado." }, { status: 404 });
 
-  // Remove credenciais mas mantém o registro do aluno
   delete alunos[idx].login;
+  delete alunos[idx].usuario;
   delete alunos[idx].senha;
   await dbSet("students.json", alunos);
 
   return NextResponse.json({ ok: true });
 }
+
