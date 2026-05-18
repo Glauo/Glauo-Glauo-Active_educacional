@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
 import { ModalPortal } from "@/components/modal-portal";
 
 type AlunoData = {
@@ -152,7 +152,7 @@ function fromAluno(a?: AlunoData): Form {
   return {
     nome: text(a?.nome || a?.name),
     turma: text(a?.turma || a?.classe),
-    modulo: text(a?.modulo || a?.modalidade || "Aula em Turma"),
+    modulo: migrateModule(a?.modulo || a?.modalidade || "Aula em Turma"),
     livro: text(a?.livro || a?.book),
     matricula: text(a?.matricula),
     rg: text(a?.rg),
@@ -228,6 +228,9 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   const [credWhatsappLink, setCredWhatsappLink] = useState("");
   const vip = isVipModule(form.modulo);
   const planTotal = vipPlanTotal(form.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
+  const vipTotalNumber = Math.max(0, Number(form.vip_aulas_total || planTotal) || planTotal);
+  const vipRestantesNumber = Math.max(0, Number(form.vip_aulas_restantes || vipTotalNumber) || 0);
+  const vipDadasNumber = Math.max(0, vipTotalNumber - vipRestantesNumber);
   const turmaOptions = useMemo(() => {
     const names = turmas.map((t) => text(t.nome || t.name)).filter(Boolean);
     const unique = Array.from(new Set(["Sem Turma", ...names, form.turma].filter(Boolean)));
@@ -271,7 +274,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       ...prev,
       turma: turmaNome,
       livro: text(turma?.livro || turma?.book) || prev.livro,
-      modulo: text(turma?.modulo || turma?.tipo_aula || turma?.modalidade) || prev.modulo,
+      modulo: migrateModule(turma?.modulo || turma?.tipo_aula || turma?.modalidade || prev.modulo),
     }));
     setErro("");
   }
@@ -444,6 +447,23 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                 <div className="form-group">
                   <label className="form-label">Aulas do pacote VIP</label>
                   <input className="form-input" type="number" min="0" value={form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_total", e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Aulas dadas</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    max={vipTotalNumber || undefined}
+                    value={vipDadasNumber}
+                    onChange={(e) => {
+                      const dadas = Math.max(0, Number(e.target.value) || 0);
+                      const total = Math.max(vipTotalNumber, dadas);
+                      update("vip_aulas_total", String(total));
+                      update("vip_aulas_restantes", String(Math.max(0, total - dadas)));
+                    }}
+                  />
+                  <div className="form-help">ADM e coordenador podem ajustar manualmente quando necessario.</div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Aulas restantes</label>

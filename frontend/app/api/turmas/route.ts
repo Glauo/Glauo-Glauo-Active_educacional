@@ -3,6 +3,7 @@ import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
 import { getSchoolClasses } from "@/lib/school-data";
+import { migrateModule, teacherClassValueByModule } from "@/lib/course-modules";
 
 const KEY = "classes.json";
 
@@ -15,7 +16,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
 
   const turmas = await getSchoolClasses();
-  return NextResponse.json({ turmas });
+  return NextResponse.json({ turmas: turmas.map((turma) => ({ ...turma, modulo: migrateModule(turma.modulo || turma.tipo_aula || turma.modalidade) })) });
 }
 
 export async function POST(req: NextRequest) {
@@ -31,7 +32,8 @@ export async function POST(req: NextRequest) {
     const exists = turmas.some((t) => text(t.nome).toLowerCase() === nome.toLowerCase());
     if (exists) return NextResponse.json({ error: "Turma ja existe." }, { status: 409 });
 
-    const nova = { ...body, nome, id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
+    const modulo = migrateModule(body.modulo || body.tipo_aula || body.modalidade);
+    const nova = { ...body, nome, modulo, tipo_aula: modulo, valor_aula: body.valor_aula || teacherClassValueByModule(modulo), id: body.id || crypto.randomUUID(), created_at: new Date().toISOString() };
     turmas.push(nova);
     await dbSet(KEY, turmas);
     return NextResponse.json({ ok: true, turma: nova }, { status: 201 });
@@ -55,7 +57,8 @@ export async function PUT(req: NextRequest) {
     if (idx === -1) return NextResponse.json({ error: "Turma nao encontrada." }, { status: 404 });
 
     const oldNome = text(turmas[idx].nome);
-    turmas[idx] = { ...turmas[idx], ...updates, updated_at: new Date().toISOString() };
+    const modulo = migrateModule(updates.modulo || updates.tipo_aula || updates.modalidade || turmas[idx].modulo);
+    turmas[idx] = { ...turmas[idx], ...updates, modulo, tipo_aula: modulo, valor_aula: updates.valor_aula || turmas[idx].valor_aula || teacherClassValueByModule(modulo), updated_at: new Date().toISOString() };
 
     const writes: Promise<boolean>[] = [dbSet(KEY, turmas)];
     const newNome = text(turmas[idx].nome);

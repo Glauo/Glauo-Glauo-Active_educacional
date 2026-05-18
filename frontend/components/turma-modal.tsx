@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BOOK_LEVELS, COURSE_MODULES } from "@/lib/course-modules";
+import { BOOK_LEVELS, COURSE_MODULES, isVipModule, migrateModule } from "@/lib/course-modules";
 import { ModalPortal } from "@/components/modal-portal";
 
 type TurmaData = {
@@ -85,7 +85,7 @@ function fromTurma(t?: TurmaData): Form {
   const horaFim = String(t?.hora_fim || "").slice(0, 5);
   return {
     nome: String(t?.nome || t?.name || ""),
-    modulo: String(t?.modulo || t?.tipo_aula || t?.modalidade || "Aula em Turma"),
+    modulo: migrateModule(t?.modulo || t?.tipo_aula || t?.modalidade || "Aula em Turma"),
     professor: String(t?.professor || "Sem Professor"),
     livro: String(t?.livro || t?.book || ""),
     ultima_licao: String(t?.ultima_licao || t?.ultima_aula || ""),
@@ -111,7 +111,7 @@ function TurmaModal({ turma, onClose, onSaved }: { turma?: TurmaData; onClose: (
   const [erro, setErro] = useState("");
   // VIP lesson package (avulsa) only for the pure "Vip" module.
   // Intensivo Vip + all online turmas are paid monthly — no lesson balance.
-  const isVip = form.modulo === "Vip";
+  const isVip = isVipModule(form.modulo);
   const professorOptions = useMemo(() => {
     const nomes = professores.map((p) => String(p.nome || p.name || p.usuario || p.login || "").trim()).filter(Boolean);
     return Array.from(new Set(["Sem Professor", ...nomes, form.professor].filter(Boolean)));

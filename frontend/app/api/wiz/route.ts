@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
-import { teacherClassValueByModule } from "@/lib/course-modules";
+import { migrateModule, teacherClassValueByModule } from "@/lib/course-modules";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
 
@@ -35,6 +35,10 @@ function normalizeList(value: unknown) {
 
 function normalize(value: unknown) {
   return text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function keywords(value: unknown) {
+  return normalize(value).split(/[^a-z0-9]+/).filter((word) => word.length >= 3);
 }
 
 function firstName(value: unknown) {
@@ -80,12 +84,22 @@ function credentialMessage(kind: "aluno" | "professor", nome: string, login: str
 function findByName(items: Row[], needle: unknown) {
   const wanted = normalize(needle);
   if (!wanted) return null;
-  return items.find((item) => {
+  const wantedWords = keywords(wanted);
+  let best: Row | null = null;
+  let bestScore = 0;
+  for (const item of items) {
     const id = normalize(item.id);
     const nome = normalize(item.nome || item.name || item.aluno || item.professor || item.usuario || item.login);
     const login = normalize(item.login || item.usuario);
-    return id === wanted || login === wanted || nome === wanted || nome.includes(wanted);
-  }) || null;
+    if (id === wanted || login === wanted || nome === wanted || nome.includes(wanted)) return item;
+    const nameWords = keywords(nome);
+    const score = wantedWords.filter((word) => nameWords.includes(word) || nome.includes(word)).length;
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return bestScore >= Math.min(2, wantedWords.length) ? best : null;
 }
 
 function filterRecipients(items: Row[], turma: unknown) {
@@ -110,6 +124,23 @@ function parseMoney(value: unknown) {
 
 function money(value: number) {
   return value.toFixed(2).replace(".", ",");
+}
+
+function findBestInText(items: Row[], prompt: unknown, fields: string[]) {
+  const words = keywords(prompt);
+  if (!words.length) return null;
+  let best: Row | null = null;
+  let bestScore = 0;
+  for (const item of items) {
+    const haystack = fields.map((field) => normalize(item[field])).join(" ");
+    if (!haystack.trim()) continue;
+    const score = words.filter((word) => haystack.includes(word)).length;
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 1 ? best : null;
 }
 
 function safeFileName(value: string) {
@@ -205,17 +236,49 @@ async function createWallPost(data: Row, actor: string) {
   return { ok: true, message: `Comunicado criado: ${post.titulo}`, item: post };
 }
 
+function polishedCommunicationMessage(raw: unknown) {
+  const mensagem = text(raw);
+  if (!mensagem) return "";
+  const clean = mensagem
+    .replace(/^(enviar|mandar|avisar|comunicar|criar comunicado)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (clean.length <= 180) return `Comunicado Active Educacional:\n\n${clean}`;
+  return `Comunicado Active Educacional:\n\n${clean}`;
+}
+
 async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
-  const mensagem = text(data.mensagem || data.texto);
+  const mensagem = polishedCommunicationMessage(data.mensagem || data.texto);
   if (!mensagem) return { ok: false, message: "Mensagem e obrigatoria para envio em massa." };
 
   const publico = lower(data.publico || data.destinatarios || "alunos");
   const assunto = text(data.assunto || data.titulo || "Mensagem Active Educacional");
-  const [students, teachers, users] = await Promise.all([
+  const [students, teachers, users, classes] = await Promise.all([
     dbList<Row>("students.json"),
     dbList<Row>("teachers.json"),
     dbList<Row>("users.json"),
+    dbList<Row>("classes.json"),
   ]);
+  const targetAluno = text(data.aluno || data.destinatario);
+  const prompt = text(data.prompt || data.mensagem || data.texto);
+  const studentTarget = targetAluno ? findByName(students, targetAluno) : findBestInText(students, prompt, ["nome", "name", "aluno", "login"]);
+  if (studentTarget && !publico.includes("todos") && !text(data.turma)) {
+    const phone = studentPhone(studentTarget);
+    const email = studentEmail(studentTarget);
+    const whatsapp = phone && data.enviar_whatsapp !== false ? await sendWhatsApp(phone, mensagem, session) : { ok: false, status: "sem telefone" };
+    const emailResult = email && data.enviar_email !== false ? await sendEmail(email, assunto, mensagem, session) : { ok: false, status: "sem email" };
+    return {
+      ok: true,
+      message: `Comunicado enviado para ${text(studentTarget.nome || studentTarget.name)}. WhatsApp: ${whatsapp.status}. E-mail: ${emailResult.status}.`,
+      total: 1,
+      whatsapp_enviados: whatsapp.ok ? 1 : 0,
+      whatsapp_falhas: whatsapp.ok ? 0 : 1,
+      emails_enviados: emailResult.ok ? 1 : 0,
+      emails_falhas: emailResult.ok ? 0 : 1,
+    };
+  }
+  const classTarget = text(data.turma) ? findByName(classes, data.turma) : findBestInText(classes, prompt, ["nome", "name", "turma"]);
+  const turmaDestino = text(data.turma || classTarget?.nome || classTarget?.name);
   const source = publico.includes("todos")
     ? [...students, ...teachers, ...users]
     : publico.includes("prof")
@@ -223,7 +286,7 @@ async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
       : publico.includes("usu")
         ? users
         : students;
-  const recipients = filterRecipients(source, data.turma);
+  const recipients = filterRecipients(source, turmaDestino);
   const enviarWhatsApp = data.enviar_whatsapp !== false;
   const enviarEmail = data.enviar_email !== false;
   let whatsappOk = 0;
@@ -328,7 +391,7 @@ async function createWork(data: Row, actor: string) {
 async function createStudent(data: Row) {
   const nome = text(data.nome || data.aluno);
   if (!nome) return { ok: false, message: "Nome do aluno e obrigatorio." };
-  const modulo = text(data.modulo || "Ingles em turma online");
+  const modulo = migrateModule(data.modulo || "Aula em Turma");
   const item = {
     id: crypto.randomUUID(),
     nome,
@@ -676,7 +739,7 @@ async function recordTeacherClass(prompt: string, actor: string): Promise<Row> {
 
   const turmaId = text(turmaFound.id || turmaFound.nome || turmaFound.name);
   const turmaName = text(turmaFound.nome || turmaFound.name);
-  const modulo = text(turmaFound.modulo || turmaFound.tipo_aula || turmaFound.modalidade || turmaFound.nivel);
+  const modulo = migrateModule(turmaFound.modulo || turmaFound.tipo_aula || turmaFound.modalidade || turmaFound.nivel);
   const livro = text(turmaFound.livro || turmaFound.book);
   const valorAula = teacherClassValueByModule(modulo) ||
     parseMoney((teacher as Row).valor_aula || (teacher as Row).valor_hora || (teacher as Row).valor || turmaFound.valor_aula || "0");
@@ -767,7 +830,7 @@ function isClassRegistration(norm: string): boolean {
 function suggestFromPrompt(prompt: string) {
   const norm = lower(prompt);
   if (isClassRegistration(norm)) return "record_teacher_class";
-  if ((norm.includes("massa") || norm.includes("todos") || norm.includes("turma")) && (norm.includes("whatsapp") || norm.includes("email") || norm.includes("mensagem"))) return "send_bulk_message";
+  if (norm.includes("whatsapp") || norm.includes("email") || norm.includes("e-mail") || norm.includes("comunicado") || norm.includes("avisar") || norm.includes("enviar mensagem") || norm.includes("mandar mensagem")) return "send_bulk_message";
   if ((norm.includes("senha") || norm.includes("login") || norm.includes("acesso")) && norm.includes("prof")) return "reset_teacher_access";
   if (norm.includes("senha") || norm.includes("login") || norm.includes("acesso")) return "reset_student_access";
   if (norm.includes("responder") || norm.includes("duvida") || norm.includes("chat")) return "answer_student";
@@ -784,12 +847,17 @@ function suggestFromPrompt(prompt: string) {
 function bulkDataFromPrompt(prompt: string) {
   const norm = lower(prompt);
   const publico = norm.includes("prof") ? "professores" : norm.includes("usuario") || norm.includes("usuário") ? "usuarios" : norm.includes("aluno") ? "alunos" : norm.includes("todos") ? "todos" : "alunos";
-  const msgMatch = prompt.match(/(?:mensagem|enviar|mandar|avisar)[:\s-]+(.+)$/i);
-  const mensagem = text(msgMatch?.[1]) || prompt;
+  const msgMatch = prompt.match(/(?:mensagem|comunicado|texto|avisar|enviar|mandar)[:\s-]+(.+)$/i);
+  const quoted = prompt.match(/["“”']([^"“”']{4,})["“”']/);
+  const turmaMatch = prompt.match(/turma\s+([A-Za-zÀ-ÿ0-9 ]{3,40}?)(?=,|\.|\s+mensagem|\s+comunicado|\s+avisar|\s+enviar|\s+mandar|$)/i);
+  const alunoMatch = prompt.match(/(?:aluno|para)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+  const mensagem = text(quoted?.[1] || msgMatch?.[1]) || prompt;
   return {
     publico,
-    turma: norm.includes("todos") ? "Todas" : "",
+    turma: norm.includes("todos") ? "Todas" : text(turmaMatch?.[1]),
+    aluno: text(turmaMatch?.[1]) ? "" : text(alunoMatch?.[1]),
     assunto: "Mensagem do Professor Wiz",
+    prompt,
     mensagem,
     enviar_whatsapp: true,
     enviar_email: true,
