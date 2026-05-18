@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { StudentPortalClient } from "@/components/student-portal-client";
 import { isHomeworkActivity, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
-import { releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
+import { hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
@@ -92,7 +92,12 @@ export default async function AlunoHomePage() {
     .filter((atividade) => lower(atividade.origem).includes("workbook"))
     .filter((atividade) => !workbookBook || lower(atividade.livro).includes(`livro ${workbookBook}`));
   const licoesNaoWorkbook = licoesCadastradas.filter((atividade) => !lower(atividade.origem).includes("workbook"));
-  const workbookBase = licoesWorkbookCadastradas.length > 0 ? licoesWorkbookCadastradas : workbookLessonsForBook(workbookBook);
+  const licoesWorkbookIndividuais = licoesWorkbookCadastradas.filter(hasWorkbookStudentTarget);
+  const workbookBase = licoesWorkbookIndividuais.length > 0
+    ? licoesWorkbookIndividuais
+    : licoesWorkbookCadastradas.length > 0
+      ? licoesWorkbookCadastradas
+      : workbookLessonsForBook(workbookBook);
   const workbookLicoes = releasedWorkbookLessons(workbookBase, minhasEntregas);
   const licoes = [...licoesNaoWorkbook, ...workbookLicoes];
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { autoScore, lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
-import { getWorkbookHomeworkById, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
+import { getWorkbookHomeworkById, hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -35,7 +35,12 @@ export async function POST(req: NextRequest) {
       .filter((item) => lower(item.origem).includes("workbook"))
       .filter((item) => studentMatchesTarget(item, session, student))
       .filter((item) => !book || lower(item.livro).includes(`livro ${book}`));
-    const workbookBase = registeredWorkbookLessons.length > 0 ? registeredWorkbookLessons : workbookLessonsForBook(book);
+    const individualWorkbookLessons = registeredWorkbookLessons.filter(hasWorkbookStudentTarget);
+    const workbookBase = individualWorkbookLessons.length > 0
+      ? individualWorkbookLessons
+      : registeredWorkbookLessons.length > 0
+        ? registeredWorkbookLessons
+        : workbookLessonsForBook(book);
     const released = releasedWorkbookLessons(workbookBase, studentSubmissions)
       .some((item) => text(item.id) === activityId);
     if (!released) {

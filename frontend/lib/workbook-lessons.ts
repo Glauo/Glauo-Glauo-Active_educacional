@@ -1,4 +1,4 @@
-import { text, type Homework, type HomeworkSubmission, type Row } from "./school-modules";
+import { normalizeList, text, type Homework, type HomeworkSubmission, type Row } from "./school-modules";
 import { WORKBOOK_LESSON_CONTENT, WORKBOOK_LESSON_QUESTIONS } from "./workbook-content";
 
 type WorkbookPart = {
@@ -104,6 +104,13 @@ export function getWorkbookHomeworkById(id: unknown) {
     if (homework) return homework;
   }
   return null;
+}
+
+export function hasWorkbookStudentTarget(homework: Row) {
+  return Boolean(
+    text(homework.aluno || homework.aluno_nome || homework.target_aluno) ||
+    normalizeList(homework.alunos || homework.alunos_especificos).length > 0
+  );
 }
 
 export function releasedWorkbookLessons(lessons: Homework[], submissions: HomeworkSubmission[]) {
