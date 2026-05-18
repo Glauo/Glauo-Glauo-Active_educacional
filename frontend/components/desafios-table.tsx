@@ -4,6 +4,25 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { EditarDesafioBtn } from "./desafio-modal";
 
+function DesafioDeleteBtn({ id, titulo }: { id: string; titulo: string }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+
+  async function excluir() {
+    if (!confirm(`Excluir o desafio "${titulo}"? Esta ação não pode ser desfeita.`)) return;
+    setSaving(true);
+    await fetch(`/api/desafios?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    setSaving(false);
+    router.refresh();
+  }
+
+  return (
+    <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} title="Excluir desafio">
+      {saving ? "..." : "Excluir"}
+    </button>
+  );
+}
+
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; descricao?: string; pontos?: number | string; status?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; [k: string]: unknown };
 
@@ -107,7 +126,10 @@ export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; c
                     </td>
                     <td style={{ fontWeight: 600 }}>{nConclusoes}</td>
                     <td>
-                      <EditarDesafioBtn desafio={d} />
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <EditarDesafioBtn desafio={d} />
+                        <DesafioDeleteBtn id={String(d.id || titulo)} titulo={titulo} />
+                      </div>
                     </td>
                   </tr>
                 );
