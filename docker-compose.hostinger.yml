@@ -1,5 +1,22 @@
 services:
 
+  # Banco PostgreSQL local usado pelo Active. Mantido no compose para evitar
+  # alerta de orphan no EasyPanel sem remover o container de producao.
+  postgres_active_local:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ativo_educacional
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "yzaf9IIANpm3C51phXHLGlnn"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ativo_educacional"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   # ── Streamlit / Wiz backend (interno, não exposto ao público) ──────────────
   app:
     build:
