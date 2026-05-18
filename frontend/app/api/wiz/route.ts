@@ -236,22 +236,78 @@ async function createWallPost(data: Row, actor: string) {
   return { ok: true, message: `Comunicado criado: ${post.titulo}`, item: post };
 }
 
+function stripCommandNoise(value: string) {
+  return value
+    .replace(/^(enviar|mandar|avisar|comunicar|criar|gerar|melhorar)\s+(um\s+|uma\s+)?(comunicado|mensagem|aviso)?\s*/i, "")
+    .replace(/\b(por|via)\s+(whatsapp|zap|email|e-mail)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function communicationBodyFromPrompt(prompt: unknown) {
+  const raw = text(prompt);
+  if (!raw) return "";
+  const quoted = raw.match(/["“”']([^"“”']{4,})["“”']/);
+  if (quoted?.[1]) return text(quoted[1]);
+
+  const afterColon = raw.includes(":") ? raw.split(":").slice(1).join(":") : "";
+  if (text(afterColon).length >= 4) return stripCommandNoise(afterColon);
+
+  return stripCommandNoise(raw)
+    .replace(/\bpara\s+todos\s+(os\s+)?alunos\b/gi, "")
+    .replace(/\bpara\s+a\s+turma\s+[A-Za-zÀ-ÿ0-9 ]{2,50}/gi, "")
+    .replace(/\bturma\s+[A-Za-zÀ-ÿ0-9 ]{2,50}/gi, "")
+    .replace(/\bpara\s+(o\s+aluno|a\s+aluna|aluno|aluna)?\s*[A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?/gi, "")
+    .trim();
+}
+
 function polishedCommunicationMessage(raw: unknown) {
   const mensagem = text(raw);
   if (!mensagem) return "";
-  const clean = mensagem
-    .replace(/^(enviar|mandar|avisar|comunicar|criar comunicado)\s+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (clean.length <= 180) return `Comunicado Active Educacional:\n\n${clean}`;
-  return `Comunicado Active Educacional:\n\n${clean}`;
+  const clean = stripCommandNoise(mensagem);
+  const body = clean.endsWith(".") || clean.endsWith("!") || clean.endsWith("?") ? clean : `${clean}.`;
+  return [
+    "Comunicado Active Educacional",
+    "",
+    "Prezados(as),",
+    "",
+    body.charAt(0).toUpperCase() + body.slice(1),
+    "",
+    "Atenciosamente,",
+    "Active Educacional",
+  ].join("\n");
+}
+
+function wantsAllStudents(prompt: unknown) {
+  const norm = normalize(prompt);
+  return /\btodos?\s+(os\s+)?alunos\b/.test(norm) || /\balunos\s+de\s+todas\s+as\s+turmas\b/.test(norm);
+}
+
+function wantsClass(prompt: unknown) {
+  return /\bturma\b/.test(normalize(prompt));
+}
+
+function extractClassTarget(prompt: string, classes: Row[], explicit: unknown) {
+  if (text(explicit)) return findByName(classes, explicit);
+  if (!wantsClass(prompt)) return null;
+  const match = prompt.match(/\bturma\s+([A-Za-zÀ-ÿ0-9 ]{2,50}?)(?=,|\.|:|\s+comunicado|\s+mensagem|\s+aviso|\s+por\s+whatsapp|\s+por\s+email|\s+via\s+whatsapp|\s+via\s+email|$)/i);
+  return findByName(classes, text(match?.[1])) || findBestInText(classes, prompt, ["nome", "name", "turma"]);
+}
+
+function extractStudentTarget(prompt: string, students: Row[], explicit: unknown) {
+  if (text(explicit)) return findByName(students, explicit);
+  if (wantsAllStudents(prompt) || wantsClass(prompt)) return null;
+  const match = prompt.match(/\bpara\s+(?:o\s+aluno|a\s+aluna|aluno|aluna)?\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+  return findByName(students, text(match?.[1])) || findBestInText(students, prompt, ["nome", "name", "aluno", "login"]);
 }
 
 async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
-  const mensagem = polishedCommunicationMessage(data.mensagem || data.texto);
+  const prompt = text(data.prompt || data.mensagem || data.texto);
+  const rawMessage = text(data.mensagem || data.texto) || communicationBodyFromPrompt(prompt);
+  const mensagem = polishedCommunicationMessage(rawMessage);
   if (!mensagem) return { ok: false, message: "Mensagem e obrigatoria para envio em massa." };
 
-  const publico = lower(data.publico || data.destinatarios || "alunos");
+  const publico = wantsAllStudents(prompt) ? "alunos" : lower(data.publico || data.destinatarios || "alunos");
   const assunto = text(data.assunto || data.titulo || "Mensagem Active Educacional");
   const [students, teachers, users, classes] = await Promise.all([
     dbList<Row>("students.json"),
@@ -260,9 +316,11 @@ async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
     dbList<Row>("classes.json"),
   ]);
   const targetAluno = text(data.aluno || data.destinatario);
-  const prompt = text(data.prompt || data.mensagem || data.texto);
-  const studentTarget = targetAluno ? findByName(students, targetAluno) : findBestInText(students, prompt, ["nome", "name", "aluno", "login"]);
-  if (studentTarget && !publico.includes("todos") && !text(data.turma)) {
+  const classTarget = extractClassTarget(prompt, classes, data.turma);
+  const turmaDestino = wantsAllStudents(prompt) ? "Todas" : text(data.turma || classTarget?.nome || classTarget?.name);
+  const studentTarget = extractStudentTarget(prompt, students, targetAluno);
+
+  if (studentTarget && !turmaDestino && !wantsAllStudents(prompt)) {
     const phone = studentPhone(studentTarget);
     const email = studentEmail(studentTarget);
     const whatsapp = phone && data.enviar_whatsapp !== false ? await sendWhatsApp(phone, mensagem, session) : { ok: false, status: "sem telefone" };
@@ -277,8 +335,7 @@ async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
       emails_falhas: emailResult.ok ? 0 : 1,
     };
   }
-  const classTarget = text(data.turma) ? findByName(classes, data.turma) : findBestInText(classes, prompt, ["nome", "name", "turma"]);
-  const turmaDestino = text(data.turma || classTarget?.nome || classTarget?.name);
+
   const source = publico.includes("todos")
     ? [...students, ...teachers, ...users]
     : publico.includes("prof")
@@ -864,6 +921,24 @@ function bulkDataFromPrompt(prompt: string) {
   };
 }
 
+function communicationDataFromPrompt(prompt: string) {
+  const norm = lower(prompt);
+  const publico = norm.includes("prof") ? "professores" : norm.includes("usuario") || norm.includes("usu") ? "usuarios" : "alunos";
+  const turmaMatch = prompt.match(/turma\s+([A-Za-zÀ-ÿ0-9 ]{3,40}?)(?=,|\.|:|\s+mensagem|\s+comunicado|\s+avisar|\s+enviar|\s+mandar|$)/i);
+  const alunoMatch = prompt.match(/(?:aluno|para)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+  const turma = text(turmaMatch?.[1]);
+  return {
+    publico,
+    turma: wantsAllStudents(prompt) ? "Todas" : turma,
+    aluno: turma || wantsAllStudents(prompt) ? "" : text(alunoMatch?.[1]),
+    assunto: "Comunicado Active Educacional",
+    prompt,
+    mensagem: communicationBodyFromPrompt(prompt) || prompt,
+    enviar_whatsapp: true,
+    enviar_email: true,
+  };
+}
+
 function extractPromptField(prompt: string, names: string[]) {
   const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const pattern = new RegExp(`(?:${escaped})\\s*[:=-]\\s*([^\\n,;]+)`, "i");
@@ -898,7 +973,7 @@ async function answer(prompt: string, actor: string, session: WizSession): Promi
   if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
   if (action === "send_bulk_message") {
     if (!canAdmin(session.perfil) && !lower(session.perfil).includes("comercial")) return { ok: false, message: "Perfil sem permissao para envio em massa." };
-    return sendBulkMessage(bulkDataFromPrompt(prompt), actor, session);
+    return sendBulkMessage(communicationDataFromPrompt(prompt), actor, session);
   }
   if (action === "add_library_material") {
     if (!canAdmin(session.perfil) && !lower(session.perfil).includes("prof")) return { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
