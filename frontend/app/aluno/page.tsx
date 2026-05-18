@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { StudentPortalClient } from "@/components/student-portal-client";
 import { isHomeworkActivity, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
+import { releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
@@ -44,11 +45,12 @@ function matchesAgenda(row: Record<string, unknown>, aluno: Aluno | undefined, t
   return targetClass === lower(turma);
 }
 
-function visibleChallenge(row: Desafio, turma: string) {
+function visibleChallenge(row: Desafio, turma: string, session: NonNullable<Awaited<ReturnType<typeof getSession>>>, aluno?: Aluno) {
   const status = lower(row.status || "publicado");
-  if (status.includes("rascunho") || status.includes("arquiv")) return false;
+  if (status.includes("rascunho") || status.includes("arquiv") || status.includes("inativ") || status.includes("cancel")) return false;
   const target = lower(row.turma);
-  return !target || ["todas", "todos"].includes(target) || target === lower(turma);
+  const turmaOk = !target || ["todas", "todos", "escola toda"].includes(target) || target === lower(turma);
+  return turmaOk && studentMatchesTarget(row, session, aluno);
 }
 
 export default async function AlunoHomePage() {
@@ -80,17 +82,21 @@ export default async function AlunoHomePage() {
       return text(b.publicado_em || b.data).localeCompare(text(a.publicado_em || a.data));
     });
 
-  const licoes = atividades
+  const minhasEntregas = entregas.filter((entrega) => lower(entrega.aluno_login) === lower(session.usuario) || lower(entrega.aluno) === lower(session.pessoa));
+  const licoesCadastradas = atividades
     .filter(isHomeworkActivity)
     .filter((atividade) => studentMatchesTarget(atividade, session, meuPerfil))
     .filter((atividade) => !lower(atividade.status).includes("rascunho"));
+  const workbookBook = studentWorkbookBook(meuPerfil, session.unit);
+  const workbookLicoes = releasedWorkbookLessons(workbookLessonsForBook(workbookBook), minhasEntregas);
+  const existingIds = new Set(licoesCadastradas.map((atividade) => text(atividade.id)));
+  const licoes = [...licoesCadastradas, ...workbookLicoes.filter((atividade) => !existingIds.has(text(atividade.id)))];
 
-  const minhasEntregas = entregas.filter((entrega) => lower(entrega.aluno_login) === lower(session.usuario) || lower(entrega.aluno) === lower(session.pessoa));
   const minhasNotas = notas.filter((n) => lower(n.aluno) === lower(session.pessoa) || lower(n.aluno_login) === lower(session.usuario));
   const minhasFaturas = recebimentos
     .filter((r) => sameStudentInvoice(r, meuPerfil, sessionLite))
     .sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento)));
-  const meusDesafios = desafios.filter((d) => visibleChallenge(d, minhaTurma));
+  const meusDesafios = desafios.filter((d) => visibleChallenge(d, minhaTurma, session, meuPerfil));
   const minhasConclusoes = conclusoes.filter((c) => lower(c.aluno) === lower(session.usuario) || lower(c.aluno) === lower(session.pessoa));
   const minhasFaltas = frequencias.filter((f) => (lower(f.aluno) === lower(session.pessoa) || lower(f.aluno_id) === lower(meuPerfil?.id || session.usuario)) && Boolean(f.falta)).length;
   const minhaAgenda = agenda

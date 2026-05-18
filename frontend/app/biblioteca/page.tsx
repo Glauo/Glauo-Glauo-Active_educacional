@@ -3,6 +3,7 @@ import { dbList } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { BibliotecaClient } from "@/components/biblioteca-client";
+import { workbookLibraryBooks } from "@/lib/workbook-lessons";
 
 type Livro = { id?: string; titulo?: string; title?: string; autor?: string; author?: string; nivel?: string; nivel_livro?: string; turma?: string; categoria?: string; tipo?: string; url?: string; file_path?: string; status?: string; [k: string]: unknown };
 type Video = { id?: string; titulo?: string; title?: string; turma?: string; url?: string; descricao?: string; [k: string]: unknown };
@@ -17,7 +18,8 @@ export default async function BibliotecaPage() {
     dbList<Record<string, unknown>>("materials.json")
   ]);
 
-  const categorias = [...new Set(livros.map((l) => String(l.categoria || l.tipo || l.nivel || "Geral")))];
+  const livrosComWorkbooks = [...livros, ...workbookLibraryBooks().filter((book) => !livros.some((livro) => String(livro.id) === book.id || String(livro.url) === book.url))];
+  const categorias = [...new Set(livrosComWorkbooks.map((l) => String(l.categoria || l.tipo || l.nivel || "Geral")))];
 
   return (
     <AppShell breadcrumb="Biblioteca" userName={session.pessoa || session.usuario} userRole={session.perfil}>
@@ -35,7 +37,7 @@ export default async function BibliotecaPage() {
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" /></svg>
           </div>
           <div className="metric-label">Livros cadastrados</div>
-          <div className="metric-value">{livros.length}</div>
+          <div className="metric-value">{livrosComWorkbooks.length}</div>
           <div className="metric-note">{categorias.length} categorias diferentes</div>
         </div>
         <div className="metric-card metric-card-green">
@@ -56,7 +58,7 @@ export default async function BibliotecaPage() {
         </div>
       </div>
 
-      <BibliotecaClient livros={livros} videos={videos} materiais={materiais} />
+      <BibliotecaClient livros={livrosComWorkbooks} videos={videos} materiais={materiais} />
     </AppShell>
   );
 }

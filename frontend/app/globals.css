@@ -2885,6 +2885,45 @@
   line-height: 1.1;
 }
 
+.student-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.student-bell {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+  color: var(--navy-700);
+  cursor: pointer;
+}
+
+.student-bell small {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--red-500);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .student-metrics,
 .student-grid {
   display: grid;
