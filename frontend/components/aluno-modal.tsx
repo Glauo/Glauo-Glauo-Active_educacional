@@ -350,10 +350,10 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       setErro((d as { error?: string }).error || "Erro ao salvar.");
       return;
     }
-    const phone = form.responsavel_telefone || form.telefone;
-    if (phone && payload.login && payload.senha) {
-      const result = await sendWhatsAppAutomatico(phone, credentialMessage({ ...form, login: payload.login, senha: payload.senha }));
-      setCredFeedback(result.ok ? "Aluno salvo. Login e senha enviados automaticamente por WhatsApp." : `Aluno salvo. WhatsApp nao enviado: ${result.status || result.error || "verifique a WAPI"}.`);
+    const data = await res.json().catch(() => ({}));
+    const status = data.notification_status as { whatsapp?: string; email?: string; whatsapp_enviado?: boolean; email_enviado?: boolean } | undefined;
+    if (status) {
+      setCredFeedback(`Aluno salvo. WhatsApp: ${status.whatsapp || "nao enviado"}. E-mail: ${status.email || "nao enviado"}.`);
     }
     onSaved();
   }
