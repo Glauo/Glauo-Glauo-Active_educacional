@@ -1,4 +1,5 @@
 import { text, type Homework, type HomeworkSubmission, type Row } from "./school-modules";
+import { WORKBOOK_LESSON_CONTENT, WORKBOOK_LESSON_QUESTIONS } from "./workbook-content";
 
 type WorkbookPart = {
   book: "1" | "2" | "3";
@@ -42,12 +43,27 @@ export function workbookLessonsForBook(book?: string): Homework[] {
       const lesson = part.firstLesson + index;
       const pages = pageRange(part, lesson);
       const id = `workbook-book-${book}-lesson-${String(lesson).padStart(3, "0")}`;
+      const exactContent = WORKBOOK_LESSON_CONTENT[book]?.[lesson] || "";
+      const exactQuestions = (WORKBOOK_LESSON_QUESTIONS[book]?.[lesson] || []).map((question, questionIndex) => ({
+        id: `${id}_${question.idSuffix || `q${questionIndex + 1}`}`,
+        tipo: "multipla_escolha" as const,
+        enunciado: question.section ? `${question.section}\n${question.question}` : question.question,
+        opcoes: question.options,
+        correta_idx: null,
+        pontos: 1,
+      }));
+      const fallbackQuestion = {
+        id: `${id}_resposta`,
+        tipo: "upload" as const,
+        enunciado: `Abra o PDF ${part.title}, faca a licao ${lesson} nas paginas ${pages.start} a ${pages.end} e envie aqui sua resposta, foto ou link do arquivo.`,
+        pontos: 10,
+      };
       return {
         id,
         tipo: "Licao de Casa",
         origem: "workbook_pdf",
         titulo: `Workbook ${book} - Licao ${lesson}`,
-        descricao: `Faca a licao ${lesson} no ${part.title}, paginas ${pages.start} a ${pages.end}. Envie sua resposta ou anexe o comprovante conforme orientacao do professor.`,
+        descricao: exactContent || `Faca a licao ${lesson} no ${part.title}, paginas ${pages.start} a ${pages.end}. Envie sua resposta ou anexe o comprovante conforme orientacao do professor.`,
         disciplina: "Ingles",
         turma: "Todas",
         livro: `Livro ${book}`,
@@ -59,15 +75,8 @@ export function workbookLessonsForBook(book?: string): Homework[] {
         material_page_start: pages.start,
         material_page_end: pages.end,
         allow_resubmission: false,
-        questions: [
-          {
-            id: `${id}_resposta`,
-            tipo: "upload",
-            enunciado: `Abra o PDF ${part.title}, faca a licao ${lesson} nas paginas ${pages.start} a ${pages.end} e envie aqui sua resposta, foto ou link do arquivo.`,
-            pontos: 10,
-          },
-        ],
-        peso: 10,
+        questions: exactQuestions.length > 0 ? exactQuestions : [fallbackQuestion],
+        peso: exactQuestions.length > 0 ? exactQuestions.length : 10,
       } satisfies Homework;
     }));
 }

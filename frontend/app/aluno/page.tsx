@@ -88,9 +88,13 @@ export default async function AlunoHomePage() {
     .filter((atividade) => studentMatchesTarget(atividade, session, meuPerfil))
     .filter((atividade) => !lower(atividade.status).includes("rascunho"));
   const workbookBook = studentWorkbookBook(meuPerfil, session.unit);
-  const workbookLicoes = releasedWorkbookLessons(workbookLessonsForBook(workbookBook), minhasEntregas);
-  const existingIds = new Set(licoesCadastradas.map((atividade) => text(atividade.id)));
-  const licoes = [...licoesCadastradas, ...workbookLicoes.filter((atividade) => !existingIds.has(text(atividade.id)))];
+  const licoesWorkbookCadastradas = licoesCadastradas
+    .filter((atividade) => lower(atividade.origem).includes("workbook"))
+    .filter((atividade) => !workbookBook || lower(atividade.livro).includes(`livro ${workbookBook}`));
+  const licoesNaoWorkbook = licoesCadastradas.filter((atividade) => !lower(atividade.origem).includes("workbook"));
+  const workbookBase = licoesWorkbookCadastradas.length > 0 ? licoesWorkbookCadastradas : workbookLessonsForBook(workbookBook);
+  const workbookLicoes = releasedWorkbookLessons(workbookBase, minhasEntregas);
+  const licoes = [...licoesNaoWorkbook, ...workbookLicoes];
 
   const minhasNotas = notas.filter((n) => lower(n.aluno) === lower(session.pessoa) || lower(n.aluno_login) === lower(session.usuario));
   const minhasFaturas = recebimentos
