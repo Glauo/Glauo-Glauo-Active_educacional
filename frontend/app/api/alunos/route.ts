@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
-import { isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
 
 const KEY = "students.json";
 const HEAVY_KEYS = ["file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -25,7 +25,7 @@ function nextMatricula(alunos: Record<string, unknown>[]) {
 }
 
 function normalizeAluno(body: Record<string, unknown>) {
-  const modulo = text(body.modulo || body.modalidade);
+  const modulo = migrateModule(body.modulo || body.modalidade);
   const vip = isVipModule(modulo);
   const vipTotalDefault = vipPlanTotal(body.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
   const responsavel =
@@ -79,8 +79,8 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
-  const alunos = await dbListWithoutKeys(KEY, HEAVY_KEYS);
-  return NextResponse.json({ alunos });
+  const alunos = await dbListWithoutKeys(KEY, HEAVY_KEYS) as Record<string, unknown>[];
+  return NextResponse.json({ alunos: alunos.map((aluno) => ({ ...aluno, modulo: migrateModule(aluno.modulo || aluno.modalidade) })) });
 }
 
 export async function POST(req: NextRequest) {

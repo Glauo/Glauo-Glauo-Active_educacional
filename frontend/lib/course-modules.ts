@@ -1,10 +1,10 @@
-// Official module types — Mister Wiz definition
+// Official module types - Mister Wiz definition
 export const COURSE_MODULES = [
   "Aula em Turma",
   "Aula Teens Presencial",
-  "Aula VIP Particular",
-  "Aula Intensivo VIP",
-  "Reposição de Aula",
+  "Aulas VIP Personalizadas",
+  "Intensivo Online Ouro",
+  "Reposicao de Aula",
 ] as const;
 
 export const BOOK_LEVELS = [
@@ -25,64 +25,69 @@ function normalized(value: unknown) {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
-// Maps every legacy module name to a new canonical module name
+// Maps every legacy module name to a new canonical module name.
 const LEGACY_MAP: Record<string, string> = {
-  "ingles em turma online":   "Aula em Turma",
-  "turma presencial":         "Aula em Turma",
-  "aula em turma online":     "Aula em Turma",
-  "presencial em turma":      "Aula em Turma",
-  "online em turma":          "Aula em Turma",
+  "ingles em turma online": "Aula em Turma",
+  "turma presencial": "Aula em Turma",
+  "aula em turma online": "Aula em Turma",
+  "presencial em turma": "Aula em Turma",
+  "online em turma": "Aula em Turma",
   "kids completo presencial": "Aula em Turma",
-  "teens completo":           "Aula Teens Presencial",
-  "intensivo vip":            "Aula Intensivo VIP",
-  "intensivo vip online":     "Aula Intensivo VIP",
-  "aula em turma vip":        "Aula Intensivo VIP",
-  "vip":                      "Aula VIP Particular",
-  "aulas vip":                "Aula VIP Particular",
-  "aula vip particular":      "Aula VIP Particular",
-  "reposicoes":               "Reposição de Aula",
-  "reposicao":                "Reposição de Aula",
-  "reposicao de aula":        "Reposição de Aula",
-  "repos":                    "Reposição de Aula",
+  "teens completo": "Aula Teens Presencial",
+  "intensivo vip": "Intensivo Online Ouro",
+  "intensivo vip online": "Intensivo Online Ouro",
+  "aula intensivo vip": "Intensivo Online Ouro",
+  "aula em turma vip": "Intensivo Online Ouro",
+  "intensivo online ouro": "Intensivo Online Ouro",
+  "intensino online ouro": "Intensivo Online Ouro",
+  "vip": "Aulas VIP Personalizadas",
+  "aulas vip": "Aulas VIP Personalizadas",
+  "aula vip": "Aulas VIP Personalizadas",
+  "aula vip particular": "Aulas VIP Personalizadas",
+  "aula vip personalizada": "Aulas VIP Personalizadas",
+  "aulas vip personalizadas": "Aulas VIP Personalizadas",
+  "reposicoes": "Reposicao de Aula",
+  "reposicao": "Reposicao de Aula",
+  "reposicao de aula": "Reposicao de Aula",
+  "repos": "Reposicao de Aula",
 };
 
 export function migrateModule(moduleName: unknown): string {
   const norm = normalized(moduleName);
   if (!norm) return "Aula em Turma";
   if (LEGACY_MAP[norm]) return LEGACY_MAP[norm];
-  // Fuzzy fallbacks for unknown legacy names
-  if (norm.includes("repos")) return "Reposição de Aula";
+  if (norm.includes("repos")) return "Reposicao de Aula";
   if (norm.includes("teens") || norm.includes("tens")) return "Aula Teens Presencial";
-  if (norm.includes("intensivo")) return "Aula Intensivo VIP";
-  if (norm === "vip" || (norm.includes("vip") && !norm.includes("intensivo") && !norm.includes("em turma"))) return "Aula VIP Particular";
+  if (norm.includes("intensivo") || norm.includes("intensino") || norm.includes("ouro")) return "Intensivo Online Ouro";
+  if (norm === "vip" || (norm.includes("vip") && !norm.includes("intensivo") && !norm.includes("intensino") && !norm.includes("em turma"))) return "Aulas VIP Personalizadas";
   if (norm.includes("turma") || norm.includes("online") || norm.includes("presencial")) return "Aula em Turma";
   return "Aula em Turma";
 }
 
 // Teacher pay per class:
-//   Aula em Turma         -> R$ 100
-//   Aula Teens Presencial -> R$ 100
-//   Aula VIP Particular   -> R$  50
-//   Aula Intensivo VIP    -> R$  30
-//   Reposicao de Aula     -> R$  50
+//   Aula em Turma             -> R$ 100
+//   Aula Teens Presencial     -> R$ 100
+//   Aulas VIP Personalizadas  -> R$  50
+//   Intensivo Online Ouro     -> R$  30
+//   Reposicao de Aula         -> R$  50
 export function teacherClassValueByModule(moduleName: unknown): number {
   const m = normalized(moduleName);
   if (!m) return 0;
   if (m.includes("repos")) return 50;
-  if (m.includes("intensivo")) return 30; // must come before generic "vip"
+  if (m.includes("intensivo") || m.includes("intensino") || m.includes("ouro")) return 30;
   if (m.includes("teens")) return 100;
   if (m.includes("vip")) return 50;
   if (m.includes("turma")) return 100;
   return 0;
 }
 
-// Only "Aula VIP Particular" triggers the lesson-package counter
+// Only "Aulas VIP Personalizadas" triggers the lesson-package counter.
 export function isVipModule(moduleName: unknown): boolean {
   const m = normalized(moduleName);
-  return m === "aula vip particular" || m === "vip particular";
+  return m === "aulas vip personalizadas" || m === "aula vip personalizada" || m === "aula vip particular" || m === "vip particular";
 }
 
 export function vipPlanTotal(planName: unknown): number {

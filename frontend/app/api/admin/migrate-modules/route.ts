@@ -17,17 +17,13 @@ function migrateStudent(s: Row): { record: Row; changed: boolean; from: string; 
   const oldModule = text(s.modulo || s.modalidade);
   const newModule = migrateModule(oldModule);
   const isVip = isVipModule(newModule);
-
-  const vipTotal = isVip
-    ? Math.max(num(s.vip_aulas_total) || vipPlanTotal(s.vip_tipo_plano || "Pacote 10 aulas"), 1)
-    : 0;
-  const vipRestantes = isVip
-    ? Math.max(0, num(s.vip_aulas_restantes) || vipTotal)
-    : 0;
+  const vipTotal = isVip ? Math.max(num(s.vip_aulas_total) || vipPlanTotal(s.vip_tipo_plano || "Pacote 10 aulas"), 1) : 0;
+  const vipRestantes = isVip ? Math.max(0, num(s.vip_aulas_restantes) || vipTotal) : 0;
 
   const record: Row = {
     ...s,
     modulo: newModule,
+    modalidade: newModule,
     valor_professor_aula: teacherClassValueByModule(newModule),
     vip_tipo_plano: isVip ? text(s.vip_tipo_plano || "Pacote 10 aulas") : "",
     vip_aulas_total: isVip ? vipTotal : 0,
@@ -48,6 +44,8 @@ function migrateClass(c: Row): { record: Row; changed: boolean; from: string; to
   const record: Row = {
     ...c,
     modulo: newModule,
+    tipo_aula: newModule,
+    modalidade: newModule.toLowerCase().includes("online") ? "Online" : "Presencial",
     valor_aula: teacherClassValueByModule(newModule) || num(c.valor_aula),
   };
   if (oldModule !== newModule) record.modulo_legado = oldModule;
@@ -67,19 +65,15 @@ export async function POST() {
 
   const studentResults = students.map(migrateStudent);
   const classResults = classes.map(migrateClass);
-
-  const migratedStudents = studentResults.map((r) => r.record);
-  const migratedClasses = classResults.map((r) => r.record);
-
   await Promise.all([
-    dbSet("students.json", migratedStudents),
-    dbSet("classes.json", migratedClasses),
+    dbSet("students.json", studentResults.map((r) => r.record)),
+    dbSet("classes.json", classResults.map((r) => r.record)),
   ]);
 
   const studentChanges = studentResults.filter((r) => r.changed);
   const classChanges = classResults.filter((r) => r.changed);
 
-  const summary = {
+  return NextResponse.json({
     ok: true,
     total_alunos: students.length,
     alunos_migrados: studentChanges.length,
@@ -87,13 +81,11 @@ export async function POST() {
     turmas_migradas: classChanges.length,
     detalhes_alunos: studentChanges.map((r) => ({ de: r.from, para: r.to })),
     detalhes_turmas: classChanges.map((r) => ({ de: r.from, para: r.to })),
-    novos_modulos: ["Aula em Turma", "Aula Teens Presencial", "Aula VIP Particular", "Aula Intensivo VIP", "Reposição de Aula"],
+    novos_modulos: ["Aula em Turma", "Aula Teens Presencial", "Aulas VIP Personalizadas", "Intensivo Online Ouro", "Reposicao de Aula"],
     vip_default: VIP_DEFAULT_TOTAL,
     executado_por: session.pessoa || session.usuario,
     executado_em: new Date().toISOString(),
-  };
-
-  return NextResponse.json(summary);
+  });
 }
 
 export async function GET() {
@@ -105,7 +97,7 @@ export async function GET() {
     dbList<Row>("students.json"),
     dbList<Row>("classes.json"),
   ]);
-  const preview = {
+  return NextResponse.json({
     alunos: students.map((s) => ({
       nome: text(s.nome || s.name),
       modulo_atual: text(s.modulo || s.modalidade),
@@ -116,6 +108,5 @@ export async function GET() {
       modulo_atual: text(c.modulo || c.tipo_aula || c.modalidade),
       modulo_novo: migrateModule(c.modulo || c.tipo_aula || c.modalidade),
     })),
-  };
-  return NextResponse.json(preview);
+  });
 }

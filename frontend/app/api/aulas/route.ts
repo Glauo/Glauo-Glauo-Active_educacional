@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { isAdminOrCoordinator, isTeacher, sameName } from "@/lib/roles";
-import { isVipModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPackageStats } from "@/lib/course-modules";
+import { isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPackageStats } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
 
@@ -23,7 +23,7 @@ function moneyValue(value: unknown) {
 }
 
 function classModule(turma: Row) {
-  return text(turma.modulo || turma.tipo_aula || turma.modalidade || turma.nivel);
+  return migrateModule(turma.modulo || turma.tipo_aula || turma.modalidade || turma.nivel);
 }
 
 function toInt(value: unknown) {
