@@ -15,6 +15,16 @@ function isPaid(value: unknown) {
   return status.includes("pago") || status.includes("baixado") || status.includes("liquidado");
 }
 
+function ensureFinanceIds(items: Record<string, unknown>[]) {
+  let changed = false;
+  const next = items.map((item) => {
+    if (text(item.id)) return item;
+    changed = true;
+    return { ...item, id: crypto.randomUUID(), legacy_id_repaired_at: new Date().toISOString() };
+  });
+  return { items: next, changed };
+}
+
 async function audit(entry: Record<string, unknown>) {
   const log = await dbList<Record<string, unknown>>("finance_audit.json");
   await dbSet("finance_audit.json", [
@@ -72,8 +82,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tipo = searchParams.get("tipo") || "recebimentos";
   const key = tipo === "despesas" ? "payables.json" : "receivables.json";
-  const lancamentos = searchParams.get("include_pdf") === "true" ? await dbList(key) : await dbListWithoutKeys(key, HEAVY_KEYS);
-  return NextResponse.json({ lancamentos });
+  const raw = searchParams.get("include_pdf") === "true"
+    ? await dbList<Record<string, unknown>>(key)
+    : await dbListWithoutKeys<Record<string, unknown>>(key, HEAVY_KEYS);
+  const repaired = ensureFinanceIds(raw);
+  if (repaired.changed) {
+    const full = await dbList<Record<string, unknown>>(key);
+    const fixedFull = ensureFinanceIds(full);
+    await dbSet(key, fixedFull.items);
+  }
+  return NextResponse.json({ lancamentos: repaired.items });
 }
 
 export async function POST(req: NextRequest) {
@@ -85,7 +103,9 @@ export async function POST(req: NextRequest) {
     const { tipo = "recebimentos", ...data } = body;
     const key = tipo === "despesas" ? "payables.json" : "receivables.json";
 
-    const lancamentos = await dbList<Record<string, unknown>>(key);
+    const current = await dbList<Record<string, unknown>>(key);
+    const repaired = ensureFinanceIds(current);
+    const lancamentos = repaired.items;
     const id = text(data.id) || crypto.randomUUID();
     const pdfUpdate = text(data.boleto_pdf_b64) ? {
       boleto_status: "Importado",
@@ -150,7 +170,9 @@ export async function PUT(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "ID obrigatorio." }, { status: 400 });
 
     const key = tipo === "despesas" ? "payables.json" : "receivables.json";
-    const lancamentos = await dbList<Record<string, unknown>>(key);
+    const baseLancamentos = await dbList<Record<string, unknown>>(key);
+    const repairedLancamentos = ensureFinanceIds(baseLancamentos);
+    const lancamentos = repairedLancamentos.items;
     const idx = lancamentos.findIndex((l) => l.id === id);
     if (idx === -1) return NextResponse.json({ error: "Lancamento nao encontrado." }, { status: 404 });
 
@@ -263,7 +285,8 @@ export async function DELETE(req: NextRequest) {
   const ids = (idsParam ? idsParam.split(",") : [id]).map((item) => text(item)).filter(Boolean);
   if (ids.length === 0) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
   const key = tipo === "despesas" ? "payables.json" : "receivables.json";
-  const lancamentos = await dbList<Record<string, unknown>>(key);
+  const repaired = ensureFinanceIds(await dbList<Record<string, unknown>>(key));
+  const lancamentos = repaired.items;
   const selected = lancamentos.filter((l) => ids.includes(text(l.id)));
   const paid = selected.filter((l) => isPaid(l.status));
   if (paid.length > 0) {
@@ -308,7 +331,8 @@ export async function PATCH(req: NextRequest) {
     const actor = session.pessoa || session.usuario;
     const now = new Date().toISOString();
 
-    const lancamentos = await dbList<Record<string, unknown>>(key);
+    const repairedLancamentos = ensureFinanceIds(await dbList<Record<string, unknown>>(key));
+    const lancamentos = repairedLancamentos.items;
     const idsSet = new Set(ids);
     const recibosNovos: Record<string, unknown>[] = [];
     let baixados = 0;
