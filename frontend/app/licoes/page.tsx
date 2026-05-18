@@ -25,6 +25,11 @@ export default async function LicoesPage() {
     dbList<Record<string, unknown>>("students.json"),
   ]);
   const licoes = activities.filter(isHomeworkActivity);
+  const licoesOrdenadas = [...licoes].sort((a, b) => {
+    const dateDiff = text(b.created_at || b.updated_at).localeCompare(text(a.created_at || a.updated_at));
+    if (dateDiff !== 0) return dateDiff;
+    return text(a.titulo).localeCompare(text(b.titulo));
+  });
   const entregas = submissions.filter((submission) => licoes.some((item) => text(item.id) === text(submission.activity_id)));
   const corrigidas = entregas.filter((submission) => text(submission.status).toLowerCase().includes("corrigido"));
   const pendentes = entregas.length - corrigidas.length;
@@ -66,12 +71,15 @@ export default async function LicoesPage() {
               <table className="data-table">
                 <thead><tr><th>Licao</th><th>Turma</th><th>Disciplina</th><th>Prazo</th><th>Status</th><th>Entregas</th><th>Acoes</th></tr></thead>
                 <tbody>
-                  {licoes.map((licao) => {
+                  {licoesOrdenadas.map((licao) => {
                     const count = entregas.filter((submission) => text(submission.activity_id) === text(licao.id)).length;
+                    const turmaLabel = text(licao.aluno || licao.target_aluno)
+                      ? `${text(licao.turma || "Todas")} / ${text(licao.aluno || licao.target_aluno)}`
+                      : text(licao.turma || "Todas");
                     return (
                       <tr key={text(licao.id)}>
                         <td><div className="table-name-cell"><span className="table-name-primary">{text(licao.titulo)}</span><span className="table-name-secondary">{(licao.questions || []).length} questoes | {homeworkTotal(licao)} pts</span></div></td>
-                        <td>{text(licao.turma || "Todas")}</td>
+                        <td>{turmaLabel}</td>
                         <td>{text(licao.disciplina || "Geral")}</td>
                         <td>{text(licao.due_date || "-")}</td>
                         <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
