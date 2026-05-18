@@ -6,6 +6,7 @@ import { dbList, dbSet } from "@/lib/db";
 import { migrateModule, teacherClassValueByModule } from "@/lib/course-modules";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
+import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
 
 type Row = Record<string, unknown>;
 type WizSession = NonNullable<Awaited<ReturnType<typeof getSession>>>;
@@ -381,7 +382,7 @@ async function sendBulkMessage(data: Row, actor: string, session: WizSession) {
   };
 }
 
-async function createHomework(data: Row, actor: string) {
+async function createHomework(data: Row, actor: string, session?: WizSession) {
   const titulo = text(data.titulo || "Tarefa criada pelo Wiz");
   const disciplina = text(data.disciplina || "Ingles");
   const turma = text(data.turma || "Todas") || "Todas";
@@ -421,12 +422,20 @@ async function createHomework(data: Row, actor: string) {
     created_at: new Date().toISOString(),
     notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
   };
-  const items = await dbList<Row>("activities.json");
+  const [items, students] = await Promise.all([dbList<Row>("activities.json"), dbList<Row>("students.json")]);
+  item.notification_status = await notifyStudentsAboutLaunch({
+    students,
+    item,
+    kind: "licao",
+    title: `Nova licao de casa: ${titulo}`,
+    body: `Voce recebeu uma nova licao de ${disciplina}. Prazo: ${text(item.due_date) || "consulte no portal"}.`,
+    session,
+  });
   await dbSet("activities.json", [...items, item]);
   return { ok: true, message: `Tarefa criada: ${titulo}`, item };
 }
 
-async function createWork(data: Row, actor: string) {
+async function createWork(data: Row, actor: string, session?: WizSession) {
   const item = {
     id: `d_${Date.now()}`,
     titulo: text(data.titulo || "Trabalho criado pelo Wiz"),
@@ -440,7 +449,15 @@ async function createWork(data: Row, actor: string) {
     status: text(data.status || "Publicado"),
     notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
   };
-  const items = await dbList<Row>("challenges.json");
+  const [items, students] = await Promise.all([dbList<Row>("challenges.json"), dbList<Row>("students.json")]);
+  item.notification_status = await notifyStudentsAboutLaunch({
+    students,
+    item,
+    kind: "desafio",
+    title: `Novo desafio: ${text(item.titulo)}`,
+    body: `Um novo desafio foi lancado para voce. Pontos: ${text(item.pontos)}.`,
+    session,
+  });
   await dbSet("challenges.json", [...items, item]);
   return { ok: true, message: `Trabalho/desafio criado: ${item.titulo}`, item };
 }
@@ -1032,8 +1049,8 @@ export async function POST(req: NextRequest) {
   let result: Row;
   if (action === "answer") result = await answer(text(data.prompt || body.prompt), actor, session);
   else if (action === "create_wall_post") result = await createWallPost(data, actor);
-  else if (action === "create_homework") result = await createHomework(data, actor);
-  else if (action === "create_work") result = await createWork(data, actor);
+  else if (action === "create_homework") result = await createHomework(data, actor, session);
+  else if (action === "create_work") result = await createWork(data, actor, session);
   else if (action === "add_library_material") result = canAdmin(session.perfil) || lower(session.perfil).includes("prof") ? await addLibraryMaterial(data, actor, attachedFile) : { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
   else if (action === "create_student") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createStudent(data) : { ok: false, message: "Perfil sem permissao para cadastrar aluno." };
   else if (action === "create_financial") result = canAdmin(session.perfil) || lower(session.perfil).includes("comercial") ? await createFinancial(data) : { ok: false, message: "Perfil sem permissao para financeiro." };

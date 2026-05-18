@@ -347,6 +347,11 @@ export function HomeworkSubmitForm({ homework, submission }: { homework: Homewor
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {text(homework.material_url) && (
+        <a className="btn btn-secondary btn-sm" href={text(homework.material_url)} target="_blank" rel="noreferrer">
+          Abrir PDF da licao {text(homework.material_page_start) && `(paginas ${text(homework.material_page_start)} a ${text(homework.material_page_end)})`}
+        </a>
+      )}
       {questions.map((question, index) => (
         <div key={question.id} className="card">
           <div className="card-body">

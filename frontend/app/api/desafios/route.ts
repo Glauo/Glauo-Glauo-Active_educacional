@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
+import { text } from "@/lib/school-modules";
 
 type Desafio = { id?: string; titulo?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
 
@@ -15,8 +17,16 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const body = await req.json() as Desafio;
-  const desafios = await dbList<Desafio>("challenges.json");
-  const novo = { ...body, id: body.id || `d_${Date.now()}`, status: body.status || "Publicado" };
+  const [desafios, students] = await Promise.all([dbList<Desafio>("challenges.json"), dbList<Record<string, unknown>>("students.json")]);
+  const novo: Desafio = { ...body, id: body.id || `d_${Date.now()}`, status: body.status || "Publicado" };
+  novo.notification_status = await notifyStudentsAboutLaunch({
+    students,
+    item: novo,
+    kind: "desafio",
+    title: `Novo desafio: ${text(novo.titulo || "Desafio")}`,
+    body: `Um novo desafio foi lancado para voce. Pontos: ${text(novo.pontos || 0)}.`,
+    session,
+  });
   desafios.push(novo);
   await dbSet("challenges.json", desafios);
   return NextResponse.json(novo, { status: 201 });
