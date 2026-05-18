@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
-import { autoScore, nowIso, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
+import { autoScore, lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
 import { getWorkbookHomeworkById, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 export async function POST(req: NextRequest) {
@@ -27,6 +27,21 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!homework) return NextResponse.json({ error: "Licao nao encontrada." }, { status: 404 });
+
+  if (lower(homework.origem).includes("workbook")) {
+    const book = studentWorkbookBook(student, session.unit);
+    const studentSubmissions = submissions.filter((item) => text(item.aluno_login) === text(session.usuario) || text(item.aluno) === text(session.pessoa));
+    const registeredWorkbookLessons = activities
+      .filter((item) => lower(item.origem).includes("workbook"))
+      .filter((item) => studentMatchesTarget(item, session, student))
+      .filter((item) => !book || lower(item.livro).includes(`livro ${book}`));
+    const workbookBase = registeredWorkbookLessons.length > 0 ? registeredWorkbookLessons : workbookLessonsForBook(book);
+    const released = releasedWorkbookLessons(workbookBase, studentSubmissions)
+      .some((item) => text(item.id) === activityId);
+    if (!released) {
+      return NextResponse.json({ error: "Conclua a licao anterior antes de enviar esta atividade." }, { status: 403 });
+    }
+  }
 
   const answers = body.answers || {};
   const missing = (homework.questions || []).filter((question) => !text(answers[question.id]));
