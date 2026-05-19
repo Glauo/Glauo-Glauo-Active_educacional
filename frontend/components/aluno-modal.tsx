@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { BOOK_LEVELS, COURSE_MODULES, formatModuleValue, isVipModule, isVipUnlimitedPlan, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, VIP_UNLIMITED, vipPlanTotal } from "@/lib/course-modules";
 import { ModalPortal } from "@/components/modal-portal";
 
 type AlunoData = {
@@ -85,6 +85,7 @@ type Form = {
   vip_tipo_plano: string;
   vip_aulas_total: string;
   vip_aulas_restantes: string;
+  vip_aulas_dadas: string;
   observacoes: string;
   login: string;
   senha: string;
@@ -181,6 +182,7 @@ function fromAluno(a?: AlunoData): Form {
     vip_tipo_plano: text(a?.vip_tipo_plano || "Pacote 10 aulas"),
     vip_aulas_total: text(a?.vip_aulas_total ?? ""),
     vip_aulas_restantes: text(a?.vip_aulas_restantes ?? ""),
+    vip_aulas_dadas: text(a?.vip_aulas_dadas ?? a?.aulas_dadas_vip ?? "0"),
     observacoes: text(a?.observacoes),
     login: text(a?.login || a?.usuario),
     senha: text(a?.senha),
@@ -227,10 +229,11 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   const [credFeedback, setCredFeedback] = useState("");
   const [credWhatsappLink, setCredWhatsappLink] = useState("");
   const vip = isVipModule(form.modulo);
-  const planTotal = vipPlanTotal(form.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
-  const vipTotalNumber = Math.max(0, Number(form.vip_aulas_total || planTotal) || planTotal);
-  const vipRestantesNumber = Math.max(0, Number(form.vip_aulas_restantes || vipTotalNumber) || 0);
-  const vipDadasNumber = Math.max(0, vipTotalNumber - vipRestantesNumber);
+  const vipIndeterminado = isVipUnlimitedPlan(form.vip_tipo_plano);
+  const planTotal = vipIndeterminado ? VIP_DEFAULT_TOTAL : (vipPlanTotal(form.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL);
+  const vipTotalNumber = vipIndeterminado ? 0 : Math.max(0, Number(form.vip_aulas_total || planTotal) || planTotal);
+  const vipRestantesNumber = vipIndeterminado ? 0 : Math.max(0, Number(form.vip_aulas_restantes || vipTotalNumber) || 0);
+  const vipDadasNumber = vipIndeterminado ? Math.max(0, Number(form.vip_aulas_dadas || 0)) : Math.max(0, vipTotalNumber - vipRestantesNumber);
   const turmaOptions = useMemo(() => {
     const names = turmas.map((t) => text(t.nome || t.name)).filter(Boolean);
     const unique = Array.from(new Set(["Sem Turma", ...names, form.turma].filter(Boolean)));
@@ -317,8 +320,8 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       bairro: form.bairro.trim(),
       valor_professor_aula: teacherClassValueByModule(form.modulo),
       vip_tipo_plano: vip ? form.vip_tipo_plano : "",
-      vip_aulas_total: vip ? Number(form.vip_aulas_total || planTotal) : 0,
-      vip_aulas_restantes: vip ? Number(form.vip_aulas_restantes === "" ? (form.vip_aulas_total || planTotal) : form.vip_aulas_restantes) : 0,
+      vip_aulas_total: vip ? (vipIndeterminado ? VIP_UNLIMITED : Number(form.vip_aulas_total || planTotal)) : 0,
+      vip_aulas_restantes: vip ? (vipIndeterminado ? VIP_UNLIMITED : Number(form.vip_aulas_restantes === "" ? (form.vip_aulas_total || planTotal) : form.vip_aulas_restantes)) : 0,
       vip_aulas_dadas: vip ? vipDadasNumber : 0,
       aulas_dadas_vip: vip ? vipDadasNumber : 0,
       responsavel: {
@@ -436,7 +439,8 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                     className="form-input"
                     value={form.vip_tipo_plano}
                     onChange={(e) => {
-                      const total = vipPlanTotal(e.target.value);
+                      const isUnlim = isVipUnlimitedPlan(e.target.value);
+                      const total = isUnlim ? VIP_UNLIMITED : vipPlanTotal(e.target.value);
                       update("vip_tipo_plano", e.target.value);
                       update("vip_aulas_total", String(total));
                       update("vip_aulas_restantes", String(total));
@@ -444,34 +448,57 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                   >
                     <option>Aula avulsa</option>
                     <option>Pacote 10 aulas</option>
+                    <option>Aulas Indeterminadas</option>
                   </select>
+                  {vipIndeterminado && (
+                    <div className="form-help" style={{ color: "var(--blue-600)", fontWeight: 600 }}>
+                      Aluno sem limite de aulas — o contador nao sera decrementado automaticamente.
+                    </div>
+                  )}
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Aulas do pacote VIP</label>
-                  <input className="form-input" type="number" min="0" value={form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_total", e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Aulas dadas</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    max={vipTotalNumber || undefined}
-                    value={vipDadasNumber}
-                    onChange={(e) => {
-                      const dadas = Math.max(0, Number(e.target.value) || 0);
-                      const total = Math.max(vipTotalNumber, dadas);
-                      update("vip_aulas_total", String(total));
-                      update("vip_aulas_restantes", String(Math.max(0, total - dadas)));
-                    }}
-                  />
-                  <div className="form-help">ADM e coordenador podem ajustar manualmente quando necessario.</div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Aulas restantes</label>
-                  <input className="form-input" type="number" min="0" value={form.vip_aulas_restantes || form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_restantes", e.target.value)} />
-                  <div className="form-help">Exemplo: pacote de 10 com 7 restantes significa 3 aulas dadas.</div>
-                </div>
+                {!vipIndeterminado && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Aulas do pacote VIP</label>
+                      <input className="form-input" type="number" min="0" value={form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_total", e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Aulas dadas</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min="0"
+                        max={vipTotalNumber || undefined}
+                        value={vipDadasNumber}
+                        onChange={(e) => {
+                          const dadas = Math.max(0, Number(e.target.value) || 0);
+                          const total = Math.max(vipTotalNumber, dadas);
+                          update("vip_aulas_total", String(total));
+                          update("vip_aulas_restantes", String(Math.max(0, total - dadas)));
+                        }}
+                      />
+                      <div className="form-help">ADM e coordenador podem ajustar manualmente quando necessario.</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Aulas restantes</label>
+                      <input className="form-input" type="number" min="0" value={form.vip_aulas_restantes || form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_restantes", e.target.value)} />
+                      <div className="form-help">Exemplo: pacote de 10 com 7 restantes significa 3 aulas dadas.</div>
+                    </div>
+                  </>
+                )}
+                {vipIndeterminado && (
+                  <div className="form-group">
+                    <label className="form-label">Aulas dadas (contador)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      value={vipDadasNumber}
+                      onChange={(e) => update("vip_aulas_dadas", e.target.value)}
+                    />
+                    <div className="form-help">Apenas para registro historico. Nao ha limite.</div>
+                  </div>
+                )}
               </>
             )}
             <div className="form-group">

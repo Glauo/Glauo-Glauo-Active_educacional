@@ -163,6 +163,7 @@ function faturaKeys(aluno: Aluno) {
 function vipLabel(aluno: Aluno) {
   const p = vipPackageStats(aluno);
   if (!p) return "";
+  if (p.unlimited) return `${p.dadas} dadas · Sem limite`;
   return `${p.dadas}/${p.total} dadas · ${p.restantes} restantes`;
 }
 

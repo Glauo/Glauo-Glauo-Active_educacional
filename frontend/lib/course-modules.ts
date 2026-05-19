@@ -19,6 +19,7 @@ export const BOOK_LEVELS = [
 ] as const;
 
 export const VIP_DEFAULT_TOTAL = 10;
+export const VIP_UNLIMITED = -1;
 
 function normalized(value: unknown) {
   return String(value || "")
@@ -90,7 +91,13 @@ export function isVipModule(moduleName: unknown): boolean {
   return m === "aulas vip personalizadas" || m === "aula vip personalizada" || m === "aula vip particular" || m === "vip particular";
 }
 
+export function isVipUnlimitedPlan(planName: unknown): boolean {
+  const plan = normalized(planName);
+  return plan.includes("indetermin") || plan.includes("ilimitad") || plan.includes("sem limite");
+}
+
 export function vipPlanTotal(planName: unknown): number {
+  if (isVipUnlimitedPlan(planName)) return VIP_UNLIMITED;
   const plan = normalized(planName);
   if (plan.includes("10")) return VIP_DEFAULT_TOTAL;
   if (plan.includes("avulsa") || plan.includes("avulso")) return 1;
@@ -102,12 +109,21 @@ function toInt(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function vipPackageStats(aluno: Record<string, unknown>) {
+export function vipPackageStats(aluno: Record<string, unknown>): {
+  total: number; dadas: number; restantes: number; unlimited: boolean;
+} | null {
   const modulo = aluno.modulo || aluno.modalidade || aluno.tipo_aula;
   const hasVipPlan = isVipModule(aluno.vip_tipo_plano);
   if (!isVipModule(modulo) && !hasVipPlan) return null;
 
-  const planTotal = vipPlanTotal(aluno.vip_tipo_plano || "Pacote 10 aulas");
+  const planName = aluno.vip_tipo_plano || "Pacote 10 aulas";
+  const unlimited = isVipUnlimitedPlan(planName) || toInt(aluno.vip_aulas_total) === VIP_UNLIMITED;
+  if (unlimited) {
+    const explicitDadas = toInt(aluno.vip_aulas_dadas ?? aluno.aulas_dadas_vip);
+    return { total: VIP_UNLIMITED, dadas: explicitDadas, restantes: VIP_UNLIMITED, unlimited: true };
+  }
+
+  const planTotal = vipPlanTotal(planName);
   const total = Math.max(1, toInt(aluno.vip_aulas_total) || planTotal || VIP_DEFAULT_TOTAL);
   const explicitDadas = toInt(aluno.vip_aulas_dadas ?? aluno.aulas_dadas_vip);
   const rawRestantes = aluno.vip_aulas_restantes;
@@ -116,7 +132,7 @@ export function vipPackageStats(aluno: Record<string, unknown>) {
     : Math.min(total, Math.max(0, toInt(rawRestantes)));
   const dadas = Math.max(0, explicitDadas || (total - restantes));
 
-  return { total, dadas, restantes };
+  return { total, dadas, restantes, unlimited: false };
 }
 
 export function formatModuleValue(moduleName: unknown): string {
