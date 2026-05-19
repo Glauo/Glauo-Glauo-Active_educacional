@@ -180,19 +180,59 @@ function vipLabel(aluno: Aluno) {
   return `${p.dadas}/${p.total} dadas · ${p.restantes} restantes`;
 }
 
+/* ── Envio de documento (recibo/relatorio) ── */
+async function sendDoc(canal: "whatsapp" | "email" | "ambos", opts: { telefone?: string; email?: string; assunto?: string; mensagem: string }) {
+  const res = await fetch("/api/financeiro/send-doc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canal, ...opts }),
+  });
+  const data = await res.json().catch(() => ({})) as { ok?: boolean; results?: Record<string, string> };
+  if (!res.ok || !data.ok) {
+    const detail = data.results ? Object.entries(data.results).map(([k, v]) => `${k}: ${v}`).join(" | ") : "verifique configuracoes";
+    alert(`Envio nao confirmado: ${detail}`);
+  } else {
+    const detail = data.results ? Object.entries(data.results).map(([k, v]) => `${k}: ${v}`).join(" | ") : "ok";
+    alert(`Enviado! ${detail}`);
+  }
+}
+
 /* ── Inline recibo ── */
 function ReciboInline({ fatura, aluno, onClose }: { fatura: Recebimento; aluno: Aluno; onClose: () => void }) {
+  const [sending, setSending] = useState<"" | "whatsapp" | "email" | "ambos">("");
   const nome = text(aluno.nome || aluno.name || "Aluno");
   const valor = parseValor(fatura.valor_parcela ?? fatura.valor);
   const dataBaixa = fatura.data_baixa ? fmtDate(fatura.data_baixa) : new Date().toLocaleDateString("pt-BR");
   const recNum = text(fatura.id || Date.now()).slice(-6).toUpperCase();
+  const telefone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp);
+  const email = text(aluno.responsavel_email || aluno.email);
+
+  const mensagemRecibo = [
+    `✅ *Recibo de Pagamento — Ativo Educacional*`,
+    `Recibo nº: ${recNum}`,
+    `Data: ${dataBaixa}`,
+    `Aluno: ${nome}`,
+    `Referente: ${text(fatura.descricao || "Mensalidade / Serviços Educacionais")}`,
+    `Valor recebido: ${formatBRL(valor)}`,
+    ``,
+    `Ativo Educacional — Este recibo confirma o pagamento do valor acima.`,
+  ].join("\n");
+
+  async function enviar(canal: "whatsapp" | "email" | "ambos") {
+    setSending(canal);
+    await sendDoc(canal, { telefone, email, assunto: `Recibo de Pagamento — ${nome}`, mensagem: mensagemRecibo });
+    setSending("");
+  }
+
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth: 480 }}>
         <div className="modal-header">
           <div className="modal-title">Recibo de Pagamento</div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button className="btn btn-primary btn-sm" onClick={() => printWindow("recibo-print", "Recibo — Ativo Educacional")}>Imprimir</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => enviar("whatsapp")} disabled={!telefone || !!sending} title={!telefone ? "Sem telefone cadastrado" : ""}>{sending === "whatsapp" ? "Enviando..." : "WhatsApp"}</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => enviar("email")} disabled={!email || !!sending} title={!email ? "Sem e-mail cadastrado" : ""}>{sending === "email" ? "Enviando..." : "E-mail"}</button>
             <button className="modal-close" onClick={onClose}>
               <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
             </button>
@@ -224,6 +264,7 @@ function ReciboInline({ fatura, aluno, onClose }: { fatura: Recebimento; aluno: 
 
 /* ── Relatório do aluno ── */
 function RelatorioAlunoModal({ aluno, faturas: faturasRaw, onClose }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void }) {
+  const [sending, setSending] = useState<"" | "whatsapp" | "email">("");
   const faturas = [...faturasRaw].sort((a, b) =>
     toSortableDate(a.vencimento || a.data_vencimento).localeCompare(toSortableDate(b.vencimento || b.data_vencimento))
   );
@@ -231,18 +272,37 @@ function RelatorioAlunoModal({ aluno, faturas: faturasRaw, onClose }: { aluno: A
   const total = faturas.reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
   const totalPago = faturas.filter(isPago).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
   const telefone = text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp);
+  const email = text(aluno.responsavel_email || aluno.email);
   const hoje = new Date().toLocaleDateString("pt-BR");
   const datas = faturas.map((f) => text(f.vencimento || f.data_vencimento)).filter(Boolean).sort();
   const periodo = datas.length > 0 ? (datas.length === 1 ? fmtDate(datas[0]) : `${fmtDate(datas[0])} a ${fmtDate(datas[datas.length - 1])}`) : "";
+
+  const mensagemRelatorio = [
+    `📊 *Relatório Financeiro — Ativo Educacional*`,
+    `Aluno: ${nome}`,
+    periodo ? `Período: ${periodo}` : "",
+    `Emissão: ${hoje}`,
+    ``,
+    `Total: ${formatBRL(total)}`,
+    `Pago: ${formatBRL(totalPago)}`,
+    `Em aberto: ${formatBRL(total - totalPago)}`,
+  ].filter((l) => l !== undefined).join("\n");
+
+  async function enviar(canal: "whatsapp" | "email") {
+    setSending(canal);
+    await sendDoc(canal, { telefone, email, assunto: `Relatório Financeiro — ${nome}`, mensagem: mensagemRelatorio });
+    setSending("");
+  }
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth: 760, width: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
         <div className="modal-header">
           <div className="modal-title">Relatório Financeiro do Aluno</div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn btn-primary btn-sm" onClick={() => printWindow("relatorio-professor-print", `Relatório — ${nome}`)}>Imprimir / PDF</button>
-            {telefone && <AutoWhatsAppButton phone={telefone} message={`Relatório financeiro de ${nome}\nPeríodo: ${periodo}\nTotal: ${formatBRL(total)}\nPago: ${formatBRL(totalPago)}\nSaldo: ${formatBRL(total - totalPago)}`} />}
+            <button className="btn btn-secondary btn-sm" onClick={() => enviar("whatsapp")} disabled={!telefone || !!sending} title={!telefone ? "Sem telefone cadastrado" : ""}>{sending === "whatsapp" ? "Enviando..." : "WhatsApp"}</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => enviar("email")} disabled={!email || !!sending} title={!email ? "Sem e-mail cadastrado" : ""}>{sending === "email" ? "Enviando..." : "E-mail"}</button>
             <button className="modal-close" onClick={onClose}>
               <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
             </button>
