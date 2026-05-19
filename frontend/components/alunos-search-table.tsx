@@ -69,6 +69,19 @@ function fmtDate(v: unknown) {
   return Number.isNaN(d.getTime()) ? raw : d.toLocaleDateString("pt-BR");
 }
 
+// Converts DD/MM/YYYY or ISO date to a sortable YYYY-MM-DD string
+function toSortableDate(v: unknown): string {
+  const raw = text(v);
+  if (!raw) return "9999-99-99";
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+    const [d, m, y] = raw.slice(0, 10).split("/");
+    return `${y}-${m}-${d}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "9999-99-99" : parsed.toISOString().slice(0, 10);
+}
+
 function isPago(f: Recebimento) {
   const s = text(f.status || f.situacao).toLowerCase();
   return s.includes("pago") || s.includes("baixado") || s.includes("liquidado");
@@ -210,7 +223,10 @@ function ReciboInline({ fatura, aluno, onClose }: { fatura: Recebimento; aluno: 
 }
 
 /* ── Relatório do aluno ── */
-function RelatorioAlunoModal({ aluno, faturas, onClose }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void }) {
+function RelatorioAlunoModal({ aluno, faturas: faturasRaw, onClose }: { aluno: Aluno; faturas: Recebimento[]; onClose: () => void }) {
+  const faturas = [...faturasRaw].sort((a, b) =>
+    toSortableDate(a.vencimento || a.data_vencimento).localeCompare(toSortableDate(b.vencimento || b.data_vencimento))
+  );
   const nome = text(aluno.nome || aluno.name || "Aluno");
   const total = faturas.reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
   const totalPago = faturas.filter(isPago).reduce((s, f) => s + parseValor(f.valor_parcela ?? f.valor), 0);
@@ -355,10 +371,9 @@ function AlunoDrawer({
   const financeiro = text(aluno.status_financeiro || aluno.situacao_financeira || (totalAberto > 0 ? "Pendente" : "Regular"));
 
   const faturasOrdenadas = useMemo(() => [...faturas].sort((a, b) => {
-    const pa = isPago(a) ? 1 : 0;
-    const pb = isPago(b) ? 1 : 0;
-    if (pa !== pb) return pa - pb;
-    return text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento));
+    const da = toSortableDate(a.vencimento || a.data_vencimento);
+    const db = toSortableDate(b.vencimento || b.data_vencimento);
+    return da.localeCompare(db);
   }), [faturas]);
 
   const freqAluno = useMemo(() => frequencias.filter((f) => {
