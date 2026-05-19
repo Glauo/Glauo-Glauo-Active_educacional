@@ -14,29 +14,59 @@ function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+function parseVencimento(v: unknown): Date | null {
+  const raw = String(v || "").trim();
+  if (!raw) return null;
+  // DD/MM/YYYY
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]));
+  // YYYY-MM-DD or ISO
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseVal(v: unknown): number {
+  return parseFloat(String(v || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+}
+
 function calcStats(recebimentos: Recebimento[]) {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
+  const mesAtual = hoje.getMonth();
+  const anoAtual = hoje.getFullYear();
 
-  let totalAberto = 0;
-  let inadimplentes = 0;
-  let vencemHoje = 0;
+  let aReceberMes = 0;   // a receber com vencimento no mês atual
+  let recebidoMes = 0;   // pago com vencimento no mês atual
+  let vencemHoje = 0;    // não pago e vence hoje
+  let emAtraso = 0;      // não pago e já venceu (qualquer mês)
+  let emAtrasoMes = 0;   // não pago e já venceu dentro do mês atual
 
   for (const r of recebimentos) {
     const status = String(r.status || "").toLowerCase();
-    if (status === "pago" || status === "baixado") continue;
+    const pago = status === "pago" || status === "baixado" || status.includes("liquidado");
+    const val = parseVal(r.valor_parcela ?? r.valor);
+    const venc = parseVencimento(r.vencimento || r.data_vencimento);
 
-    const val = parseFloat(String(r.valor || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-    totalAberto += val;
+    const noMesAtual = venc && venc.getMonth() === mesAtual && venc.getFullYear() === anoAtual;
 
-    const venc = r.vencimento ? new Date(String(r.vencimento)) : null;
-    if (venc) {
-      if (venc < hoje) inadimplentes++;
+    if (noMesAtual) {
+      if (pago) recebidoMes += val;
+      else {
+        aReceberMes += val;
+        if (venc && venc < hoje) emAtrasoMes++;
+      }
+    }
+
+    if (!pago && venc) {
+      if (venc < hoje) emAtraso++;
       if (venc.toDateString() === hoje.toDateString()) vencemHoje++;
     }
   }
 
-  return { totalAberto, inadimplentes, vencemHoje };
+  const mesLabel = `${MESES_PT[mesAtual]}/${anoAtual}`;
+  return { aReceberMes, recebidoMes, vencemHoje, emAtraso, emAtrasoMes, mesLabel };
 }
 
 export default async function DashboardPage() {
@@ -58,7 +88,7 @@ export default async function DashboardPage() {
     return !s.includes("inativ") && !s.includes("cancel");
   });
 
-  const { totalAberto, inadimplentes, vencemHoje } = calcStats(recebimentos);
+  const { aReceberMes, recebidoMes, vencemHoje, emAtraso, emAtrasoMes, mesLabel } = calcStats(recebimentos);
   const alunosVip = alunosAtivos
     .map((aluno) => ({ aluno, pacote: vipPackageStats(aluno) }))
     .filter((item): item is { aluno: Aluno; pacote: NonNullable<ReturnType<typeof vipPackageStats>> } => Boolean(item.pacote));
@@ -149,9 +179,9 @@ export default async function DashboardPage() {
               <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
             </svg>
           </div>
-          <div className="metric-label">A receber</div>
-          <div className="metric-value">{formatBRL(totalAberto)}</div>
-          <div className="metric-note">{vencemHoje} vencem hoje</div>
+          <div className="metric-label">A receber — {mesLabel}</div>
+          <div className="metric-value">{formatBRL(aReceberMes)}</div>
+          <div className="metric-note">{vencemHoje > 0 ? `${vencemHoje} vencem hoje · ` : ""}{recebidoMes > 0 ? `${formatBRL(recebidoMes)} recebido` : "Nada recebido ainda"}</div>
         </div>
 
         <div className="metric-card metric-card-red">
@@ -160,9 +190,9 @@ export default async function DashboardPage() {
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
           </div>
-          <div className="metric-label">Inadimplentes</div>
-          <div className="metric-value">{inadimplentes}</div>
-          <div className="metric-note">{recebimentos.length} lançamentos no total</div>
+          <div className="metric-label">Em atraso</div>
+          <div className="metric-value">{emAtraso}</div>
+          <div className="metric-note">{emAtrasoMes > 0 ? `${emAtrasoMes} vencida(s) em ${mesLabel}` : `Nenhuma em atraso em ${mesLabel}`}</div>
         </div>
       </div>
 
