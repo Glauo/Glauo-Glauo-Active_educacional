@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { autoScore, lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
+import { applyWorkbookAnswerKey, hasFullAutoCorrection } from "@/lib/workbook-answer-key";
 import { getWorkbookHomeworkById, hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 export async function POST(req: NextRequest) {
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!homework) return NextResponse.json({ error: "Licao nao encontrada." }, { status: 404 });
+  homework = applyWorkbookAnswerKey(homework);
 
   if (lower(homework.origem).includes("workbook")) {
     const book = studentWorkbookBook(student, session.unit);
@@ -60,6 +62,8 @@ export async function POST(req: NextRequest) {
   }
 
   const scored = autoScore(homework, answers);
+  const canAutoCorrect = hasFullAutoCorrection(homework);
+  const maxScore = (homework.questions || []).reduce((sum, question) => sum + (Number(question.pontos) || 0), 0) || 10;
   const submission: HomeworkSubmission = {
     ...(existingIdx >= 0 ? submissions[existingIdx] : {}),
     id: existingIdx >= 0 ? submissions[existingIdx].id : crypto.randomUUID(),
@@ -70,12 +74,62 @@ export async function POST(req: NextRequest) {
     answers,
     question_scores: scored.questionScores,
     score: scored.total,
-    status: "Aguardando correcao",
+    feedback: canAutoCorrect
+      ? `Corrigida automaticamente pelo gabarito oficial. Nota: ${Number(scored.total).toFixed(1)} / ${maxScore}.`
+      : undefined,
+    status: canAutoCorrect ? "Corrigido" : "Aguardando correcao",
     submitted_at: nowIso(),
+    graded_at: canAutoCorrect ? nowIso() : undefined,
+    graded_by: canAutoCorrect ? "Gabarito automatico" : undefined,
   };
   const next = existingIdx >= 0
     ? submissions.map((item, index) => index === existingIdx ? submission : item)
     : [...submissions, submission];
-  await dbSet("activity_submissions.json", next);
+  if (canAutoCorrect) {
+    const [grades, audit] = await Promise.all([
+      dbList<Row>("grades.json"),
+      dbList<Row>("grade_audit.json"),
+    ]);
+    const gradeId = `homework_${text(submission.id)}`;
+    const gradeRecord = {
+      id: gradeId,
+      aluno: submission.aluno,
+      aluno_login: submission.aluno_login,
+      titulo: homework.titulo || "Licao de Casa",
+      desafio: homework.titulo || "Licao de Casa",
+      disciplina: homework.disciplina || "Ingles",
+      turma: submission.turma || homework.turma,
+      nota: scored.total,
+      pontos: scored.total,
+      total: maxScore,
+      status: "Corrigido",
+      origem: "Licao de Casa",
+      origem_id: submission.activity_id,
+      corrigido_por: "Gabarito automatico",
+      data: nowIso(),
+    };
+    const gradeIdx = grades.findIndex((grade) => text(grade.id) === gradeId);
+    const nextGrades = gradeIdx >= 0
+      ? grades.map((grade, index) => index === gradeIdx ? { ...grade, ...gradeRecord } : grade)
+      : [...grades, gradeRecord];
+    const auditEntry = {
+      id: crypto.randomUUID(),
+      tipo: gradeIdx >= 0 ? "alteracao_nota_licao_automatica" : "lancamento_nota_licao_automatica",
+      submission_id: submission.id,
+      activity_id: submission.activity_id,
+      aluno: submission.aluno,
+      nota: scored.total,
+      usuario: "Gabarito automatico",
+      perfil: "sistema",
+      data: nowIso(),
+    };
+    await Promise.all([
+      dbSet("activity_submissions.json", next),
+      dbSet("grades.json", nextGrades),
+      dbSet("grade_audit.json", [...audit, auditEntry]),
+    ]);
+  } else {
+    await dbSet("activity_submissions.json", next);
+  }
   return NextResponse.json(submission, { status: 201 });
 }
