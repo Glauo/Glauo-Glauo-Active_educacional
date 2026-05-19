@@ -3,6 +3,7 @@ import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
+import { isAdmin } from "@/lib/roles";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -106,6 +107,19 @@ export async function POST(req: NextRequest) {
     const current = await dbList<Record<string, unknown>>(key);
     const repaired = ensureFinanceIds(current);
     const lancamentos = repaired.items;
+
+    // Batch create (mensalidades mensais)
+    if (Array.isArray(data.items) && (data.items as unknown[]).length > 0) {
+      const novos = (data.items as Record<string, unknown>[]).map((item) => ({
+        ...item,
+        id: text(item.id) || crypto.randomUUID(),
+        created_at: new Date().toISOString(),
+        created_by: session.pessoa || session.usuario,
+      }));
+      await dbSet(key, [...lancamentos, ...novos]);
+      return NextResponse.json({ ok: true, count: novos.length }, { status: 201 });
+    }
+
     const id = text(data.id) || crypto.randomUUID();
     const pdfUpdate = text(data.boleto_pdf_b64) ? {
       boleto_status: "Importado",
@@ -180,6 +194,9 @@ export async function PUT(req: NextRequest) {
     const wasPaid = isPaid(lancamentos[idx].status);
     const willBePaid = isPaid(updates.status);
     const isReversal = Boolean(updates.estorno);
+    if (isReversal && !isAdmin(session)) {
+      return NextResponse.json({ error: "Somente administrador pode tirar baixa de pagamento." }, { status: 403 });
+    }
     if (wasPaid && updates.status && !willBePaid && !isReversal) {
       return NextResponse.json({ error: "Lancamento pago so pode voltar para aberto por estorno auditado." }, { status: 409 });
     }

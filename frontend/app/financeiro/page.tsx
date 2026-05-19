@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { ImportarBoletoPdfBtn, NovoLancamentoBtn } from "@/components/financeiro-modal";
 import { FinanceiroTable } from "@/components/financeiro-table";
 import { FinanceiroCommandCenter } from "@/components/financeiro-command-center";
-import { isAdminOrCoordinator } from "@/lib/roles";
+import { isAdmin, isAdminOrCoordinator } from "@/lib/roles";
 
 type Lancamento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; tipo?: string; codigo?: string; [k: string]: unknown };
 const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -167,7 +167,7 @@ export default async function FinanceiroPage() {
         </div>
       </div>
 
-      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} canSeeProfessorReports={isAdminOrCoordinator(session)} professores={professores} fornecedores={fornecedores} fechamentos={fechamentos} />
+      <FinanceiroTable recebimentos={recebimentos} despesas={despesas} canSeeProfessorReports={isAdminOrCoordinator(session)} canReversePayments={isAdmin(session)} professores={professores} fornecedores={fornecedores} fechamentos={fechamentos} />
     </AppShell>
   );
 }

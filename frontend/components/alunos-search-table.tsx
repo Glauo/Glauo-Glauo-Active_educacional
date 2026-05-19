@@ -390,10 +390,10 @@ function AcessoBox({ aluno }: { aluno: Aluno }) {
 
 /* ── Drawer principal ── */
 function AlunoDrawer({
-  aluno, faturas, frequencias, onClose, canManageAccess,
+  aluno, faturas, frequencias, onClose, canManageAccess, canReversePayments,
 }: {
   aluno: Aluno; faturas: Recebimento[]; frequencias: Frequencia[];
-  onClose: () => void; canManageAccess: boolean;
+  onClose: () => void; canManageAccess: boolean; canReversePayments: boolean;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<DrawerTab>("perfil");
@@ -403,15 +403,20 @@ function AlunoDrawer({
   const [baixaForma, setBaixaForma] = useState("PIX");
   const [baixaData, setBaixaData] = useState(todayISO());
   const [baixaValor, setBaixaValor] = useState("");
+  const [estornoFatura, setEstornoFatura] = useState<Recebimento | null>(null);
+  const [estornoMotivo, setEstornoMotivo] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [isError, setIsError] = useState(false);
   const [showNovoLanc, setShowNovoLanc] = useState(false);
   const [lancCategoria, setLancCategoria] = useState("Mensalidade");
   const [lancDescricao, setLancDescricao] = useState("");
-  const [lancValor, setLancValor] = useState("");
+  const [lancValor, setLancValor] = useState(lancCategoria === "Mensalidade" ? text(aluno.valor_mensalidade) : "");
   const [lancVenc, setLancVenc] = useState(todayISO());
   const [lancParcelas, setLancParcelas] = useState("1");
+  const [lancDiaVenc, setLancDiaVenc] = useState(text(aluno.dia_vencimento) || "10");
+  const [lancMesInicio, setLancMesInicio] = useState(new Date().toISOString().slice(0, 7));
+  const [lancNumMeses, setLancNumMeses] = useState("12");
 
   const nome = text(aluno.nome || aluno.name || "Aluno");
   const turma = text(aluno.turma || aluno.classe || "-");
@@ -462,7 +467,7 @@ function AlunoDrawer({
         setIsError(false);
         router.refresh();
       } else {
-        const d = await res.json().catch(() => ({}));
+        const d = await res.json().catch(() => ({})) as { error?: string };
         setMsg(d.error || "Erro ao registrar baixa.");
         setIsError(true);
       }
@@ -474,25 +479,106 @@ function AlunoDrawer({
     }
   }
 
-  async function criarLancamento() {
-    if (!lancValor.trim() || !lancVenc) { setMsg("Informe valor e vencimento."); setIsError(true); return; }
+  async function tirarBaixa() {
+    if (!estornoFatura?.id) return;
+    if (!estornoMotivo.trim()) {
+      setMsg("Informe o motivo para tirar a baixa.");
+      setIsError(true);
+      return;
+    }
     setSaving(true);
     setMsg("");
+    try {
+      const res = await fetch("/api/financeiro", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: estornoFatura.id,
+          tipo: "recebimentos",
+          estorno: true,
+          estorno_motivo: estornoMotivo,
+        }),
+      });
+      if (res.ok) {
+        setEstornoFatura(null);
+        setEstornoMotivo("");
+        setMsg("Baixa retirada. A fatura voltou para pendente.");
+        setIsError(false);
+        router.refresh();
+      } else {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        setMsg(d.error || "Erro ao tirar baixa.");
+        setIsError(true);
+      }
+    } catch {
+      setMsg("Erro de conexao ao tirar baixa.");
+      setIsError(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  async function criarLancamento() {
+    if (!lancValor.trim()) { setMsg("Informe o valor."); setIsError(true); return; }
+    setSaving(true);
+    setMsg("");
+
+    if (lancCategoria === "Mensalidade") {
+      const dia = Math.max(1, Math.min(31, parseInt(lancDiaVenc) || 10));
+      const numMeses = Math.max(1, Math.min(24, parseInt(lancNumMeses) || 12));
+      const [anoIni, mesIni] = lancMesInicio.split("-").map(Number);
+      const items = Array.from({ length: numMeses }, (_, i) => {
+        const d = new Date(anoIni, mesIni - 1 + i, 1);
+        const ano = d.getFullYear();
+        const mes = d.getMonth();
+        const diaEfetivo = Math.min(dia, new Date(ano, mes + 1, 0).getDate());
+        const venc = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaEfetivo).padStart(2, "0")}`;
+        return {
+          aluno: nome, aluno_login: text(aluno.login),
+          telefone: text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp),
+          email: text(aluno.responsavel_email || aluno.email),
+          descricao: `Mensalidade ${MESES_PT[mes]}/${ano}`,
+          categoria: "Mensalidade", valor: lancValor, valor_parcela: lancValor,
+          vencimento: venc, data_vencimento: venc, status: "Pendente",
+        };
+      });
+      const res = await fetch("/api/financeiro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: "recebimentos", items }),
+      });
+      setSaving(false);
+      if (res.ok) {
+        const d = await res.json().catch(() => ({})) as { count?: number };
+        setMsg(`${d.count || numMeses} mensalidade(s) gerada(s) com sucesso!`);
+        setIsError(false);
+        setShowNovoLanc(false);
+        setLancValor("");
+        router.refresh();
+      } else {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        setMsg(d.error || "Erro ao gerar mensalidades.");
+        setIsError(true);
+      }
+      return;
+    }
+
+    // Outros lançamentos (Material, Taxa, etc.)
+    if (!lancVenc) { setSaving(false); setMsg("Informe o vencimento."); setIsError(true); return; }
     const res = await fetch("/api/financeiro", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tipo_lancamento: "recebimentos",
-        aluno: nome,
-        aluno_login: text(aluno.login),
+        aluno: nome, aluno_login: text(aluno.login),
         telefone: text(aluno.responsavel_telefone || aluno.telefone || aluno.whatsapp),
         email: text(aluno.responsavel_email || aluno.email),
         descricao: lancDescricao || lancCategoria,
         categoria: lancCategoria,
-        valor: lancValor,
-        vencimento: lancVenc,
-        parcelas: Number(lancParcelas) || 1,
-        status: "Pendente",
+        valor: lancValor, vencimento: lancVenc,
+        parcelas: Number(lancParcelas) || 1, status: "Pendente",
       }),
     });
     setSaving(false);
@@ -505,7 +591,7 @@ function AlunoDrawer({
       setLancParcelas("1");
       router.refresh();
     } else {
-      const d = await res.json().catch(() => ({}));
+      const d = await res.json().catch(() => ({})) as { error?: string };
       setMsg(d.error || "Erro ao criar lançamento.");
       setIsError(true);
     }
@@ -647,31 +733,67 @@ function AlunoDrawer({
                   <div className="form-grid" style={{ marginBottom: 12 }}>
                     <div className="form-group">
                       <label className="form-label">Categoria</label>
-                      <select className="form-input" value={lancCategoria} onChange={(e) => setLancCategoria(e.target.value)}>
+                      <select className="form-input" value={lancCategoria} onChange={(e) => {
+                        const cat = e.target.value;
+                        setLancCategoria(cat);
+                        if (cat === "Mensalidade") setLancValor(text(aluno.valor_mensalidade));
+                        else setLancValor("");
+                      }}>
                         <option>Mensalidade</option><option>Material</option><option>Matrícula</option>
                         <option>Taxa</option><option>Rematrícula</option><option>Outros</option>
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label className="form-label">Descrição</label>
-                      <input className="form-input" placeholder="Ex: Mensalidade junho 2026" value={lancDescricao} onChange={(e) => setLancDescricao(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Valor (R$)</label>
-                      <input className="form-input" inputMode="decimal" placeholder="450,00" value={lancValor} onChange={(e) => setLancValor(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">1º Vencimento</label>
-                      <input className="form-input" type="date" value={lancVenc} onChange={(e) => setLancVenc(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Parcelas</label>
-                      <select className="form-input" value={lancParcelas} onChange={(e) => setLancParcelas(e.target.value)}>
-                        {[1,2,3,4,5,6,7,8,9,10,11,12].map((n) => <option key={n} value={n}>{n}x</option>)}
-                      </select>
-                    </div>
+
+                    {lancCategoria === "Mensalidade" ? (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">Valor da mensalidade (R$)</label>
+                          <input className="form-input" inputMode="decimal" placeholder="299,00" value={lancValor} onChange={(e) => setLancValor(e.target.value)} />
+                          <div className="form-help">Cadastrado no aluno: {text(aluno.valor_mensalidade) || "não informado"}</div>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Dia de vencimento</label>
+                          <input className="form-input" type="number" min="1" max="31" placeholder="10" value={lancDiaVenc} onChange={(e) => setLancDiaVenc(e.target.value)} />
+                          <div className="form-help">Todo mês neste dia. Meses com menos dias ajustam automaticamente.</div>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Mês de início</label>
+                          <input className="form-input" type="month" value={lancMesInicio} onChange={(e) => setLancMesInicio(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Gerar quantos meses</label>
+                          <select className="form-input" value={lancNumMeses} onChange={(e) => setLancNumMeses(e.target.value)}>
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map((n) => <option key={n} value={n}>{n} {n === 1 ? "mês" : "meses"}</option>)}
+                          </select>
+                          <div className="form-help">Serão geradas {lancNumMeses} cobrança(s) mensais com vencimento todo dia {lancDiaVenc}.</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">Descrição</label>
+                          <input className="form-input" placeholder="Ex: Material livro 1" value={lancDescricao} onChange={(e) => setLancDescricao(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Valor (R$)</label>
+                          <input className="form-input" inputMode="decimal" placeholder="450,00" value={lancValor} onChange={(e) => setLancValor(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Vencimento</label>
+                          <input className="form-input" type="date" value={lancVenc} onChange={(e) => setLancVenc(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Parcelas</label>
+                          <select className="form-input" value={lancParcelas} onChange={(e) => setLancParcelas(e.target.value)}>
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map((n) => <option key={n} value={n}>{n}x</option>)}
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <button className="btn btn-primary btn-sm" onClick={criarLancamento} disabled={saving}>{saving ? "Criando..." : "Criar lançamento"}</button>
+                  <button className="btn btn-primary btn-sm" onClick={criarLancamento} disabled={saving}>
+                    {saving ? "Gerando..." : lancCategoria === "Mensalidade" ? `Gerar ${lancNumMeses} mensalidade(s)` : "Criar lançamento"}
+                  </button>
                 </div>
               )}
 
@@ -712,6 +834,11 @@ function AlunoDrawer({
                               Recibo
                             </button>
                           )}
+                          {pago && canReversePayments && (
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--red-700)" }} onClick={() => { setEstornoFatura(f); setEstornoMotivo(""); }}>
+                              Tirar baixa
+                            </button>
+                          )}
                           {boletoUrl && (
                             <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem" }} href={boletoUrl} target="_blank" rel="noreferrer">Boleto</a>
                           )}
@@ -746,6 +873,34 @@ function AlunoDrawer({
                     <div className="modal-footer">
                       <button className="btn btn-secondary" onClick={() => setBaixaFatura(null)}>Cancelar</button>
                       <button className="btn btn-primary" onClick={darBaixa} disabled={saving}>{saving ? "Salvando..." : "Confirmar baixa"}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal tirar baixa */}
+              {estornoFatura && (
+                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setEstornoFatura(null)}>
+                  <div className="modal-box" style={{ maxWidth: 500 }}>
+                    <div className="modal-header">
+                      <div>
+                        <div className="modal-title">Tirar baixa do pagamento</div>
+                        <div className="modal-subtitle">{text(estornoFatura.descricao || "Mensalidade")} â€” {nome}</div>
+                      </div>
+                      <button className="modal-close" onClick={() => setEstornoFatura(null)}><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
+                    </div>
+                    <div className="modal-body">
+                      <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.18)", color: "var(--red-700)", fontSize: "0.82rem", marginBottom: 12 }}>
+                        Esta ação não apaga a fatura. Ela remove a baixa, volta o status para Pendente e registra auditoria.
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Motivo do estorno</label>
+                        <textarea className="form-input form-textarea" rows={3} value={estornoMotivo} onChange={(e) => setEstornoMotivo(e.target.value)} placeholder="Ex: baixa feita na parcela errada" />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-secondary" onClick={() => setEstornoFatura(null)} disabled={saving}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={tirarBaixa} disabled={saving || !estornoMotivo.trim()}>{saving ? "Salvando..." : "Confirmar estorno"}</button>
                     </div>
                   </div>
                 </div>
@@ -820,12 +975,13 @@ function AlunoDrawer({
 
 /* ── Tabela principal ── */
 export function AlunosSearchTable({
-  alunos, recebimentos, frequencias = [], canManageAccess,
+  alunos, recebimentos, frequencias = [], canManageAccess, canReversePayments,
 }: {
   alunos: Aluno[];
   recebimentos: Recebimento[];
   frequencias?: Frequencia[];
   canManageAccess: boolean;
+  canReversePayments: boolean;
 }) {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
@@ -893,6 +1049,7 @@ export function AlunosSearchTable({
           faturas={getFaturas(alunoSelecionado)}
           frequencias={frequencias}
           canManageAccess={canManageAccess}
+          canReversePayments={canReversePayments}
           onClose={() => setAlunoSelecionado(null)}
         />
       )}

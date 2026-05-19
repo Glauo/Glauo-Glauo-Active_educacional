@@ -1,5 +1,9 @@
 import type { SessionUser } from "./auth";
 
+export function isAdmin(session: Pick<SessionUser, "perfil"> | null) {
+  return String(session?.perfil || "").toLowerCase().includes("admin");
+}
+
 export function isAdminOrCoordinator(session: Pick<SessionUser, "perfil"> | null) {
   const perfil = String(session?.perfil || "").toLowerCase();
   return perfil.includes("admin") || perfil.includes("coord") || perfil.includes("dire") || perfil.includes("gestor");

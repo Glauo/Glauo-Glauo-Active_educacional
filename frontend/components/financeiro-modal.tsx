@@ -866,12 +866,12 @@ export function BaixaBtn({ lancamento, tipo }: { lancamento: LancamentoData; tip
   );
 }
 
-export function EstornoBtn({ lancamento, tipo }: { lancamento: LancamentoData; tipo: "recebimentos" | "despesas" }) {
+export function EstornoBtn({ lancamento, tipo, canReverse = true }: { lancamento: LancamentoData; tipo: "recebimentos" | "despesas"; canReverse?: boolean }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const pago = text(lancamento.status).toLowerCase().includes("pago") ||
     text(lancamento.status).toLowerCase().includes("baixado");
-  if (!pago) return null;
+  if (!pago || !canReverse) return null;
 
   async function estornar() {
     const motivo = prompt("Motivo do estorno (obrigatorio):");

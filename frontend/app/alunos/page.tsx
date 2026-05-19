@@ -4,10 +4,10 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoAlunoBtn } from "@/components/aluno-modal";
 import { AlunosSearchTable } from "@/components/alunos-search-table";
-import { isAdminOrCoordinator } from "@/lib/roles";
+import { isAdmin, isAdminOrCoordinator } from "@/lib/roles";
 
 type Aluno = { id?: string; nome?: string; name?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
-type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; [k: string]: unknown };
+type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; data_baixa?: string; status?: string; situacao?: string; [k: string]: unknown };
 
 const HEAVY_KEYS = [
   "boleto_pdf_b64",
@@ -68,6 +68,7 @@ function slimRecebimentos(alunos: Aluno[], recebimentos: Recebimento[]) {
       valor: text(item.valor_parcela ?? item.valor),
       vencimento: item.vencimento || item.data_vencimento,
       data_vencimento: item.data_vencimento || item.vencimento,
+      data_baixa: item.data_baixa,
       status: item.status,
       situacao: item.situacao,
     };
@@ -186,7 +187,7 @@ export default async function AlunosPage() {
           </div>
         </div>
       ) : (
-        <AlunosSearchTable alunos={alunos} recebimentos={recebimentosLeves} frequencias={frequencias} canManageAccess={isAdminOrCoordinator(session)} />
+        <AlunosSearchTable alunos={alunos} recebimentos={recebimentosLeves} frequencias={frequencias} canManageAccess={isAdminOrCoordinator(session)} canReversePayments={isAdmin(session)} />
       )}
     </AppShell>
   );

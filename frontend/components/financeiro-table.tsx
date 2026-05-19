@@ -507,7 +507,7 @@ function RelatorioDetalhadoProfModal({
 }
 
 /* ── Tab: Recebimentos (agrupado por mês) ── */
-function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
+function RecebimentosTab({ recebimentos, canReversePayments }: { recebimentos: Lancamento[]; canReversePayments: boolean }) {
   const router = useRouter();
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
@@ -676,7 +676,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                           <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
 	                          <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(valorParcela(r))}</span></td>
                           <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
+                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" canReverse={canReversePayments} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
                       );
                     })}
@@ -701,7 +701,7 @@ function RecebimentosTab({ recebimentos }: { recebimentos: Lancamento[] }) {
 }
 
 /* ── Tab: Despesas ── */
-function DespesasTab({ despesas }: { despesas: Lancamento[] }) {
+function DespesasTab({ despesas, canReversePayments }: { despesas: Lancamento[]; canReversePayments: boolean }) {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
 
@@ -771,7 +771,7 @@ function DespesasTab({ despesas }: { despesas: Lancamento[] }) {
                       <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
                       <td><span style={{ fontWeight: 700, color: "var(--red-700)" }}>{formatBRL(parseValor(d.valor))}</span></td>
                       <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EstornoBtn lancamento={d} tipo="despesas" /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
+                      <td><div style={{ display: "flex", gap: 4 }}><BaixaBtn lancamento={d} tipo="despesas" /><EstornoBtn lancamento={d} tipo="despesas" canReverse={canReversePayments} /><EditarLancamentoBtn lancamento={d} tipo="despesas" /></div></td>
                     </tr>
                   );
                 })}
@@ -891,7 +891,7 @@ function BaixaMassaBtn({ profNome, aulas, onDone }: { profNome: string; aulas: L
 }
 
 /* ── Tab: Pagamento Professores (por nome do professor) ── */
-function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
+function ProfessoresAulasTab({ despesas, canReversePayments }: { despesas: Lancamento[]; canReversePayments: boolean }) {
   const [professor, setProfessor] = useState("todos");
   const [relatorioAberto, setRelatorioAberto] = useState(false);
 
@@ -1032,7 +1032,7 @@ function ProfessoresAulasTab({ despesas }: { despesas: Lancamento[] }) {
                               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                 <BaixaBtn lancamento={d} tipo="despesas" />
                                 <ReciboBtn lancamento={d} label="Recibo" />
-                                <EstornoBtn lancamento={d} tipo="despesas" />
+                                <EstornoBtn lancamento={d} tipo="despesas" canReverse={canReversePayments} />
                                 <EditarLancamentoBtn lancamento={d} tipo="despesas" />
                               </div>
                             </td>
@@ -1269,6 +1269,7 @@ export function FinanceiroTable({
   recebimentos,
   despesas,
   canSeeProfessorReports,
+  canReversePayments,
   professores = [],
   fornecedores = [],
   fechamentos = [],
@@ -1276,6 +1277,7 @@ export function FinanceiroTable({
   recebimentos: Lancamento[];
   despesas: Lancamento[];
   canSeeProfessorReports: boolean;
+  canReversePayments: boolean;
   professores?: Record<string, unknown>[];
   fornecedores?: Record<string, unknown>[];
   fechamentos?: Record<string, unknown>[];
@@ -1307,10 +1309,10 @@ export function FinanceiroTable({
           </div>
         </div>
       </div>
-      {tab === "recebimentos" && <RecebimentosTab recebimentos={recebimentos} />}
-      {tab === "despesas" && <DespesasTab despesas={despesas} />}
+      {tab === "recebimentos" && <RecebimentosTab recebimentos={recebimentos} canReversePayments={canReversePayments} />}
+      {tab === "despesas" && <DespesasTab despesas={despesas} canReversePayments={canReversePayments} />}
       {tab === "inadimplencia" && <InadimplenciaTab recebimentos={recebimentos} />}
-      {canSeeProfessorReports && tab === "professores" && <ProfessoresAulasTab despesas={despesas} />}
+      {canSeeProfessorReports && tab === "professores" && <ProfessoresAulasTab despesas={despesas} canReversePayments={canReversePayments} />}
       {canSeeProfessorReports && tab === "fornecedores" && (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         <FinanceiroFornecedores fornecedores={fornecedores as any} despesas={despesas} />
