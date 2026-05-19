@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
-import { canManageAllSchoolContent, canManageSchoolContent, homeworkTotal, nowIso, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
+import { canManageAllSchoolContent, homeworkTotal, nowIso, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || !canManageSchoolContent(session)) {
+  if (!session || !canManageAllSchoolContent(session)) {
     return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
   }
   const body = (await req.json()) as { submission_id?: string; score?: number; feedback?: string; question_scores?: Record<string, number> };

@@ -77,6 +77,16 @@ const navSections = [
         )
       },
       {
+        href: "/correcao-licoes",
+        label: "Correcao de Licoes",
+        icon: (
+          <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clipRule="evenodd" />
+            <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2v-3a1 1 0 10-2 0v3H4V5h8a1 1 0 100-2H4z" />
+          </svg>
+        )
+      },
+      {
         href: "/desafios",
         label: "Desafios",
         icon: (

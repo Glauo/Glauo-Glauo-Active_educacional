@@ -1,17 +1,11 @@
 import { AppShell } from "@/components/app-shell";
-import { HomeworkCreateButton, HomeworkReviewForm } from "@/components/school-modules-client";
-import { HomeworkDeleteBtn, HomeworkDeleteTodayBtn, HomeworkEditBtn } from "@/components/homework-actions";
+import { HomeworkCreateButton } from "@/components/school-modules-client";
+import { HomeworkDeleteTodayBtn } from "@/components/homework-actions";
+import { HomeworkStudentLessonsClient } from "@/components/homework-student-lessons-client";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
-import { canManageSchoolContent, homeworkTotal, isHomeworkActivity, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
+import { canManageSchoolContent, isHomeworkActivity, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
 import { redirect } from "next/navigation";
-
-function statusBadge(status: string) {
-  const value = status.toLowerCase();
-  if (value.includes("rascunho")) return "neutral";
-  if (value.includes("encerr")) return "warning";
-  return "success";
-}
 
 export default async function LicoesPage() {
   const session = await getSession();
@@ -68,33 +62,7 @@ export default async function LicoesPage() {
             {licoes.length === 0 ? (
               <div className="empty-state"><div className="empty-title">Nenhuma licao criada</div><p className="empty-desc">Use Nova licao para publicar tarefa manual ou gerar questoes com Prof Wiz.</p></div>
             ) : (
-              <table className="data-table">
-                <thead><tr><th>Licao</th><th>Turma</th><th>Disciplina</th><th>Prazo</th><th>Status</th><th>Entregas</th><th>Acoes</th></tr></thead>
-                <tbody>
-                  {licoesOrdenadas.map((licao) => {
-                    const count = entregas.filter((submission) => text(submission.activity_id) === text(licao.id)).length;
-                    const turmaLabel = text(licao.aluno || licao.target_aluno)
-                      ? `${text(licao.turma || "Todas")} / ${text(licao.aluno || licao.target_aluno)}`
-                      : text(licao.turma || "Todas");
-                    return (
-                      <tr key={text(licao.id)}>
-                        <td><div className="table-name-cell"><span className="table-name-primary">{text(licao.titulo)}</span><span className="table-name-secondary">{(licao.questions || []).length} questoes | {homeworkTotal(licao)} pts</span></div></td>
-                        <td>{turmaLabel}</td>
-                        <td>{text(licao.disciplina || "Geral")}</td>
-                        <td>{text(licao.due_date || "-")}</td>
-                        <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
-                        <td style={{ fontWeight: 700 }}>{count}</td>
-                        <td>
-                          <div style={{ display: "flex", gap: 4 }}>
-                            <HomeworkEditBtn licao={licao} turmas={turmaNames} />
-                            <HomeworkDeleteBtn licao={licao} />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <HomeworkStudentLessonsClient licoes={licoesOrdenadas} entregas={entregas} alunos={alunos} turmaNames={turmaNames} />
             )}
           </div>
         </div>
@@ -109,48 +77,6 @@ export default async function LicoesPage() {
               <div className="pipeline-step"><div className="pipeline-num">03</div><div className="pipeline-title">Publicacao acontece somente apos revisao do professor.</div></div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <div className="section-eyebrow">Correcao</div>
-            <h3 className="section-title">Entregas dos alunos</h3>
-            <p className="section-subtitle">Questoes objetivas recebem pontuacao inicial automatica; professor valida e salva a nota final.</p>
-          </div>
-        </div>
-        <div className="card-body">
-          {entregas.length === 0 ? (
-            <div className="empty-state"><div className="empty-title">Nenhuma entrega recebida</div><p className="empty-desc">As respostas aparecem aqui assim que o aluno enviar a licao pelo portal.</p></div>
-          ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              {entregas.slice().reverse().map((submission) => {
-                const licao = licoes.find((item) => text(item.id) === text(submission.activity_id));
-                return (
-                  <div className="entity-card" key={text(submission.id)} style={{ cursor: "default" }}>
-                    <div className="entity-card-top">
-                      <div className="entity-card-info">
-                        <div className="entity-card-name">{text(submission.aluno)}</div>
-                        <div className="entity-card-sub">{text(licao?.titulo || "Licao")} | {text(submission.submitted_at || "-")}</div>
-                      </div>
-                      <span className={`badge badge-${text(submission.status).toLowerCase().includes("corrigido") ? "success" : "warning"}`}><span className="badge-dot" />{text(submission.status || "Aguardando correcao")}</span>
-                    </div>
-                    <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-                      {(licao?.questions || []).map((question, idx) => (
-                        <div className="attendance-item" key={question.id} style={{ alignItems: "flex-start" }}>
-                          <strong>{idx + 1}.</strong>
-                          <span>{question.enunciado}</span>
-                          <span style={{ color: "var(--text-muted)" }}>Resposta: {text((submission.answers as Record<string, string> | undefined)?.[question.id]) || "-"}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <HomeworkReviewForm submission={submission} homework={licao} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
     </AppShell>
