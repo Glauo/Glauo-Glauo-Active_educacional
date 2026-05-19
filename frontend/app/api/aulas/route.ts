@@ -199,6 +199,12 @@ export async function POST(req: NextRequest) {
         const alunoModulo = text(aluno.modulo || aluno.modalidade || modulo);
         if (!sameName(alunoTurma, className(turma)) || !isVipModule(alunoModulo)) return aluno;
         const pacote = vipPackageStats({ ...aluno, modulo: alunoModulo });
+        // Unlimited plan: only increment dadas counter, never deduct
+        if (pacote?.unlimited) {
+          const dadas = Math.max(0, toInt(aluno.vip_aulas_dadas ?? aluno.aulas_dadas_vip) + 1);
+          vipConsumidos.push({ aluno: text(aluno.nome || aluno.name), anteriores: -1, restantes: -1, total: -1 });
+          return { ...aluno, vip_aulas_dadas: dadas, aulas_dadas_vip: dadas };
+        }
         const total = pacote?.total || VIP_DEFAULT_TOTAL;
         const restantesAtuais = pacote?.restantes ?? Math.max(0, toInt(aluno.vip_aulas_restantes || total));
         if (restantesAtuais <= 0) return { ...aluno, vip_aulas_total: total, vip_aulas_restantes: 0 };

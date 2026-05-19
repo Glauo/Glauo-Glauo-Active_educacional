@@ -213,7 +213,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
           <div className="student-avatar">{initials(nome)}</div>
           <strong>{nome}</strong>
           <span>{turma || "Aluno"}</span>
-          {pacoteVip && <small>{pacoteVip.dadas}/{pacoteVip.total} aulas VIP dadas | {pacoteVip.restantes} restantes</small>}
+          {pacoteVip && <small>{pacoteVip.unlimited ? `${pacoteVip.dadas} aulas VIP dadas | Sem limite` : `${pacoteVip.dadas}/${pacoteVip.total} aulas VIP dadas | ${pacoteVip.restantes} restantes`}</small>}
         </div>
         <nav className="student-nav">
           {menu.map((item) => (
@@ -247,7 +247,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
               <div><span>Tarefas pendentes</span><strong>{pendentes}</strong></div>
               <div><span>Desafios pendentes</span><strong>{desafiosPendentes}</strong></div>
               <div><span>Débitos em aberto</span><strong>{totalDebitos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></div>
-              <div><span>{pacoteVip ? "Aulas VIP restantes" : "Pontos em desafios"}</span><strong>{pacoteVip ? `${pacoteVip.restantes}/${pacoteVip.total}` : pontos}</strong></div>
+              <div><span>{pacoteVip ? "Aulas VIP" : "Pontos em desafios"}</span><strong>{pacoteVip ? (pacoteVip.unlimited ? `${pacoteVip.dadas} dadas · Ilimitado` : `${pacoteVip.restantes}/${pacoteVip.total} restantes`) : pontos}</strong></div>
             </section>
             <section className="student-grid">
               <div className="student-panel"><div className="student-section-head"><div><span>Hoje</span><h2>Próximas aulas</h2></div></div>{agenda.slice(0, 4).length ? agenda.slice(0, 4).map((a, i) => <div className="student-list-row" key={text(a.id) || i}><strong>{text(a.titulo || a.descricao || "Aula")}</strong><span>{dateLabel(a.data || a.date)} {text(a.horario || a.hora)}</span></div>) : <Empty title="Nenhuma aula na agenda" desc="Quando houver aula/evento, aparece aqui." />}</div>

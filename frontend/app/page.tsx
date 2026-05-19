@@ -61,16 +61,24 @@ export default async function DashboardPage() {
   const { totalAberto, inadimplentes, vencemHoje } = calcStats(recebimentos);
   const alunosVip = alunosAtivos
     .map((aluno) => ({ aluno, pacote: vipPackageStats(aluno) }))
-    .filter((item): item is { aluno: Aluno; pacote: { total: number; dadas: number; restantes: number } } => Boolean(item.pacote));
+    .filter((item): item is { aluno: Aluno; pacote: NonNullable<ReturnType<typeof vipPackageStats>> } => Boolean(item.pacote));
   const vipResumo = alunosVip.reduce(
     (acc, item) => ({
-      total: acc.total + item.pacote.total,
+      total: item.pacote.unlimited ? acc.total : acc.total + item.pacote.total,
       dadas: acc.dadas + item.pacote.dadas,
-      restantes: acc.restantes + item.pacote.restantes,
+      restantes: item.pacote.unlimited ? acc.restantes : acc.restantes + item.pacote.restantes,
     }),
     { total: 0, dadas: 0, restantes: 0 }
   );
-  const alunosVipAtencao = [...alunosVip].sort((a, b) => a.pacote.restantes - b.pacote.restantes).slice(0, 5);
+  // Sort by restantes ascending (unlimited last, as they don't need attention)
+  const alunosVipAtencao = [...alunosVip]
+    .sort((a, b) => {
+      if (a.pacote.unlimited && b.pacote.unlimited) return 0;
+      if (a.pacote.unlimited) return 1;
+      if (b.pacote.unlimited) return -1;
+      return a.pacote.restantes - b.pacote.restantes;
+    })
+    .slice(0, 5);
 
   const turmasAtivas = turmas.filter((t) => {
     const s = String(t.status || t.situacao || "ativa").toLowerCase();
@@ -275,10 +283,12 @@ export default async function DashboardPage() {
                     <div className="spotlight-row" key={String(aluno.id || aluno.nome || i)}>
                       <span className="spotlight-label">
                         {String(aluno.nome || aluno.name || `Aluno ${i + 1}`)}
-                        <small className="text-muted" style={{ display: "block", marginTop: 2 }}>{pacote.dadas}/{pacote.total} dadas</small>
+                        <small className="text-muted" style={{ display: "block", marginTop: 2 }}>
+                          {pacote.unlimited ? `${pacote.dadas} dadas` : `${pacote.dadas}/${pacote.total} dadas`}
+                        </small>
                       </span>
-                      <span className={`badge badge-${pacote.restantes <= 2 ? "warning" : "info"}`}>
-                        {pacote.restantes} restantes
+                      <span className={`badge badge-${pacote.unlimited ? "success" : pacote.restantes <= 2 ? "warning" : "info"}`}>
+                        {pacote.unlimited ? "Ilimitado" : `${pacote.restantes} restantes`}
                       </span>
                     </div>
                   ))}
