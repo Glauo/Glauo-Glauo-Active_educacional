@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbListWithoutKeys, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
-import { isVipModule, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, vipPlanTotal } from "@/lib/course-modules";
+import { isVipModule, isVipUnlimitedPlan, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, VIP_UNLIMITED, vipPlanTotal } from "@/lib/course-modules";
 import { applyGeneratedStudentCredentials, notifyStudentCredentials } from "@/lib/student-credentials";
 
 const KEY = "students.json";
@@ -34,10 +34,25 @@ function nextMatricula(alunos: Record<string, unknown>[]) {
 function normalizeAluno(body: Record<string, unknown>) {
   const modulo = migrateModule(body.modulo || body.modalidade);
   const vip = isVipModule(modulo);
-  const vipTotalDefault = vipPlanTotal(body.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL;
-  const vipTotal = vip ? Math.max(0, numberOrDefault(body.vip_aulas_total, vipTotalDefault)) : 0;
-  const vipRestantes = vip ? Math.max(0, Math.min(vipTotal || vipTotalDefault, numberOrDefault(body.vip_aulas_restantes, vipTotal || vipTotalDefault))) : 0;
-  const vipDadas = vip ? Math.max(0, (vipTotal || vipTotalDefault) - vipRestantes) : 0;
+  const tipoPlanosRaw = text(body.vip_tipo_plano || "Pacote 10 aulas");
+  const isUnlimited = vip && isVipUnlimitedPlan(tipoPlanosRaw);
+
+  let vipTotal: number;
+  let vipRestantes: number;
+  let vipDadas: number;
+
+  if (!vip) {
+    vipTotal = 0; vipRestantes = 0; vipDadas = 0;
+  } else if (isUnlimited) {
+    vipTotal = VIP_UNLIMITED;
+    vipRestantes = VIP_UNLIMITED;
+    vipDadas = Math.max(0, numberOrDefault(body.vip_aulas_dadas ?? body.aulas_dadas_vip, 0));
+  } else {
+    const vipTotalDefault = vipPlanTotal(tipoPlanosRaw) || VIP_DEFAULT_TOTAL;
+    vipTotal = Math.max(0, numberOrDefault(body.vip_aulas_total, vipTotalDefault));
+    vipRestantes = Math.max(0, Math.min(vipTotal || vipTotalDefault, numberOrDefault(body.vip_aulas_restantes, vipTotal || vipTotalDefault)));
+    vipDadas = Math.max(0, (vipTotal || vipTotalDefault) - vipRestantes);
+  }
   const responsavel =
     body.responsavel && typeof body.responsavel === "object" && !Array.isArray(body.responsavel)
       ? body.responsavel as Record<string, unknown>
@@ -71,8 +86,8 @@ function normalizeAluno(body: Record<string, unknown>) {
     cidade: text(body.cidade),
     bairro: text(body.bairro),
     valor_professor_aula: teacherClassValueByModule(modulo),
-    vip_tipo_plano: vip ? text(body.vip_tipo_plano || "Pacote 10 aulas") : "",
-    vip_aulas_total: vip ? (vipTotal || vipTotalDefault) : 0,
+    vip_tipo_plano: vip ? tipoPlanosRaw : "",
+    vip_aulas_total: vipTotal,
     vip_aulas_restantes: vipRestantes,
     vip_aulas_dadas: vipDadas,
     aulas_dadas_vip: vipDadas,
