@@ -3176,6 +3176,18 @@
   margin: 0;
 }
 
+.correction-feedback-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.correction-feedback-heading .form-label {
+  margin: 0;
+}
+
 .correction-question-list {
   display: grid;
   gap: 12px;
@@ -3254,5 +3266,10 @@
   .correction-actions,
   .correction-answer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .correction-feedback-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
 import type { Homework, HomeworkQuestion, HomeworkSubmission } from "@/lib/school-modules";
 
 function text(value: unknown) {
@@ -60,6 +61,10 @@ function suggestedScore(question: HomeworkQuestion, raw: string): number {
 
 function statusBadge(status: unknown) {
   return lower(status).includes("corrigido") ? "success" : "warning";
+}
+
+function parseScore(value: string) {
+  return Number(value.replace(",", ".")) || 0;
 }
 
 type SubmissionWithHomework = { submission: HomeworkSubmission; homework?: Homework };
@@ -224,6 +229,13 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
     setScore(String(Number(Object.values(next).reduce((s, v) => s + Number(v || 0), 0).toFixed(1))));
   }
 
+  function generateScoreMessage() {
+    const finalScore = Math.max(0, Math.min(parseScore(score), maxScore));
+    setScore(String(finalScore));
+    setFeedback(homeworkEvaluationMessage(finalScore, maxScore));
+    setMsg("Mensagem para o aluno gerada pela nota.");
+  }
+
   async function save() {
     setSaving(true);
     setMsg("");
@@ -352,7 +364,12 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         )}
 
         <div className="form-group" style={{ marginTop: 16 }}>
-          <label className="form-label">Devolutiva para o aluno</label>
+          <div className="correction-feedback-heading">
+            <label className="form-label">Devolutiva para o aluno</label>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={generateScoreMessage}>
+              Gerar mensagem pela nota
+            </button>
+          </div>
           <textarea
             className="form-input form-textarea"
             rows={4}
@@ -363,7 +380,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         </div>
 
         {msg && (
-          <div className={msg.includes("salva") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>
+          <div className={msg.includes("salva") || msg.includes("lancou") || msg.includes("gerada") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>
             {msg}
           </div>
         )}
