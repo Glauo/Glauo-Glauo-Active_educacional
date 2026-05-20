@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
+import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
 import { canManageAllSchoolContent, homeworkTotal, nowIso, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
 
 export async function POST(req: NextRequest) {
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   const reviewed: HomeworkSubmission = {
     ...existing,
     score,
-    feedback: text(body.feedback),
+    feedback: text(body.feedback) || homeworkEvaluationMessage(score, maxScore),
     question_scores: body.question_scores || existing.question_scores || {},
     status: "Corrigido",
     graded_at: nowIso(),

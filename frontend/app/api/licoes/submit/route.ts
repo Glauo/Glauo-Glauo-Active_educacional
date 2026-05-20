@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
+import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
 import { autoScore, lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
 import { applyWorkbookAnswerKey, hasFullAutoCorrection } from "@/lib/workbook-answer-key";
 import { getWorkbookHomeworkById, hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
     question_scores: scored.questionScores,
     score: scored.total,
     feedback: canAutoCorrect
-      ? `Corrigida automaticamente pelo gabarito oficial. Nota: ${Number(scored.total).toFixed(1)} / ${maxScore}.`
+      ? homeworkEvaluationMessage(scored.total, maxScore)
       : undefined,
     status: canAutoCorrect ? "Corrigido" : "Aguardando correcao",
     submitted_at: nowIso(),

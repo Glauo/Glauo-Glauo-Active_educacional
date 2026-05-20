@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
 import { canManageAllSchoolContent, text, type Homework, type HomeworkQuestion, type HomeworkSubmission } from "@/lib/school-modules";
 
 function lower(v: unknown) { return text(v).toLowerCase(); }
@@ -58,29 +59,29 @@ export async function POST(req: NextRequest) {
       suggestedScore = scoreOpen(q, raw);
       const words = raw.trim().split(/\s+/).filter(Boolean).length;
       observation = !raw ? "Sem resposta registrada."
-        : words < 5 ? "Resposta muito curta — verifique se o aluno desenvolveu o raciocinio."
-        : words < 15 ? "Resposta parcial — avalie se os pontos principais foram abordados."
-        : "Resposta com desenvolvimento adequado — valide o conteudo especifico.";
+        : words < 5 ? "Resposta muito curta; verifique se o aluno desenvolveu o raciocinio."
+        : words < 15 ? "Resposta parcial; avalie se os pontos principais foram abordados."
+        : "Resposta com desenvolvimento adequado; valide o conteudo especifico.";
     }
     return { questionId: q.id, suggestedScore, observation, raw };
   });
 
   const suggestedTotal = Number(results.reduce((s, r) => s + r.suggestedScore, 0).toFixed(1));
-  const totalMax = questions.reduce((s, q) => s + (Number(q.pontos) || 0), 0);
+  const totalMax = questions.reduce((s, q) => s + (Number(q.pontos) || 0), 0) || 10;
   const openCount = questions.filter(q => q.tipo === "aberta" || q.tipo === "upload").length;
   const missingCount = results.filter(r => !r.raw).length;
   const objectiveCount = questions.length - openCount;
 
-  const lines = [
+  const internalSummary = [
     `IA analisou ${questions.length} questao(oes).`,
     objectiveCount > 0 ? `${objectiveCount} objetiva(s) corrigida(s) automaticamente pelo gabarito.` : "",
-    openCount > 0 ? `${openCount} dissertativa(s) com nota sugerida por extensao — valide o conteudo antes de salvar.` : "",
+    openCount > 0 ? `${openCount} dissertativa(s) com nota sugerida por extensao; valide o conteudo antes de salvar.` : "",
     missingCount > 0 ? `Atencao: ${missingCount} questao(oes) sem resposta registrada.` : "Entrega completa.",
-    `Nota sugerida: ${suggestedTotal} / ${totalMax}.`,
   ].filter(Boolean).join(" ");
+  const feedback = homeworkEvaluationMessage(suggestedTotal, totalMax);
 
   const questionScores: Record<string, number> = {};
   for (const r of results) questionScores[r.questionId] = r.suggestedScore;
 
-  return NextResponse.json({ questionScores, suggestedTotal, feedback: lines, details: results });
+  return NextResponse.json({ questionScores, suggestedTotal, feedback, summary: internalSummary, details: results });
 }
