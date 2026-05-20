@@ -1011,6 +1011,34 @@
   margin-top: 2px;
 }
 
+.vip-renew-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.vip-renew-panel > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vip-renew-panel strong {
+  color: var(--navy-900);
+  font-size: 0.875rem;
+}
+
+.vip-renew-panel span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .checkbox-row {
   display: inline-flex;
   align-items: center;
@@ -2072,6 +2100,9 @@
 @media (max-width: 640px) {
   .page-content { padding: 14px 14px 32px; gap: 16px; }
   .metric-grid-4, .metric-grid-3 { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-group-span2 { grid-column: span 1; }
+  .vip-renew-panel { align-items: stretch; flex-direction: column; }
   .card-body { padding: 16px; }
   .card-body-lg { padding: 20px; }
   .card-header { padding: 16px 16px 0; }
