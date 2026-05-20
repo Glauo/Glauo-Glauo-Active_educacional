@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { financeMessage } from "@/lib/finance-message";
 
 type LancamentoData = {
   id?: string;
@@ -313,11 +314,11 @@ function LancamentoModal({
       if (!res.ok) { const d = await res.json().catch(() => ({})); setErro(String(d.error || "Erro ao salvar.")); return; }
       const data = await res.json().catch(() => ({}));
       const item = data.lancamento || payload;
-      const msg = boletoMessage(item, window.location.origin);
+      const msg = financeMessage(item, window.location.origin);
       links.push({
         label: text(item.parcela) || "Parcela",
         whatsapp: "",
-        email: mailtoUrl(text(item.email || form.aluno_email), `Boleto Active Educacional - ${text(item.descricao)}`, msg),
+        email: mailtoUrl(text(item.email || form.aluno_email), msg.subject, msg.body),
       });
       setSavedLinks(links);
       onSaved();
@@ -368,11 +369,11 @@ function LancamentoModal({
       } else {
         const data = await res.json().catch(() => ({}));
         const item = data.lancamento || payload;
-        const msg = boletoMessage(item, window.location.origin);
+        const msg = financeMessage(item, window.location.origin);
         links.push({
           label: `Parcela ${parcelaTxt}`,
           whatsapp: "",
-          email: form.enviar_email ? mailtoUrl(text(item.email || form.aluno_email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
+          email: form.enviar_email ? mailtoUrl(text(item.email || form.aluno_email), msg.subject, msg.body) : "",
         });
       }
     }
@@ -649,10 +650,10 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
         return;
       }
       const item = data.lancamento as LancamentoData;
-      const msg = boletoMessage(item, window.location.origin);
+      const msg = financeMessage(item, window.location.origin);
       setLinks({
         whatsapp: "",
-        email: form.enviar_email ? mailtoUrl(text(form.aluno_email || item.email), `Boleto Active Educacional - ${text(item.descricao)}`, msg) : "",
+        email: form.enviar_email ? mailtoUrl(text(form.aluno_email || item.email), msg.subject, msg.body) : "",
       });
       router.refresh();
     } catch (err) {

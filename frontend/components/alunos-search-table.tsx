@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { financeMessage } from "@/lib/finance-message";
 import { vipPackageStats } from "@/lib/course-modules";
 import { EditarAlunoBtn } from "./aluno-modal";
 import { AutoWhatsAppButton } from "./auto-whatsapp-button";
@@ -844,7 +845,7 @@ function AlunoDrawer({
                           {boletoUrl && (
                             <a className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem" }} href={boletoUrl} target="_blank" rel="noreferrer">Boleto</a>
                           )}
-                          {phone && <AutoWhatsAppButton phone={phone} message={boletoMsg} className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--green-700)" }} />}
+                          {phone && <AutoWhatsAppButton phone={phone} message={financeMessage(f, typeof window !== "undefined" ? window.location.origin : "").body} className="btn btn-ghost btn-sm" style={{ fontSize: "0.72rem", color: "var(--green-700)" }} />}
                         </div>
                       </div>
                     );
