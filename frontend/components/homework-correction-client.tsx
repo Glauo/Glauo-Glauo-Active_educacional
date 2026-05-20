@@ -168,7 +168,8 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
   const initialScores = Object.fromEntries(questions.map((q, idx) => {
     const saved = Number((submission.question_scores || {})[q.id]);
     const raw = answerValue(submission, q, idx);
-    return [q.id, Number.isFinite(saved) && saved > 0 ? saved : suggestedScore(q, raw)];
+    const hasSavedScore = Object.prototype.hasOwnProperty.call(submission.question_scores || {}, q.id);
+    return [q.id, hasSavedScore && Number.isFinite(saved) ? saved : suggestedScore(q, raw)];
   }));
 
   const [questionScores, setQuestionScores] = useState<Record<string, number>>(initialScores);
@@ -192,13 +193,14 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
       const res = await fetch("/api/licoes/ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submission, homework }),
+        body: JSON.stringify({ submission, homework, persist: true }),
       });
       const data = await res.json().catch(() => ({})) as {
         questionScores?: Record<string, number>;
         suggestedTotal?: number;
         feedback?: string;
         error?: string;
+        saved?: boolean;
       };
       if (!res.ok) { setMsg(data.error || "Erro ao consultar IA."); return; }
       if (data.questionScores) {
@@ -206,6 +208,10 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         setScore(String(data.suggestedTotal ?? 0));
       }
       if (data.feedback) setFeedback(data.feedback);
+      if (data.saved) {
+        setMsg("Wiz IA avaliou e lancou a nota automaticamente.");
+        onSaved();
+      }
     } finally {
       setAiLoading(false);
     }
@@ -250,7 +256,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
       <div className="card-body">
         <div className="correction-actions">
           <button className="btn btn-secondary" type="button" onClick={applyAi} disabled={aiLoading || !homework}>
-            {aiLoading ? "Analisando..." : "Analisar com IA"}
+            {aiLoading ? "Avaliando..." : "Avaliar com IA e lancar nota"}
           </button>
           <div className="form-group correction-score">
             <label className="form-label">Nota final / {maxScore}</label>
