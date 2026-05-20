@@ -36,12 +36,15 @@ function answerLabel(question: HomeworkQuestion, raw: string) {
 }
 
 function expectedLabel(question: HomeworkQuestion) {
-  if (question.tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
+  if (question.tipo === "multipla_escolha") return "A Wiz IA avalia a alternativa pelo enunciado e contexto.";
+  if (question.tipo === "verdadeiro_falso") return "A Wiz IA avalia se a resposta faz sentido pelo enunciado.";
+  if (true) return text(question.feedback) || "Resposta aberta; avaliar criterio, clareza e completude.";
+  if ((question as HomeworkQuestion).tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
     const idx = Number(question.correta_idx);
     const opt = question.opcoes?.[idx];
     return opt ? `${String.fromCharCode(65 + idx)}) ${opt}` : `Alternativa ${idx + 1}`;
   }
-  if (question.tipo === "verdadeiro_falso") {
+  if ((question as HomeworkQuestion).tipo === "verdadeiro_falso") {
     if (["1", "v", "true", "verdadeiro"].includes(lower(question.correta_texto))) return "Verdadeiro";
     if (["0", "f", "false", "falso"].includes(lower(question.correta_texto))) return "Falso";
   }
@@ -51,13 +54,7 @@ function expectedLabel(question: HomeworkQuestion) {
 function suggestedScore(question: HomeworkQuestion, raw: string): number {
   const pts = Number(question.pontos) || 0;
   if (!raw) return 0;
-  if (question.tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
-    return Number(raw) === Number(question.correta_idx) ? pts : 0;
-  }
-  if (question.tipo === "verdadeiro_falso" && text(question.correta_texto)) {
-    const norm = (v: string) => ["1", "true", "verdadeiro"].includes(lower(v)) ? "v" : ["0", "false", "falso"].includes(lower(v)) ? "f" : lower(v);
-    return norm(raw) === norm(text(question.correta_texto)) ? pts : 0;
-  }
+  if (question.tipo === "multipla_escolha" || question.tipo === "verdadeiro_falso") return 0;
   return Number((pts * 0.8).toFixed(1));
 }
 
@@ -286,7 +283,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
                       {raw && raw !== label && <small style={{ color: "var(--text-muted)" }}>Valor: {raw}</small>}
                     </div>
                     <div>
-                      <span>Gabarito / criterio</span>
+                      <span>Critério da IA</span>
                       <strong>{expectedLabel(q)}</strong>
                     </div>
                     <div>

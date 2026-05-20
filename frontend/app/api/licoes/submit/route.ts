@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
-import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
-import { autoScore, lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
-import { applyWorkbookAnswerKey, hasFullAutoCorrection } from "@/lib/workbook-answer-key";
+import { gradeHomeworkWithWiz } from "@/lib/homework-ai-grader";
+import { lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
 import { getWorkbookHomeworkById, hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
 
 export async function POST(req: NextRequest) {
@@ -29,7 +28,6 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!homework) return NextResponse.json({ error: "Licao nao encontrada." }, { status: 404 });
-  homework = applyWorkbookAnswerKey(homework);
 
   if (lower(homework.origem).includes("workbook")) {
     const book = studentWorkbookBook(student, session.unit);
@@ -62,8 +60,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Esta licao ja foi enviada e nao permite reenvio." }, { status: 403 });
   }
 
-  const scored = autoScore(homework, answers);
-  const canAutoCorrect = hasFullAutoCorrection(homework);
+  const aiGrade = await gradeHomeworkWithWiz(homework, answers);
+  const canAutoCorrect = Boolean(aiGrade);
   const maxScore = (homework.questions || []).reduce((sum, question) => sum + (Number(question.pontos) || 0), 0) || 10;
   const submission: HomeworkSubmission = {
     ...(existingIdx >= 0 ? submissions[existingIdx] : {}),
@@ -73,15 +71,13 @@ export async function POST(req: NextRequest) {
     aluno_login: session.usuario,
     turma: text(session.unit),
     answers,
-    question_scores: scored.questionScores,
-    score: scored.total,
-    feedback: canAutoCorrect
-      ? homeworkEvaluationMessage(scored.total, maxScore)
-      : undefined,
-    status: canAutoCorrect ? "Corrigido" : "Aguardando correcao",
+    question_scores: aiGrade?.questionScores || {},
+    score: aiGrade?.total || 0,
+    feedback: aiGrade?.feedback,
+    status: canAutoCorrect ? "Corrigido" : "Aguardando correcao IA",
     submitted_at: nowIso(),
     graded_at: canAutoCorrect ? nowIso() : undefined,
-    graded_by: canAutoCorrect ? "Gabarito automatico" : undefined,
+    graded_by: canAutoCorrect ? "Wiz IA" : undefined,
   };
   const next = existingIdx >= 0
     ? submissions.map((item, index) => index === existingIdx ? submission : item)
@@ -100,13 +96,13 @@ export async function POST(req: NextRequest) {
       desafio: homework.titulo || "Licao de Casa",
       disciplina: homework.disciplina || "Ingles",
       turma: submission.turma || homework.turma,
-      nota: scored.total,
-      pontos: scored.total,
+      nota: aiGrade?.total || 0,
+      pontos: aiGrade?.total || 0,
       total: maxScore,
       status: "Corrigido",
       origem: "Licao de Casa",
       origem_id: submission.activity_id,
-      corrigido_por: "Gabarito automatico",
+      corrigido_por: "Wiz IA",
       data: nowIso(),
     };
     const gradeIdx = grades.findIndex((grade) => text(grade.id) === gradeId);
@@ -119,9 +115,10 @@ export async function POST(req: NextRequest) {
       submission_id: submission.id,
       activity_id: submission.activity_id,
       aluno: submission.aluno,
-      nota: scored.total,
-      usuario: "Gabarito automatico",
+      nota: aiGrade?.total || 0,
+      usuario: "Wiz IA",
       perfil: "sistema",
+      resumo: aiGrade?.summary,
       data: nowIso(),
     };
     await Promise.all([

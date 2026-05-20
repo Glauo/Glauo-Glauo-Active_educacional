@@ -73,7 +73,7 @@ export default async function LicoesPage() {
             <h3 className="section-title" style={{ marginBottom: 14 }}>Fluxo com revisao humana</h3>
             <div className="pipeline">
               <div className="pipeline-step"><div className="pipeline-num">01</div><div className="pipeline-title">Professor informa turma, disciplina, livro e topico.</div></div>
-              <div className="pipeline-step"><div className="pipeline-num">02</div><div className="pipeline-title">Prof Wiz gera questoes editaveis com gabarito.</div></div>
+              <div className="pipeline-step"><div className="pipeline-num">02</div><div className="pipeline-title">Prof Wiz gera questoes editaveis; a correcao automatica usa IA.</div></div>
               <div className="pipeline-step"><div className="pipeline-num">03</div><div className="pipeline-title">Publicacao acontece somente apos revisao do professor.</div></div>
             </div>
           </div>
