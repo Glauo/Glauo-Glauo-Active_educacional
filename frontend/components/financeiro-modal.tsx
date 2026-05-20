@@ -320,6 +320,7 @@ function LancamentoModal({
         email: mailtoUrl(text(item.email || form.aluno_email), `Boleto Active Educacional - ${text(item.descricao)}`, msg),
       });
       setSavedLinks(links);
+      onSaved();
       return;
     }
 

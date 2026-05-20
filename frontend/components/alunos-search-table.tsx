@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { vipPackageStats } from "@/lib/course-modules";
 import { EditarAlunoBtn } from "./aluno-modal";
 import { AutoWhatsAppButton } from "./auto-whatsapp-button";
+import { EditarLancamentoBtn } from "./financeiro-modal";
 
 type Aluno = {
   id?: string; nome?: string; name?: string; matricula?: string;
@@ -823,7 +824,8 @@ function AlunoDrawer({
                         <span className={`badge badge-${pago ? "success" : financBadge(text(f.status || f.situacao || "Pendente"))}`} style={{ flexShrink: 0 }}>
                           <span className="badge-dot" />{text(f.status || f.situacao || "Pendente")}
                         </span>
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+                          <EditarLancamentoBtn lancamento={f} tipo="recebimentos" />
                           {!pago && (
                             <button className="btn btn-primary btn-sm" style={{ fontSize: "0.72rem" }} onClick={() => { setBaixaFatura(f); setBaixaValor(text(f.valor_parcela ?? f.valor)); }}>
                               Baixar
