@@ -133,6 +133,11 @@ function autoPassword(cpf: string) {
   return digits(cpf).slice(0, 5);
 }
 
+function numberValue(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function calcAge(dateValue: string) {
   const raw = text(dateValue);
   const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -228,9 +233,11 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
   const [savingCred, setSavingCred] = useState(false);
   const [credFeedback, setCredFeedback] = useState("");
   const [credWhatsappLink, setCredWhatsappLink] = useState("");
+  const [vipFeedback, setVipFeedback] = useState("");
   const vip = isVipModule(form.modulo);
   const vipIndeterminado = isVipUnlimitedPlan(form.vip_tipo_plano);
   const planTotal = vipIndeterminado ? VIP_DEFAULT_TOTAL : (vipPlanTotal(form.vip_tipo_plano || "Pacote 10 aulas") || VIP_DEFAULT_TOTAL);
+  const vipRenewAmount = Math.max(1, planTotal || VIP_DEFAULT_TOTAL);
   const vipTotalNumber = vipIndeterminado ? 0 : Math.max(0, Number(form.vip_aulas_total || planTotal) || planTotal);
   const vipRestantesNumber = vipIndeterminado ? 0 : Math.max(0, Number(form.vip_aulas_restantes || vipTotalNumber) || 0);
   const vipDadasNumber = vipIndeterminado ? Math.max(0, Number(form.vip_aulas_dadas || 0)) : Math.max(0, vipTotalNumber - vipRestantesNumber);
@@ -260,6 +267,7 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       return next;
     });
     setErro("");
+    setVipFeedback("");
   }
 
   function preencherAcessoAutomatico() {
@@ -279,6 +287,21 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
       livro: text(turma?.livro || turma?.book) || prev.livro,
       modulo: migrateModule(turma?.modulo || turma?.tipo_aula || turma?.modalidade || prev.modulo),
     }));
+    setErro("");
+  }
+
+  function renovarPacoteVip() {
+    if (!vip || vipIndeterminado) return;
+    const currentTotal = Math.max(vipTotalNumber, numberValue(form.vip_aulas_total), vipRenewAmount);
+    const currentRestantes = Math.max(0, numberValue(form.vip_aulas_restantes || vipRestantesNumber));
+    const nextTotal = currentTotal + vipRenewAmount;
+    const nextRestantes = currentRestantes + vipRenewAmount;
+    setForm((prev) => ({
+      ...prev,
+      vip_aulas_total: String(nextTotal),
+      vip_aulas_restantes: String(nextRestantes),
+    }));
+    setVipFeedback(`Renovacao adicionada: +${vipRenewAmount} aula(s). Salve as alteracoes para confirmar.`);
     setErro("");
   }
 
@@ -483,6 +506,20 @@ function AlunoModal({ aluno, onClose, onSaved }: { aluno?: AlunoData; onClose: (
                       <label className="form-label">Aulas restantes</label>
                       <input className="form-input" type="number" min="0" value={form.vip_aulas_restantes || form.vip_aulas_total || planTotal} onChange={(e) => update("vip_aulas_restantes", e.target.value)} />
                       <div className="form-help">Exemplo: pacote de 10 com 7 restantes significa 3 aulas dadas.</div>
+                    </div>
+                    <div className="form-group form-group-span2">
+                      <div className="vip-renew-panel">
+                        <div>
+                          <strong>Renovacao de aulas particulares VIP</strong>
+                          <span>
+                            Adiciona +{vipRenewAmount} aula(s) ao pacote e ao saldo restante, preservando {vipDadasNumber} aula(s) ja dada(s).
+                          </span>
+                        </div>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={renovarPacoteVip}>
+                          Renovar pacote VIP
+                        </button>
+                      </div>
+                      {vipFeedback && <div className="form-success">{vipFeedback}</div>}
                     </div>
                   </>
                 )}

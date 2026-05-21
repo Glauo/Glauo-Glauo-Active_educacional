@@ -3,7 +3,6 @@ import { HomeworkCorrectionClient } from "@/components/homework-correction-clien
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
 import { canManageAllSchoolContent, isHomeworkActivity, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
-import { applyWorkbookAnswerKey } from "@/lib/workbook-answer-key";
 import { redirect } from "next/navigation";
 
 export default async function CorrecaoLicoesPage() {
@@ -15,7 +14,7 @@ export default async function CorrecaoLicoesPage() {
     dbList<Homework>("activities.json"),
     dbList<HomeworkSubmission>("activity_submissions.json"),
   ]);
-  const licoes = activities.filter(isHomeworkActivity).map(applyWorkbookAnswerKey);
+  const licoes = activities.filter(isHomeworkActivity);
   const items = submissions
     .filter((submission) => licoes.some((item) => text(item.id) === text(submission.activity_id)))
     .map((submission) => ({

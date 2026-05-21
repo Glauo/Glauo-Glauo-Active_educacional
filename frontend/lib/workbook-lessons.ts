@@ -1,5 +1,4 @@
 import { normalizeList, text, type Homework, type HomeworkSubmission, type Row } from "./school-modules";
-import { applyWorkbookAnswerKey } from "./workbook-answer-key";
 import { WORKBOOK_LESSON_CONTENT, WORKBOOK_LESSON_QUESTIONS } from "./workbook-content";
 
 type WorkbookPart = {
@@ -50,7 +49,6 @@ export function workbookLessonsForBook(book?: string): Homework[] {
         tipo: "multipla_escolha" as const,
         enunciado: question.section ? `${question.section}\n${question.question}` : question.question,
         opcoes: question.options,
-        correta_idx: null,
         pontos: 1,
       }));
       const fallbackQuestion = {
@@ -59,7 +57,7 @@ export function workbookLessonsForBook(book?: string): Homework[] {
         enunciado: `Abra o PDF ${part.title}, faca a licao ${lesson} nas paginas ${pages.start} a ${pages.end} e envie aqui sua resposta, foto ou link do arquivo.`,
         pontos: 10,
       };
-      return applyWorkbookAnswerKey({
+      return {
         id,
         tipo: "Licao de Casa",
         origem: "workbook_pdf",
@@ -78,7 +76,7 @@ export function workbookLessonsForBook(book?: string): Homework[] {
         allow_resubmission: false,
         questions: exactQuestions.length > 0 ? exactQuestions : [fallbackQuestion],
         peso: exactQuestions.length > 0 ? exactQuestions.length : 10,
-      } satisfies Homework);
+      } satisfies Homework;
     }));
 }
 

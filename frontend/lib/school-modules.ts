@@ -158,23 +158,6 @@ export function homeworkTotal(homework: Homework) {
   return questions.reduce((sum, question) => sum + (Number(question.pontos) || 0), 0);
 }
 
-export function autoScore(homework: Homework, answers: Record<string, string>) {
-  const questionScores: Record<string, number> = {};
-  let total = 0;
-  for (const question of homework.questions || []) {
-    const answer = text(answers[question.id]);
-    let score = 0;
-    if (question.tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
-      score = Number(answer) === Number(question.correta_idx) ? Number(question.pontos) || 0 : 0;
-    } else if (question.tipo === "verdadeiro_falso" && question.correta_texto) {
-      score = lower(answer) === lower(question.correta_texto) ? Number(question.pontos) || 0 : 0;
-    }
-    questionScores[question.id] = score;
-    total += score;
-  }
-  return { total, questionScores };
-}
-
 export function tagBadge(kind?: string) {
   const value = lower(kind);
   if (value.includes("urgent")) return "danger";

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { financeMessage } from "@/lib/finance-message";
 import { BaixaBtn, EditarLancamentoBtn, EstornoBtn } from "./financeiro-modal";
 import { FinanceiroFornecedores } from "./financeiro-fornecedores";
 import { FinanceiroProfessorFechamento } from "./financeiro-professor-fechamento";
@@ -204,7 +205,7 @@ function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
   const boletoLink = pdfHref
     ? (pdfHref.startsWith("http") ? pdfHref : `${typeof window !== "undefined" ? window.location.origin : ""}${pdfHref}`)
     : `${typeof window !== "undefined" ? window.location.origin : ""}/api/financeiro/boleto?id=${id}`;
-  const msg = `Boleto Ativo Educacional\nAluno: ${String(lancamento.aluno || lancamento.nome || "")}\nReferencia: ${String(lancamento.descricao || "")}\nValor: ${formatBRL(parseValor(lancamento.valor_parcela || lancamento.valor))}\nVencimento: ${String(lancamento.vencimento || lancamento.data_vencimento || "")}\nLink: ${boletoLink}`;
+  const msg = financeMessage({ ...lancamento, boleto_pdf_url: pdfHref || boletoLink }, typeof window !== "undefined" ? window.location.origin : "").body;
 
   async function gerar() {
     if (!id) return;

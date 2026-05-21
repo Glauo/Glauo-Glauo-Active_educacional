@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { homeworkEvaluationMessage } from "@/lib/homework-feedback";
 import type { Homework, HomeworkQuestion, HomeworkSubmission } from "@/lib/school-modules";
 
 function text(value: unknown) {
@@ -36,12 +37,15 @@ function answerLabel(question: HomeworkQuestion, raw: string) {
 }
 
 function expectedLabel(question: HomeworkQuestion) {
-  if (question.tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
+  if (question.tipo === "multipla_escolha") return "A Wiz IA avalia a alternativa pelo enunciado e contexto.";
+  if (question.tipo === "verdadeiro_falso") return "A Wiz IA avalia se a resposta faz sentido pelo enunciado.";
+  if (true) return text(question.feedback) || "Resposta aberta; avaliar criterio, clareza e completude.";
+  if ((question as HomeworkQuestion).tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
     const idx = Number(question.correta_idx);
     const opt = question.opcoes?.[idx];
     return opt ? `${String.fromCharCode(65 + idx)}) ${opt}` : `Alternativa ${idx + 1}`;
   }
-  if (question.tipo === "verdadeiro_falso") {
+  if ((question as HomeworkQuestion).tipo === "verdadeiro_falso") {
     if (["1", "v", "true", "verdadeiro"].includes(lower(question.correta_texto))) return "Verdadeiro";
     if (["0", "f", "false", "falso"].includes(lower(question.correta_texto))) return "Falso";
   }
@@ -51,18 +55,16 @@ function expectedLabel(question: HomeworkQuestion) {
 function suggestedScore(question: HomeworkQuestion, raw: string): number {
   const pts = Number(question.pontos) || 0;
   if (!raw) return 0;
-  if (question.tipo === "multipla_escolha" && question.correta_idx !== null && question.correta_idx !== undefined) {
-    return Number(raw) === Number(question.correta_idx) ? pts : 0;
-  }
-  if (question.tipo === "verdadeiro_falso" && text(question.correta_texto)) {
-    const norm = (v: string) => ["1", "true", "verdadeiro"].includes(lower(v)) ? "v" : ["0", "false", "falso"].includes(lower(v)) ? "f" : lower(v);
-    return norm(raw) === norm(text(question.correta_texto)) ? pts : 0;
-  }
+  if (question.tipo === "multipla_escolha" || question.tipo === "verdadeiro_falso") return 0;
   return Number((pts * 0.8).toFixed(1));
 }
 
 function statusBadge(status: unknown) {
   return lower(status).includes("corrigido") ? "success" : "warning";
+}
+
+function parseScore(value: string) {
+  return Number(value.replace(",", ".")) || 0;
 }
 
 type SubmissionWithHomework = { submission: HomeworkSubmission; homework?: Homework };
@@ -171,7 +173,8 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
   const initialScores = Object.fromEntries(questions.map((q, idx) => {
     const saved = Number((submission.question_scores || {})[q.id]);
     const raw = answerValue(submission, q, idx);
-    return [q.id, Number.isFinite(saved) && saved > 0 ? saved : suggestedScore(q, raw)];
+    const hasSavedScore = Object.prototype.hasOwnProperty.call(submission.question_scores || {}, q.id);
+    return [q.id, hasSavedScore && Number.isFinite(saved) ? saved : suggestedScore(q, raw)];
   }));
 
   const [questionScores, setQuestionScores] = useState<Record<string, number>>(initialScores);
@@ -195,13 +198,14 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
       const res = await fetch("/api/licoes/ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submission, homework }),
+        body: JSON.stringify({ submission, homework, persist: true }),
       });
       const data = await res.json().catch(() => ({})) as {
         questionScores?: Record<string, number>;
         suggestedTotal?: number;
         feedback?: string;
         error?: string;
+        saved?: boolean;
       };
       if (!res.ok) { setMsg(data.error || "Erro ao consultar IA."); return; }
       if (data.questionScores) {
@@ -209,6 +213,10 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         setScore(String(data.suggestedTotal ?? 0));
       }
       if (data.feedback) setFeedback(data.feedback);
+      if (data.saved) {
+        setMsg("Wiz IA avaliou e lancou a nota automaticamente.");
+        onSaved();
+      }
     } finally {
       setAiLoading(false);
     }
@@ -219,6 +227,13 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
     const next = { ...questionScores, [id]: n };
     setQuestionScores(next);
     setScore(String(Number(Object.values(next).reduce((s, v) => s + Number(v || 0), 0).toFixed(1))));
+  }
+
+  function generateScoreMessage() {
+    const finalScore = Math.max(0, Math.min(parseScore(score), maxScore));
+    setScore(String(finalScore));
+    setFeedback(homeworkEvaluationMessage(finalScore, maxScore));
+    setMsg("Mensagem para o aluno gerada pela nota.");
   }
 
   async function save() {
@@ -253,7 +268,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
       <div className="card-body">
         <div className="correction-actions">
           <button className="btn btn-secondary" type="button" onClick={applyAi} disabled={aiLoading || !homework}>
-            {aiLoading ? "Analisando..." : "Analisar com IA"}
+            {aiLoading ? "Avaliando..." : "Avaliar com IA e lancar nota"}
           </button>
           <div className="form-group correction-score">
             <label className="form-label">Nota final / {maxScore}</label>
@@ -286,7 +301,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
                       {raw && raw !== label && <small style={{ color: "var(--text-muted)" }}>Valor: {raw}</small>}
                     </div>
                     <div>
-                      <span>Gabarito / criterio</span>
+                      <span>Critério da IA</span>
                       <strong>{expectedLabel(q)}</strong>
                     </div>
                     <div>
@@ -349,7 +364,12 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         )}
 
         <div className="form-group" style={{ marginTop: 16 }}>
-          <label className="form-label">Devolutiva para o aluno</label>
+          <div className="correction-feedback-heading">
+            <label className="form-label">Devolutiva para o aluno</label>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={generateScoreMessage}>
+              Gerar mensagem pela nota
+            </button>
+          </div>
           <textarea
             className="form-input form-textarea"
             rows={4}
@@ -360,7 +380,7 @@ function CorrectionDetail({ item, onSaved }: { item: SubmissionWithHomework; onS
         </div>
 
         {msg && (
-          <div className={msg.includes("salva") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>
+          <div className={msg.includes("salva") || msg.includes("lancou") || msg.includes("gerada") ? "form-success" : "form-error"} style={{ marginBottom: 8 }}>
             {msg}
           </div>
         )}

@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
 import { isAdmin } from "@/lib/roles";
+import { financeMessage } from "@/lib/finance-message";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -32,30 +33,6 @@ async function audit(entry: Record<string, unknown>) {
     ...log,
     { id: crypto.randomUUID(), data: new Date().toISOString(), ...entry },
   ]);
-}
-
-function money(value: unknown) {
-  const n = Number.parseFloat(text(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function boletoMessage(lancamento: Record<string, unknown>, origin: string) {
-  const id = text(lancamento.id);
-  const pdfUrl = text(lancamento.boleto_pdf_url);
-  const link = pdfUrl
-    ? (pdfUrl.startsWith("http") ? pdfUrl : `${origin}${pdfUrl}`)
-    : `${origin}/api/financeiro/boleto?id=${encodeURIComponent(id)}`;
-  return [
-    "Ola! Seu boleto/fatura da Active Educacional foi salvo.",
-    "",
-    `Aluno: ${text(lancamento.aluno || lancamento.nome)}`,
-    `Referencia: ${text(lancamento.descricao)}`,
-    `Parcela: ${text(lancamento.parcela) || "1"}`,
-    `Valor: ${money(lancamento.valor_parcela || lancamento.valor)}`,
-    `Vencimento: ${text(lancamento.vencimento || lancamento.data_vencimento)}`,
-    "",
-    `Acesse o boleto: ${link}`,
-  ].join("\n");
 }
 
 function shouldSendWhatsApp(data: Record<string, unknown>) {
@@ -145,7 +122,8 @@ export async function POST(req: NextRequest) {
     const origin = new URL(req.url).origin;
     if (tipo !== "despesas" && shouldSendWhatsApp(data)) {
       runNotification((async () => {
-        const result = await sendWhatsApp(novo.telefone || novo.whatsapp, boletoMessage(novo, origin), session);
+        const message = financeMessage(novo, origin);
+        const result = await sendWhatsApp(novo.telefone || novo.whatsapp, message.body, session);
         const atualizados = await dbList<Record<string, unknown>>(key);
         const notificationStatus = { ...(novo.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
         await dbSet(key, atualizados.map((item) => item.id === id ? { ...item, notification_status: notificationStatus } : item));
@@ -153,7 +131,8 @@ export async function POST(req: NextRequest) {
     }
     if (tipo !== "despesas" && shouldSendEmail(data)) {
       runNotification((async () => {
-        const result = await sendEmail(novo.email, `Boleto Active Educacional - ${text(novo.descricao) || text(novo.aluno)}`, boletoMessage(novo, origin), session);
+        const message = financeMessage(novo, origin);
+        const result = await sendEmail(novo.email, message.subject, message.body, session);
         const atualizados = await dbList<Record<string, unknown>>(key);
         const current = atualizados.find((item) => item.id === id) || novo;
         const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };
@@ -259,7 +238,8 @@ export async function PUT(req: NextRequest) {
     if (tipo !== "despesas" && shouldSendWhatsApp(updates)) {
       const lancamento = { ...lancamentos[idx] };
       runNotification((async () => {
-        const result = await sendWhatsApp(lancamento.telefone || lancamento.whatsapp, boletoMessage(lancamento, origin), session);
+        const message = financeMessage(lancamento, origin);
+        const result = await sendWhatsApp(lancamento.telefone || lancamento.whatsapp, message.body, session);
         const atualizados = await dbList<Record<string, unknown>>(key);
         const current = atualizados.find((item) => item.id === id) || lancamento;
         const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), whatsapp: result.ok ? "enviado_wapi" : result.status };
@@ -269,7 +249,8 @@ export async function PUT(req: NextRequest) {
     if (tipo !== "despesas" && shouldSendEmail(updates)) {
       const lancamento = { ...lancamentos[idx] };
       runNotification((async () => {
-        const result = await sendEmail(lancamento.email, `Boleto Active Educacional - ${text(lancamento.descricao) || text(lancamento.aluno)}`, boletoMessage(lancamento, origin), session);
+        const message = financeMessage(lancamento, origin);
+        const result = await sendEmail(lancamento.email, message.subject, message.body, session);
         const atualizados = await dbList<Record<string, unknown>>(key);
         const current = atualizados.find((item) => item.id === id) || lancamento;
         const notificationStatus = { ...(current.notification_status as Record<string, unknown> | undefined), email: result.ok ? "enviado_smtp" : result.status };

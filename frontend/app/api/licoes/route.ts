@@ -3,7 +3,6 @@ import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { canManageSchoolContent, homeworkTotal, normalizeList, nowIso, text, type Homework, type HomeworkQuestion } from "@/lib/school-modules";
 import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
-import { applyWorkbookAnswerKey } from "@/lib/workbook-answer-key";
 
 const KEY = "activities.json";
 
@@ -22,8 +21,8 @@ function normalizeQuestions(body: Homework): HomeworkQuestion[] {
     tipo: question.tipo || "aberta",
     enunciado: text(question.enunciado) || `Questao ${index + 1}`,
     opcoes: normalizeList(question.opcoes),
-    correta_idx: question.correta_idx === null || question.correta_idx === undefined ? null : Number(question.correta_idx),
-    correta_texto: text(question.correta_texto),
+    correta_idx: null,
+    correta_texto: "",
     pontos: Number(question.pontos) || 1,
     feedback: text(question.feedback),
   }));
@@ -45,7 +44,7 @@ export async function POST(req: NextRequest) {
   const titulo = text(body.titulo);
   if (!titulo) return NextResponse.json({ error: "Titulo da licao e obrigatorio." }, { status: 400 });
   const questions = normalizeQuestions(body);
-  const item: Homework = applyWorkbookAnswerKey({
+  const item: Homework = {
     ...body,
     id: text(body.id) || crypto.randomUUID(),
     tipo: "Licao de Casa",
@@ -68,7 +67,7 @@ export async function POST(req: NextRequest) {
     autor: session.pessoa || session.usuario,
     created_at: nowIso(),
     notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
-  });
+  };
   const [activities, students] = await Promise.all([dbList<Homework>(KEY), dbList<Record<string, unknown>>("students.json")]);
   const notification = await notifyStudentsAboutLaunch({
     students,
@@ -94,12 +93,12 @@ export async function PUT(req: NextRequest) {
   const activities = await dbList<Homework>(KEY);
   const idx = activities.findIndex((item) => text(item.id) === id);
   if (idx === -1) return NextResponse.json({ error: "Nao encontrado" }, { status: 404 });
-  activities[idx] = applyWorkbookAnswerKey({
+  activities[idx] = {
     ...activities[idx],
     ...body,
     questions: body.questions ? normalizeQuestions(body) : activities[idx].questions,
     updated_at: nowIso(),
-  });
+  };
   await dbSet(KEY, activities);
   return NextResponse.json(activities[idx]);
 }

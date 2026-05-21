@@ -28,9 +28,8 @@ export async function POST(req: NextRequest) {
           "Conceito fora do contexto estudado",
           "Alternativa com erro conceitual comum",
         ],
-        correta_idx: 0,
         pontos: 2,
-        feedback: "Revise o gabarito antes de publicar. A Prof Wiz deixou distratores pedagogicos para validacao humana.",
+        feedback: "Revise a questao antes de publicar. A correcao automatica sera feita pela Wiz IA.",
       };
     }
     if (index % 3 === 1) {
@@ -38,7 +37,6 @@ export async function POST(req: NextRequest) {
         id: crypto.randomUUID(),
         tipo: "verdadeiro_falso",
         enunciado: `A afirmacao a seguir esta alinhada ao conteudo ${capitulo} em nivel ${dificuldade}: o aluno consegue explicar o conceito com exemplo proprio.`,
-        correta_texto: "V",
         pontos: 1,
         feedback: "Ajuste a afirmacao conforme o livro/apostila antes de publicar.",
       };
