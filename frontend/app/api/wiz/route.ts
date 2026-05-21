@@ -735,6 +735,59 @@ async function logMessage(data: Row, actor: string) {
   return { ok: true, message: `Envio preparado para ${item.destinatario}`, item };
 }
 
+const STOP_PHRASES = [
+  "parar", "pare", "chega", "cancelar", "cancela",
+  "nao precisa", "eu resolvo", "eu cuido", "deixa eu",
+  "pode parar", "tchau", "fui", "ok obrigado", "ok obrigada",
+  "ok valeu", "valeu wiz", "obrigado wiz", "obrigada wiz",
+  "pode deixar", "tudo certo", "ja entendi",
+];
+
+function isStopCommand(prompt: string): boolean {
+  const norm = normalize(prompt).replace(/[!.?]+$/, "").trim();
+  return STOP_PHRASES.some((w) => norm === w || norm.startsWith(w + " ") || norm.endsWith(" " + w));
+}
+
+const STOP_REPLIES = [
+  "Certo, sem problema! Qualquer coisa é só chamar.",
+  "Entendido! Fico por aqui se precisar.",
+  "Ok, tudo bem! Se surgir qualquer dúvida, estou disponível.",
+  "Claro! Pode continuar. Se precisar de mim, é só pedir.",
+];
+
+const FALLBACK_MESSAGES = [
+  "Boa pergunta! Esse ponto aqui está fora do que consigo resolver sozinho. Vou encaminhar para o responsável dar uma olhada — ele entra em contato em breve. Para o operacional do dia a dia, pode chamar!",
+  "Hmm, esse aqui vai precisar de atenção humana! Já anotei e vou repassar para o responsável. Para registros de aula, cadastros e comunicados, estou aqui.",
+  "Entendido! Esse ponto foge um pouco do que consigo fazer diretamente, mas não se preocupa — vou encaminhar para o responsável resolver. Se precisar de mais alguma coisa enquanto isso, é só pedir!",
+  "Anotado! Isso vai precisar da atenção do responsável. Já encaminhei para ele. Se quiser ajuda com algo operacional — aulas, alunos, financeiro — pode contar comigo.",
+];
+
+function randomOf(arr: string[]): string {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function humanFallback(): string {
+  return randomOf(FALLBACK_MESSAGES);
+}
+
+function actionHumanLabel(action: string): string {
+  const labels: Record<string, string> = {
+    create_homework: "criar uma tarefa ou lição de casa",
+    create_work: "lançar um trabalho ou desafio",
+    create_student: "cadastrar um aluno",
+    create_financial: "lançar um recebimento ou cobrança",
+    create_agenda: "adicionar um evento na agenda",
+    reset_student_access: "atualizar o acesso de um aluno",
+    reset_teacher_access: "atualizar o acesso de um professor",
+    answer_student: "responder a dúvida de um aluno",
+    create_wall_post: "criar um comunicado",
+    send_bulk_message: "enviar mensagem em massa",
+    add_library_material: "cadastrar material na biblioteca",
+    record_teacher_class: "registrar a aula de um professor",
+  };
+  return labels[action] || "executar essa ação";
+}
+
 function findInPrompt(items: Row[], prompt: string, fields: string[]): Row | null {
   const normPrompt = normalize(prompt);
   let best: Row | null = null;
@@ -986,21 +1039,41 @@ function libraryDataFromPrompt(prompt: string): Row {
 }
 
 async function answer(prompt: string, actor: string, session: WizSession): Promise<Row> {
+  if (!prompt.trim() || isStopCommand(prompt)) {
+    return { ok: true, message: randomOf(STOP_REPLIES) };
+  }
   const action = suggestFromPrompt(prompt);
   if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
   if (action === "send_bulk_message") {
-    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("comercial")) return { ok: false, message: "Perfil sem permissao para envio em massa." };
+    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("comercial")) return { ok: false, message: "Sem permissao para envio em massa. Fale com um administrador." };
     return sendBulkMessage(communicationDataFromPrompt(prompt), actor, session);
   }
   if (action === "add_library_material") {
-    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("prof")) return { ok: false, message: "Perfil sem permissao para cadastrar materiais na biblioteca." };
+    if (!canAdmin(session.perfil) && !lower(session.perfil).includes("prof")) return { ok: false, message: "Sem permissao para cadastrar materiais na biblioteca. Fale com um administrador." };
     return addLibraryMaterial(libraryDataFromPrompt(prompt), actor);
   }
+  if (action === "answer") {
+    return { ok: true, message: humanFallback() };
+  }
+
+  const actionLabels: Record<string, string> = {
+    create_homework: "Me passa o nome da turma, o conteúdo e quantas questões quer — já crio a tarefa!",
+    create_work: "Me informa o título, turma e prazo do trabalho que eu já lanço.",
+    create_student: "Me passa o nome completo, turma e o livro do aluno que eu cadastro agora.",
+    create_financial: "Me informa o nome do aluno, o valor e quantas parcelas para eu lançar.",
+    create_agenda: "Me diz o título, data e horário do evento para eu agendar.",
+    reset_student_access: "Me informa o nome do aluno e eu atualizo o login e senha.",
+    reset_teacher_access: "Me informa o nome do professor e eu atualizo o acesso dele.",
+    answer_student: "Me passa o nome do aluno e a dúvida dele que eu respondo!",
+    create_wall_post: "Me diz o título e o texto do comunicado — para qual turma vai?",
+    send_bulk_message: "Me informa a mensagem e para quem enviar (todos, turma ou aluno específico).",
+    add_library_material: "Me passa o título e o link do material que eu cadastro na biblioteca.",
+    record_teacher_class: "Me informa a professora, a turma e a lição para eu registrar a aula.",
+  };
+
   return {
     ok: true,
-    message: action === "answer"
-      ? "Sou o Professor Wiz operacional do Active: posso registrar aula de professor, cadastrar aluno, criar comunicado, gerar tarefa, criar trabalho, cadastrar materiais PDF na biblioteca, lancar recebimento, enviar mensagens, atualizar login/senha, responder aluno e agendar evento. Diga a acao com dados objetivos, ex: 'Registrar aula da professora Maria na turma Chicago ontem, licao Unit 5'."
-      : `Parece uma solicitacao de ${action}. Use o formulario rapido correspondente ou envie os dados completos para executar.`,
+    message: actionLabels[action] ?? `Parece que você quer ${actionHumanLabel(action)}. Me manda os dados completos e já executo!`,
     suggested_action: action,
   };
 }
