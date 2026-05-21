@@ -138,6 +138,7 @@ export function WizAssistantClient({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const todayLogs = logs.filter((log) => {
     const date = str(log.data || log.date);
@@ -171,10 +172,24 @@ export function WizAssistantClient({
     }
   }
 
+  function cancelRequest() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: "Ok! Pode continuar com o que precisar.", ts: now() }]);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
   async function send() {
     const prompt = input.trim();
     const file = selectedFile;
-    if ((!prompt && !file) || loading) return;
+    if (!prompt && !file) return;
+
+    if (loading) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setLoading(false);
+    }
 
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", text: file ? `${prompt || "Cadastrar material PDF na biblioteca"}\n[Anexo: ${file.name}]` : prompt, ts: now() };
     setMessages((prev) => [...prev, userMsg]);
@@ -182,6 +197,9 @@ export function WizAssistantClient({
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setLoading(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       let res: Response;
@@ -191,23 +209,28 @@ export function WizAssistantClient({
         form.append("prompt", prompt);
         form.append("tipo", "material");
         form.append("arquivo_pdf", file);
-        res = await fetch("/api/wiz", { method: "POST", body: form });
+        res = await fetch("/api/wiz", { method: "POST", body: form, signal: controller.signal });
       } else {
         res = await fetch("/api/wiz", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "answer", data: { prompt } }),
+          signal: controller.signal,
         });
       }
       const json = await res.json().catch(() => ({}));
       const reply = str(json.message || json.error || (res.ok ? "Feito." : "Erro ao processar a solicitação."));
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: reply, ts: now() }]);
       if (res.ok) router.refresh();
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "wiz", text: "Sem conexão. Tente novamente.", ts: now() }]);
     } finally {
-      setLoading(false);
-      inputRef.current?.focus();
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+        inputRef.current?.focus();
+      }
     }
   }
 
@@ -263,7 +286,7 @@ export function WizAssistantClient({
               <button
                 key={action.label}
                 onClick={() => applyQuickAction(action.template)}
-                disabled={loading}
+                disabled={false}
                 style={{
                   display: "flex", alignItems: "center", gap: 5,
                   background: "var(--bg-card)", border: "1px solid var(--border)",
@@ -306,12 +329,11 @@ export function WizAssistantClient({
               accept="application/pdf,.pdf"
               style={{ display: "none" }}
               onChange={(e) => onFileChange(e.target.files?.[0] || null)}
-              disabled={loading}
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
+              disabled={false}
               aria-label="Anexar PDF"
               title="Anexar PDF"
               style={{
@@ -340,12 +362,30 @@ export function WizAssistantClient({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKey}
-              disabled={loading}
             />
+            {loading && (
+              <button
+                type="button"
+                onClick={cancelRequest}
+                aria-label="Cancelar"
+                title="Cancelar"
+                style={{
+                  width: 42, height: 42, borderRadius: 14,
+                  border: "1px solid var(--border)", background: "var(--bg-card)",
+                  color: "var(--text-muted)", display: "inline-flex",
+                  alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: 16, height: 16 }}>
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
             <button
               className="wiz-send-btn"
               onClick={send}
-              disabled={loading || (!input.trim() && !selectedFile)}
+              disabled={!input.trim() && !selectedFile}
               aria-label="Enviar"
             >
               <svg viewBox="0 0 20 20" fill="currentColor">
