@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutoWhatsAppButton } from "@/components/auto-whatsapp-button";
 import {
@@ -42,6 +42,11 @@ type AgendaForm = {
   detalhes: string;
   meeting_link: string;
   status: string;
+};
+
+type SalesSendState = {
+  status: "pendente" | "enviando" | "enviado" | "falhou" | "parado";
+  detail?: string;
 };
 
 function closeIcon() {
@@ -128,6 +133,34 @@ function waMessage(lead: CommercialLead) {
   return `Ola ${leadName(lead)}! Aqui e da Active Educacional. Quero dar continuidade ao seu atendimento${interest ? ` sobre ${interest}` : ""}.`;
 }
 
+function leadQueueKey(lead: CommercialLead) {
+  return text(lead.id) || leadPhone(lead).replace(/\D/g, "");
+}
+
+function salesMessage(template: string, lead: CommercialLead, seller: string) {
+  const interest = text(lead.interesse || lead.curso || lead.modulo || "nossos cursos");
+  return template
+    .replaceAll("{nome}", leadName(lead))
+    .replaceAll("{interesse}", interest)
+    .replaceAll("{consultor}", text(seller || "equipe comercial"))
+    .replaceAll("{origem}", text(lead.origem || "Active Educacional"))
+    .trim();
+}
+
+function salesLeads(leads: CommercialLead[]) {
+  const unique = new Map<string, CommercialLead>();
+  for (const lead of leads) {
+    const phone = leadPhone(lead);
+    const digits = phone.replace(/\D/g, "");
+    if (digits && !unique.has(digits)) unique.set(digits, lead);
+  }
+  return Array.from(unique.values());
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function apiRequest(url: string, method: string, payload?: unknown) {
   const response = await fetch(url, {
     method,
@@ -137,6 +170,19 @@ async function apiRequest(url: string, method: string, payload?: unknown) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(text((data as { error?: string }).error || "Nao foi possivel salvar."));
   return data;
+}
+
+async function sendSalesWhatsApp(phone: string, message: string) {
+  const response = await fetch("/api/whatsapp/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ telefone: phone, mensagem: message }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !(data as { ok?: boolean }).ok) {
+    throw new Error(text((data as { status?: string; error?: string }).status || (data as { error?: string }).error || "WhatsApp nao enviado."));
+  }
+  return text((data as { status?: string }).status || "enviado");
 }
 
 function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; seller: string; onClose: () => void; onSaved: () => void }) {
@@ -256,12 +302,142 @@ function AgendaModal({ item, lead, leads, onClose, onSaved }: { item?: Commercia
   );
 }
 
+function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]; seller: string; onClose: () => void }) {
+  const eligibleLeads = useMemo(() => salesLeads(leads), [leads]);
+  const stopRef = useRef(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [template, setTemplate] = useState("Ola {nome}! Tudo bem? Aqui e {consultor}, da Active Educacional. Vi seu interesse em {interesse}. Posso te ajudar a escolher a melhor opcao de aula?");
+  const [intervalSeconds, setIntervalSeconds] = useState("90");
+  const [allowed, setAllowed] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState("");
+  const [states, setStates] = useState<Record<string, SalesSendState>>({});
+
+  const selectedLeads = eligibleLeads.filter((lead) => selected.includes(leadQueueKey(lead)));
+  const sampleLead = selectedLeads[0] || eligibleLeads[0];
+
+  function toggle(key: string) {
+    setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+    setMessage("");
+  }
+
+  function mark(key: string, state: SalesSendState) {
+    setStates((current) => ({ ...current, [key]: state }));
+  }
+
+  async function waitInterval(seconds: number) {
+    const until = Date.now() + seconds * 1000;
+    while (!stopRef.current && Date.now() < until) {
+      await sleep(Math.min(1000, Math.max(0, until - Date.now())));
+    }
+  }
+
+  async function sendQueue() {
+    const cleanTemplate = template.trim();
+    const seconds = Math.min(300, Math.max(45, Number(intervalSeconds) || 90));
+    if (!allowed) { setMessage("Confirme que os leads podem receber contato comercial."); return; }
+    if (!selectedLeads.length) { setMessage("Selecione ao menos um lead com WhatsApp."); return; }
+    if (!cleanTemplate) { setMessage("Escreva a mensagem de vendas."); return; }
+
+    stopRef.current = false;
+    setRunning(true);
+    setMessage(`Fila iniciada para ${selectedLeads.length} lead(s).`);
+    setStates(Object.fromEntries(selectedLeads.map((lead) => [leadQueueKey(lead), { status: "pendente" }])));
+
+    for (let index = 0; index < selectedLeads.length; index += 1) {
+      const lead = selectedLeads[index];
+      const key = leadQueueKey(lead);
+      if (stopRef.current) {
+        mark(key, { status: "parado", detail: "Fila interrompida." });
+        continue;
+      }
+
+      mark(key, { status: "enviando" });
+      try {
+        const status = await sendSalesWhatsApp(leadPhone(lead), salesMessage(cleanTemplate, lead, seller));
+        mark(key, { status: "enviado", detail: status });
+      } catch (err) {
+        mark(key, { status: "falhou", detail: err instanceof Error ? err.message : "Falha no envio." });
+        stopRef.current = true;
+        setMessage(`Fila pausada apos falha no contato de ${leadName(lead)}.`);
+        break;
+      }
+
+      if (index < selectedLeads.length - 1) await waitInterval(seconds);
+    }
+
+    if (!stopRef.current) setMessage("Fila concluida.");
+    setRunning(false);
+  }
+
+  function stopQueue() {
+    stopRef.current = true;
+    setMessage("Parada solicitada. O envio atual termina e os proximos contatos ficam bloqueados.");
+  }
+
+  return (
+    <div className="modal-overlay" onClick={(event) => !running && event.target === event.currentTarget && onClose()}>
+      <div className="modal-box commercial-sales-modal">
+        <div className="modal-header">
+          <div><div className="modal-title">Mensagem de vendas no WhatsApp</div><div className="modal-subtitle">Envio sequencial para leads filtrados do Comercial.</div></div>
+          <button className="modal-close" type="button" aria-label="Fechar" onClick={onClose} disabled={running}>{closeIcon()}</button>
+        </div>
+        <div className="modal-body">
+          <div className="commercial-sales-layout">
+            <div className="commercial-sales-compose">
+              <div className="form-group">
+                <label className="form-label">Mensagem</label>
+                <textarea className="form-input form-textarea commercial-sales-template" rows={6} value={template} onChange={(event) => setTemplate(event.target.value)} disabled={running} />
+                <div className="form-help">Variaveis: {"{nome}"}, {"{interesse}"}, {"{consultor}"} e {"{origem}"}.</div>
+              </div>
+              <div className="commercial-sales-controls">
+                <div className="form-group">
+                  <label className="form-label">Intervalo entre contatos</label>
+                  <div className="commercial-sales-interval"><input className="form-input" type="number" min={45} max={300} step={15} value={intervalSeconds} onChange={(event) => setIntervalSeconds(event.target.value)} disabled={running} /><span>segundos</span></div>
+                </div>
+                <label className="checkbox-row commercial-sales-allow"><input type="checkbox" checked={allowed} onChange={(event) => setAllowed(event.target.checked)} disabled={running} /> Contato comercial permitido</label>
+              </div>
+              {sampleLead && <div className="commercial-sales-preview"><span>Previa</span><p>{salesMessage(template, sampleLead, seller)}</p></div>}
+            </div>
+            <div className="commercial-sales-picker">
+              <div className="commercial-sales-picker-head">
+                <strong>Leads com WhatsApp</strong>
+                <div><button className="btn btn-ghost btn-sm" type="button" onClick={() => setSelected(eligibleLeads.map(leadQueueKey))} disabled={running || !eligibleLeads.length}>Selecionar</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => setSelected([])} disabled={running || !selected.length}>Limpar</button></div>
+              </div>
+              <div className="commercial-sales-list">
+                {eligibleLeads.length === 0 && <div className="commercial-stage-empty">Nenhum lead filtrado tem WhatsApp.</div>}
+                {eligibleLeads.map((lead) => {
+                  const key = leadQueueKey(lead);
+                  const state = states[key];
+                  return (
+                    <label className="commercial-sales-row" key={key}>
+                      <input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} disabled={running} />
+                      <span><strong>{leadName(lead)}</strong><small>{leadPhone(lead)} | {leadStage(lead)}</small></span>
+                      {state && <em className={`commercial-sales-state commercial-sales-state-${state.status}`} title={state.detail}>{state.status}</em>}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          {message && <div className="commercial-sales-feedback">{message}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" type="button" onClick={onClose} disabled={running}>Fechar</button>
+          {running ? <button className="btn btn-danger" type="button" onClick={stopQueue}>Parar fila</button> : <button className="btn btn-primary" type="button" onClick={sendQueue} disabled={!eligibleLeads.length}>Iniciar envios</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[]; agenda: CommercialAgendaItem[]; seller: string }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [leadModal, setLeadModal] = useState<CommercialLead | "new" | null>(null);
   const [agendaModal, setAgendaModal] = useState<{ item?: CommercialAgendaItem; lead?: CommercialLead } | null>(null);
+  const [salesModal, setSalesModal] = useState(false);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -318,7 +494,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
       <section className="card commercial-workbench">
         <div className="card-header commercial-card-header">
           <div><div className="section-eyebrow">FUNIL</div><h3 className="section-title">Pipeline de leads</h3><p className="section-subtitle">Mova o lead por etapa, agende retornos e mantenha o atendimento no mesmo painel.</p></div>
-          <div className="commercial-toolbar-actions"><button className="btn btn-secondary" type="button" onClick={() => setAgendaModal({})} disabled={leads.length === 0}>{plusIcon()}Agendar</button><button className="btn btn-primary" type="button" onClick={() => setLeadModal("new")}>{plusIcon()}Novo lead</button></div>
+          <div className="commercial-toolbar-actions"><button className="btn btn-secondary" type="button" onClick={() => setSalesModal(true)} disabled={visibleLeads.length === 0}>WhatsApp vendas</button><button className="btn btn-secondary" type="button" onClick={() => setAgendaModal({})} disabled={leads.length === 0}>{plusIcon()}Agendar</button><button className="btn btn-primary" type="button" onClick={() => setLeadModal("new")}>{plusIcon()}Novo lead</button></div>
         </div>
         <div className="card-body commercial-workbench-body">
           <div className="commercial-filters">
@@ -382,6 +558,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
 
       {leadModal && <LeadModal lead={leadModal === "new" ? undefined : leadModal} seller={seller} onClose={() => setLeadModal(null)} onSaved={saved} />}
       {agendaModal && <AgendaModal item={agendaModal.item} lead={agendaModal.lead} leads={leads} onClose={() => setAgendaModal(null)} onSaved={saved} />}
+      {salesModal && <SalesMessageModal leads={visibleLeads} seller={seller} onClose={() => setSalesModal(false)} />}
     </>
   );
 }

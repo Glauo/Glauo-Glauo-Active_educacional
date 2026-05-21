@@ -1331,6 +1331,166 @@
 .commercial-agenda-table { min-width: 860px; }
 .commercial-agenda-table td { vertical-align: top; }
 .commercial-modal-box { max-width: 760px; }
+.commercial-sales-modal { max-width: 1080px; }
+
+.commercial-sales-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(310px, 0.88fr);
+  gap: 18px;
+}
+
+.commercial-sales-template { min-height: 170px; }
+
+.commercial-sales-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) 1fr;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.commercial-sales-interval {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.commercial-sales-interval span,
+.commercial-sales-row small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.commercial-sales-allow { min-height: 42px; }
+
+.commercial-sales-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(16,185,129,0.06);
+  padding: 12px;
+  margin-top: 14px;
+}
+
+.commercial-sales-preview span {
+  color: var(--green-700);
+  display: block;
+  font-size: 0.71rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.commercial-sales-preview p {
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.commercial-sales-picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(14,32,64,0.025);
+  min-height: 390px;
+  overflow: hidden;
+}
+
+.commercial-sales-picker-head {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.commercial-sales-picker-head div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.commercial-sales-picker-head strong { font-size: 0.85rem; }
+
+.commercial-sales-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commercial-sales-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px;
+}
+
+.commercial-sales-row input { accent-color: var(--blue-600); }
+
+.commercial-sales-row strong,
+.commercial-sales-row small {
+  display: block;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.commercial-sales-row strong {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.commercial-sales-state {
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+  padding: 3px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.commercial-sales-state-enviado {
+  background: var(--green-100);
+  border-color: rgba(16,185,129,0.2);
+  color: var(--green-700);
+}
+
+.commercial-sales-state-enviando,
+.commercial-sales-state-pendente {
+  background: rgba(37,99,235,0.08);
+  border-color: rgba(37,99,235,0.18);
+  color: var(--blue-600);
+}
+
+.commercial-sales-state-falhou,
+.commercial-sales-state-parado {
+  background: var(--red-100);
+  border-color: rgba(239,68,68,0.22);
+  color: var(--red-700);
+}
+
+.commercial-sales-feedback {
+  border: 1px solid rgba(37,99,235,0.16);
+  border-radius: var(--radius-md);
+  background: rgba(37,99,235,0.06);
+  color: var(--blue-600);
+  font-size: 0.84rem;
+  font-weight: 600;
+  margin-top: 14px;
+  padding: 10px 12px;
+}
 
 @media (max-width: 760px) {
   .commercial-card-header {
@@ -1342,6 +1502,9 @@
   .commercial-toolbar-actions .btn { flex: 1 1 150px; }
   .commercial-filters { grid-template-columns: 1fr; }
   .commercial-board { grid-auto-columns: minmax(238px, 84vw); }
+  .commercial-sales-layout,
+  .commercial-sales-controls { grid-template-columns: 1fr; }
+  .commercial-sales-picker { min-height: 0; }
 }
 
 .search-bar {
