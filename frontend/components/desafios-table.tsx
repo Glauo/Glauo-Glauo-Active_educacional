@@ -23,8 +23,9 @@ function DesafioDeleteBtn({ id, titulo }: { id: string; titulo: string }) {
   );
 }
 
-type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; descricao?: string; pontos?: number | string; status?: string; [k: string]: unknown };
+type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; turmas?: string[]; aluno?: string; alunos?: string[]; descricao?: string; pontos?: number | string; status?: string; questions?: Row[]; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; [k: string]: unknown };
+type Row = Record<string, unknown>;
 
 function statusBadge(status: string) {
   const l = status.toLowerCase();
@@ -33,7 +34,20 @@ function statusBadge(status: string) {
   return "success";
 }
 
-export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; conclusoes: Conclusao[] }) {
+function list(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  return String(value || "").split(/[,\n;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function targetLabel(desafio: Desafio) {
+  const alunos = [String(desafio.aluno || "").trim(), ...list(desafio.alunos)].filter(Boolean);
+  if (alunos.length > 0) return `${alunos.length} aluno(s)`;
+  const turmas = [String(desafio.turma || "").trim(), ...list(desafio.turmas)]
+    .filter((item) => item && item.toLowerCase() !== "todas");
+  return turmas.length > 0 ? turmas.join(", ") : "Todas";
+}
+
+export function DesafiosTable({ desafios, conclusoes, turmas = [], alunos = [] }: { desafios: Desafio[]; conclusoes: Conclusao[]; turmas?: Row[]; alunos?: Row[] }) {
   const [busca, setBusca] = useState("");
 
   const filtrados = useMemo(() => {
@@ -92,6 +106,7 @@ export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; c
               <tr>
                 <th>Desafio</th>
                 <th>Turma</th>
+                <th>Questoes</th>
                 <th>Pontos</th>
                 <th>Status</th>
                 <th>Conclusões</th>
@@ -101,7 +116,8 @@ export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; c
             <tbody>
               {filtrados.map((d, i) => {
                 const titulo = String(d.titulo || d.title || `Desafio ${i + 1}`);
-                const turma = String(d.turma || "Todas");
+                const turma = targetLabel(d);
+                const questionCount = Array.isArray(d.questions) && d.questions.length > 0 ? d.questions.length : d.descricao ? 1 : 0;
                 const pontos = Number(d.pontos) || 0;
                 const status = String(d.status || "Publicado");
                 const nConclusoes = conclusoes.filter((c) => c.desafio_id === (d.id || titulo)).length;
@@ -118,6 +134,7 @@ export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; c
                       </div>
                     </td>
                     <td>{turma}</td>
+                    <td>{questionCount || "-"}</td>
                     <td><span className="badge badge-gold">{pontos} pts</span></td>
                     <td>
                       <span className={`badge badge-${statusBadge(status)}`}>
@@ -127,7 +144,7 @@ export function DesafiosTable({ desafios, conclusoes }: { desafios: Desafio[]; c
                     <td style={{ fontWeight: 600 }}>{nConclusoes}</td>
                     <td>
                       <div style={{ display: "flex", gap: 4 }}>
-                        <EditarDesafioBtn desafio={d} />
+                        <EditarDesafioBtn desafio={d} turmas={turmas} alunos={alunos} />
                         <DesafioDeleteBtn id={String(d.id || titulo)} titulo={titulo} />
                       </div>
                     </td>

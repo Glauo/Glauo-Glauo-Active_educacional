@@ -76,7 +76,7 @@ export default async function DesafiosPage() {
       </div>
 
       <div className="content-grid grid-2-1">
-        <DesafiosTable desafios={desafios} conclusoes={conclusoes} />
+        <DesafiosTable desafios={desafios} conclusoes={conclusoes} turmas={turmas} alunos={alunos} />
 
         {/* Ranking */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
