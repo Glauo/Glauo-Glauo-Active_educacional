@@ -81,6 +81,38 @@ function Empty({ title, desc }: { title: string; desc: string }) {
   return <div className="student-empty"><strong>{title}</strong><span>{desc}</span></div>;
 }
 
+type ChallengeQuestion = {
+  id?: string;
+  tipo?: string;
+  enunciado?: string;
+  opcoes?: string[];
+  pontos?: number | string;
+};
+
+function challengeTypeLabel(value: unknown) {
+  const raw = text(value).toLowerCase();
+  if (raw.includes("multipla")) return "Multipla escolha";
+  if (raw.includes("verdadeiro") || raw.includes("falso")) return "Verdadeiro/Falso";
+  if (raw.includes("upload") || raw.includes("arquivo") || raw.includes("link")) return "Arquivo ou link";
+  return "Pergunta";
+}
+
+function challengeQuestions(desafio: Row): ChallengeQuestion[] {
+  if (Array.isArray(desafio.questions) && desafio.questions.length > 0) {
+    return desafio.questions.map((question) => (question || {}) as ChallengeQuestion);
+  }
+  if (text(desafio.descricao) || Array.isArray(desafio.opcoes)) {
+    return [{
+      id: text(desafio.id) || "legacy",
+      tipo: text(desafio.tipo) || "aberta",
+      enunciado: text(desafio.descricao),
+      opcoes: Array.isArray(desafio.opcoes) ? desafio.opcoes.map(text).filter(Boolean) : [],
+      pontos: desafio.pontos as number | string | undefined,
+    }];
+  }
+  return [];
+}
+
 function StudentChat() {
   const [messages, setMessages] = useState<Row[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -268,7 +300,44 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
 
         {tab === "licoes" && <section className="student-panel"><div className="student-section-head"><div><span>Tarefas</span><h2>Lições de casa</h2></div></div>{licoesOrdenadas.length ? licoesOrdenadas.map((licao) => <article className="student-card" key={text(licao.id)}><div className="student-card-tags"><span className="badge badge-info">{text(licao.disciplina || "Inglês")}</span><span className={`badge badge-${statusBadge(entregasPorLicao.get(text(licao.id))?.status || "Pendente")}`}>{text(entregasPorLicao.get(text(licao.id))?.status || "Pendente")}</span></div><h3>{text(licao.titulo)}</h3><p>{text(licao.descricao)}</p><small>Prazo: {dateTimeLabel(licao.due_date)}</small><HomeworkSubmitForm homework={licao} submission={entregasPorLicao.get(text(licao.id))} /></article>) : <Empty title="Não há lições de casa no momento" desc="Quando uma lição for lançada, ela aparecerá aqui." />}</section>}
 
-        {tab === "desafios" && <section className="student-panel"><div className="student-section-head"><div><span>Desafios</span><h2>Desafios lançados</h2></div></div>{desafios.length ? <table className="data-table"><thead><tr><th>Desafio</th><th>Pontos</th><th>Status</th></tr></thead><tbody>{desafios.map((d, i) => { const id = text(d.id || d.titulo || d.title); const done = conclusoes.some((c) => text(c.desafio_id) === id); return <tr key={id || i}><td>{text(d.titulo || d.title || "Desafio")}</td><td>{Number(d.pontos || 0)} pts</td><td><span className={`badge badge-${done ? "success" : "neutral"}`}>{done ? "Concluído" : "Pendente"}</span></td></tr>; })}</tbody></table> : <Empty title="Não há desafios no momento" desc="Quando um desafio for lançado, ele aparecerá aqui." />}</section>}
+        {tab === "desafios" && (
+          <section className="student-panel">
+            <div className="student-section-head"><div><span>Desafios</span><h2>Desafios lancados</h2></div></div>
+            {desafios.length ? desafios.map((desafio, index) => {
+              const id = text(desafio.id || desafio.titulo || desafio.title);
+              const done = conclusoes.some((conclusao) => text(conclusao.desafio_id) === id);
+              const questions = challengeQuestions(desafio);
+              return (
+                <article className="student-card" key={id || index}>
+                  <div className="student-card-tags">
+                    <span className="badge badge-gold">{Number(desafio.pontos || 0)} pts</span>
+                    <span className={`badge badge-${done ? "success" : "neutral"}`}>{done ? "Concluido" : "Pendente"}</span>
+                    {questions.length > 0 && <span className="badge badge-info">{questions.length} questao(oes)</span>}
+                  </div>
+                  <h3>{text(desafio.titulo || desafio.title || "Desafio")}</h3>
+                  {Array.isArray(desafio.questions) && text(desafio.descricao) && <p>{text(desafio.descricao)}</p>}
+                  {questions.length > 0 ? (
+                    <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                      {questions.map((question, questionIndex) => (
+                        <div className="card" key={text(question.id) || questionIndex}>
+                          <div className="card-body">
+                            <div className="section-eyebrow">Questao {questionIndex + 1} | {challengeTypeLabel(question.tipo)} | {Number(question.pontos || 0)} pts</div>
+                            <h4 className="section-title" style={{ fontSize: "1rem", marginTop: 6 }}>{text(question.enunciado) || "Questao do desafio"}</h4>
+                            {Array.isArray(question.opcoes) && question.opcoes.length > 0 && (
+                              <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                                {question.opcoes.map((opcao, optionIndex) => <span className="attendance-item" key={`${text(question.id)}_${optionIndex}`}>{String.fromCharCode(65 + optionIndex)}) {opcao}</span>)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p>Consulte a orientacao do professor para realizar este desafio.</p>}
+                </article>
+              );
+            }) : <Empty title="Nao ha desafios no momento" desc="Quando um desafio for lancado, ele aparecera aqui." />}
+          </section>
+        )}
 
         {tab === "chat" && <StudentChat />}
         {tab === "wiz" && <StudentWiz />}
