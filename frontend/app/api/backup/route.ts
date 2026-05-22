@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inflateRawSync } from "node:zlib";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { getSession } from "@/lib/auth";
 import { dbGet, dbSet } from "@/lib/db";
+import { saveLibraryPdf } from "@/lib/library-pdfs";
 import { isAdminOrCoordinator } from "@/lib/roles";
 
 const BACKUP_KEYS = [
@@ -28,6 +27,7 @@ const BACKUP_KEYS = [
   "books.json",
   "videos.json",
   "materials.json",
+  "library_files.json",
   "fee_templates.json",
   "inventory.json",
   "inventory_moves.json",
@@ -66,25 +66,11 @@ function canManageBackup(perfil: string) {
   return p.includes("dire") || isAdminOrCoordinator({ perfil });
 }
 
-function safeFilename(value: unknown, fallback: string) {
-  const name = String(value || fallback)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return name || fallback;
-}
-
-async function saveImportedPdf(base64: string, filename: string) {
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "livros");
-  await mkdir(uploadDir, { recursive: true });
+async function saveImportedPdf(id: string, base64: string, filename: string) {
   const cleanBase64 = base64.includes(",") ? base64.split(",").pop() || "" : base64;
   const buffer = Buffer.from(cleanBase64, "base64");
-  if (!buffer.length) return "";
-  const safeName = `${Date.now()}-${safeFilename(filename, "livro.pdf")}`;
-  await writeFile(path.join(uploadDir, safeName), buffer);
-  return `/uploads/livros/${safeName}`;
+  if (!buffer.length) return null;
+  return saveLibraryPdf("books.json", id, buffer, filename || `${id}.pdf`);
 }
 
 async function normalizeBackupValue(key: string, value: unknown) {
@@ -99,11 +85,15 @@ async function normalizeBackupValue(key: string, value: unknown) {
       }
       const livro = { ...row } as Record<string, unknown>;
       const fileB64 = typeof livro.file_b64 === "string" ? livro.file_b64 : "";
-      if (fileB64.length > 1000 && !livro.url && !livro.file_path) {
-        const url = await saveImportedPdf(fileB64, String(livro.file_name || livro.titulo || `livro-${index + 1}.pdf`)).catch(() => "");
-        if (url) {
-          livro.url = url;
-          livro.file_path = url;
+      if (fileB64.length > 1000) {
+        const id = String(livro.id || livro.book_id || `livro_${index + 1}_${Date.now()}`);
+        const pdf = await saveImportedPdf(id, fileB64, String(livro.file_name || livro.titulo || `livro-${index + 1}.pdf`)).catch(() => null);
+        if (pdf) {
+          livro.id = id;
+          livro.url = pdf.url;
+          livro.file_path = pdf.url;
+          livro.pdf_nome = pdf.pdf_nome;
+          livro.pdf_mime = pdf.pdf_mime;
         }
       }
       delete livro.file_b64;
