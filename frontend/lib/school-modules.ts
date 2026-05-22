@@ -132,19 +132,13 @@ export function studentMatchesTarget(item: Row, session: SessionUser, student?: 
   const targetClasses = normalizeList(item.turmas || item.target_turmas || item.target_turmas_envio);
   const publico = lower(item.publico || item.destinatarios);
 
-  if (targetStudent && lower(targetStudent) !== lower(studentName) && lower(targetStudent) !== lower(studentLogin)) {
-    return false;
-  }
-  if (targetStudents.length > 0 && !targetStudents.some((name) => lower(name) === lower(studentName) || lower(name) === lower(studentLogin))) {
-    return false;
-  }
-  if (targetClass && !["todas", "todos", "escola toda"].includes(lower(targetClass)) && lower(targetClass) !== lower(studentClass)) {
-    return false;
-  }
-  if (targetClasses.length > 0 && !targetClasses.some((turma) => ["todas", "todos", "escola toda"].includes(lower(turma)) || lower(turma) === lower(studentClass))) {
-    return false;
-  }
   if (publico.includes("professor") || publico.includes("coord")) return false;
+  if (targetStudent) return lower(targetStudent) === lower(studentName) || lower(targetStudent) === lower(studentLogin);
+  if (targetStudents.length > 0) return targetStudents.some((name) => lower(name) === lower(studentName) || lower(name) === lower(studentLogin));
+  const classTargets = [targetClass, ...targetClasses].filter(Boolean);
+  if (classTargets.length > 0 && !classTargets.some((turma) => ["todas", "todos", "escola toda", "todas as turmas"].includes(lower(turma)) || lower(turma) === lower(studentClass))) {
+    return false;
+  }
   return true;
 }
 

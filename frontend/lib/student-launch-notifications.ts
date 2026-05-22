@@ -51,16 +51,12 @@ export function itemTargetsStudent(item: Row, student: Row) {
   const targetClasses = normalizeList(item.turmas || item.target_turmas || item.target_turmas_envio);
   const className = normalize(studentClass(student));
 
-  if (targetStudent && !listMatchesStudent([targetStudent], student)) return false;
-  if (targetStudents.length > 0 && !listMatchesStudent(targetStudents, student)) return false;
+  if (targetStudent) return listMatchesStudent([targetStudent], student);
+  if (targetStudents.length > 0) return listMatchesStudent(targetStudents, student);
 
-  if (targetClass) {
-    const target = normalize(targetClass);
-    if (!["todas", "todos", "escola toda", "todas as turmas"].includes(target) && target !== className) return false;
-  }
-
-  if (targetClasses.length > 0) {
-    const matchesClass = targetClasses.some((turma) => {
+  const classTargets = [targetClass, ...targetClasses].filter(Boolean);
+  if (classTargets.length > 0) {
+    const matchesClass = classTargets.some((turma) => {
       const target = normalize(turma);
       return ["todas", "todos", "escola toda", "todas as turmas"].includes(target) || target === className;
     });

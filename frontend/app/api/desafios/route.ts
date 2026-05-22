@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbList, dbSet } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
-import { text } from "@/lib/school-modules";
+import { normalizeList, text } from "@/lib/school-modules";
 
-type Desafio = { id?: string; titulo?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
+type Desafio = { id?: string; titulo?: string; turma?: string; turmas?: string[]; aluno?: string; alunos?: string[]; pontos?: number | string; status?: string; [k: string]: unknown };
 
 export async function GET() {
   const session = await getSession();
@@ -18,7 +18,15 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const body = await req.json() as Desafio;
   const [desafios, students] = await Promise.all([dbList<Desafio>("challenges.json"), dbList<Record<string, unknown>>("students.json")]);
-  const novo: Desafio = { ...body, id: body.id || `d_${Date.now()}`, status: body.status || "Publicado" };
+  const novo: Desafio = {
+    ...body,
+    id: body.id || `d_${Date.now()}`,
+    turma: text(body.turma || "Todas") || "Todas",
+    turmas: normalizeList(body.turmas),
+    aluno: text(body.aluno),
+    alunos: normalizeList(body.alunos),
+    status: body.status || "Publicado",
+  };
   novo.notification_status = await notifyStudentsAboutLaunch({
     students,
     item: novo,
@@ -40,7 +48,14 @@ export async function PUT(req: NextRequest) {
   const desafios = await dbList<Desafio>("challenges.json");
   const idx = desafios.findIndex((d) => d.id === body.id);
   if (idx === -1) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
-  desafios[idx] = { ...desafios[idx], ...body };
+  desafios[idx] = {
+    ...desafios[idx],
+    ...body,
+    turma: text(body.turma || desafios[idx].turma || "Todas") || "Todas",
+    turmas: body.turmas === undefined ? desafios[idx].turmas : normalizeList(body.turmas),
+    aluno: body.aluno === undefined ? desafios[idx].aluno : text(body.aluno),
+    alunos: body.alunos === undefined ? desafios[idx].alunos : normalizeList(body.alunos),
+  };
   await dbSet("challenges.json", desafios);
   return NextResponse.json(desafios[idx]);
 }
