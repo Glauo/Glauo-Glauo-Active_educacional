@@ -14,6 +14,22 @@ function splitLines(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
+function rowName(row: Row) {
+  return text(row.nome || row.name || row.titulo || row.title || row.login);
+}
+
+function rowClass(row: Row) {
+  return text(row.turma || row.classe || row.class);
+}
+
+function uniqueClassNames(rows: Row[]) {
+  return [...new Set(rows.map((row) => text(row.nome || row.name || row.turma || row.classe)).filter(Boolean))];
+}
+
+function toggleList(list: string[], value: string) {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
 function closeIcon() {
   return <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>;
 }
@@ -159,6 +175,7 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
     titulo: "",
     disciplina: "",
     turma: "Todas",
+    turmas: [] as string[],
     aluno: "",
     due_date: "",
     livro: "",
@@ -181,6 +198,11 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
 
   function update(field: keyof typeof form, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
+    setErro("");
+  }
+
+  function toggleTurma(turma: string) {
+    setForm((prev) => ({ ...prev, turmas: toggleList(prev.turmas, turma) }));
     setErro("");
   }
 
@@ -211,8 +233,12 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
       return;
     }
     setSaving(true);
+    const turmasMarcadas = form.turmas.filter((turma) => turma !== form.turma);
+    const usarMarcadas = form.turma === "Todas" && turmasMarcadas.length > 0;
     const payload = {
       ...form,
+      turma: usarMarcadas ? turmasMarcadas[0] : form.turma,
+      turmas: usarMarcadas ? turmasMarcadas.slice(1) : turmasMarcadas,
       status,
       peso: Number(form.peso) || 10,
       questions: questions.map((question) => ({
@@ -257,8 +283,20 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
               <div className="form-grid">
                 <div className="form-group form-group-span2"><label className="form-label">Titulo *</label><input className="form-input" value={form.titulo} onChange={(e) => update("titulo", e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Disciplina</label><input className="form-input" value={form.disciplina} onChange={(e) => update("disciplina", e.target.value)} placeholder="Ingles, Matematica..." /></div>
-                <div className="form-group"><label className="form-label">Turma</label><select className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)}><option>Todas</option>{turmas.map((t, i) => <option key={text(t.id || t.nome || t.name || i)}>{text(t.nome || t.name || `Turma ${i + 1}`)}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">Aluno especifico</label><select className="form-input" value={form.aluno} onChange={(e) => update("aluno", e.target.value)}><option value="">Turma inteira</option>{alunos.map((a, i) => <option key={text(a.id || a.login || i)}>{text(a.nome || a.name || a.login)}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">Turma principal</label><select className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)}><option>Todas</option>{uniqueClassNames(turmas).map((turma) => <option key={turma}>{turma}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">Aluno especifico</label><select className="form-input" value={form.aluno} onChange={(e) => update("aluno", e.target.value)}><option value="">Turma(s) selecionada(s)</option>{alunos.map((a, i) => <option key={text(a.id || a.login || i)} value={text(a.login || a.usuario || rowName(a))}>{rowName(a)}{rowClass(a) ? ` - ${rowClass(a)}` : ""}</option>)}</select></div>
+                <div className="form-group form-group-span2">
+                  <label className="form-label">Turmas adicionais</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                    {uniqueClassNames(turmas).map((turma) => (
+                      <label className="attendance-item" key={turma}>
+                        <input type="checkbox" checked={form.turmas.includes(turma)} onChange={() => toggleTurma(turma)} />
+                        {turma}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="form-help">Marque outras turmas quando a mesma licao deve ser publicada para mais de uma turma.</div>
+                </div>
                 <div className="form-group"><label className="form-label">Prazo</label><input className="form-input" type="datetime-local" value={form.due_date} onChange={(e) => update("due_date", e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Livro / apostila</label><input className="form-input" value={form.livro} onChange={(e) => update("livro", e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Capitulo / unidade</label><input className="form-input" value={form.capitulo} onChange={(e) => update("capitulo", e.target.value)} /></div>

@@ -13,10 +13,11 @@ export default async function DesafiosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [desafios, conclusoes, alunos] = await Promise.all([
+  const [desafios, conclusoes, alunos, turmas] = await Promise.all([
     dbList<Desafio>("challenges.json"),
     dbList<Conclusao>("challenge_completions.json"),
-    dbList<Record<string, unknown>>("students.json")
+    dbList<Record<string, unknown>>("students.json"),
+    dbList<Record<string, unknown>>("classes.json")
   ]);
 
   const publicados = desafios.filter((d) => {
@@ -35,7 +36,7 @@ export default async function DesafiosPage() {
           <p className="page-description">Gerencie desafios publicados por turma, acompanhe conclusões e ranking de pontos.</p>
         </div>
         <div className="page-actions">
-          <NovoDesafioBtn />
+          <NovoDesafioBtn turmas={turmas} alunos={alunos} />
         </div>
       </div>
 

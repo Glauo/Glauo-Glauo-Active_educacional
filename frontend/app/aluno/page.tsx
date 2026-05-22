@@ -45,12 +45,10 @@ function matchesAgenda(row: Record<string, unknown>, aluno: Aluno | undefined, t
   return targetClass === lower(turma);
 }
 
-function visibleChallenge(row: Desafio, turma: string, session: NonNullable<Awaited<ReturnType<typeof getSession>>>, aluno?: Aluno) {
+function visibleChallenge(row: Desafio, session: NonNullable<Awaited<ReturnType<typeof getSession>>>, aluno?: Aluno) {
   const status = lower(row.status || "publicado");
   if (status.includes("rascunho") || status.includes("arquiv") || status.includes("inativ") || status.includes("cancel")) return false;
-  const target = lower(row.turma);
-  const turmaOk = !target || ["todas", "todos", "escola toda"].includes(target) || target === lower(turma);
-  return turmaOk && studentMatchesTarget(row, session, aluno);
+  return studentMatchesTarget(row, session, aluno);
 }
 
 export default async function AlunoHomePage() {
@@ -103,7 +101,7 @@ export default async function AlunoHomePage() {
   const minhasFaturas = recebimentos
     .filter((r) => sameStudentInvoice(r, meuPerfil, sessionLite))
     .sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento)));
-  const meusDesafios = desafios.filter((d) => visibleChallenge(d, minhaTurma, session, meuPerfil));
+  const meusDesafios = desafios.filter((d) => visibleChallenge(d, session, meuPerfil));
   const minhasConclusoes = conclusoes.filter((c) => lower(c.aluno) === lower(session.usuario) || lower(c.aluno) === lower(session.pessoa));
   const minhasFaltas = frequencias.filter((f) => (lower(f.aluno) === lower(session.pessoa) || lower(f.aluno_id) === lower(meuPerfil?.id || session.usuario)) && Boolean(f.falta)).length;
   const minhaAgenda = agenda

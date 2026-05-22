@@ -51,10 +51,11 @@ function matchesStudent(lesson: Homework, student: Row) {
   const targetStudent = text(lesson.aluno || lesson.target_aluno);
   const targetStudents = list(lesson.alunos || lesson.alunos_especificos || lesson.target_alunos);
   const targetClass = text(lesson.turma || lesson.target_turma);
+  const targetClasses = [targetClass, ...list(lesson.turmas || lesson.target_turmas || lesson.target_turmas_envio)].filter(Boolean);
   if (targetStudent) return keys.includes(lower(targetStudent));
   if (targetStudents.length > 0) return targetStudents.some((target) => keys.includes(lower(target)));
   return bookMatches(lesson, student) &&
-    (!targetClass || ["todas", "todos"].includes(lower(targetClass)) || lower(targetClass) === lower(turma));
+    (targetClasses.length === 0 || targetClasses.some((target) => ["todas", "todos", "escola toda", "todas as turmas"].includes(lower(target)) || lower(target) === lower(turma)));
 }
 
 export function HomeworkStudentLessonsClient({

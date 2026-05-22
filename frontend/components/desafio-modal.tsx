@@ -8,6 +8,8 @@ type DesafioData = {
   titulo?: string;
   title?: string;
   turma?: string;
+  turmas?: string[] | string;
+  aluno?: string;
   descricao?: string;
   pontos?: number | string;
   tipo?: string;
@@ -22,6 +24,8 @@ type DesafioData = {
 type Form = {
   titulo: string;
   turma: string;
+  turmas: string[];
+  aluno: string;
   pontos: string;
   descricao: string;
   tipo: string;
@@ -32,10 +36,39 @@ type Form = {
   status: string;
 };
 
+type Row = Record<string, unknown>;
+
+function text(value: unknown) {
+  return String(value || "").trim();
+}
+
+function splitTargets(value: unknown) {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean);
+  return text(value).split(/[,\n;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function rowName(row: Row) {
+  return text(row.nome || row.name || row.aluno || row.login);
+}
+
+function rowClass(row: Row) {
+  return text(row.turma || row.classe || row.class);
+}
+
+function classNames(rows: Row[]) {
+  return [...new Set(rows.map((row) => text(row.nome || row.name || row.turma || row.classe)).filter(Boolean))];
+}
+
+function toggleTarget(targets: string[], value: string) {
+  return targets.includes(value) ? targets.filter((item) => item !== value) : [...targets, value];
+}
+
 function fromDesafio(d?: DesafioData): Form {
   return {
     titulo: String(d?.titulo || d?.title || ""),
     turma: String(d?.turma || "Todas"),
+    turmas: splitTargets(d?.turmas),
+    aluno: String(d?.aluno || ""),
     pontos: String(d?.pontos || "10"),
     descricao: String(d?.descricao || ""),
     tipo: String(d?.tipo || "Pergunta direta"),
@@ -47,14 +80,32 @@ function fromDesafio(d?: DesafioData): Form {
   };
 }
 
-function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; onClose: () => void; onSaved: () => void }) {
+function DesafioModal({
+  desafio,
+  turmas = [],
+  alunos = [],
+  onClose,
+  onSaved,
+}: {
+  desafio?: DesafioData;
+  turmas?: Row[];
+  alunos?: Row[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const isEdit = Boolean(desafio?.id);
   const [form, setForm] = useState<Form>(fromDesafio(desafio));
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
+  const nomesTurmas = classNames(turmas);
 
   function update(field: keyof Form, value: string) {
     setForm((p) => ({ ...p, [field]: value }));
+    setErro("");
+  }
+
+  function toggleTurma(turma: string) {
+    setForm((prev) => ({ ...prev, turmas: toggleTarget(prev.turmas, turma) }));
     setErro("");
   }
 
@@ -83,9 +134,13 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
     if (!form.titulo.trim()) { setErro("O titulo e obrigatorio."); return; }
     if (!form.pontos || isNaN(Number(form.pontos))) { setErro("Informe um valor de pontos valido."); return; }
     setSaving(true);
+    const turmasMarcadas = form.turmas.filter((turma) => turma !== form.turma);
+    const usarMarcadas = form.turma === "Todas" && turmasMarcadas.length > 0;
     const payload = {
       ...(isEdit ? { id: desafio!.id } : {}),
       ...form,
+      turma: usarMarcadas ? turmasMarcadas[0] : form.turma,
+      turmas: usarMarcadas ? turmasMarcadas.slice(1) : turmasMarcadas,
       opcoes: form.opcoes.split("\n").map((o) => o.trim()).filter(Boolean),
       pontos: Number(form.pontos)
     };
@@ -117,8 +172,27 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
               <label className="form-label">Titulo do desafio *</label>
               <input className="form-input" placeholder="Ex: Revise a licao e responda" value={form.titulo} onChange={(e) => update("titulo", e.target.value)} autoFocus />
             </div>
-            <div className="form-group"><label className="form-label">Turma</label><input className="form-input" placeholder="Ex: Turma A ou Todas" value={form.turma} onChange={(e) => update("turma", e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Turma principal</label>{nomesTurmas.length > 0 ? <select className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)}><option>Todas</option>{nomesTurmas.map((turma) => <option key={turma}>{turma}</option>)}</select> : <input className="form-input" placeholder="Ex: Turma A ou Todas" value={form.turma} onChange={(e) => update("turma", e.target.value)} />}</div>
             <div className="form-group"><label className="form-label">Pontos</label><input className="form-input" type="number" min="0" placeholder="10" value={form.pontos} onChange={(e) => update("pontos", e.target.value)} /></div>
+            <div className="form-group form-group-span2">
+              <label className="form-label">Turmas adicionais</label>
+              {nomesTurmas.length > 0 ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                    {nomesTurmas.map((turma) => (
+                      <label className="attendance-item" key={turma}>
+                        <input type="checkbox" checked={form.turmas.includes(turma)} onChange={() => toggleTurma(turma)} />
+                        {turma}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="form-help">Marque outras turmas para publicar o mesmo desafio em mais de uma turma.</div>
+                </>
+              ) : (
+                <textarea className="form-input form-textarea" rows={2} value={form.turmas.join("\n")} onChange={(e) => setForm((prev) => ({ ...prev, turmas: splitTargets(e.target.value) }))} placeholder="Uma turma por linha" />
+              )}
+            </div>
+            <div className="form-group form-group-span2"><label className="form-label">Aluno especifico</label>{alunos.length > 0 ? <select className="form-input" value={form.aluno} onChange={(e) => update("aluno", e.target.value)}><option value="">Turma(s) selecionada(s)</option>{alunos.map((aluno, index) => <option key={text(aluno.id || aluno.login || index)} value={text(aluno.login || aluno.usuario || rowName(aluno))}>{rowName(aluno)}{rowClass(aluno) ? ` - ${rowClass(aluno)}` : ""}</option>)}</select> : <input className="form-input" value={form.aluno} onChange={(e) => update("aluno", e.target.value)} placeholder="Opcional" />}</div>
             <div className="form-group"><label className="form-label">Tipo de desafio</label><select className="form-input" value={form.tipo} onChange={(e) => update("tipo", e.target.value)}><option>Multipla escolha</option><option>Pergunta direta</option><option>Assinalar</option></select></div>
             <div className="form-group"><label className="form-label">Livro</label><input className="form-input" placeholder="Livro da turma" value={form.livro} onChange={(e) => update("livro", e.target.value)} /></div>
             <div className="form-group"><label className="form-label">Licao</label><input className="form-input" placeholder="Ex: Unidade 4 - pagina 36" value={form.licao} onChange={(e) => update("licao", e.target.value)} /></div>
@@ -140,7 +214,7 @@ function DesafioModal({ desafio, onClose, onSaved }: { desafio?: DesafioData; on
   );
 }
 
-export function NovoDesafioBtn() {
+export function NovoDesafioBtn({ turmas, alunos }: { turmas: Row[]; alunos: Row[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   return (
@@ -149,7 +223,7 @@ export function NovoDesafioBtn() {
         <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
         Novo desafio
       </button>
-      {open && <DesafioModal onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
+      {open && <DesafioModal turmas={turmas} alunos={alunos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
     </>
   );
 }
