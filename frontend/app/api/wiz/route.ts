@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { migrateModule, teacherClassValueByModule } from "@/lib/course-modules";
+import { saveLibraryPdf, type LibraryPdfKey } from "@/lib/library-pdfs";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
 import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
@@ -144,25 +143,11 @@ function findBestInText(items: Row[], prompt: unknown, fields: string[]) {
   return bestScore >= 1 ? best : null;
 }
 
-function safeFileName(value: string) {
-  return text(value || "material.pdf")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase() || "material.pdf";
-}
-
 function libraryKey(tipo: unknown) {
   const t = lower(tipo || "livros");
   if (t.includes("video")) return "videos.json";
   if (t.includes("material") || t.includes("apostila") || t.includes("apoio")) return "materials.json";
   return "books.json";
-}
-
-function uploadFolderForKey(key: string) {
-  return key === "materials.json" ? "materiais" : key === "videos.json" ? "videos" : "livros";
 }
 
 async function savePdfBase64(data: Row, key: string, id: string) {
@@ -171,25 +156,22 @@ async function savePdfBase64(data: Row, key: string, id: string) {
   const clean = raw.includes(",") ? raw.split(",").pop() || "" : raw;
   const buffer = Buffer.from(clean, "base64");
   if (!buffer.length) throw new Error("PDF em base64 vazio.");
-  const folder = uploadFolderForKey(key);
-  const uploadsDir = path.join(process.cwd(), "public", "uploads", folder);
-  await mkdir(uploadsDir, { recursive: true });
-  const original = safeFileName(text(data.pdf_nome || data.nome_arquivo || data.filename || `${id}.pdf`));
-  const filename = `${Date.now()}-${original.endsWith(".pdf") ? original : `${original}.pdf`}`;
-  await writeFile(path.join(uploadsDir, filename), buffer);
-  return { url: `/uploads/${folder}/${filename}`, pdf_nome: original, pdf_mime: "application/pdf" };
+  if (key === "videos.json") return {};
+  const filename = text(data.pdf_nome || data.nome_arquivo || data.filename || `${id}.pdf`);
+  return saveLibraryPdf(key as LibraryPdfKey, id, buffer, filename, "application/pdf");
 }
 
 async function savePdfFile(file: File | null, key: string, id: string) {
   if (!(file instanceof File) || file.size === 0) return {};
   if (file.type && file.type !== "application/pdf") throw new Error("Envie apenas arquivo PDF.");
-  const folder = uploadFolderForKey(key);
-  const uploadsDir = path.join(process.cwd(), "public", "uploads", folder);
-  await mkdir(uploadsDir, { recursive: true });
-  const original = safeFileName(file.name || `${id}.pdf`);
-  const filename = `${Date.now()}-${original.endsWith(".pdf") ? original : `${original}.pdf`}`;
-  await writeFile(path.join(uploadsDir, filename), Buffer.from(await file.arrayBuffer()));
-  return { url: `/uploads/${folder}/${filename}`, pdf_nome: file.name || original, pdf_mime: "application/pdf" };
+  if (key === "videos.json") return {};
+  return saveLibraryPdf(
+    key as LibraryPdfKey,
+    id,
+    Buffer.from(await file.arrayBuffer()),
+    file.name || `${id}.pdf`,
+    file.type || "application/pdf"
+  );
 }
 
 async function audit(action: string, payload: Row, result: Row, actor: string, perfil: string) {

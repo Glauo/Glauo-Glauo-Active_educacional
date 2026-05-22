@@ -8,6 +8,15 @@ import { workbookLibraryBooks } from "@/lib/workbook-lessons";
 type Livro = { id?: string; titulo?: string; title?: string; autor?: string; author?: string; nivel?: string; nivel_livro?: string; turma?: string; categoria?: string; tipo?: string; url?: string; file_path?: string; status?: string; [k: string]: unknown };
 type Video = { id?: string; titulo?: string; title?: string; turma?: string; url?: string; descricao?: string; [k: string]: unknown };
 
+function normalizedTitle(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default async function BibliotecaPage() {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -18,7 +27,23 @@ export default async function BibliotecaPage() {
     dbList<Record<string, unknown>>("materials.json")
   ]);
 
-  const livrosComWorkbooks = [...livros, ...workbookLibraryBooks().filter((book) => !livros.some((livro) => String(livro.id) === book.id || String(livro.url) === book.url))];
+  const workbooks = workbookLibraryBooks();
+  const workbookByTitle = new Map(workbooks.map((book) => [normalizedTitle(book.titulo), book]));
+  const livrosComFallback = livros.map((livro) => {
+    const workbook = workbookByTitle.get(normalizedTitle(livro.titulo || livro.title));
+    const url = String(livro.url || livro.file_path || "");
+    return workbook && url.startsWith("/uploads/livros/")
+      ? { ...livro, url: workbook.url, file_path: workbook.url, pdf_nome: livro.pdf_nome || workbook.pdf_nome }
+      : livro;
+  });
+  const livrosComWorkbooks = [
+    ...livrosComFallback,
+    ...workbooks.filter((book) => !livrosComFallback.some((livro) =>
+      String(livro.id) === book.id ||
+      String(livro.url) === book.url ||
+      normalizedTitle(livro.titulo || livro.title) === normalizedTitle(book.titulo)
+    )),
+  ];
   const categorias = [...new Set(livrosComWorkbooks.map((l) => String(l.categoria || l.tipo || l.nivel || "Geral")))];
 
   return (
