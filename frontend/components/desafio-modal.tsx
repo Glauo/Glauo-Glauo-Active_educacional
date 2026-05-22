@@ -61,7 +61,7 @@ function splitLines(value: string) {
 }
 
 function rowName(row: Row) {
-  return text(row.nome || row.name || row.aluno || row.login || row.usuario);
+  return text(row.nome || row.name || row.nome_completo || row.aluno || row.aluno_nome || row.login || row.usuario);
 }
 
 function rowClass(row: Row) {
@@ -344,18 +344,14 @@ function DesafioModal({
               <div className="form-grid">
                 <div className="form-group">
                   <label className="form-label">Turmas cadastradas</label>
-                  {nomesTurmas.length > 0 ? (
-                    <div style={{ display: "grid", gap: 8, maxHeight: 220, overflow: "auto" }}>
-                      {nomesTurmas.map((turma) => (
-                        <label className="attendance-item" key={turma}>
-                          <input type="checkbox" checked={form.turmas.includes(turma)} onChange={() => toggleTurma(turma)} disabled={form.alunos.length > 0} />
-                          {turma}
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <textarea className="form-input form-textarea" rows={4} value={form.turmas.join("\n")} onChange={(event) => setForm((prev) => ({ ...prev, turmas: splitTargets(event.target.value) }))} placeholder="Uma turma por linha" />
-                  )}
+                  <div style={{ display: "grid", gap: 8, maxHeight: 220, overflow: "auto" }}>
+                    {nomesTurmas.length ? nomesTurmas.map((turma) => (
+                      <label className="attendance-item" key={turma}>
+                        <input type="checkbox" checked={form.turmas.includes(turma)} onChange={() => toggleTurma(turma)} disabled={form.alunos.length > 0} />
+                        {turma}
+                      </label>
+                    )) : <div className="form-help">Nenhuma turma cadastrada disponivel.</div>}
+                  </div>
                   <div className="form-help">Sem turma marcada, o desafio fica disponivel para todas as turmas.</div>
                 </div>
                 <div className="form-group">

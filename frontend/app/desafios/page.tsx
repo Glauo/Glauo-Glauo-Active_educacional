@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
-import { dbList } from "@/lib/db";
+import { dbList, dbListWithoutKeys } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getSchoolClasses } from "@/lib/school-data";
 import { redirect } from "next/navigation";
 import { NovoDesafioBtn } from "@/components/desafio-modal";
 import { NotaRapidaForm } from "@/components/notas-form";
@@ -9,6 +10,17 @@ import { DesafiosTable } from "@/components/desafios-table";
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; descricao?: string; pontos?: number | string; status?: string; data_publicacao?: string; data?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
 
+const STUDENT_HEAVY_KEYS = [
+  "file_b64",
+  "pdf_b64",
+  "base64",
+  "arquivo_b64",
+  "foto_b64",
+  "imagem_b64",
+  "documento_b64",
+  "anexo_b64",
+];
+
 export default async function DesafiosPage() {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -16,8 +28,8 @@ export default async function DesafiosPage() {
   const [desafios, conclusoes, alunos, turmas] = await Promise.all([
     dbList<Desafio>("challenges.json"),
     dbList<Conclusao>("challenge_completions.json"),
-    dbList<Record<string, unknown>>("students.json"),
-    dbList<Record<string, unknown>>("classes.json")
+    dbListWithoutKeys<Record<string, unknown>>("students.json", STUDENT_HEAVY_KEYS),
+    getSchoolClasses()
   ]);
 
   const publicados = desafios.filter((d) => {
