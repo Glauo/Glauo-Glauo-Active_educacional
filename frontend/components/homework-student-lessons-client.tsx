@@ -11,7 +11,11 @@ function text(value: unknown) {
 }
 
 function lower(value: unknown) {
-  return text(value).toLowerCase();
+  return text(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 function statusBadge(status: string) {
@@ -25,14 +29,32 @@ function studentName(row: Row) {
   return text(row.nome || row.name || row.aluno || row.login);
 }
 
+function list(value: unknown) {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean);
+  return text(value).split(/[,\n;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function studentKeys(student: Row) {
+  return [studentName(student), student.login, student.usuario, student.id].map(lower).filter(Boolean);
+}
+
+function bookMatches(lesson: Homework, student: Row) {
+  const lessonBook = lower(lesson.livro);
+  if (!lessonBook) return true;
+  const studentBook = lower(student.livro || student.book || student.nivel);
+  return Boolean(studentBook) && lessonBook === studentBook;
+}
+
 function matchesStudent(lesson: Homework, student: Row) {
-  const name = studentName(student);
-  const login = text(student.login || student.usuario);
+  const keys = studentKeys(student);
   const turma = text(student.turma || student.classe);
   const targetStudent = text(lesson.aluno || lesson.target_aluno);
+  const targetStudents = list(lesson.alunos || lesson.alunos_especificos || lesson.target_alunos);
   const targetClass = text(lesson.turma || lesson.target_turma);
-  if (targetStudent) return lower(targetStudent) === lower(name) || lower(targetStudent) === lower(login);
-  return !targetClass || ["todas", "todos"].includes(lower(targetClass)) || lower(targetClass) === lower(turma);
+  if (targetStudent) return keys.includes(lower(targetStudent));
+  if (targetStudents.length > 0) return targetStudents.some((target) => keys.includes(lower(target)));
+  return bookMatches(lesson, student) &&
+    (!targetClass || ["todas", "todos"].includes(lower(targetClass)) || lower(targetClass) === lower(turma));
 }
 
 export function HomeworkStudentLessonsClient({
@@ -97,7 +119,7 @@ export function HomeworkStudentLessonsClient({
                       <td>{text(licao.turma || "Todas")}</td>
                       <td>{text(licao.due_date || "-")}</td>
                       <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
-                      <td>{delivery ? <span className={`badge badge-${lower(delivery.status).includes("corrigido") ? "success" : "warning"}`}><span className="badge-dot" />{text(delivery.status || "Enviada")}</span> : <span className="badge badge-neutral">Nao entregue</span>}</td>
+                      <td>{delivery ? <span className={`badge badge-${lower(delivery.status).includes("corrigido") ? "success" : "warning"}`}><span className="badge-dot" />{text(delivery.status || "Enviada")}</span> : <span className="badge badge-neutral">Aguardando resposta</span>}</td>
                       <td><div style={{ display: "flex", gap: 4 }}><HomeworkEditBtn licao={licao} turmas={turmaNames} /><HomeworkDeleteBtn licao={licao} /></div></td>
                     </tr>
                   );
@@ -110,4 +132,3 @@ export function HomeworkStudentLessonsClient({
     </div>
   );
 }
-
