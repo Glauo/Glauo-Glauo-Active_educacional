@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { gradeHomeworkWithWiz } from "@/lib/homework-ai-grader";
 import { lower, nowIso, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type Row } from "@/lib/school-modules";
-import { getWorkbookHomeworkById, hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLessonsForBook } from "@/lib/workbook-lessons";
+import { hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook } from "@/lib/workbook-lessons";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -16,17 +16,7 @@ export async function POST(req: NextRequest) {
     dbList<HomeworkSubmission>("activity_submissions.json"),
   ]);
   const student = students.find((item) => text(item.login || item.usuario) === text(session.usuario) || text(item.nome || item.name) === text(session.pessoa));
-  let homework = activities.find((item) => text(item.id) === activityId);
-  if (!homework) {
-    const workbookHomework = getWorkbookHomeworkById(activityId);
-    const book = studentWorkbookBook(student, session.unit);
-    const studentSubmissions = submissions.filter((item) => text(item.aluno_login) === text(session.usuario) || text(item.aluno) === text(session.pessoa));
-    const workbookLessons = releasedWorkbookLessons(workbookLessonsForBook(book), studentSubmissions);
-    const released = workbookLessons.some((item) => text(item.id) === activityId);
-    if (workbookHomework && released && text(workbookHomework.livro).includes(text(book))) {
-      homework = workbookHomework;
-    }
-  }
+  const homework = activities.find((item) => text(item.id) === activityId);
   if (!homework) return NextResponse.json({ error: "Licao nao encontrada." }, { status: 404 });
 
   if (lower(homework.origem).includes("workbook")) {
@@ -39,9 +29,7 @@ export async function POST(req: NextRequest) {
     const individualWorkbookLessons = registeredWorkbookLessons.filter(hasWorkbookStudentTarget);
     const workbookBase = individualWorkbookLessons.length > 0
       ? individualWorkbookLessons
-      : registeredWorkbookLessons.length > 0
-        ? registeredWorkbookLessons
-        : workbookLessonsForBook(book);
+      : registeredWorkbookLessons;
     const released = releasedWorkbookLessons(workbookBase, studentSubmissions)
       .some((item) => text(item.id) === activityId);
     if (!released) {
