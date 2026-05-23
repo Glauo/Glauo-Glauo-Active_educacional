@@ -58,6 +58,34 @@ function matchesStudent(lesson: Homework, student: Row) {
     (targetClasses.length === 0 || targetClasses.some((target) => ["todas", "todos", "escola toda", "todas as turmas"].includes(lower(target)) || lower(target) === lower(turma)));
 }
 
+function questionCount(lesson: Homework) {
+  return Array.isArray(lesson.questions) ? lesson.questions.length : 0;
+}
+
+function targetLabel(lesson: Homework) {
+  const students = [text(lesson.aluno), ...list(lesson.alunos)].filter(Boolean);
+  if (students.length > 0) return `${students.length} aluno(s)`;
+  const classes = [text(lesson.turma), ...list(lesson.turmas)].filter((item) => item && !["todas", "todos"].includes(lower(item)));
+  return classes.length > 0 ? classes.join(", ") : "Todas";
+}
+
+function lessonTotal(lesson: Homework) {
+  return (lesson.questions || []).reduce((sum, question) => sum + (Number(question.pontos) || 0), 0) || Number(lesson.peso || 0) || 10;
+}
+
+function deliveryCount(lesson: Homework, entregas: HomeworkSubmission[]) {
+  const id = text(lesson.id);
+  return entregas.filter((submission) => text(submission.activity_id) === id).length;
+}
+
+function questionTypeLabel(value: unknown) {
+  const type = lower(value);
+  if (type.includes("multipla")) return "Multipla escolha";
+  if (type.includes("verdadeiro") || type.includes("falso")) return "Verdadeiro/Falso";
+  if (type.includes("upload")) return "Upload";
+  return "Dissertativa";
+}
+
 export function HomeworkStudentLessonsClient({
   licoes,
   entregas,
@@ -78,7 +106,68 @@ export function HomeworkStudentLessonsClient({
   }, [licoes, selectedStudent]);
 
   return (
-    <div className="card">
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <div className="section-eyebrow">Gestao completa</div>
+            <h3 className="section-title">Todas as licoes lancadas</h3>
+            <p className="section-subtitle">ADM e coordenacao veem titulo, conteudo, destinatarios e podem editar ou excluir.</p>
+          </div>
+          <span className="badge badge-info">{licoes.length} licao(oes)</span>
+        </div>
+        <div className="card-body" style={{ paddingTop: 12 }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Licao</th>
+                <th>Destino</th>
+                <th>Questoes</th>
+                <th>Entregas</th>
+                <th>Status</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {licoes.map((licao) => (
+                <tr key={text(licao.id || licao.titulo)}>
+                  <td>
+                    <div className="table-name-cell">
+                      <span className="table-name-primary">{text(licao.titulo || "Licao de casa")}</span>
+                      <span className="table-name-secondary">{text(licao.disciplina || "Geral")} | Livro: {text(licao.livro || "-")} | Prazo: {text(licao.due_date || "-")}</span>
+                      {text(licao.descricao) && <span className="table-name-secondary">{text(licao.descricao).slice(0, 100)}{text(licao.descricao).length > 100 ? "..." : ""}</span>}
+                      <details style={{ marginTop: 8 }}>
+                        <summary style={{ cursor: "pointer", color: "var(--blue-600)", fontWeight: 700, fontSize: "0.8rem" }}>Ver conteudo da tarefa</summary>
+                        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                          {(licao.questions || []).map((question, index) => (
+                            <div key={text(question.id) || index} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+                              <div className="section-eyebrow">Questao {index + 1} | {questionTypeLabel(question.tipo)} | {Number(question.pontos || 0)} pts</div>
+                              <div style={{ fontWeight: 700, marginTop: 4 }}>{text(question.enunciado)}</div>
+                              {Array.isArray(question.opcoes) && question.opcoes.length > 0 && (
+                                <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+                                  {question.opcoes.map((opcao, optionIndex) => <span key={`${text(question.id)}_${optionIndex}`} className="table-name-secondary">{String.fromCharCode(65 + optionIndex)}) {opcao}</span>)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {questionCount(licao) === 0 && <span className="table-name-secondary">Sem questoes estruturadas cadastradas.</span>}
+                        </div>
+                      </details>
+                    </div>
+                  </td>
+                  <td>{targetLabel(licao)}</td>
+                  <td><span className="badge badge-gold">{questionCount(licao)} | {lessonTotal(licao)} pts</span></td>
+                  <td>{deliveryCount(licao, entregas)}</td>
+                  <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
+                  <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><HomeworkEditBtn licao={licao} turmas={turmaNames} alunos={alunos} /><HomeworkDeleteBtn licao={licao} /></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
       <div className="card-header">
         <div>
           <div className="section-eyebrow">Licoes por aluno</div>
@@ -121,7 +210,7 @@ export function HomeworkStudentLessonsClient({
                       <td>{text(licao.due_date || "-")}</td>
                       <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>
                       <td>{delivery ? <span className={`badge badge-${lower(delivery.status).includes("corrigido") ? "success" : "warning"}`}><span className="badge-dot" />{text(delivery.status || "Enviada")}</span> : <span className="badge badge-neutral">Aguardando resposta</span>}</td>
-                      <td><div style={{ display: "flex", gap: 4 }}><HomeworkEditBtn licao={licao} turmas={turmaNames} /><HomeworkDeleteBtn licao={licao} /></div></td>
+                      <td><div style={{ display: "flex", gap: 4 }}><HomeworkEditBtn licao={licao} turmas={turmaNames} alunos={alunos} /><HomeworkDeleteBtn licao={licao} /></div></td>
                     </tr>
                   );
                 })}
@@ -130,6 +219,7 @@ export function HomeworkStudentLessonsClient({
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }
