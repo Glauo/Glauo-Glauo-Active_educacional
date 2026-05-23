@@ -3,9 +3,21 @@ import { HomeworkCreateButton } from "@/components/school-modules-client";
 import { HomeworkDeleteTodayBtn } from "@/components/homework-actions";
 import { HomeworkStudentLessonsClient } from "@/components/homework-student-lessons-client";
 import { getSession } from "@/lib/auth";
-import { dbList } from "@/lib/db";
+import { dbList, dbListWithoutKeys } from "@/lib/db";
+import { getSchoolClasses } from "@/lib/school-data";
 import { canManageSchoolContent, isHomeworkActivity, text, type Homework, type HomeworkSubmission } from "@/lib/school-modules";
 import { redirect } from "next/navigation";
+
+const STUDENT_HEAVY_KEYS = [
+  "file_b64",
+  "pdf_b64",
+  "base64",
+  "arquivo_b64",
+  "foto_b64",
+  "imagem_b64",
+  "documento_b64",
+  "anexo_b64",
+];
 
 export default async function LicoesPage() {
   const session = await getSession();
@@ -15,8 +27,8 @@ export default async function LicoesPage() {
   const [activities, submissions, turmas, alunos] = await Promise.all([
     dbList<Homework>("activities.json"),
     dbList<HomeworkSubmission>("activity_submissions.json"),
-    dbList<Record<string, unknown>>("classes.json"),
-    dbList<Record<string, unknown>>("students.json"),
+    getSchoolClasses(),
+    dbListWithoutKeys<Record<string, unknown>>("students.json", STUDENT_HEAVY_KEYS),
   ]);
   const licoes = activities.filter(isHomeworkActivity);
   const licoesOrdenadas = [...licoes].sort((a, b) => {
