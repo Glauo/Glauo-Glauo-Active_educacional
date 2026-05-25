@@ -6,8 +6,8 @@ import { NovoAlunoBtn } from "@/components/aluno-modal";
 import { AlunosSearchTable } from "@/components/alunos-search-table";
 import { isAdmin, isAdminOrCoordinator } from "@/lib/roles";
 
-type Aluno = { id?: string; nome?: string; name?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
-type Recebimento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; data_baixa?: string; status?: string; situacao?: string; [k: string]: unknown };
+type Aluno = { id?: string; nome?: string; name?: string; login?: string; cpf?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; situacao?: string; status_financeiro?: string; situacao_financeira?: string; responsavel?: string; [k: string]: unknown };
+type Recebimento = { id?: string; aluno?: string; nome?: string; aluno_id?: string; aluno_login?: string; descricao?: string; valor?: string | number; vencimento?: string; data_vencimento?: string; data_baixa?: string; status?: string; situacao?: string; boleto_pdf_url?: string; boleto_status?: string; categoria?: string; [k: string]: unknown };
 
 const HEAVY_KEYS = [
   "boleto_pdf_b64",
@@ -44,6 +44,8 @@ function dateValue(value: unknown) {
 
 function faturaKeys(aluno: Aluno) {
   return [
+    `id:${normalize(aluno.id)}`,
+    `cpf:${normalize(aluno.cpf)}`,
     `nome:${normalize(aluno.nome || aluno.name)}`,
     `login:${normalize(aluno.login)}`,
   ].filter((key) => !key.endsWith(":"));
@@ -55,12 +57,14 @@ function slimRecebimentos(alunos: Aluno[], recebimentos: Recebimento[]) {
 
   for (const item of recebimentos) {
     const keys = [
+      `id:${normalize(item.aluno_id)}`,
       `nome:${normalize(item.aluno || item.nome)}`,
       `login:${normalize(item.aluno_login)}`,
     ].filter((key) => alunoKeys.has(key));
 
     const slim: Recebimento = {
       id: item.id,
+      aluno_id: text(item.aluno_id),
       aluno: item.aluno,
       nome: item.nome,
       aluno_login: text(item.aluno_login),
@@ -71,6 +75,9 @@ function slimRecebimentos(alunos: Aluno[], recebimentos: Recebimento[]) {
       data_baixa: item.data_baixa,
       status: item.status,
       situacao: item.situacao,
+      boleto_pdf_url: item.boleto_pdf_url,
+      boleto_status: item.boleto_status,
+      categoria: item.categoria,
     };
 
     for (const key of keys) {

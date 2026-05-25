@@ -156,6 +156,23 @@ function studentMonthlyValue(aluno?: AlunoOption) {
   return text(aluno?.valor_mensalidade || aluno?.mensalidade || aluno?.plano_valor);
 }
 
+function boletoImportForm(aluno?: AlunoOption) {
+  return {
+    aluno_id: aluno ? studentIdentifier(aluno) : "",
+    aluno: aluno ? studentName(aluno) : "",
+    aluno_login: aluno ? studentLogin(aluno) : "",
+    aluno_email: aluno ? studentEmail(aluno) : "",
+    aluno_telefone: aluno ? studentPhone(aluno) : "",
+    descricao: "Boleto externo",
+    valor: aluno ? studentMonthlyValue(aluno) : "",
+    vencimento: text(aluno?.vencimento),
+    categoria: "Mensalidade",
+    enviar_whatsapp: true,
+    enviar_email: true,
+    observacoes: "",
+  };
+}
+
 function whatsappUrl(phone: unknown, message: string) {
   return "";
 }
@@ -635,27 +652,35 @@ export function NovoLancamentoBtn({ alunos = [] }: { alunos?: AlunoOption[] }) {
   );
 }
 
-export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }) {
+export function ImportarBoletoPdfBtn({
+  alunos = [],
+  alunoInicial,
+  label = "Importar boleto PDF",
+  className = "btn btn-secondary",
+}: {
+  alunos?: AlunoOption[];
+  alunoInicial?: AlunoOption;
+  label?: string;
+  className?: string;
+}) {
+  const alunosDisponiveis = alunoInicial
+    ? [alunoInicial, ...alunos.filter((aluno) => studentIdentifier(aluno) !== studentIdentifier(alunoInicial))]
+    : alunos;
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [links, setLinks] = useState<{ whatsapp: string; email: string } | null>(null);
-  const [form, setForm] = useState({
-    aluno_id: "",
-    aluno: "",
-    aluno_login: "",
-    aluno_email: "",
-    aluno_telefone: "",
-    descricao: "Boleto externo",
-    valor: "",
-    vencimento: "",
-    categoria: "Mensalidade",
-    enviar_whatsapp: true,
-    enviar_email: true,
-    observacoes: "",
-  });
+  const [form, setForm] = useState(() => boletoImportForm(alunoInicial));
   const router = useRouter();
+
+  function abrir() {
+    setForm(boletoImportForm(alunoInicial));
+    setArquivo(null);
+    setErro("");
+    setLinks(null);
+    setOpen(true);
+  }
 
   function update<K extends keyof typeof form>(field: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -664,7 +689,7 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
   }
 
   function selecionarAluno(id: string) {
-    const aluno = findStudentByIdentifier(alunos, id);
+    const aluno = findStudentByIdentifier(alunosDisponiveis, id);
     if (!aluno) return;
     setForm((prev) => ({
       ...prev,
@@ -681,7 +706,6 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
   async function importar() {
     if (!arquivo) { setErro("Selecione o arquivo PDF do boleto."); return; }
     if (!form.aluno.trim()) { setErro("Selecione ou informe o aluno."); return; }
-    if (!form.vencimento) { setErro("Informe o vencimento do boleto."); return; }
 
     const payload = new FormData();
     payload.set("arquivo_pdf", arquivo);
@@ -711,9 +735,9 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
 
   return (
     <>
-      <button className="btn btn-secondary" onClick={() => setOpen(true)}>
+      <button className={className} onClick={abrir}>
         <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM10 2a1 1 0 011 1v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3A1 1 0 017.707 9.293L9 10.586V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
-        Importar boleto PDF
+        {label}
       </button>
       {open && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
@@ -733,13 +757,13 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
                   <label className="form-label">Aluno *</label>
                   <select className="form-input" value={form.aluno_id} onChange={(e) => selecionarAluno(e.target.value)} autoFocus>
                     <option value="">Selecione o aluno</option>
-                    {alunos.map((aluno, index) => (
+                    {alunosDisponiveis.map((aluno, index) => (
                       <option key={studentIdentifier(aluno, index)} value={studentIdentifier(aluno, index)}>
                         {studentName(aluno) || "Aluno sem nome"}{text(aluno.turma || aluno.classe) ? ` - ${text(aluno.turma || aluno.classe)}` : ""}
                       </option>
                     ))}
                   </select>
-                  <div className="form-help">{alunos.length ? `${alunos.length} alunos carregados do cadastro.` : "Nenhum aluno carregado do cadastro. Os campos manuais continuam disponiveis."}</div>
+                  <div className="form-help">{alunosDisponiveis.length ? `${alunosDisponiveis.length} aluno(s) carregado(s) do cadastro.` : "Nenhum aluno carregado do cadastro. Os campos manuais continuam disponiveis."}</div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Nome do aluno</label>
@@ -772,8 +796,9 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
                   <input className="form-input" inputMode="decimal" value={form.valor} onChange={(e) => update("valor", e.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Vencimento *</label>
+                  <label className="form-label">Vencimento</label>
                   <input className="form-input" type="date" value={form.vencimento} onChange={(e) => update("vencimento", e.target.value)} />
+                  <div className="form-help">Opcional no anexo. Se o boleto ja tem vencimento no PDF, voce pode deixar em branco e ajustar depois.</div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Descricao</label>
