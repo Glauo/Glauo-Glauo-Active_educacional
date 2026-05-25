@@ -29,18 +29,34 @@ type LancamentoData = {
 
 type AlunoOption = {
   id?: string;
+  _id?: string;
+  uuid?: string;
+  codigo?: string;
   nome?: string;
   name?: string;
+  nome_completo?: string;
+  aluno?: string;
+  aluno_nome?: string;
   login?: string;
+  usuario?: string;
+  cpf?: string;
   turma?: string;
   classe?: string;
   email?: string;
   responsavel_email?: string;
+  email_responsavel?: string;
+  emailResponsavel?: string;
+  aluno_email?: string;
   telefone?: string;
   celular?: string;
   whatsapp?: string;
   responsavel_telefone?: string;
+  telefone_responsavel?: string;
+  celular_responsavel?: string;
+  whatsapp_responsavel?: string;
   valor_mensalidade?: string | number;
+  mensalidade?: string | number;
+  plano_valor?: string | number;
   vencimento?: string;
   dia_vencimento?: string | number;
   [k: string]: unknown;
@@ -99,15 +115,45 @@ function addMonths(dateStr: string, months: number) {
 }
 
 function studentName(aluno: AlunoOption) {
-  return text(aluno.nome || aluno.name);
+  return text(aluno.nome || aluno.name || aluno.nome_completo || aluno.aluno || aluno.aluno_nome || aluno.login || aluno.usuario);
+}
+
+function studentLogin(aluno?: AlunoOption) {
+  return text(aluno?.login || aluno?.usuario || aluno?.codigo);
+}
+
+function studentIdentifier(aluno: AlunoOption, index?: number) {
+  return text(aluno.id || aluno._id || aluno.uuid || aluno.codigo || studentLogin(aluno) || aluno.cpf || studentName(aluno) || (typeof index === "number" ? `aluno-${index}` : ""));
+}
+
+function findStudentByIdentifier(alunos: AlunoOption[], identifier: string) {
+  const target = text(identifier);
+  if (!target) return undefined;
+  return alunos.find((aluno, index) => {
+    const keys = [
+      studentIdentifier(aluno, index),
+      text(aluno.id),
+      text(aluno._id),
+      text(aluno.uuid),
+      text(aluno.codigo),
+      studentLogin(aluno),
+      text(aluno.cpf),
+      studentName(aluno),
+    ];
+    return keys.some((key) => key === target);
+  });
 }
 
 function studentEmail(aluno?: AlunoOption) {
-  return text(aluno?.responsavel_email || aluno?.email);
+  return text(aluno?.responsavel_email || aluno?.email_responsavel || aluno?.emailResponsavel || aluno?.aluno_email || aluno?.email);
 }
 
 function studentPhone(aluno?: AlunoOption) {
-  return text(aluno?.responsavel_telefone || aluno?.celular || aluno?.whatsapp || aluno?.telefone);
+  return text(aluno?.responsavel_telefone || aluno?.telefone_responsavel || aluno?.celular_responsavel || aluno?.whatsapp_responsavel || aluno?.celular || aluno?.whatsapp || aluno?.telefone);
+}
+
+function studentMonthlyValue(aluno?: AlunoOption) {
+  return text(aluno?.valor_mensalidade || aluno?.mensalidade || aluno?.plano_valor);
 }
 
 function whatsappUrl(phone: unknown, message: string) {
@@ -193,7 +239,7 @@ function LancamentoModal({
   const [boletoPdf, setBoletoPdf] = useState<File | null>(null);
   const isRecebimento = form.tipo_lancamento === "recebimentos";
 
-  const alunoSelecionado = useMemo(() => alunos.find((a) => text(a.id) === form.aluno_id || studentName(a) === form.aluno), [alunos, form.aluno_id, form.aluno]);
+  const alunoSelecionado = useMemo(() => findStudentByIdentifier(alunos, form.aluno_id) || alunos.find((a) => studentName(a) === form.aluno), [alunos, form.aluno_id, form.aluno]);
   const total = parseMoney(form.valor_total);
   const qtdParcelas = Math.min(48, Math.max(1, Number.parseInt(form.qtd_parcelas) || 1));
   const valorParcelaCalc = qtdParcelas > 0 ? total / qtdParcelas : 0;
@@ -219,18 +265,18 @@ function LancamentoModal({
   }
 
   function selecionarAluno(id: string) {
-    const aluno = alunos.find((a) => text(a.id) === id);
+    const aluno = findStudentByIdentifier(alunos, id);
     if (!aluno) {
       setForm((prev) => ({ ...prev, aluno_id: "", aluno: "", aluno_login: "", aluno_email: "", aluno_telefone: "" }));
       return;
     }
-    const valor = text(aluno.valor_mensalidade);
+    const valor = studentMonthlyValue(aluno);
     const venc = text(aluno.vencimento) || form.vencimento;
     setForm((prev) => ({
       ...prev,
-      aluno_id: text(aluno.id),
+      aluno_id: studentIdentifier(aluno),
       aluno: studentName(aluno),
-      aluno_login: text(aluno.login),
+      aluno_login: studentLogin(aluno),
       aluno_email: studentEmail(aluno),
       aluno_telefone: studentPhone(aluno),
       valor_total: valor || prev.valor_total,
@@ -422,9 +468,9 @@ function LancamentoModal({
                   <label className="form-label">Aluno *</label>
                   <select className="form-input" value={form.aluno_id} onChange={(e) => selecionarAluno(e.target.value)} autoFocus>
                     <option value="">Selecione o aluno</option>
-                    {alunos.map((aluno) => (
-                      <option key={text(aluno.id) || studentName(aluno)} value={text(aluno.id)}>
-                        {studentName(aluno)}{text(aluno.turma || aluno.classe) ? ` - ${text(aluno.turma || aluno.classe)}` : ""}
+                    {alunos.map((aluno, index) => (
+                      <option key={studentIdentifier(aluno, index)} value={studentIdentifier(aluno, index)}>
+                        {studentName(aluno) || "Aluno sem nome"}{text(aluno.turma || aluno.classe) ? ` - ${text(aluno.turma || aluno.classe)}` : ""}
                       </option>
                     ))}
                   </select>
@@ -618,16 +664,16 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
   }
 
   function selecionarAluno(id: string) {
-    const aluno = alunos.find((a) => text(a.id) === id);
+    const aluno = findStudentByIdentifier(alunos, id);
     if (!aluno) return;
     setForm((prev) => ({
       ...prev,
-      aluno_id: text(aluno.id),
+      aluno_id: studentIdentifier(aluno),
       aluno: studentName(aluno),
-      aluno_login: text(aluno.login),
+      aluno_login: studentLogin(aluno),
       aluno_email: studentEmail(aluno),
       aluno_telefone: studentPhone(aluno),
-      valor: text(aluno.valor_mensalidade) || prev.valor,
+      valor: studentMonthlyValue(aluno) || prev.valor,
       vencimento: text(aluno.vencimento) || prev.vencimento,
     }));
   }
@@ -687,8 +733,13 @@ export function ImportarBoletoPdfBtn({ alunos = [] }: { alunos?: AlunoOption[] }
                   <label className="form-label">Aluno *</label>
                   <select className="form-input" value={form.aluno_id} onChange={(e) => selecionarAluno(e.target.value)} autoFocus>
                     <option value="">Selecione o aluno</option>
-                    {alunos.map((aluno) => <option key={text(aluno.id) || studentName(aluno)} value={text(aluno.id)}>{studentName(aluno)}</option>)}
+                    {alunos.map((aluno, index) => (
+                      <option key={studentIdentifier(aluno, index)} value={studentIdentifier(aluno, index)}>
+                        {studentName(aluno) || "Aluno sem nome"}{text(aluno.turma || aluno.classe) ? ` - ${text(aluno.turma || aluno.classe)}` : ""}
+                      </option>
+                    ))}
                   </select>
+                  <div className="form-help">{alunos.length ? `${alunos.length} alunos carregados do cadastro.` : "Nenhum aluno carregado do cadastro. Os campos manuais continuam disponiveis."}</div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Nome do aluno</label>
