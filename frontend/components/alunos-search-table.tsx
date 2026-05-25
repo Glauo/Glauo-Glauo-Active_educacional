@@ -7,7 +7,7 @@ import { financeMessage } from "@/lib/finance-message";
 import { vipPackageStats } from "@/lib/course-modules";
 import { EditarAlunoBtn } from "./aluno-modal";
 import { AutoWhatsAppButton } from "./auto-whatsapp-button";
-import { EditarLancamentoBtn } from "./financeiro-modal";
+import { EditarLancamentoBtn, ImportarBoletoPdfBtn } from "./financeiro-modal";
 
 type Aluno = {
   id?: string; nome?: string; name?: string; matricula?: string;
@@ -26,11 +26,11 @@ type Aluno = {
 };
 
 type Recebimento = {
-  id?: string; aluno?: string; nome?: string; aluno_login?: string;
+  id?: string; aluno?: string; nome?: string; aluno_id?: string; aluno_login?: string;
   descricao?: string; valor?: string | number; valor_parcela?: string | number;
   vencimento?: string; data_vencimento?: string; data_baixa?: string;
   status?: string; situacao?: string; forma_pagamento?: string;
-  boleto_pdf_url?: string; [k: string]: unknown;
+  boleto_pdf_url?: string; boleto_status?: string; [k: string]: unknown;
 };
 
 type Frequencia = {
@@ -170,6 +170,8 @@ tfoot tr:first-child{border-top:2px solid #0f172a}
 
 function faturaKeys(aluno: Aluno) {
   return [
+    `id:${text(aluno.id).toLowerCase()}`,
+    `cpf:${text(aluno.cpf).toLowerCase()}`,
     `nome:${text(aluno.nome || aluno.name).toLowerCase()}`,
     `login:${text(aluno.login).toLowerCase()}`,
   ].filter((k) => !k.endsWith(":"));
@@ -723,6 +725,7 @@ function AlunoDrawer({
                 <button className="btn btn-primary btn-sm" onClick={() => { setShowNovoLanc(!showNovoLanc); setMsg(""); }}>
                   {showNovoLanc ? "Cancelar lançamento" : "+ Novo lançamento"}
                 </button>
+                <ImportarBoletoPdfBtn alunoInicial={aluno} label="Anexar boleto PDF" className="btn btn-secondary btn-sm" />
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowRelatorio(true)}>
                   Relatório / imprimir
                 </button>
@@ -996,6 +999,7 @@ export function AlunosSearchTable({
     const map = new Map<string, Recebimento[]>();
     for (const r of recebimentos) {
       const keys = [
+        `id:${text(r.aluno_id).toLowerCase()}`,
         `nome:${text(r.aluno || r.nome).toLowerCase()}`,
         `login:${text(r.aluno_login).toLowerCase()}`,
       ].filter((k) => !k.endsWith(":"));

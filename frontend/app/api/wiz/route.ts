@@ -752,6 +752,21 @@ function humanFallback(): string {
   return randomOf(FALLBACK_MESSAGES);
 }
 
+function supportAnswer(prompt: string): string {
+  const norm = normalize(prompt);
+  if ((norm.includes("suporte") || norm.includes("ajuda") || norm.includes("como")) && norm.includes("boleto")) {
+    return [
+      "Para anexar boleto em PDF: abra Financeiro > Importar boleto PDF, selecione o aluno, escolha o arquivo e salve.",
+      "Tambem da para abrir Alunos > ficha do aluno > Financeiro > Anexar boleto PDF; nesse caminho o aluno ja vem preenchido.",
+      "O vencimento e opcional no anexo: se o PDF ja trouxer a data, voce pode salvar e ajustar depois. O boleto fica no financeiro, na ficha do aluno e no painel do aluno.",
+    ].join("\n");
+  }
+  if ((norm.includes("suporte") || norm.includes("ajuda") || norm.includes("como")) && norm.includes("financeiro")) {
+    return "No Financeiro voce pode criar recebimentos, anexar boleto PDF, enviar cobranca, dar baixa e, como administrador, tirar baixa feita por engano com auditoria.";
+  }
+  return "";
+}
+
 function actionHumanLabel(action: string): string {
   const labels: Record<string, string> = {
     create_homework: "criar uma tarefa ou lição de casa",
@@ -1024,6 +1039,8 @@ async function answer(prompt: string, actor: string, session: WizSession): Promi
   if (!prompt.trim() || isStopCommand(prompt)) {
     return { ok: true, message: randomOf(STOP_REPLIES) };
   }
+  const support = supportAnswer(prompt);
+  if (support) return { ok: true, message: support };
   const action = suggestFromPrompt(prompt);
   if (action === "record_teacher_class") return recordTeacherClass(prompt, actor);
   if (action === "send_bulk_message") {
