@@ -139,11 +139,14 @@ function leadQueueKey(lead: CommercialLead) {
 
 function salesMessage(template: string, lead: CommercialLead, seller: string) {
   const interest = text(lead.interesse || lead.curso || lead.modulo || "nossos cursos");
+  const variables: Record<string, string> = {
+    nome: leadName(lead),
+    interesse: interest,
+    consultor: text(seller || lead.vendedor || lead.responsavel || "equipe comercial"),
+    origem: text(lead.origem || "Active Educacional"),
+  };
   return template
-    .replaceAll("{nome}", leadName(lead))
-    .replaceAll("{interesse}", interest)
-    .replaceAll("{consultor}", text(seller || "equipe comercial"))
-    .replaceAll("{origem}", text(lead.origem || "Active Educacional"))
+    .replace(/\{\s*(nome|interesse|consultor|origem)\s*\}/gi, (_, key: string) => variables[key.toLowerCase()] || "")
     .trim();
 }
 
