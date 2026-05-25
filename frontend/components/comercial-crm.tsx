@@ -183,7 +183,10 @@ async function sendSalesWhatsApp(phone: string, message: string) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !(data as { ok?: boolean }).ok) {
-    throw new Error(text((data as { status?: string; error?: string }).status || (data as { error?: string }).error || "WhatsApp nao enviado."));
+    const attempts = Array.isArray((data as { attempts?: unknown[] }).attempts) ? (data as { attempts?: unknown[] }).attempts || [] : [];
+    const last = attempts[attempts.length - 1] as Record<string, unknown> | undefined;
+    const detail = text(last?.preview || last?.status || last?.error);
+    throw new Error(text((data as { status?: string; error?: string }).status || (data as { error?: string }).error || detail || "WhatsApp nao enviado."));
   }
   return text((data as { status?: string }).status || "enviado");
 }
@@ -346,6 +349,8 @@ function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]
     setRunning(true);
     setMessage(`Fila iniciada para ${selectedLeads.length} lead(s).`);
     setStates(Object.fromEntries(selectedLeads.map((lead) => [leadQueueKey(lead), { status: "pendente" }])));
+    let sentCount = 0;
+    let failedCount = 0;
 
     for (let index = 0; index < selectedLeads.length; index += 1) {
       const lead = selectedLeads[index];
@@ -359,17 +364,17 @@ function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]
       try {
         const status = await sendSalesWhatsApp(leadPhone(lead), salesMessage(cleanTemplate, lead, seller));
         mark(key, { status: "enviado", detail: status });
+        sentCount += 1;
       } catch (err) {
         mark(key, { status: "falhou", detail: err instanceof Error ? err.message : "Falha no envio." });
-        stopRef.current = true;
-        setMessage(`Fila pausada apos falha no contato de ${leadName(lead)}.`);
-        break;
+        failedCount += 1;
+        setMessage(`Falha no contato de ${leadName(lead)}. A fila continuara para os proximos leads.`);
       }
 
       if (index < selectedLeads.length - 1) await waitInterval(seconds);
     }
 
-    if (!stopRef.current) setMessage("Fila concluida.");
+    if (!stopRef.current) setMessage(`Fila concluida. Enviados: ${sentCount}. Falhas: ${failedCount}.`);
     setRunning(false);
   }
 
