@@ -5,6 +5,7 @@ import { isAdminOrCoordinator } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { NovoProfessorBtn, EditarProfessorBtn } from "@/components/professor-modal";
 import { TeacherClassPanel } from "@/components/teacher-class-panel";
+import { FinanceiroProfessorFechamento } from "@/components/financeiro-professor-fechamento";
 
 type Professor = { id?: string; nome?: string; name?: string; area?: string; especialidade?: string; turmas?: string | string[]; status?: string; situacao?: string; telefone?: string; celular?: string; email?: string; cpf?: string; usuario?: string; login?: string; valor_aula?: string | number; tipo_contrato?: string; pix?: string; disponibilidade?: string; [k: string]: unknown };
 
@@ -16,6 +17,7 @@ export default async function ProfessoresPage() {
   const turmas = await dbList<Record<string, unknown>>("classes.json");
   const aulas = await dbList<Record<string, unknown>>("class_sessions.json");
   const alunos = await dbList<Record<string, unknown>>("students.json");
+  const despesas = await dbList<Record<string, unknown>>("payables.json");
 
   const ativos = professores.filter((p) => {
     const s = String(p.status || p.situacao || "ativo").toLowerCase();
@@ -71,6 +73,13 @@ export default async function ProfessoresPage() {
         userName={session.pessoa || session.usuario}
         userRole={session.perfil}
       />
+
+      {manage && (
+        <FinanceiroProfessorFechamento
+          professores={professores}
+          payables={despesas}
+        />
+      )}
 
       <div className="card">
         <div className="toolbar">

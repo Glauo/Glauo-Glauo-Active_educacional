@@ -66,13 +66,13 @@ function dentroDoperiodo(data: string, inicio: string, fim: string): boolean {
 function calcularPeriodo(): { inicio: string; fim: string } {
   const agora = new Date();
 
-  // Período: dia 10 do mês anterior → dia 09 do mês atual
-  let anoInicio = agora.getFullYear();
-  let mesInicio = agora.getMonth() - 1; // mês anterior
-  if (mesInicio < 0) { mesInicio = 11; anoInicio--; }
+  // Periodo financeiro dos professores: dia 05 a dia 05.
+  const base = agora.getDate() >= 5
+    ? new Date(agora.getFullYear(), agora.getMonth(), 5)
+    : new Date(agora.getFullYear(), agora.getMonth() - 1, 5);
 
-  const inicio = toISO(new Date(anoInicio, mesInicio, 10));
-  const fim = toISO(new Date(agora.getFullYear(), agora.getMonth(), 9));
+  const inicio = toISO(base);
+  const fim = toISO(new Date(base.getFullYear(), base.getMonth() + 1, 5));
 
   return { inicio, fim };
 }
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     const { inicio, fim } = calcularPeriodo();
     const agora = new Date();
     const diaAtual = agora.getDate();
-    const statusFechamento: Fechamento["status"] = diaAtual >= 10 ? "fechado" : "pre_fechamento";
+    const statusFechamento: Fechamento["status"] = diaAtual >= 5 ? "fechado" : "pre_fechamento";
 
     const [professores, payables, fechamentos] = await Promise.all([
       dbList<Professor>("teachers.json"),

@@ -120,11 +120,11 @@ function isProfessorPayable(p: AulaItem) {
 
 function periodoAtual(): { inicio: string; fim: string } {
   const agora = new Date();
-  let anoInicio = agora.getFullYear();
-  let mesInicio = agora.getMonth() - 1;
-  if (mesInicio < 0) { mesInicio = 11; anoInicio--; }
-  const inicio = new Date(anoInicio, mesInicio, 10).toISOString().slice(0, 10);
-  const fim = new Date(agora.getFullYear(), agora.getMonth(), 9).toISOString().slice(0, 10);
+  const base = agora.getDate() >= 5
+    ? new Date(agora.getFullYear(), agora.getMonth(), 5)
+    : new Date(agora.getFullYear(), agora.getMonth() - 1, 5);
+  const inicio = base.toISOString().slice(0, 10);
+  const fim = new Date(base.getFullYear(), base.getMonth() + 1, 5).toISOString().slice(0, 10);
   return { inicio, fim };
 }
 
@@ -229,7 +229,7 @@ function DetalheProfModal({
       <div className="modal-box" style={{ maxWidth: 860, width: "95vw", maxHeight: "92vh", overflowY: "auto" }}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Fechamento — {profNome}</div>
+            <div className="modal-title">Cobrança de aulas — {profNome}</div>
             <div className="modal-subtitle">Período: {fmtDate(inicio)} a {fmtDate(fim)}</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -249,7 +249,7 @@ function DetalheProfModal({
           {/* Cabeçalho do documento */}
           <div style={{ textAlign: "center", borderBottom: "2px solid var(--navy-900)", paddingBottom: 16, marginBottom: 20 }}>
             <div style={{ fontWeight: 900, fontSize: "1.375rem", color: "var(--navy-900)" }}>ATIVO EDUCACIONAL</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 4 }}>Fechamento de Pagamento — Professor</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 4 }}>Cobrança / fechamento de aulas — Professor</div>
           </div>
 
           {/* Dados do professor */}
@@ -379,7 +379,7 @@ function DetalheProfModal({
           {msg && <span style={{ flex: 1, fontSize: "0.82rem", color: msg.includes("sucesso") || msg.includes("Pago") ? "var(--green-700)" : "var(--red-600)" }}>{msg}</span>}
           {(!fechamento || fechamento.status === "pre_fechamento") && (
             <button className="btn btn-primary" onClick={gerarFechamento} disabled={gerando}>
-              {gerando ? "Gerando…" : fechamento ? "Atualizar fechamento" : "Gerar fechamento"}
+              {gerando ? "Gerando…" : fechamento ? "Atualizar cobrança" : "Gerar cobrança"}
             </button>
           )}
           {fechamento && fechamento.status !== "pago" && fechamento.status !== "cancelado" && (
@@ -405,6 +405,8 @@ export function FinanceiroProfessorFechamento({
   const [carregado, setCarregado] = useState(false);
   const [detalheProf, setDetalheProf] = useState<Professor | null>(null);
   const [busca, setBusca] = useState("");
+  const [gerandoProf, setGerandoProf] = useState("");
+  const [msg, setMsg] = useState("");
 
   const { inicio, fim } = periodoAtual();
 
@@ -448,6 +450,31 @@ export function FinanceiroProfessorFechamento({
     });
   }
 
+  async function gerarCobranca(prof: Professor) {
+    const profNome = String(prof.nome || prof.name || "");
+    if (!profNome) return;
+    setGerandoProf(profNome);
+    setMsg("");
+    const res = await fetch("/api/financeiro/professor-fechamento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        professor_nome: profNome,
+        professor_id: String(prof.id || profNome),
+        periodo_inicio: inicio,
+        periodo_fim: fim,
+      }),
+    });
+    setGerandoProf("");
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setMsg(String((data as { error?: string }).error || "Erro ao gerar cobranca."));
+      return;
+    }
+    setMsg(`Cobranca gerada para ${profNome}.`);
+    await carregarFechamentos();
+  }
+
   const totalMes = profsFiltrados.reduce((s, p) => {
     const aulas = getAulasMes(p);
     return s + aulas.reduce((as, a) => as + parseValor(a.valor), 0);
@@ -470,7 +497,7 @@ export function FinanceiroProfessorFechamento({
           <div className="metric-icon metric-icon-gold">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9z" clipRule="evenodd" /></svg>
           </div>
-          <div className="metric-label">Total do período</div>
+          <div className="metric-label">Total do ciclo</div>
           <div className="metric-value" style={{ fontSize: "1.375rem" }}>{formatBRL(totalMes)}</div>
           <div className="metric-note">{fmtDate(inicio)} a {fmtDate(fim)}</div>
         </div>
@@ -496,6 +523,7 @@ export function FinanceiroProfessorFechamento({
           </div>
           <div className="toolbar-right">
             <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Período: {fmtDate(inicio)} a {fmtDate(fim)}</span>
+            {msg && <span style={{ fontSize: "0.78rem", fontWeight: 700, color: msg.includes("gerada") ? "var(--green-700)" : "var(--red-600)" }}>{msg}</span>}
             <button className="btn btn-secondary btn-sm" onClick={carregarFechamentos}>
               <svg viewBox="0 0 20 20" fill="currentColor" width={14} height={14} style={{ marginRight: 4 }}>
                 <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
@@ -510,8 +538,8 @@ export function FinanceiroProfessorFechamento({
         <div className="card-header">
           <div>
             <div className="section-eyebrow">Fechamentos</div>
-            <h3 className="section-title">Pagamento de professores — período atual</h3>
-            <p className="section-subtitle">{profsFiltrados.length} professor{profsFiltrados.length !== 1 ? "es" : ""}</p>
+            <h3 className="section-title">Aulas e cobrança de professores — ciclo 05 a 05</h3>
+            <p className="section-subtitle">{profsFiltrados.length} professor{profsFiltrados.length !== 1 ? "es" : ""} com período de {fmtDate(inicio)} a {fmtDate(fim)}</p>
           </div>
         </div>
         <div className="card-body" style={{ paddingTop: 0 }}>
@@ -527,9 +555,9 @@ export function FinanceiroProfessorFechamento({
               <thead>
                 <tr>
                   <th>Professor</th>
-                  <th>Aulas no período</th>
+                  <th>Aulas no ciclo</th>
                   <th>Valor a pagar</th>
-                  <th>Status fechamento</th>
+                  <th>Status cobrança</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -569,9 +597,16 @@ export function FinanceiroProfessorFechamento({
                         <span className={`badge badge-${cls}`}><span className="badge-dot" />{label}</span>
                       </td>
                       <td>
-                        <button className="btn btn-primary btn-sm" onClick={() => setDetalheProf(prof)}>
-                          Ver detalhes
-                        </button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => setDetalheProf(prof)}>
+                            Ver detalhes
+                          </button>
+                          {(!fechamento || fechamento.status === "pre_fechamento") && (
+                            <button className="btn btn-secondary btn-sm" onClick={() => gerarCobranca(prof)} disabled={gerandoProf === profNome}>
+                              {gerandoProf === profNome ? "Gerando..." : fechamento ? "Atualizar cobrança" : "Gerar cobrança"}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
