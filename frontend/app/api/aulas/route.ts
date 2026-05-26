@@ -104,6 +104,8 @@ export async function POST(req: NextRequest) {
       const aberta = aulas.find((a) => a.status === "aberta" && text(a.turma_id) === turmaId);
       if (aberta) return NextResponse.json({ error: "Esta turma já possui aula aberta." }, { status: 409 });
 
+      const tipoAula = text(body.tipo_aula || "Aula Normal");
+      const horaInicio = text(body.hora_inicio);
       const aula = {
         id: crypto.randomUUID(),
         turma_id: turmaId,
@@ -112,10 +114,12 @@ export async function POST(req: NextRequest) {
         professor_telefone: text(teacher.telefone || teacher.whatsapp || teacher.celular),
         professor_email: text(teacher.email),
         modulo,
+        tipo_aula: tipoAula,
         livro,
         licao_inicio: text(body.licao_inicio) || licaoAtual,
         status: "aberta",
         data_aula: dataAulaISO,
+        hora_inicio: horaInicio,
         aberta_por: session.pessoa || session.usuario,
         inicio: new Date().toISOString(),
         created_at: new Date().toISOString()
@@ -137,11 +141,9 @@ export async function POST(req: NextRequest) {
       const licaoFim = text(body.licao_fim || body.licao_final);
       if (!licaoFim) return NextResponse.json({ error: "Informe a lição em que a aula parou." }, { status: 400 });
 
-      const materia = text(body.materia || body.conteudo);
+      const materia = text(body.materia || body.conteudo || body.tipo_aula || "Aula Normal");
       const tarefa = text(body.tarefa || body.trabalho_casa);
       const presencas = Array.isArray(body.presencas) ? body.presencas as Row[] : [];
-      if (!materia) return NextResponse.json({ error: "Informe a materia/conteudo da aula." }, { status: 400 });
-      if (!tarefa) return NextResponse.json({ error: "Informe a tarefa de casa." }, { status: 400 });
       if (presencas.some((p) => typeof p.presente !== "boolean")) return NextResponse.json({ error: "Marque presenca ou falta de todos os alunos." }, { status: 400 });
 
       const modulo = classModule(turma);
