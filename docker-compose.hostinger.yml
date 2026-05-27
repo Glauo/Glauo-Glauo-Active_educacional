@@ -69,6 +69,7 @@ services:
       WAPI_BASE_URL: ${WAPI_BASE_URL}
       WAPI_TOKEN: ${WAPI_TOKEN}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
+      WIZBOT_PAUSED: "1"
     expose:
       - "8787"
     networks:
