@@ -62,11 +62,42 @@ function questionCount(lesson: Homework) {
   return Array.isArray(lesson.questions) ? lesson.questions.length : 0;
 }
 
-function targetLabel(lesson: Homework) {
+
+function TargetCell({ lesson }: { lesson: Homework }) {
   const students = [text(lesson.aluno), ...list(lesson.alunos)].filter(Boolean);
-  if (students.length > 0) return `${students.length} aluno(s)`;
-  const classes = [text(lesson.turma), ...list(lesson.turmas)].filter((item) => item && !["todas", "todos"].includes(lower(item)));
-  return classes.length > 0 ? classes.join(", ") : "Todas";
+  const classes = [text(lesson.turma), ...list(lesson.turmas)].filter(
+    (item) => item && !["todas", "todos"].includes(lower(item))
+  );
+
+  if (students.length === 0 && classes.length === 0) {
+    return <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Todas as turmas</span>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      {classes.length > 0 && (
+        <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--blue-600)" }}>
+          {classes.join(", ")}
+        </span>
+      )}
+      {students.length > 0 && (
+        students.length <= 3 ? (
+          <span style={{ fontSize: "0.8rem" }}>{students.join(", ")}</span>
+        ) : (
+          <details>
+            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--blue-600)", fontWeight: 600 }}>
+              {students.length} aluno(s) — ver nomes
+            </summary>
+            <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2, paddingLeft: 4 }}>
+              {students.map((name, i) => (
+                <span key={i} style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>{name}</span>
+              ))}
+            </div>
+          </details>
+        )
+      )}
+    </div>
+  );
 }
 
 function lessonTotal(lesson: Homework) {
@@ -155,7 +186,7 @@ export function HomeworkStudentLessonsClient({
                       </details>
                     </div>
                   </td>
-                  <td>{targetLabel(licao)}</td>
+                  <td><TargetCell lesson={licao} /></td>
                   <td><span className="badge badge-gold">{questionCount(licao)} | {lessonTotal(licao)} pts</span></td>
                   <td>{deliveryCount(licao, entregas)}</td>
                   <td><span className={`badge badge-${statusBadge(text(licao.status || "Ativa"))}`}><span className="badge-dot" />{text(licao.status || "Ativa")}</span></td>

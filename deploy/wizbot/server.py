@@ -46,11 +46,26 @@ def _get_model_name():
     return str(os.getenv("ACTIVE_WIZ_MODEL", "")).strip() or str(os.getenv("ACTIVE_CHATBOT_MODEL", "llama-3.3-70b-versatile")).strip()
 
 
+def _env_flag(name, default=False):
+    raw = str(os.getenv(name, "")).strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on", "sim"}
+
+
 def _state_path():
     raw = str(os.getenv("WIZ_STATE_PATH", "")).strip()
     if raw:
         return raw
     return os.path.join(os.path.dirname(__file__), "wizbot_state.json")
+
+
+def _default_state():
+    return {
+        "bot_paused": _env_flag("WIZBOT_PAUSED", False),
+        "paused_contacts": {},
+        "recent_auto_replies": [],
+    }
 
 
 def _load_state():
@@ -59,12 +74,14 @@ def _load_state():
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
             if isinstance(data, dict):
-                return data
+                merged = _default_state()
+                merged.update(data)
+                return merged
     except FileNotFoundError:
         pass
     except Exception:
         pass
-    return {"paused_contacts": {}, "recent_auto_replies": []}
+    return _default_state()
 
 
 def _save_state(data):
@@ -74,6 +91,23 @@ def _save_state(data):
         os.makedirs(folder, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
+
+
+def _set_bot_paused(paused, by_number=""):
+    with _STATE_LOCK:
+        data = _load_state()
+        data["bot_paused"] = bool(paused)
+        data["bot_pause_control"] = {
+            "by": _normalize_whatsapp_number(by_number),
+            "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        _save_state(data)
+
+
+def _is_bot_paused():
+    with _STATE_LOCK:
+        data = _load_state()
+    return bool(data.get("bot_paused", False))
 
 
 def _remember_auto_reply(number, text):
@@ -764,10 +798,11 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         print(f"[wizbot] GET path={self.path}", flush=True)
         if self.path.startswith("/health"):
-            self._write_json(200, {"ok": True, "service": "wizbot-standalone"})
+            self._write_json(200, {"ok": True, "service": "wizbot-standalone", "paused": _is_bot_paused()})
             return
         if self.path.startswith("/wapi/webhook"):
-            self._write_json(200, {"ok": True, "message": "Webhook ativo"})
+            paused = _is_bot_paused()
+            self._write_json(200, {"ok": True, "message": "Webhook pausado" if paused else "Webhook ativo", "paused": paused})
             return
         self._write_json(404, {"ok": False, "message": "Not found"})
 
@@ -820,6 +855,18 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
             print("[wizbot] ignored incoming", flush=True)
             self._write_json(200, {"ok": True, "ignored": True})
             return
+        cmd = _wiz_control_command(text)
+        if sender in _admin_whatsapp_numbers() and cmd:
+            _set_bot_paused(cmd == "stop", sender)
+            reply = "Bot Mister Wiz pausado." if cmd == "stop" else "Bot Mister Wiz retomado."
+            ok_send, status_send = _send_whatsapp_wapi(sender, reply)
+            print(f"[wizbot] admin control cmd={cmd} ok={ok_send} status={status_send}", flush=True)
+            self._write_json(200, {"ok": ok_send, "message": status_send, "control": cmd, "paused": cmd == "stop"})
+            return
+        if _is_bot_paused():
+            print(f"[wizbot] bot paused sender={sender}", flush=True)
+            self._write_json(200, {"ok": True, "ignored": True, "reason": "bot paused"})
+            return
         if _is_contact_paused(sender):
             print(f"[wizbot] contact paused sender={sender}", flush=True)
             self._write_json(200, {"ok": True, "ignored": True, "paused_contact": sender})
@@ -854,13 +901,6 @@ class WizWebhookHandler(BaseHTTPRequestHandler):
                     return
             print("[wizbot] sector message without valid reference", flush=True)
             self._write_json(200, {"ok": True, "ignored": True, "sector": True})
-            return
-        cmd = _wiz_control_command(text)
-        if sender in _admin_whatsapp_numbers() and cmd:
-            reply = "Bot Mister Wiz pausado." if cmd == "stop" else "Bot Mister Wiz retomado."
-            ok_send, status_send = _send_whatsapp_wapi(sender, reply)
-            print(f"[wizbot] admin control cmd={cmd} ok={ok_send} status={status_send}", flush=True)
-            self._write_json(200, {"ok": ok_send, "message": status_send, "control": cmd})
             return
         try:
             if _needs_direct_handoff(text) and not _values_are_authorized():
