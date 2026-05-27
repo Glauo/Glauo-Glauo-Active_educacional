@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Homework, HomeworkQuestion, HomeworkSubmission, WallPost } from "@/lib/school-modules";
+import { ModalPortal } from "@/components/modal-portal";
 
 type Row = Record<string, unknown>;
 
@@ -28,6 +29,13 @@ function uniqueClassNames(rows: Row[]) {
 
 function toggleList(list: string[], value: string) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
+function refreshKeepingScroll(refresh: () => void) {
+  const scrollY = window.scrollY;
+  refresh();
+  requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  window.setTimeout(() => window.scrollTo(0, scrollY), 150);
 }
 
 function closeIcon() {
@@ -260,16 +268,17 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
       return;
     }
     setOpen(false);
-    router.refresh();
+    refreshKeepingScroll(() => router.refresh());
   }
 
   return (
     <>
-      <button className="btn btn-primary" onClick={() => setOpen(true)}>
+      <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
         <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
         Nova licao
       </button>
       {open && (
+        <ModalPortal>
         <div className="modal-overlay" onClick={(event) => event.currentTarget === event.target && setOpen(false)}>
           <div className="modal-box" style={{ maxWidth: 980 }}>
             <div className="modal-header">
@@ -277,7 +286,7 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
                 <div className="modal-title">Nova licao de casa</div>
                 <div className="modal-subtitle">Crie manualmente ou gere uma base revisavel com Prof Wiz</div>
               </div>
-              <button className="modal-close" onClick={() => setOpen(false)}>{closeIcon()}</button>
+              <button type="button" className="modal-close" onClick={() => setOpen(false)}>{closeIcon()}</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
@@ -312,7 +321,7 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
                     <div className="section-eyebrow">Prof Wiz</div>
                     <h3 className="section-title">Geracao assistida</h3>
                   </div>
-                  <button className="btn btn-secondary btn-sm" onClick={gerarWiz} disabled={saving}>Gerar com Prof Wiz</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={gerarWiz} disabled={saving}>Gerar com Prof Wiz</button>
                 </div>
                 <div className="card-body">
                   <div className="form-grid">
@@ -337,17 +346,18 @@ export function HomeworkCreateButton({ turmas, alunos }: { turmas: Row[]; alunos
                     </div>
                   </div>
                 ))}
-                <button className="btn btn-secondary btn-sm" onClick={() => setQuestions((prev) => [...prev, { id: crypto.randomUUID(), tipo: "aberta", enunciado: "", pontos: 1 }])}>Adicionar questao</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setQuestions((prev) => [...prev, { id: crypto.randomUUID(), tipo: "aberta", enunciado: "", pontos: 1 }])}>Adicionar questao</button>
               </div>
               <label className="attendance-item" style={{ marginTop: 16 }}><input type="checkbox" checked={form.allow_resubmission} onChange={(e) => update("allow_resubmission", e.target.checked)} /> Permitir reenvio</label>
               {erro && <div className="form-error">{erro}</div>}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" disabled={saving} onClick={() => salvar("Rascunho")}>Salvar rascunho</button>
-              <button className="btn btn-primary" disabled={saving} onClick={() => salvar("Ativa")}>{saving ? "Salvando..." : "Salvar e publicar"}</button>
+              <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => salvar("Rascunho")}>Salvar rascunho</button>
+              <button type="button" className="btn btn-primary" disabled={saving} onClick={() => salvar("Ativa")}>{saving ? "Salvando..." : "Salvar e publicar"}</button>
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );
