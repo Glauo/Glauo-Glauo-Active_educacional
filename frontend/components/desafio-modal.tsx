@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { HomeworkQuestion } from "@/lib/school-modules";
+import { ModalPortal } from "@/components/modal-portal";
 
 type DesafioData = {
   id?: string;
@@ -78,6 +79,13 @@ function classNames(rows: Row[]) {
 
 function toggleTarget(targets: string[], value: string) {
   return targets.includes(value) ? targets.filter((item) => item !== value) : [...targets, value];
+}
+
+function refreshKeepingScroll(refresh: () => void) {
+  const scrollY = window.scrollY;
+  refresh();
+  requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  window.setTimeout(() => window.scrollTo(0, scrollY), 150);
 }
 
 function questionType(value: unknown): QuestionType {
@@ -310,6 +318,7 @@ function DesafioModal({
   }
 
   return (
+    <ModalPortal>
     <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth: 1040 }}>
         <div className="modal-header">
@@ -317,7 +326,7 @@ function DesafioModal({
             <div className="modal-title">{isEdit ? "Editar desafio" : "Novo desafio"}</div>
             <div className="modal-subtitle">Destinatarios e questoes usam os cadastros do sistema</div>
           </div>
-          <button className="modal-close" onClick={onClose}>
+          <button type="button" className="modal-close" onClick={onClose}>
             <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
           </button>
         </div>
@@ -408,15 +417,15 @@ function DesafioModal({
                       {question.tipo === "upload" && <div className="form-group form-group-span2"><div className="form-help">Use esse formato quando a entrega for um arquivo, link ou evidencia descrita pelo aluno.</div></div>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => removeQuestion(index)} disabled={questions.length === 1}>Remover questao</button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeQuestion(index)} disabled={questions.length === 1}>Remover questao</button>
                     </div>
                   </div>
                 </div>
               ))}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => addQuestion("aberta")}>Adicionar pergunta</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => addQuestion("multipla_escolha")}>Adicionar multipla escolha</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => addQuestion("verdadeiro_falso")}>Adicionar V/F</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addQuestion("aberta")}>Adicionar pergunta</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addQuestion("multipla_escolha")}>Adicionar multipla escolha</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addQuestion("verdadeiro_falso")}>Adicionar V/F</button>
               </div>
             </div>
           </div>
@@ -427,13 +436,14 @@ function DesafioModal({
           {erro && <div className="form-error">{erro}</div>}
         </div>
         <div className="modal-footer">
-          {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
-          <button className="btn btn-secondary" onClick={gerarComWiz} disabled={saving}>Wiz criar base</button>
-          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button className="btn btn-primary" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Publicar desafio"}</button>
+          {isEdit && <button type="button" className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
+          <button type="button" className="btn btn-secondary" onClick={gerarComWiz} disabled={saving}>Wiz criar base</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button type="button" className="btn btn-primary" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Publicar desafio"}</button>
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -442,11 +452,11 @@ export function NovoDesafioBtn({ turmas, alunos }: { turmas: Row[]; alunos: Row[
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="btn btn-primary" onClick={() => setOpen(true)}>
+      <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
         <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
         Novo desafio
       </button>
-      {open && <DesafioModal turmas={turmas} alunos={alunos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
+      {open && <DesafioModal turmas={turmas} alunos={alunos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); refreshKeepingScroll(() => router.refresh()); }} />}
     </>
   );
 }
@@ -456,8 +466,8 @@ export function EditarDesafioBtn({ desafio, turmas, alunos }: { desafio: Desafio
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.75rem" }} onClick={() => setOpen(true)}>Editar</button>
-      {open && <DesafioModal desafio={desafio} turmas={turmas} alunos={alunos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); router.refresh(); }} />}
+      <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: "0.75rem" }} onClick={() => setOpen(true)}>Editar</button>
+      {open && <DesafioModal desafio={desafio} turmas={turmas} alunos={alunos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); refreshKeepingScroll(() => router.refresh()); }} />}
     </>
   );
 }
