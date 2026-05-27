@@ -1,3 +1,5 @@
+import { polishPortugueseText } from "./portuguese-text";
+
 function text(value: unknown) {
   return String(value || "").trim();
 }
@@ -29,30 +31,30 @@ function financeCategory(row: Record<string, unknown>) {
 
 function categoryTitle(category: string) {
   const titles: Record<string, string> = {
-    matricula: "Matricula",
+    matricula: "Matrícula",
     mensalidade: "Mensalidade",
-    material: "Material didatico",
-    renegociacao: "Renegociacao financeira",
+    material: "Material didático",
+    renegociacao: "Renegociação financeira",
     aula_avulsa: "Aula avulsa",
-    reposicao: "Reposicao de aula",
+    reposicao: "Reposição de aula",
     evento: "Evento",
     boleto: "Boleto importado",
-    outros: "Lancamento financeiro",
+    outros: "Lançamento financeiro",
   };
   return titles[category] || titles.outros;
 }
 
 function introFor(category: string) {
   const intros: Record<string, string> = {
-    matricula: "Informamos que a cobranca de matricula foi lancada no sistema.",
-    mensalidade: "Informamos que a mensalidade foi lancada no sistema.",
-    material: "Informamos que a cobranca de material didatico foi lancada no sistema.",
-    renegociacao: "Informamos que a renegociacao financeira foi registrada no sistema.",
-    aula_avulsa: "Informamos que a cobranca referente a aula avulsa foi lancada no sistema.",
-    reposicao: "Informamos que a cobranca referente a reposicao de aula foi lancada no sistema.",
-    evento: "Informamos que a cobranca referente ao evento foi lancada no sistema.",
-    boleto: "Informamos que o boleto/fatura foi anexado e esta disponivel para pagamento.",
-    outros: "Informamos que um lancamento financeiro foi registrado no sistema.",
+    matricula: "Informamos que a cobrança de matrícula foi lançada no sistema.",
+    mensalidade: "Informamos que a mensalidade foi lançada no sistema.",
+    material: "Informamos que a cobrança de material didático foi lançada no sistema.",
+    renegociacao: "Informamos que a renegociação financeira foi registrada no sistema.",
+    aula_avulsa: "Informamos que a cobrança referente à aula avulsa foi lançada no sistema.",
+    reposicao: "Informamos que a cobrança referente à reposição de aula foi lançada no sistema.",
+    evento: "Informamos que a cobrança referente ao evento foi lançada no sistema.",
+    boleto: "Informamos que o boleto/fatura foi anexado e está disponível para pagamento.",
+    outros: "Informamos que um lançamento financeiro foi registrado no sistema.",
   };
   return intros[category] || intros.outros;
 }
@@ -72,11 +74,11 @@ export function financeMessage(row: Record<string, unknown>, origin = "") {
   const status = text(row.status || row.situacao);
   const subject = `${title} Active Educacional - ${referencia || aluno}`;
   const lines = [
-    `Ola, ${aluno}!`,
+    `Olá, ${aluno}!`,
     "",
     introFor(category),
     "",
-    `Referencia: ${referencia}`,
+    `Referência: ${referencia}`,
     parcela ? `Parcela: ${parcela}` : "",
     `Valor: ${money(row.valor_parcela || row.valor || row.valor_total)}`,
     vencimento ? `Vencimento: ${vencimento}` : "",
@@ -84,8 +86,8 @@ export function financeMessage(row: Record<string, unknown>, origin = "") {
     "",
     link ? `Acesse aqui: ${link}` : "",
     "",
-    "Em caso de duvida, fale com a secretaria da Active Educacional.",
+    "Em caso de dúvida, fale com a secretaria da Active Educacional.",
   ].filter((line) => line !== "");
 
-  return { subject, body: lines.join("\n") };
+  return { subject: polishPortugueseText(subject), body: polishPortugueseText(lines.join("\n")) };
 }

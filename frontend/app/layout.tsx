@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PWARegister } from "@/components/pwa-register";
 import { AppRecovery } from "@/components/app-recovery";
+import { TextPolisher } from "@/components/text-polisher";
 
 export const metadata: Metadata = {
   title: {
     template: "%s | Ativo Educacional",
-    default: "Ativo Educacional - Sistema de Gestao Educacional"
+    default: "Ativo Educacional - Sistema de Gestão Educacional"
   },
   description: "Plataforma completa de gestão educacional: alunos, turmas, professores, financeiro e muito mais.",
   manifest: "/manifest.json",
@@ -61,6 +62,7 @@ export default function RootLayout({
       <body>
         <PWARegister />
         <AppRecovery />
+        <TextPolisher />
         {children}
       </body>
     </html>
