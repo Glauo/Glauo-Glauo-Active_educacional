@@ -1,4 +1,5 @@
 import type { SessionUser } from "./auth";
+import { polishPortugueseText } from "./portuguese-text";
 import { sendEmail } from "./email";
 import { sendWhatsApp } from "./whatsapp";
 
@@ -78,17 +79,17 @@ export function studentCredentialEmail(row: StudentCredentialRow) {
 
 export function studentCredentialMessage(row: StudentCredentialRow, login = text(row.login || row.usuario), senha = text(row.senha)) {
   const nome = text(row.nome || row.name || "aluno");
-  return [
-    `Ola, ${nome}!`,
-    "Seu acesso ao portal do aluno Active Educacional esta liberado.",
+  return polishPortugueseText([
+    `Olá, ${nome}!`,
+    "Seu acesso ao portal do aluno Active Educacional está liberado.",
     "",
     `Login: ${login}`,
     `Senha: ${senha}`,
     "",
     "Portal: https://ativoeducacional.tech/aluno/login",
     "",
-    "Guarde esses dados com seguranca.",
-  ].join("\n");
+    "Guarde esses dados com segurança.",
+  ].join("\n"));
 }
 
 export async function notifyStudentCredentials(row: StudentCredentialRow, session?: Pick<SessionUser, "usuario" | "pessoa" | "perfil"> | null) {
@@ -110,4 +111,3 @@ export async function notifyStudentCredentials(row: StudentCredentialRow, sessio
     email_destino: email,
   };
 }
-

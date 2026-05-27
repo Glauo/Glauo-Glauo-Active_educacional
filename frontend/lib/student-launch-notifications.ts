@@ -1,5 +1,6 @@
 import type { SessionUser } from "./auth";
 import { sendEmail } from "./email";
+import { polishPortugueseText } from "./portuguese-text";
 import { lower, normalizeList, text, type Row } from "./school-modules";
 import { sendWhatsApp } from "./whatsapp";
 
@@ -88,7 +89,8 @@ export async function notifyStudentsAboutLaunch({
   const recipients = targetStudents(students, item);
   const link = kind === "licao" ? "/aluno?tab=licoes" : "/aluno?tab=desafios";
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://ativoeducacional.tech").replace(/\/+$/, "");
-  const message = `${title}\n\n${body}\n\nAcesse: ${appUrl}${link}`;
+  const subject = polishPortugueseText(title);
+  const message = polishPortugueseText(`${title}\n\n${body}\n\nAcesse: ${appUrl}${link}`);
   let whatsappOk = 0;
   let whatsappFail = 0;
   let emailOk = 0;
@@ -103,7 +105,7 @@ export async function notifyStudentsAboutLaunch({
       else whatsappFail += 1;
     }
     if (email) {
-      const result = await sendEmail(email, title, message, session);
+      const result = await sendEmail(email, subject, message, session);
       if (result.ok) emailOk += 1;
       else emailFail += 1;
     }
