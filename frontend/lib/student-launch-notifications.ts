@@ -35,6 +35,10 @@ function studentEmail(row: Row) {
   return text(row.email || row.responsavel_email);
 }
 
+function firstName(value: unknown) {
+  return text(value).split(/\s+/)[0] || "aluno";
+}
+
 function isActiveStudent(row: Row) {
   const status = lower(row.status || row.situacao || "ativo");
   return !status.includes("inativ") && !status.includes("cancel") && !status.includes("exclu");
@@ -81,16 +85,27 @@ export async function notifyStudentsAboutLaunch({
 }: {
   students: Row[];
   item: Row;
-  kind: "licao" | "desafio";
+  kind: "licao" | "desafio" | "comunicado" | "nota";
   title: string;
   body: string;
   session?: Pick<SessionUser, "usuario" | "pessoa" | "perfil"> | null;
 }): Promise<NotifyResult> {
   const recipients = targetStudents(students, item);
-  const link = kind === "licao" ? "/aluno?tab=licoes" : "/aluno?tab=desafios";
+  const linkByKind: Record<typeof kind, string> = {
+    licao: "/aluno?tab=licoes",
+    desafio: "/aluno?tab=desafios",
+    comunicado: "/aluno?tab=mural",
+    nota: "/aluno?tab=notas",
+  };
+  const labelByKind: Record<typeof kind, string> = {
+    licao: "nova lição de casa",
+    desafio: "novo desafio",
+    comunicado: "novo comunicado",
+    nota: "nova nota",
+  };
+  const link = linkByKind[kind];
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://ativoeducacional.tech").replace(/\/+$/, "");
   const subject = polishPortugueseText(title);
-  const message = polishPortugueseText(`${title}\n\n${body}\n\nAcesse: ${appUrl}${link}`);
   let whatsappOk = 0;
   let whatsappFail = 0;
   let emailOk = 0;
@@ -99,6 +114,17 @@ export async function notifyStudentsAboutLaunch({
   for (const student of recipients) {
     const phone = studentPhone(student);
     const email = studentEmail(student);
+    const message = polishPortugueseText([
+      `Olá, ${firstName(studentName(student))}!`,
+      "",
+      `Você recebeu ${labelByKind[kind]} no Active Educacional.`,
+      "",
+      title,
+      "",
+      body,
+      "",
+      `Acesse para acompanhar: ${appUrl}${link}`,
+    ].join("\n"));
     if (phone) {
       const result = await sendWhatsApp(phone, message, session);
       if (result.ok) whatsappOk += 1;

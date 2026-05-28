@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
 import { canManageAllSchoolContent, canManageSchoolContent, normalizeList, nowIso, text, todayPtBr, type WallPost } from "@/lib/school-modules";
+import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
 
 const KEY = "messages.json";
 
@@ -43,6 +44,8 @@ export async function POST(req: NextRequest) {
     autor: session.pessoa || session.usuario,
     turma: text(body.turma || "Todas") || "Todas",
     turmas: normalizeList(body.turmas),
+    aluno: text(body.aluno),
+    alunos: normalizeList(body.alunos),
     publico: text(body.publico || "Alunos"),
     tipo_post: text(body.tipo_post || "Aviso Geral"),
     status: text(body.status || "Ativo"),
@@ -58,7 +61,22 @@ export async function POST(req: NextRequest) {
     },
   };
 
-  const posts = await dbList<WallPost>(KEY);
+  const [posts, students] = await Promise.all([
+    dbList<WallPost>(KEY),
+    dbList<Record<string, unknown>>("students.json"),
+  ]);
+  if (!text(post.status).toLowerCase().includes("rascunho")) {
+    post.notification_status = await notifyStudentsAboutLaunch({
+      students,
+      item: post,
+      kind: "comunicado",
+      title: `${text(post.tipo_post)}: ${text(post.titulo)}`,
+      body: text(post.mensagem),
+      session,
+    });
+  } else {
+    post.notification_status = { push: "rascunho", whatsapp: "rascunho", email: "rascunho", total_destinatarios: 0 };
+  }
   await dbSet(KEY, [...posts, post]);
   return NextResponse.json(post, { status: 201 });
 }

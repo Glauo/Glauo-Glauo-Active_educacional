@@ -70,14 +70,18 @@ export async function POST(req: NextRequest) {
     ...(questions ? { questions, pontos: questionsTotal(questions) || Number(body.pontos) || 0 } : {}),
     status: body.status || "Publicado",
   };
-  novo.notification_status = await notifyStudentsAboutLaunch({
-    students,
-    item: novo,
-    kind: "desafio",
-    title: `Novo desafio: ${text(novo.titulo || "Desafio")}`,
-    body: `Um novo desafio foi lancado para voce. Pontos: ${text(novo.pontos || 0)}.`,
-    session,
-  });
+  if (!text(novo.status).toLowerCase().includes("rascunho")) {
+    novo.notification_status = await notifyStudentsAboutLaunch({
+      students,
+      item: novo,
+      kind: "desafio",
+      title: `Novo desafio: ${text(novo.titulo || "Desafio")}`,
+      body: `Um novo desafio foi lançado para você. Pontos: ${text(novo.pontos || 0)}.`,
+      session,
+    });
+  } else {
+    novo.notification_status = { push: "rascunho", whatsapp: "rascunho", email: "rascunho", total_destinatarios: 0 };
+  }
   desafios.push(novo);
   await dbSet("challenges.json", desafios);
   return NextResponse.json(novo, { status: 201 });
