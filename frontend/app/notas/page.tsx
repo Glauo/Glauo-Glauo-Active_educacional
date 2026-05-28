@@ -3,6 +3,7 @@ import { NotaRapidaForm } from "@/components/notas-form";
 import { NotasClient } from "@/components/notas-client";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
+import { isAdminOrCoordinator } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
 type Row = Record<string, unknown>;
@@ -47,7 +48,7 @@ export default async function NotasPage() {
         <div className="metric-card metric-card-red"><div className="metric-label">Faltas</div><div className="metric-value">{faltas}</div><div className="metric-note">Registros de aula fechada</div></div>
       </div>
 
-      <NotaRapidaForm alunos={alunos} desafios={desafios} />
+      <NotaRapidaForm alunos={alunos} desafios={desafios} canManageManual={isAdminOrCoordinator(session)} />
 
       <NotasClient notas={notas} frequencias={frequencias} />
     </AppShell>

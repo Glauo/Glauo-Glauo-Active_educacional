@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
+import { isAdminOrCoordinator } from "@/lib/roles";
 import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
 
 type Row = Record<string, unknown>;
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest) {
   const aluno = text(body.aluno);
   const titulo = text(body.titulo || body.desafio);
   const nota = Number(body.nota);
+  const origem = text(body.origem);
+  if (origem === "lancamento_manual_adm" && !isAdminOrCoordinator(session)) {
+    return NextResponse.json({ error: "Apenas administradores e coordenadores podem lancar nota manual." }, { status: 403 });
+  }
   if (!aluno || !titulo || !Number.isFinite(nota)) {
     return NextResponse.json({ error: "Aluno, desafio/titulo e nota sao obrigatorios." }, { status: 400 });
   }
