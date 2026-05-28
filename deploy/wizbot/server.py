@@ -105,6 +105,8 @@ def _set_bot_paused(paused, by_number=""):
 
 
 def _is_bot_paused():
+    if _env_flag("WIZBOT_PAUSED", False):
+        return True
     with _STATE_LOCK:
         data = _load_state()
     return bool(data.get("bot_paused", False))
