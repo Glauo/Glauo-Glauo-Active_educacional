@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NovoEventoBtn, EditarEventoBtn } from "@/components/agenda-modal";
 import { TeacherClassPanel } from "@/components/teacher-class-panel";
+import { isAdminOrCoordinator, sameName } from "@/lib/roles";
 
 type Evento = { id?: string; titulo?: string; descricao?: string; turma?: string; professor?: string; horario?: string; hora?: string; time?: string; data?: string; date?: string; dia?: string; status?: string; tipo?: string; [k: string]: unknown };
 
@@ -22,9 +23,26 @@ function statusBadge(s: string) {
   return "warning";
 }
 
+function saoPauloDateKey(value: Date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
+function eventDateKey(e: Evento) {
+  const raw = String(e.data || e.date || e.dia || "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : saoPauloDateKey(parsed);
+}
+
 export default async function AgendaPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const manage = isAdminOrCoordinator(session);
 
   const agenda = await dbList<Evento>("agenda.json");
   const turmas = await dbList<Record<string, unknown>>("classes.json");
@@ -32,34 +50,34 @@ export default async function AgendaPage() {
   const alunos = await dbList<Record<string, unknown>>("students.json");
   const professores = await dbList<Record<string, unknown>>("teachers.json");
 
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  const userName = session.pessoa || session.usuario;
+  const agendaVisivel = manage
+    ? agenda
+    : agenda.filter((e) => sameName(e.professor, userName));
 
-  const agendaHoje = agenda.filter((e) => {
-    const d = e.data || e.date || e.dia;
-    if (!d) return false;
-    const dt = new Date(String(d));
-    return dt.toDateString() === hoje.toDateString();
-  });
+  const hojeKey = saoPauloDateKey();
+  const hoje = new Date(`${hojeKey}T00:00:00`);
 
-  const agendaSemana = agenda.filter((e) => {
-    const d = e.data || e.date || e.dia;
-    if (!d) return false;
-    const dt = new Date(String(d));
+  const agendaHoje = agendaVisivel.filter((e) => eventDateKey(e) === hojeKey);
+
+  const agendaSemana = agendaVisivel.filter((e) => {
+    const key = eventDateKey(e);
+    if (!key) return false;
+    const dt = new Date(`${key}T00:00:00`);
     const fim = new Date(hoje);
     fim.setDate(fim.getDate() + 7);
     return dt >= hoje && dt <= fim;
   });
 
-  const pendentes = agenda.filter((e) => {
+  const pendentes = agendaVisivel.filter((e) => {
     const s = String(e.status || "").toLowerCase();
     return s.includes("pendent") || s.includes("confirm") || s === "";
   });
 
-  const exibir = agendaHoje.length > 0 ? agendaHoje : agenda.slice(0, 10);
+  const exibir = agendaHoje.length > 0 ? agendaHoje : agendaVisivel.slice(0, 10);
 
   return (
-    <AppShell breadcrumb="Agenda" userName={session.pessoa || session.usuario} userRole={session.perfil}>
+    <AppShell breadcrumb="Agenda" userName={userName} userRole={session.perfil}>
       <div className="page-header">
         <div className="page-title-block">
           <div className="page-eyebrow"><span className="page-eyebrow-dot" />Operação Diária</div>
@@ -72,7 +90,7 @@ export default async function AgendaPage() {
           <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 600 }}>
             {hoje.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
           </span>
-          <NovoEventoBtn />
+          {manage && <NovoEventoBtn />}
         </div>
       </div>
 
@@ -108,7 +126,7 @@ export default async function AgendaPage() {
         aulas={aulas}
         professores={professores}
         alunos={alunos}
-        userName={session.pessoa || session.usuario}
+        userName={userName}
         userRole={session.perfil}
       />
 
@@ -146,7 +164,7 @@ export default async function AgendaPage() {
                             <span className={`badge badge-${statusBadge(status)}`}>
                               <span className="badge-dot" />{status}
                             </span>
-                            <EditarEventoBtn evento={e} />
+                            {manage && <EditarEventoBtn evento={e} />}
                           </div>
                         </div>
                         {professor && <p className="timeline-meta">{professor}</p>}
@@ -200,7 +218,7 @@ export default async function AgendaPage() {
                 </div>
                 <div className="spotlight-row">
                   <span className="spotlight-label">Total na agenda</span>
-                  <span className="spotlight-value">{agenda.length}</span>
+                  <span className="spotlight-value">{agendaVisivel.length}</span>
                 </div>
               </div>
             </div>
