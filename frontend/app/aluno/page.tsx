@@ -36,6 +36,14 @@ function sameStudentInvoice(row: Recebimento, aluno: Aluno | undefined, session:
   return possible.some((item) => studentKeys.includes(item));
 }
 
+function dueDateValue(value: unknown) {
+  const raw = text(value);
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1])).getTime();
+  const date = new Date(raw.includes("T") ? raw : `${raw}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
+}
+
 function matchesAgenda(row: Record<string, unknown>, aluno: Aluno | undefined, turma: string, session: { usuario: string; pessoa: string }) {
   const status = lower(row.status || row.situacao);
   if (status.includes("cancel") || status.includes("inativ") || status.includes("arquiv")) return false;
@@ -143,7 +151,7 @@ export default async function AlunoHomePage() {
   const minhasNotas = notas.filter((n) => lower(n.aluno) === lower(session.pessoa) || lower(n.aluno_login) === lower(session.usuario));
   const minhasFaturas = recebimentos
     .filter((r) => sameStudentInvoice(r, meuPerfil, sessionLite))
-    .sort((a, b) => text(a.vencimento || a.data_vencimento).localeCompare(text(b.vencimento || b.data_vencimento)));
+    .sort((a, b) => dueDateValue(a.vencimento || a.data_vencimento) - dueDateValue(b.vencimento || b.data_vencimento));
   const meusDesafios = desafios.filter((d) => visibleChallenge(d, session, meuPerfil));
   const minhasConclusoes = conclusoes.filter((c) => lower(c.aluno) === lower(session.usuario) || lower(c.aluno) === lower(session.pessoa));
   const minhasFaltas = frequencias.filter((f) => (lower(f.aluno) === lower(session.pessoa) || lower(f.aluno_id) === lower(meuPerfil?.id || session.usuario)) && Boolean(f.falta)).length;

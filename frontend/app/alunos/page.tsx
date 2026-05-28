@@ -39,7 +39,7 @@ function dateValue(value: unknown) {
   const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1])).getTime();
   const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
 }
 
 function faturaKeys(aluno: Aluno) {
@@ -90,7 +90,7 @@ function slimRecebimentos(alunos: Aluno[], recebimentos: Recebimento[]) {
     const sorted = [...list].sort((a, b) => {
       const paidDiff = Number(isPaid(a.status || a.situacao)) - Number(isPaid(b.status || b.situacao));
       if (paidDiff !== 0) return paidDiff;
-      return dateValue(b.vencimento || b.data_vencimento) - dateValue(a.vencimento || a.data_vencimento);
+      return dateValue(a.vencimento || a.data_vencimento) - dateValue(b.vencimento || b.data_vencimento);
     });
     const abertas = sorted.filter((item) => !isPaid(item.status || item.situacao));
     const recentes = sorted.filter((item) => isPaid(item.status || item.situacao)).slice(0, 6);
