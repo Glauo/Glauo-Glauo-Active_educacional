@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { teacherClassValueByModule } from "@/lib/course-modules";
 
 type Row = Record<string, unknown>;
@@ -37,7 +36,9 @@ function isAdmin(role: string) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 }
 
 function currentTime() {
@@ -55,6 +56,22 @@ function formatOpenTime(isoStr: string) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function dateLabel(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [year, month, day] = raw.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? raw : d.toLocaleDateString("pt-BR");
+}
+
+function samePerson(a: unknown, b: unknown) {
+  return text(a).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ===
+    text(b).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 export function TeacherClassPanel({
   turmas,
   aulas,
@@ -70,14 +87,18 @@ export function TeacherClassPanel({
   userName: string;
   userRole: string;
 }) {
-  const router = useRouter();
   const admin = isAdmin(userRole);
+  const [localAulas, setLocalAulas] = useState<Row[]>(aulas);
+
+  useEffect(() => {
+    setLocalAulas(aulas);
+  }, [aulas]);
 
   const visibleClasses = useMemo(() => {
     if (admin) return turmas;
     return turmas.filter((t) => {
       const prof = text(t.professor);
-      return !prof || prof.toLowerCase() === userName.toLowerCase();
+      return !prof || samePerson(prof, userName);
     });
   }, [turmas, userName, admin]);
 
@@ -105,7 +126,7 @@ export function TeacherClassPanel({
   );
   const selectedId = selected ? classId(selected) : "";
 
-  const openClass = aulas.find(
+  const openClass = localAulas.find(
     (a) => text(a.status) === "aberta" && text(a.turma_id) === selectedId
   );
 
@@ -125,6 +146,17 @@ export function TeacherClassPanel({
   const valorAula =
     teacherClassValueByModule(modulo) ||
     moneyValue(selected?.valor_aula || (teacher as Row).valor_aula || (teacher as Row).valor_hora || (teacher as Row).valor);
+
+  const minhasAulas = useMemo(() => {
+    const base = admin
+      ? localAulas
+      : localAulas.filter((a) => samePerson(a.professor, userName));
+    return [...base].sort((a, b) => {
+      const dataA = text(a.data_aula || a.created_at || a.inicio || a.fim);
+      const dataB = text(b.data_aula || b.created_at || b.inicio || b.fim);
+      return dataB.localeCompare(dataA);
+    });
+  }, [localAulas, admin, userName]);
 
   const alunosTurma = useMemo(() => alunos.filter((a) => {
     const t = text(a.turma || a.classe);
@@ -181,15 +213,23 @@ export function TeacherClassPanel({
       return;
     }
 
+    const savedAula = (payload as { aula?: Row }).aula;
+    if (savedAula) {
+      setLocalAulas((prev) => {
+        const id = text(savedAula.id);
+        const exists = prev.some((a) => text(a.id) === id);
+        return exists ? prev.map((a) => text(a.id) === id ? savedAula : a) : [...prev, savedAula];
+      });
+    }
+
     setIsError(false);
-    setMessage(action === "open" ? "Aula aberta com sucesso." : "Aula fechada e financeiro do professor lancado.");
+    setMessage(action === "open" ? "Aula aberta com sucesso." : "Aula fechada e financeiro do professor lançado.");
     setLicaoInicio("");
     setLicaoFim("");
     setPresentes({});
     setObservacoes("");
     setHoraInicio(currentTime());
     if (admin) setDataAula(todayISO());
-    router.refresh();
   }
 
   function marcarTodos(presente: boolean) {
@@ -463,6 +503,47 @@ export function TeacherClassPanel({
             >
               {saving ? "Fechando..." : "Fechar aula e lançar financeiro"}
             </button>
+          )}
+        </div>
+
+        <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10 }}>
+            <div>
+              <div className="section-eyebrow">{admin ? "Aulas registradas" : "Minhas aulas registradas"}</div>
+              <h3 className="section-title" style={{ fontSize: "1rem" }}>{admin ? "Abertas e fechadas" : "Abertas e fechadas por você"}</h3>
+            </div>
+            <span className="badge badge-info">{minhasAulas.length} aula(s)</span>
+          </div>
+
+          {minhasAulas.length === 0 ? (
+            <div className="empty-state" style={{ padding: "18px 12px" }}>
+              <div className="empty-title">Nenhuma aula lançada ainda</div>
+              <p className="empty-desc">As aulas abertas e fechadas aparecem aqui assim que forem registradas.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8, maxHeight: 320, overflow: "auto", paddingRight: 4 }}>
+              {minhasAulas.slice(0, 20).map((aula) => {
+                const status = text(aula.status);
+                const aberta = status.toLowerCase().includes("aberta");
+                return (
+                  <div key={text(aula.id)} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "10px 12px", display: "grid", gap: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <strong style={{ color: "var(--text-primary)" }}>{text(aula.turma || "Turma")}</strong>
+                      <span className={`badge badge-${aberta ? "warning" : "success"}`}><span className="badge-dot" />{aberta ? "Aberta" : "Fechada"}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", color: "var(--text-secondary)", fontSize: "0.82rem" }}>
+                      <span>Data: {dateLabel(aula.data_aula || aula.created_at)}</span>
+                      <span>Professor: {text(aula.professor || "—")}</span>
+                      {text(aula.hora_inicio) && <span>Início: {text(aula.hora_inicio)}</span>}
+                      {text(aula.fim) && <span>Fechada: {formatOpenTime(text(aula.fim))}</span>}
+                    </div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.82rem" }}>
+                      Lição: {text(aula.licao_inicio || "—")}{text(aula.licao_fim) ? ` até ${text(aula.licao_fim)}` : ""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

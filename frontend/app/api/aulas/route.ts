@@ -17,6 +17,19 @@ function text(value: unknown) {
   return String(value || "").trim();
 }
 
+function todaySaoPauloISO() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
 function moneyValue(value: unknown) {
   const n = parseFloat(String(value || "").replace(/[^\d.,-]/g, "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -97,7 +110,7 @@ export async function POST(req: NextRequest) {
     const modulo = classModule(turma);
     const licaoAtual = text(turma.ultima_licao || turma.licao_atual || turma.ultima_aula || body.licao_inicio);
     // Lancamento manual com data retroativa e troca de professor e exclusivo de Admin/Coordenador.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todaySaoPauloISO();
     const dataAulaISO = manager ? (text(body.data_aula) || today) : today;
 
     if (action === "open") {
@@ -121,8 +134,8 @@ export async function POST(req: NextRequest) {
         data_aula: dataAulaISO,
         hora_inicio: horaInicio,
         aberta_por: session.pessoa || session.usuario,
-        inicio: new Date().toISOString(),
-        created_at: new Date().toISOString()
+        inicio: nowIso(),
+        created_at: nowIso()
       };
 
       const nextTurmas = turmas.map((t) => classId(t) === turmaId ? { ...t, aula_aberta_id: aula.id, aula_status: "Aberta" } : t);
@@ -164,8 +177,8 @@ export async function POST(req: NextRequest) {
         modulo,
         vip_consumed_students: vipConsumidos,
         fechada_por: session.pessoa || session.usuario,
-        fim: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        fim: nowIso(),
+        updated_at: nowIso()
       };
       const nextAulas = [...aulas];
       nextAulas[idx] = fechada;
@@ -173,7 +186,7 @@ export async function POST(req: NextRequest) {
       const nextTurmas = turmas.map((t) => classId(t) === turmaId ? {
         ...t,
         ultima_licao: licaoFim,
-        ultima_aula: new Date().toISOString(),
+        ultima_aula: nowIso(),
         aula_aberta_id: "",
         aula_status: "Fechada"
       } : t);
@@ -194,7 +207,7 @@ export async function POST(req: NextRequest) {
         licao_fim: licaoFim,
         materia,
         tarefa,
-        data: new Date().toISOString()
+        data: nowIso()
       }));
       const nextAlunos = alunos.map((aluno) => {
         const alunoTurma = text(aluno.turma || aluno.classe);
@@ -244,7 +257,7 @@ export async function POST(req: NextRequest) {
         data_aula: text(base.data_aula) || dataAulaISO,
         vip_consumed_students: vipConsumidos,
         status: "Pendente",
-        created_at: new Date().toISOString()
+        created_at: nowIso()
       };
 
       await Promise.all([
