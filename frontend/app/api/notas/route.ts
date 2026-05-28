@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
+import { notifyStudentsAboutLaunch } from "@/lib/student-launch-notifications";
 
 type Row = Record<string, unknown>;
 
@@ -30,12 +31,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Aluno, desafio/titulo e nota sao obrigatorios." }, { status: 400 });
   }
 
-  const [notas, conclusoes] = await Promise.all([
+  const [notas, conclusoes, students] = await Promise.all([
     dbList<Row>("grades.json"),
-    dbList<Row>("challenge_completions.json")
+    dbList<Row>("challenge_completions.json"),
+    dbList<Row>("students.json")
   ]);
   const id = text(body.id) || crypto.randomUUID();
-  const registro = {
+  const registro: Row = {
     ...body,
     id,
     aluno,
@@ -47,6 +49,16 @@ export async function POST(req: NextRequest) {
     status: "Corrigido",
     data: new Date().toISOString()
   };
+  registro.notification_status = await notifyStudentsAboutLaunch({
+    students,
+    item: registro,
+    kind: "nota",
+    title: `Nota lançada: ${titulo}`,
+    body: nota >= 7
+      ? `Sua nota foi ${nota}. Parabéns pelo resultado! Continue acompanhando as correções e feedbacks para evoluir ainda mais.`
+      : `Sua nota foi ${nota}. Revise os pontos corrigidos, estude mais um pouco e conte com o professor para melhorar seus resultados.`,
+    session,
+  });
   const idx = notas.findIndex((n) => text(n.id) === id);
   const nextNotas = idx >= 0 ? notas.map((n, i) => i === idx ? { ...n, ...registro } : n) : [...notas, registro];
 

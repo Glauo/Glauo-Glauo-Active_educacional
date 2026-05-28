@@ -69,15 +69,18 @@ export async function POST(req: NextRequest) {
     notification_status: { push: "pendente", whatsapp: "pendente", email: "pendente" },
   };
   const [activities, students] = await Promise.all([dbList<Homework>(KEY), dbList<Record<string, unknown>>("students.json")]);
-  const notification = await notifyStudentsAboutLaunch({
-    students,
-    item,
-    kind: "licao",
-    title: `Nova licao de casa: ${titulo}`,
-    body: `Voce recebeu uma nova licao de ${item.disciplina}. Prazo: ${text(item.due_date) || "consulte no portal"}.`,
-    session,
-  });
-  item.notification_status = notification;
+  if (!text(item.status).toLowerCase().includes("rascunho")) {
+    item.notification_status = await notifyStudentsAboutLaunch({
+      students,
+      item,
+      kind: "licao",
+      title: `Nova lição de casa: ${titulo}`,
+      body: `Você recebeu uma nova lição de ${item.disciplina}. Prazo: ${text(item.due_date) || "consulte no portal"}.`,
+      session,
+    });
+  } else {
+    item.notification_status = { push: "rascunho", whatsapp: "rascunho", email: "rascunho", total_destinatarios: 0 };
+  }
   await dbSet(KEY, [...activities, item]);
   return NextResponse.json(item, { status: 201 });
 }
