@@ -185,6 +185,11 @@ function mesLabel(key: string) {
   return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
 
+function sortDateValue(value: unknown) {
+  const date = parseBRDate(String(value || ""));
+  return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
+}
+
 function groupByMes(items: Lancamento[]): { key: string; label: string; items: Lancamento[] }[] {
   const map = new Map<string, Lancamento[]>();
   for (const item of items) {
@@ -194,8 +199,16 @@ function groupByMes(items: Lancamento[]): { key: string; label: string; items: L
     map.get(key)!.push(item);
   }
   return Array.from(map.entries())
-    .map(([key, its]) => ({ key, label: mesLabel(key), items: its }))
-    .sort((a, b) => b.key.localeCompare(a.key));
+    .map(([key, its]) => ({
+      key,
+      label: mesLabel(key),
+      items: [...its].sort((a, b) => sortDateValue(a.vencimento || a.data_vencimento) - sortDateValue(b.vencimento || b.data_vencimento)),
+    }))
+    .sort((a, b) => {
+      if (a.key === "sem-data") return 1;
+      if (b.key === "sem-data") return -1;
+      return a.key.localeCompare(b.key);
+    });
 }
 
 function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {

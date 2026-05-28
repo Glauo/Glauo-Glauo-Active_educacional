@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { isAdminOrCoordinator } from "@/lib/roles";
 import { isVipModule, isVipUnlimitedPlan, migrateModule, teacherClassValueByModule, VIP_DEFAULT_TOTAL, VIP_UNLIMITED, vipPlanTotal } from "@/lib/course-modules";
 import { applyGeneratedStudentCredentials, notifyStudentCredentials } from "@/lib/student-credentials";
+import { ensureStudentMonthlyBilling } from "@/lib/monthly-billing";
 
 const KEY = "students.json";
 const HEAVY_KEYS = ["file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -134,6 +135,7 @@ export async function POST(req: NextRequest) {
 
     alunos.push(novo);
     await dbSet(KEY, alunos);
+    await ensureStudentMonthlyBilling(novo, session);
     const notification_status = await notifyStudentCredentials(novo, session);
     return NextResponse.json({ ok: true, aluno: novo, notification_status }, { status: 201 });
   } catch (err) {
@@ -159,6 +161,7 @@ export async function PUT(req: NextRequest) {
 
     alunos[idx] = { ...alunos[idx], ...normalizeAluno(updates), updated_at: new Date().toISOString() };
     await dbSet(KEY, alunos);
+    await ensureStudentMonthlyBilling(alunos[idx], session);
     const notification_status = await notifyStudentCredentials(alunos[idx], session);
     return NextResponse.json({ ok: true, aluno: alunos[idx], notification_status });
   } catch (err) {

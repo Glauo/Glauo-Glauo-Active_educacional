@@ -255,10 +255,11 @@ function LancamentoModal({
   const [savedLinks, setSavedLinks] = useState<{ whatsapp: string; email: string; label: string }[]>([]);
   const [boletoPdf, setBoletoPdf] = useState<File | null>(null);
   const isRecebimento = form.tipo_lancamento === "recebimentos";
+  const isMensalidade = isRecebimento && form.categoria === "Mensalidade";
 
   const alunoSelecionado = useMemo(() => findStudentByIdentifier(alunos, form.aluno_id) || alunos.find((a) => studentName(a) === form.aluno), [alunos, form.aluno_id, form.aluno]);
   const total = parseMoney(form.valor_total);
-  const qtdParcelas = Math.min(48, Math.max(1, Number.parseInt(form.qtd_parcelas) || 1));
+  const qtdParcelas = isMensalidade ? 1 : Math.min(48, Math.max(1, Number.parseInt(form.qtd_parcelas) || 1));
   const valorParcelaCalc = qtdParcelas > 0 ? total / qtdParcelas : 0;
 
   function update<K extends keyof Form>(field: K, value: Form[K]) {
@@ -268,7 +269,7 @@ function LancamentoModal({
   }
 
   function updateValorTotal(value: string) {
-    const qtd = Math.min(48, Math.max(1, Number.parseInt(form.qtd_parcelas) || 1));
+    const qtd = isMensalidade ? 1 : Math.min(48, Math.max(1, Number.parseInt(form.qtd_parcelas) || 1));
     const calc = parseMoney(value) / qtd;
     setForm((prev) => ({ ...prev, valor_total: value, valor_parcela: calc ? moneyInput(calc) : "" }));
     setErro("");
@@ -388,12 +389,12 @@ function LancamentoModal({
       return;
     }
 
-    const valorParcela = parseMoney(form.valor_parcela) || valorParcelaCalc;
+    const valorParcela = isMensalidade ? parseMoney(form.valor_total || form.valor_parcela) : (parseMoney(form.valor_parcela) || valorParcelaCalc);
     for (let i = 0; i < qtdParcelas; i++) {
       const parcelaNumero = (Number.parseInt(form.parcela_inicial) || 1) + i;
       const vencStr = addMonths(form.vencimento, i);
       const parcelaTxt = qtdParcelas > 1 ? `${parcelaNumero}/${qtdParcelas}` : String(parcelaNumero);
-      const desc = `${form.categoria}${form.descricao ? ` - ${form.descricao}` : ""}${qtdParcelas > 1 ? ` - Parcela ${parcelaTxt}` : ""}`;
+      const desc = `${form.categoria}${form.descricao && form.descricao !== form.categoria ? ` - ${form.descricao}` : ""}${!isMensalidade && qtdParcelas > 1 ? ` - Parcela ${parcelaTxt}` : ""}`;
       const payload = {
         tipo: form.tipo_lancamento,
         aluno_id: form.aluno_id,
@@ -412,9 +413,14 @@ function LancamentoModal({
         status: form.status,
         tipo_lancamento_detalhe: form.categoria,
         categoria: form.categoria,
-        parcela_numero: parcelaNumero,
-        parcela_total: qtdParcelas,
-        parcela: parcelaTxt,
+        ...(isMensalidade ? {
+          competencia: vencStr.slice(0, 7),
+          origem: "mensalidade_manual",
+        } : {
+          parcela_numero: parcelaNumero,
+          parcela_total: qtdParcelas,
+          parcela: parcelaTxt,
+        }),
         observacoes: form.observacoes,
         gerar_boleto: form.gerar_boleto,
         ...(boletoPdfData.boleto_pdf_b64 || boletoPdfData.boleto_pdf_url ? { ...boletoPdfData, boleto_status: "Importado" } : {}),
@@ -434,7 +440,7 @@ function LancamentoModal({
         const item = data.lancamento || payload;
         const msg = financeMessage(item, window.location.origin);
         links.push({
-          label: `Parcela ${parcelaTxt}`,
+          label: isMensalidade ? "Mensalidade" : `Parcela ${parcelaTxt}`,
           whatsapp: "",
           email: form.enviar_email ? mailtoUrl(text(item.email || form.aluno_email), msg.subject, msg.body) : "",
         });
@@ -538,10 +544,10 @@ function LancamentoModal({
               <input className="form-input" placeholder="Ex: Maio/2026, Livro 3, acordo 01" value={form.descricao} onChange={(e) => update("descricao", e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Valor total (R$) *</label>
+              <label className="form-label">{isMensalidade ? "Valor da mensalidade (R$) *" : "Valor total (R$) *"}</label>
               <input className="form-input" inputMode="decimal" placeholder="0,00" value={form.valor_total} onChange={(e) => updateValorTotal(e.target.value)} />
             </div>
-            {!isEdit && (
+            {!isEdit && !isMensalidade && (
               <>
                 <div className="form-group">
                   <label className="form-label">Numero de parcelas *</label>
@@ -554,9 +560,13 @@ function LancamentoModal({
               </>
             )}
             <div className="form-group">
-              <label className="form-label">Valor da parcela</label>
+              <label className="form-label">{isMensalidade ? "Valor mensal" : "Valor da parcela"}</label>
               <input className="form-input" inputMode="decimal" value={form.valor_parcela} onChange={(e) => update("valor_parcela", e.target.value)} />
-              <div className="form-help">Calculo automatico: {qtdParcelas}x de {formatBRL(valorParcelaCalc || parseMoney(form.valor_parcela))}</div>
+              <div className="form-help">
+                {isMensalidade
+                  ? "Mensalidade e lancada como uma cobranca unica por mes. A recorrencia automatica vem do cadastro do aluno."
+                  : `Calculo automatico: ${qtdParcelas}x de ${formatBRL(valorParcelaCalc || parseMoney(form.valor_parcela))}`}
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>
@@ -624,7 +634,7 @@ function LancamentoModal({
           {isEdit && <button className="btn btn-danger btn-sm" onClick={excluir} disabled={saving} style={{ marginRight: "auto" }}>Excluir</button>}
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="btn btn-primary" onClick={salvar} disabled={saving}>
-            {saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : "Salvar e gerar parcelas"}
+            {saving ? "Salvando..." : isEdit ? "Salvar alteracoes" : isMensalidade ? "Salvar mensalidade" : "Salvar e gerar parcelas"}
           </button>
         </div>
       </div>

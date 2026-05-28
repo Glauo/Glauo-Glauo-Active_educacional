@@ -6,6 +6,7 @@ import { ImportarBoletoPdfBtn, NovoLancamentoBtn } from "@/components/financeiro
 import { FinanceiroTable } from "@/components/financeiro-table";
 import { FinanceiroCommandCenter, FinanceiroExportButton } from "@/components/financeiro-command-center";
 import { isAdmin, isAdminOrCoordinator } from "@/lib/roles";
+import { ensureStudentsMonthlyBilling } from "@/lib/monthly-billing";
 
 type Lancamento = { id?: string; aluno?: string; nome?: string; descricao?: string; valor?: number | string; vencimento?: string; data_vencimento?: string; status?: string; situacao?: string; tipo?: string; codigo?: string; [k: string]: unknown };
 const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
@@ -26,7 +27,7 @@ export default async function FinanceiroPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [recebimentos, despesas, alunos, professores, fornecedores, fechamentos] = await Promise.all([
+  let [recebimentos, despesas, alunos, professores, fornecedores, fechamentos] = await Promise.all([
     dbListWithoutKeys<Lancamento>("receivables.json", HEAVY_KEYS),
     dbList<Lancamento>("payables.json"),
     dbListWithoutKeys<Record<string, unknown>>("students.json", HEAVY_KEYS),
@@ -34,6 +35,12 @@ export default async function FinanceiroPage() {
     dbList<Record<string, unknown>>("fornecedores.json"),
     dbList<Record<string, unknown>>("professor_fechamentos.json"),
   ]);
+  if (isAdminOrCoordinator(session)) {
+    const criadas = await ensureStudentsMonthlyBilling(alunos, session);
+    if (criadas.length > 0) {
+      recebimentos = await dbListWithoutKeys<Lancamento>("receivables.json", HEAVY_KEYS);
+    }
+  }
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
