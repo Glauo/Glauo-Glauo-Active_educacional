@@ -21,10 +21,15 @@ type Props = {
   conclusoes: Row[];
   agenda: Row[];
   faltas: number;
+  biblioteca: {
+    livros: Row[];
+    materiais: Row[];
+    videos: Row[];
+  };
 };
 
-type Tab = "inicio" | "mural" | "agenda" | "financeiro" | "notas" | "licoes" | "desafios" | "chat" | "wiz";
-const TABS: Tab[] = ["inicio", "mural", "agenda", "financeiro", "notas", "licoes", "desafios", "chat", "wiz"];
+type Tab = "inicio" | "mural" | "agenda" | "financeiro" | "notas" | "licoes" | "desafios" | "biblioteca" | "chat" | "wiz";
+const TABS: Tab[] = ["inicio", "mural", "agenda", "financeiro", "notas", "licoes", "desafios", "biblioteca", "chat", "wiz"];
 
 function parseMoney(value: unknown) {
   return Number.parseFloat(text(value).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
@@ -75,6 +80,14 @@ function boletoHref(row: Row) {
   if (text(row.boleto_pdf_url)) return text(row.boleto_pdf_url);
   if (id && text(row.boleto_status || row.gerar_boleto)) return `/api/financeiro/boleto?id=${encodeURIComponent(id)}`;
   return "";
+}
+
+function libraryHref(row: Row, tipo: "livros" | "materiais" | "videos") {
+  const direct = text(row.url || row.file_path || row.link);
+  if (direct) return direct;
+  const id = text(row.id);
+  if (tipo === "videos" || !id) return "";
+  return `/api/biblioteca/pdf?tipo=${tipo}&id=${encodeURIComponent(id)}`;
 }
 
 function Empty({ title, desc }: { title: string; desc: string }) {
@@ -200,7 +213,7 @@ function StudentWiz() {
   );
 }
 
-export function StudentPortalClient({ session, perfil, muralPosts, licoes, entregas, notas, faturas, desafios, conclusoes, agenda, faltas }: Props) {
+export function StudentPortalClient({ session, perfil, muralPosts, licoes, entregas, notas, faturas, desafios, conclusoes, agenda, faltas, biblioteca }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = text(searchParams.get("tab")) as Tab;
@@ -217,6 +230,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
   const pendentes = licoes.filter((licao) => !entregasPorLicao.has(text(licao.id))).length;
   const muralNaoLido = muralPosts.filter((post) => post.requer_confirmacao && !(post.confirmacoes || []).some((item) => item.usuario === session.usuario)).length;
   const desafiosPendentes = desafios.filter((d) => !conclusoes.some((c) => text(c.desafio_id) === text(d.id || d.titulo || d.title))).length;
+  const totalBiblioteca = biblioteca.livros.length + biblioteca.materiais.length + biblioteca.videos.length;
   const totalNotificacoes = muralNaoLido + pendentes + desafiosPendentes;
   const pontos = conclusoes.reduce((sum, item) => sum + (Number(item.pontos) || 0), 0);
   const nome = text(session.pessoa || perfil?.nome || perfil?.name || session.usuario);
@@ -230,6 +244,7 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
     { id: "notas", label: "Notas" },
     { id: "licoes", label: "Tarefas", badge: pendentes },
     { id: "desafios", label: "Desafios", badge: desafiosPendentes },
+    { id: "biblioteca", label: "Biblioteca", badge: totalBiblioteca },
     { id: "chat", label: "Chat" },
     { id: "wiz", label: "IA Wiz" },
   ];
@@ -336,6 +351,88 @@ export function StudentPortalClient({ session, perfil, muralPosts, licoes, entre
                 </article>
               );
             }) : <Empty title="Nao ha desafios no momento" desc="Quando um desafio for lancado, ele aparecera aqui." />}
+          </section>
+        )}
+
+        {tab === "biblioteca" && (
+          <section className="student-panel">
+            <div className="student-section-head">
+              <div><span>Biblioteca</span><h2>Livros e materiais</h2></div>
+              <span className="badge badge-info">{totalBiblioteca} itens</span>
+            </div>
+
+            <div style={{ display: "grid", gap: 16 }}>
+              <div>
+                <div className="student-section-head" style={{ marginBottom: 10 }}>
+                  <div><span>PDF</span><h2>Livros para download</h2></div>
+                </div>
+                {biblioteca.livros.length ? (
+                  <div className="student-grid">
+                    {biblioteca.livros.map((livro, index) => {
+                      const href = libraryHref(livro, "livros");
+                      return (
+                        <article className="student-card" key={text(livro.id) || index}>
+                          <div className="student-card-tags">
+                            <span className="badge badge-info">{text(livro.nivel || livro.nivel_livro || livro.categoria || "Livro")}</span>
+                            <span className="badge badge-neutral">{text(livro.turma || "Todas")}</span>
+                          </div>
+                          <h3>{text(livro.titulo || livro.title || `Livro ${index + 1}`)}</h3>
+                          <p>{text(livro.autor || livro.author || livro.tipo || "Material didatico")}</p>
+                          {href ? <a className="btn btn-primary btn-sm" href={href} target="_blank" rel="noreferrer">Baixar material</a> : <span className="text-muted text-sm">Arquivo indisponivel</span>}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : <Empty title="Sem livros liberados" desc="Quando a escola liberar livros para sua turma, eles aparecem aqui." />}
+              </div>
+
+              <div>
+                <div className="student-section-head" style={{ marginBottom: 10 }}>
+                  <div><span>Apoio</span><h2>Apostilas e materiais</h2></div>
+                </div>
+                {biblioteca.materiais.length ? (
+                  <table className="data-table">
+                    <thead><tr><th>Material</th><th>Tipo</th><th>Turma</th><th>Download</th></tr></thead>
+                    <tbody>
+                      {biblioteca.materiais.map((material, index) => {
+                        const href = libraryHref(material, "materiais");
+                        return (
+                          <tr key={text(material.id) || index}>
+                            <td><div className="table-name-cell"><span className="table-name-primary">{text(material.titulo || material.title || `Material ${index + 1}`)}</span>{text(material.descricao) && <span className="table-name-secondary">{text(material.descricao).slice(0, 80)}</span>}</div></td>
+                            <td>{text(material.tipo || material.categoria || "Apostila")}</td>
+                            <td>{text(material.turma || "Todas")}</td>
+                            <td>{href ? <a className="btn btn-secondary btn-sm" href={href} target="_blank" rel="noreferrer">Baixar</a> : "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : <Empty title="Sem materiais de apoio" desc="Apostilas e arquivos liberados pela escola aparecem aqui." />}
+              </div>
+
+              <div>
+                <div className="student-section-head" style={{ marginBottom: 10 }}>
+                  <div><span>Videos</span><h2>Aulas gravadas</h2></div>
+                </div>
+                {biblioteca.videos.length ? (
+                  <table className="data-table">
+                    <thead><tr><th>Video</th><th>Turma</th><th>Acesso</th></tr></thead>
+                    <tbody>
+                      {biblioteca.videos.map((video, index) => {
+                        const href = libraryHref(video, "videos");
+                        return (
+                          <tr key={text(video.id) || index}>
+                            <td><div className="table-name-cell"><span className="table-name-primary">{text(video.titulo || video.title || `Video ${index + 1}`)}</span>{text(video.descricao) && <span className="table-name-secondary">{text(video.descricao).slice(0, 80)}</span>}</div></td>
+                            <td>{text(video.turma || "Todas")}</td>
+                            <td>{href ? <a className="btn btn-secondary btn-sm" href={href} target="_blank" rel="noreferrer">Abrir</a> : "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : <Empty title="Sem videos liberados" desc="Aulas gravadas liberadas para sua turma aparecem aqui." />}
+              </div>
+            </div>
           </section>
         )}
 

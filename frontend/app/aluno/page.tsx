@@ -3,13 +3,14 @@ import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { StudentPortalClient } from "@/components/student-portal-client";
 import { isHomeworkActivity, normalizeList, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
-import { hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook } from "@/lib/workbook-lessons";
+import { hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook, workbookLibraryBooks } from "@/lib/workbook-lessons";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
 type Desafio = { id?: string; titulo?: string; title?: string; turma?: string; pontos?: number | string; status?: string; [k: string]: unknown };
 type Conclusao = { desafio_id?: string; aluno?: string; pontos?: number | string; data?: string; [k: string]: unknown };
 type Nota = { aluno?: string; aluno_login?: string; titulo?: string; desafio?: string; nota?: number | string; status?: string; data?: string; [k: string]: unknown };
 type Recebimento = { id?: string; aluno?: string; nome?: string; aluno_login?: string; aluno_id?: string; descricao?: string; valor?: number | string; valor_parcela?: number | string; vencimento?: string; data_vencimento?: string; status?: string; [k: string]: unknown };
+type BibliotecaItem = { id?: string; titulo?: string; title?: string; turma?: string; turmas?: string[]; aluno?: string; alunos?: string[]; nivel?: string; nivel_livro?: string; categoria?: string; tipo?: string; livro?: string; url?: string; file_path?: string; status?: string; [k: string]: unknown };
 
 const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
@@ -70,12 +71,32 @@ function visibleChallenge(row: Desafio, session: NonNullable<Awaited<ReturnType<
   return studentMatchesTarget(row, session, aluno);
 }
 
+function normalizedTitle(value: unknown) {
+  return text(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function visibleLibraryItem(row: BibliotecaItem, session: NonNullable<Awaited<ReturnType<typeof getSession>>>, aluno: Aluno | undefined, workbookBook?: string) {
+  const status = lower(row.status || "ativo");
+  if (status.includes("rascunho") || status.includes("arquiv") || status.includes("inativ") || status.includes("cancel")) return false;
+  if (!studentMatchesTarget(row, session, aluno)) return false;
+
+  const itemBook = lower(row.livro || row.book || row.nivel || row.nivel_livro || row.categoria || row.tipo || row.titulo || row.title);
+  if (!workbookBook || !itemBook) return true;
+  if (!itemBook.includes("livro") && !itemBook.includes("book") && !/\b[123]\b/.test(itemBook)) return true;
+  return itemBook.includes(`livro ${workbookBook}`) || itemBook.includes(`book ${workbookBook}`) || new RegExp(`\\b${workbookBook}\\b`).test(itemBook);
+}
+
 export default async function AlunoHomePage() {
   const session = await getSession();
   if (!session) redirect("/aluno/login");
   if (!lower(session.perfil).includes("aluno")) redirect("/");
 
-  const [alunos, desafios, conclusoes, notas, frequencias, recebimentos, mensagens, atividades, entregas, agenda] = await Promise.all([
+  const [alunos, desafios, conclusoes, notas, frequencias, recebimentos, mensagens, atividades, entregas, agenda, livros, materiais, videos] = await Promise.all([
     dbListWithoutKeys<Aluno>("students.json", HEAVY_KEYS),
     dbList<Desafio>("challenges.json"),
     dbList<Conclusao>("challenge_completions.json"),
@@ -86,6 +107,9 @@ export default async function AlunoHomePage() {
     dbList<Homework>("activities.json"),
     dbList<HomeworkSubmission>("activity_submissions.json"),
     dbList<Record<string, unknown>>("agenda.json"),
+    dbListWithoutKeys<BibliotecaItem>("books.json", HEAVY_KEYS),
+    dbListWithoutKeys<BibliotecaItem>("materials.json", HEAVY_KEYS),
+    dbList<BibliotecaItem>("videos.json"),
   ]);
 
   const meuPerfil = alunos.find((a) => lower(a.login) === lower(session.usuario) || lower(a.nome || a.name) === lower(session.pessoa));
@@ -126,6 +150,28 @@ export default async function AlunoHomePage() {
   const minhaAgenda = agenda
     .filter((item) => matchesAgenda(item, meuPerfil, minhaTurma, sessionLite))
     .sort((a, b) => text(a.data || a.date).localeCompare(text(b.data || b.date)));
+  const workbooks = workbookLibraryBooks();
+  const workbookByTitle = new Map(workbooks.map((book) => [normalizedTitle(book.titulo), book]));
+  const livrosComFallback = livros.map((livro) => {
+    const workbook = workbookByTitle.get(normalizedTitle(livro.titulo || livro.title));
+    const url = text(livro.url || livro.file_path);
+    return workbook && url.startsWith("/uploads/livros/")
+      ? { ...livro, url: workbook.url, file_path: workbook.url, pdf_nome: livro.pdf_nome || workbook.pdf_nome }
+      : livro;
+  });
+  const livrosComWorkbooks = [
+    ...livrosComFallback,
+    ...workbooks.filter((book) => !livrosComFallback.some((livro) =>
+      text(livro.id) === book.id ||
+      text(livro.url) === book.url ||
+      normalizedTitle(livro.titulo || livro.title) === normalizedTitle(book.titulo)
+    )),
+  ];
+  const minhaBiblioteca = {
+    livros: livrosComWorkbooks.filter((item) => visibleLibraryItem(item, session, meuPerfil, workbookBook)),
+    materiais: materiais.filter((item) => visibleLibraryItem(item, session, meuPerfil, workbookBook)),
+    videos: videos.filter((item) => visibleLibraryItem(item, session, meuPerfil, workbookBook)),
+  };
 
   return (
     <StudentPortalClient
@@ -140,6 +186,7 @@ export default async function AlunoHomePage() {
       conclusoes={minhasConclusoes}
       agenda={minhaAgenda}
       faltas={minhasFaltas}
+      biblioteca={minhaBiblioteca}
     />
   );
 }
