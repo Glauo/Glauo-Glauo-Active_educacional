@@ -2,7 +2,7 @@ import { dbList, dbListWithoutKeys } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { StudentPortalClient } from "@/components/student-portal-client";
-import { isHomeworkActivity, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
+import { isHomeworkActivity, normalizeList, studentMatchesTarget, text, type Homework, type HomeworkSubmission, type WallPost } from "@/lib/school-modules";
 import { hasWorkbookStudentTarget, releasedWorkbookLessons, studentWorkbookBook } from "@/lib/workbook-lessons";
 
 type Aluno = { id?: string; nome?: string; name?: string; login?: string; turma?: string; classe?: string; livro?: string; book?: string; status?: string; [k: string]: unknown };
@@ -14,7 +14,7 @@ type Recebimento = { id?: string; aluno?: string; nome?: string; aluno_login?: s
 const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function lower(value: unknown) {
-  return text(value).toLowerCase();
+  return text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 function sameStudentInvoice(row: Recebimento, aluno: Aluno | undefined, session: { usuario: string; pessoa: string }) {
@@ -36,13 +36,32 @@ function sameStudentInvoice(row: Recebimento, aluno: Aluno | undefined, session:
 }
 
 function matchesAgenda(row: Record<string, unknown>, aluno: Aluno | undefined, turma: string, session: { usuario: string; pessoa: string }) {
-  const targetStudent = lower(row.aluno || row.aluno_nome || row.aluno_login);
-  if (targetStudent) {
-    return [session.usuario, session.pessoa, aluno?.nome, aluno?.name, aluno?.login].map(lower).includes(targetStudent);
+  const status = lower(row.status || row.situacao);
+  if (status.includes("cancel") || status.includes("inativ") || status.includes("arquiv")) return false;
+
+  const studentKeys = [
+    session.usuario,
+    session.pessoa,
+    aluno?.id,
+    aluno?.nome,
+    aluno?.name,
+    aluno?.login,
+  ].map(lower).filter(Boolean);
+
+  const targetStudent = text(row.aluno || row.aluno_nome || row.aluno_login || row.aluno_id || row.target_aluno);
+  const targetStudents = normalizeList(row.alunos || row.alunos_especificos || row.target_alunos);
+  if (targetStudent || targetStudents.length > 0) {
+    return [targetStudent, ...targetStudents].map(lower).some((target) => studentKeys.includes(target));
   }
-  const targetClass = lower(row.turma || row.classe || row.target_turma);
-  if (!targetClass || ["todas", "todos", "escola toda"].includes(targetClass)) return true;
-  return targetClass === lower(turma);
+
+  const targetClasses = [
+    text(row.turma || row.classe || row.target_turma),
+    ...normalizeList(row.turmas || row.target_turmas || row.target_turmas_envio),
+  ].map(lower).filter(Boolean);
+
+  if (targetClasses.length === 0) return false;
+  if (targetClasses.some((item) => ["todas", "todos", "escola toda", "todas as turmas"].includes(item))) return false;
+  return targetClasses.includes(lower(turma));
 }
 
 function visibleChallenge(row: Desafio, session: NonNullable<Awaited<ReturnType<typeof getSession>>>, aluno?: Aluno) {
