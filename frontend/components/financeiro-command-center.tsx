@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { financeMessage } from "@/lib/finance-message";
 
 type Row = Record<string, unknown>;
 
@@ -35,6 +36,16 @@ function dateOf(row: Row) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 function daysLate(row: Row) {
   const d = dateOf(row);
   if (!d || isPaid(row)) return 0;
@@ -42,6 +53,218 @@ function daysLate(row: Row) {
   today.setHours(0, 0, 0, 0);
   d.setHours(0, 0, 0, 0);
   return Math.max(0, Math.floor((today.getTime() - d.getTime()) / 86400000));
+}
+
+function phoneOf(row: Row) {
+  return text(row.telefone || row.whatsapp || row.celular || row.responsavel_telefone || row.telefone_responsavel || row.whatsapp_responsavel);
+}
+
+function emailOf(row: Row) {
+  return text(row.email || row.aluno_email || row.responsavel_email || row.email_responsavel || row.emailResponsavel);
+}
+
+function alunoOf(row: Row) {
+  return text(row.aluno || row.nome || row.responsavel || "Aluno");
+}
+
+function descricaoOf(row: Row) {
+  return text(row.descricao || row.tipo_lancamento_detalhe || row.categoria || "Mensalidade");
+}
+
+function boletoLink(row: Row) {
+  const id = text(row.id);
+  const pdf = text(row.boleto_pdf_url || row.boleto_pdf_public_url);
+  if (pdf) return pdf.startsWith("http") ? pdf : `${window.location.origin}${pdf}`;
+  return id ? `${window.location.origin}/api/financeiro/boleto?id=${encodeURIComponent(id)}` : "";
+}
+
+function smartFinanceMessage(row: Row, mode: CobrancaMode) {
+  const base = financeMessage(row, typeof window !== "undefined" ? window.location.origin : "");
+  const aluno = alunoOf(row);
+  const descricao = descricaoOf(row);
+  const valor = formatBRL(parseValor(row.valor_parcela || row.valor || row.valor_total));
+  const vencimento = text(row.vencimento || row.data_vencimento);
+  const link = typeof window !== "undefined" ? boletoLink(row) : "";
+  const atraso = daysLate(row);
+
+  if (mode === "atrasados") {
+    return {
+      subject: `Pendencia financeira - ${aluno}`,
+      body: [
+        `Ola, ${aluno}! Tudo bem?`,
+        "",
+        `Identificamos uma pendencia financeira referente a ${descricao}.`,
+        `Valor: ${valor}`,
+        vencimento ? `Vencimento: ${vencimento}` : "",
+        atraso ? `Atraso: ${atraso} dia(s)` : "",
+        link ? `Boleto/fatura: ${link}` : "",
+        "",
+        "Podemos te ajudar com a regularizacao? Se ja realizou o pagamento, por favor nos envie o comprovante.",
+        "",
+        "Ativo Educacional"
+      ].filter(Boolean).join("\n")
+    };
+  }
+
+  if (mode === "hoje") {
+    return {
+      subject: `Vencimento hoje - ${aluno}`,
+      body: [
+        `Ola, ${aluno}! Tudo bem?`,
+        "",
+        `Passando para lembrar que hoje vence ${descricao}.`,
+        `Valor: ${valor}`,
+        vencimento ? `Vencimento: ${vencimento}` : "",
+        link ? `Boleto/fatura: ${link}` : "",
+        "",
+        "Qualquer duvida, a secretaria esta a disposicao.",
+        "",
+        "Ativo Educacional"
+      ].filter(Boolean).join("\n")
+    };
+  }
+
+  if (mode === "proximos") {
+    return {
+      subject: `Proximo vencimento - ${aluno}`,
+      body: [
+        `Ola, ${aluno}! Tudo bem?`,
+        "",
+        `Sua fatura referente a ${descricao} esta proxima do vencimento.`,
+        `Valor: ${valor}`,
+        vencimento ? `Vencimento: ${vencimento}` : "",
+        link ? `Boleto/fatura: ${link}` : "",
+        "",
+        "Enviamos este lembrete para facilitar sua organizacao.",
+        "",
+        "Ativo Educacional"
+      ].filter(Boolean).join("\n")
+    };
+  }
+
+  return base;
+}
+
+type CobrancaMode = "atrasados" | "hoje" | "proximos" | "boletos";
+
+function SendDocButton({
+  canal,
+  row,
+  message,
+}: {
+  canal: "whatsapp" | "email";
+  row: Row;
+  message: { subject: string; body: string };
+}) {
+  const [sending, setSending] = useState(false);
+  const target = canal === "whatsapp" ? phoneOf(row) : emailOf(row);
+
+  async function send() {
+    if (!target || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/financeiro/send-doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          canal,
+          telefone: canal === "whatsapp" ? target : "",
+          email: canal === "email" ? target : "",
+          assunto: message.subject,
+          mensagem: message.body,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) alert(String(data.error || data.results?.[canal] || "Envio nao confirmado."));
+    } catch {
+      alert("Nao foi possivel enviar agora. Verifique a configuracao de envio.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <button className="btn btn-secondary btn-sm" type="button" onClick={send} disabled={!target || sending} title={!target ? `Sem ${canal === "whatsapp" ? "telefone" : "e-mail"} cadastrado` : ""}>
+      {sending ? "Enviando..." : canal === "whatsapp" ? "WhatsApp" : "E-mail"}
+    </button>
+  );
+}
+
+function CobrancaModal({
+  mode,
+  title,
+  rows,
+  onClose,
+}: {
+  mode: CobrancaMode;
+  title: string;
+  rows: Row[];
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState("");
+
+  async function copyMessage(id: string, body: string) {
+    await navigator.clipboard?.writeText(body);
+    setCopied(id);
+  }
+
+  return (
+    <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 980, width: "94vw", maxHeight: "90vh", overflowY: "auto" }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">{title}</div>
+            <div className="modal-subtitle">{rows.length} lancamento(s) prontos para acao, com mensagem personalizada por situacao.</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-title">Nada pendente nesta fila</div>
+              <p className="empty-desc">Quando houver lancamentos neste criterio, eles aparecem aqui.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {rows.map((row, index) => {
+                const id = text(row.id) || `${mode}_${index}`;
+                const message = smartFinanceMessage(row, mode);
+                const late = daysLate(row);
+                return (
+                  <div key={id} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: 12, background: "var(--surface-raised)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: 12, alignItems: "start" }}>
+                      <div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <strong style={{ color: "var(--navy-900)" }}>{alunoOf(row)}</strong>
+                          <span className={`badge badge-${late > 0 ? "danger" : "warning"}`}><span className="badge-dot" />{late > 0 ? `${late} dias atraso` : text(row.status || "Pendente")}</span>
+                        </div>
+                        <div style={{ color: "var(--text-secondary)", fontSize: "0.84rem", marginTop: 4 }}>
+                          {descricaoOf(row)} | {formatBRL(parseValor(row.valor_parcela || row.valor || row.valor_total))} | Venc.: {text(row.vencimento || row.data_vencimento) || "-"}
+                        </div>
+                        <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, padding: 10, borderRadius: "var(--radius-sm)", background: "#fff", border: "1px solid var(--border)", color: "var(--text-secondary)", fontFamily: "inherit", fontSize: "0.78rem", lineHeight: 1.45, maxHeight: 140, overflowY: "auto" }}>{message.body}</pre>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <SendDocButton canal="whatsapp" row={row} message={message} />
+                        <SendDocButton canal="email" row={row} message={message} />
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => copyMessage(id, message.body)}>
+                          {copied === id ? "Copiado" : "Copiar"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" type="button" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ResultPill({ label, value, tone }: { label: string; value: string; tone: "green" | "gold" | "red" | "blue" }) {
@@ -117,6 +340,61 @@ function BatchBoletosButton() {
   );
 }
 
+function csvCell(value: unknown) {
+  return `"${text(value).replace(/"/g, '""')}"`;
+}
+
+export function FinanceiroExportButton({
+  recebimentos,
+  despesas,
+}: {
+  recebimentos: Row[];
+  despesas: Row[];
+}) {
+  function exportar() {
+    const headers = ["tipo", "pessoa", "descricao", "valor", "vencimento", "status", "telefone", "email", "data_baixa"];
+    const linhas = [
+      headers.join(";"),
+      ...recebimentos.map((row) => [
+        "recebimento",
+        alunoOf(row),
+        descricaoOf(row),
+        parseValor(row.valor_parcela || row.valor || row.valor_total).toFixed(2).replace(".", ","),
+        text(row.vencimento || row.data_vencimento),
+        text(row.status || row.situacao || "Pendente"),
+        phoneOf(row),
+        emailOf(row),
+        text(row.data_baixa),
+      ].map(csvCell).join(";")),
+      ...despesas.map((row) => [
+        "despesa",
+        text(row.aluno || row.nome || row.professor || row.fornecedor),
+        descricaoOf(row),
+        parseValor(row.valor_parcela || row.valor || row.valor_total).toFixed(2).replace(".", ","),
+        text(row.vencimento || row.data_vencimento),
+        text(row.status || row.situacao || "Pendente"),
+        phoneOf(row),
+        emailOf(row),
+        text(row.data_baixa),
+      ].map(csvCell).join(";")),
+    ].join("\n");
+    const blob = new Blob([`\uFEFF${linhas}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `financeiro-active-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button className="btn btn-secondary" type="button" onClick={exportar}>
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+      Exportar
+    </button>
+  );
+}
+
 export function FinanceiroCommandCenter({
   recebimentos,
   despesas,
@@ -129,6 +407,7 @@ export function FinanceiroCommandCenter({
   professores: Row[];
 }) {
   const [busca, setBusca] = useState("");
+  const [cobranca, setCobranca] = useState<{ mode: CobrancaMode; title: string; rows: Row[] } | null>(null);
   const now = new Date();
   const month = now.getMonth();
   const year = now.getFullYear();
@@ -187,6 +466,29 @@ export function FinanceiroCommandCenter({
     };
   }, [recebimentos, despesas, month, year]);
 
+  const queues = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const next7 = addDays(today, 7);
+    const openRows = recebimentos.filter((row) => !isPaid(row));
+    return {
+      atrasados: openRows
+        .filter((row) => daysLate(row) > 0)
+        .sort((a, b) => daysLate(b) - daysLate(a)),
+      hoje: openRows.filter((row) => {
+        const due = dateOf(row);
+        return due ? isSameDay(due, today) : false;
+      }),
+      proximos: openRows.filter((row) => {
+        const due = dateOf(row);
+        if (!due) return false;
+        due.setHours(0, 0, 0, 0);
+        return due > today && due <= next7;
+      }),
+      boletos: openRows.filter((row) => text(row.boleto_pdf_url || row.boleto_pdf_public_url || row.boleto_status || row.boleto_codigo)),
+    };
+  }, [recebimentos]);
+
   const results = useMemo(() => {
     const q = busca.trim().toLowerCase();
     if (!q) return [];
@@ -240,6 +542,38 @@ export function FinanceiroCommandCenter({
         <div className="metric-card metric-card-blue"><div className="metric-label">Folha pendente</div><div className="metric-value" style={{ fontSize: "1.45rem" }}>{formatBRL(stats.folhaPendente)}</div><div className="metric-note">Professores/fornecedores</div></div>
       </div>
 
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <div className="section-eyebrow">Cobranca inteligente</div>
+            <h3 className="section-title">Filas prontas para acao</h3>
+            <p className="section-subtitle">Abra a fila, confira a mensagem e envie por WhatsApp ou e-mail sem procurar lancamento por lancamento.</p>
+          </div>
+        </div>
+        <div className="card-body">
+          <div className="metric-grid metric-grid-4" style={{ margin: 0 }}>
+            {[
+              { mode: "atrasados" as CobrancaMode, title: "Cobrar atrasados", rows: queues.atrasados, tone: "red", note: "Prioridade maxima" },
+              { mode: "hoje" as CobrancaMode, title: "Vencem hoje", rows: queues.hoje, tone: "blue", note: "Lembrete do dia" },
+              { mode: "proximos" as CobrancaMode, title: "Proximos 7 dias", rows: queues.proximos, tone: "gold", note: "Prevencao de atraso" },
+              { mode: "boletos" as CobrancaMode, title: "Boletos prontos", rows: queues.boletos, tone: "green", note: "Enviar link/PDF" },
+            ].map((item) => (
+              <button
+                key={item.mode}
+                type="button"
+                className={`metric-card metric-card-${item.tone}`}
+                onClick={() => setCobranca({ mode: item.mode, title: item.title, rows: item.rows })}
+                style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--border)" }}
+              >
+                <div className="metric-label">{item.title}</div>
+                <div className="metric-value">{item.rows.length}</div>
+                <div className="metric-note">{item.note}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="content-grid grid-2-1">
         <div className="card">
           <div className="card-header">
@@ -267,6 +601,7 @@ export function FinanceiroCommandCenter({
           </div>
         </div>
       </div>
+      {cobranca && <CobrancaModal mode={cobranca.mode} title={cobranca.title} rows={cobranca.rows} onClose={() => setCobranca(null)} />}
     </div>
   );
 }
