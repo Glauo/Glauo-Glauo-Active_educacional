@@ -99,6 +99,15 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
+            // Endereço do pagador (obrigatório para boleto registrado no MP)
+      const payerAddress = {
+        zip_code: text(lanc.cep) || undefined,
+        street_name: text(lanc.rua || lanc.endereco) || undefined,
+        street_number: text(lanc.numero) || undefined,
+        neighborhood: text(lanc.bairro) || undefined,
+        city: text(lanc.cidade) || undefined,
+        federal_unit: text(lanc.estado || lanc.uf) || undefined,
+      };
       const mpResult = await criarBoleteMercadoPago({
         transaction_amount: valor,
         description: text(lanc.descricao) || `Mensalidade - ${nomeAluno}`,
@@ -106,10 +115,10 @@ export async function GET(req: NextRequest) {
         payer_first_name: nomeParts[0] || "Responsavel",
         payer_last_name: nomeParts.slice(1).join(" ") || "Financeiro",
         payer_cpf: text(lanc.cpf || lanc.responsavel_cpf || ""),
+        payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
       });
-
       if (mpResult.ok) {
         updatedMap.set(id, {
           ...lanc,

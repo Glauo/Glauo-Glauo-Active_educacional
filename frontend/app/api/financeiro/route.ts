@@ -116,6 +116,15 @@ export async function POST(req: NextRequest) {
       const vencimento = text(data.vencimento || data.data_vencimento || "");
       const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
 
+      // Endereço do pagador (obrigatório para boleto registrado no MP)
+      const payerAddress = {
+        zip_code: text(data.cep) || undefined,
+        street_name: text(data.rua || data.endereco) || undefined,
+        street_number: text(data.numero) || undefined,
+        neighborhood: text(data.bairro) || undefined,
+        city: text(data.cidade) || undefined,
+        federal_unit: text(data.estado || data.uf) || undefined,
+      };
       const mpResult = await criarBoleteMercadoPago({
         transaction_amount: valor,
         description: text(data.descricao) || `Mensalidade - ${nomeAluno}`,
@@ -123,6 +132,7 @@ export async function POST(req: NextRequest) {
         payer_first_name: nomeParts[0] || "Responsavel",
         payer_last_name: nomeParts.slice(1).join(" ") || "Financeiro",
         payer_cpf: text(data.cpf || data.responsavel_cpf || ""),
+        payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
       });
@@ -249,6 +259,15 @@ export async function PUT(req: NextRequest) {
       const vencimento = text(updates.vencimento || lancAtual.vencimento || updates.data_vencimento || "");
       const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
 
+      // Endereço do pagador (obrigatório para boleto registrado no MP)
+      const payerAddress = {
+        zip_code: text(updates.cep || lancAtual.cep) || undefined,
+        street_name: text(updates.rua || lancAtual.rua || updates.endereco || lancAtual.endereco) || undefined,
+        street_number: text(updates.numero || lancAtual.numero) || undefined,
+        neighborhood: text(updates.bairro || lancAtual.bairro) || undefined,
+        city: text(updates.cidade || lancAtual.cidade) || undefined,
+        federal_unit: text(updates.estado || lancAtual.estado || updates.uf || lancAtual.uf) || undefined,
+      };
       const mpResult = await criarBoleteMercadoPago({
         transaction_amount: valor,
         description: text(updates.descricao || lancAtual.descricao) || `Mensalidade - ${nomeAluno}`,
@@ -256,6 +275,7 @@ export async function PUT(req: NextRequest) {
         payer_first_name: nomeParts[0] || "Responsavel",
         payer_last_name: nomeParts.slice(1).join(" ") || "Financeiro",
         payer_cpf: text(updates.cpf || lancAtual.cpf || updates.responsavel_cpf || lancAtual.responsavel_cpf || ""),
+        payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
       });

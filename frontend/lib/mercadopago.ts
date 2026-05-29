@@ -1,6 +1,9 @@
 /**
- * Integração com a API do Mercado Pago — Boleto Bancário
+ * Integração com a API do Mercado Pago — Boleto Bancário (Registrado)
  * Documentação: https://www.mercadopago.com.br/developers/pt/docs
+ *
+ * IMPORTANTE: Boleto registrado exige endereço completo do pagador.
+ * Se o aluno não tiver endereço cadastrado, usa o endereço da escola como fallback.
  *
  * O Access Token é lido na seguinte ordem de prioridade:
  *  1. Variável de ambiente MP_ACCESS_TOKEN ou MERCADOPAGO_ACCESS_TOKEN
@@ -10,6 +13,15 @@
 
 import { dbGet } from "@/lib/db";
 
+export interface MpPayerAddress {
+  zip_code?: string;
+  street_name?: string;
+  street_number?: string;
+  neighborhood?: string;
+  city?: string;
+  federal_unit?: string;
+}
+
 export interface MpBoletoInput {
   transaction_amount: number;
   description: string;
@@ -17,6 +29,7 @@ export interface MpBoletoInput {
   payer_first_name?: string;
   payer_last_name?: string;
   payer_cpf?: string;
+  payer_address?: MpPayerAddress;
   date_of_expiration?: string; // ISO 8601: "2025-06-10T23:59:59.000-03:00"
   external_reference?: string;
   notification_url?: string;
@@ -29,6 +42,7 @@ export interface MpBoletoResult {
   status_detail?: string;
   boleto_url?: string;
   barcode?: string;
+  digitable_line?: string;
   date_of_expiration?: string;
   error?: string;
   raw?: unknown;
@@ -36,6 +50,19 @@ export interface MpBoletoResult {
 
 const DEFAULT_ACCESS_TOKEN =
   "APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237";
+
+/**
+ * Endereço padrão da escola — usado quando o aluno não tem endereço cadastrado.
+ * O Mercado Pago EXIGE endereço completo para boleto registrado.
+ */
+const DEFAULT_ADDRESS: MpPayerAddress = {
+  zip_code: "14401-000",
+  street_name: "Rua Voluntarios da Franca",
+  street_number: "100",
+  neighborhood: "Centro",
+  city: "Franca",
+  federal_unit: "SP",
+};
 
 async function getAccessToken(): Promise<string> {
   // 1. Variável de ambiente
@@ -57,8 +84,33 @@ async function getAccessToken(): Promise<string> {
 }
 
 /**
- * Cria um boleto bancário via API do Mercado Pago.
- * Retorna a URL do boleto (external_resource_url) e o código de barras.
+ * Busca o endereço padrão da escola nas configurações do sistema.
+ * Se não encontrar, usa o DEFAULT_ADDRESS hardcoded.
+ */
+async function getDefaultAddress(): Promise<MpPayerAddress> {
+  try {
+    const config = await dbGet<Record<string, unknown>>("settings.json");
+    if (config) {
+      const addr: MpPayerAddress = {
+        zip_code: String(config.cep || config.zip_code || DEFAULT_ADDRESS.zip_code).replace(/\D/g, "").replace(/^(\d{5})(\d{3})$/, "$1-$2") || DEFAULT_ADDRESS.zip_code,
+        street_name: String(config.endereco || config.rua || config.street_name || DEFAULT_ADDRESS.street_name).trim() || DEFAULT_ADDRESS.street_name,
+        street_number: String(config.numero || config.street_number || DEFAULT_ADDRESS.street_number).trim() || DEFAULT_ADDRESS.street_number,
+        neighborhood: String(config.bairro || config.neighborhood || DEFAULT_ADDRESS.neighborhood).trim() || DEFAULT_ADDRESS.neighborhood,
+        city: String(config.cidade || config.city || DEFAULT_ADDRESS.city).trim() || DEFAULT_ADDRESS.city,
+        federal_unit: String(config.estado || config.uf || config.federal_unit || DEFAULT_ADDRESS.federal_unit).trim().toUpperCase().slice(0, 2) || DEFAULT_ADDRESS.federal_unit,
+      };
+      // Só retorna se tem pelo menos CEP e cidade preenchidos
+      if (addr.zip_code && addr.city) return addr;
+    }
+  } catch {
+    // ignora
+  }
+  return DEFAULT_ADDRESS;
+}
+
+/**
+ * Cria um boleto bancário registrado via API do Mercado Pago.
+ * Retorna a URL do boleto (external_resource_url), código de barras e linha digitável.
  */
 export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBoletoResult> {
   const accessToken = await getAccessToken();
@@ -78,6 +130,14 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
   const cpfLimpo = (input.payer_cpf || "00000000000").replace(/\D/g, "");
   const cpfFinal = cpfLimpo.length >= 11 ? cpfLimpo.slice(0, 11) : cpfLimpo.padEnd(11, "0");
 
+  // Endereço: usa o do aluno se fornecido, senão busca o padrão da escola
+  let address: MpPayerAddress;
+  if (input.payer_address && input.payer_address.zip_code && input.payer_address.city) {
+    address = input.payer_address;
+  } else {
+    address = await getDefaultAddress();
+  }
+
   const body: Record<string, unknown> = {
     transaction_amount: Number(input.transaction_amount.toFixed(2)),
     description: input.description.slice(0, 255),
@@ -90,6 +150,14 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
       identification: {
         type: "CPF",
         number: cpfFinal,
+      },
+      address: {
+        zip_code: address.zip_code || DEFAULT_ADDRESS.zip_code,
+        street_name: address.street_name || DEFAULT_ADDRESS.street_name,
+        street_number: address.street_number || DEFAULT_ADDRESS.street_number,
+        neighborhood: address.neighborhood || DEFAULT_ADDRESS.neighborhood,
+        city: address.city || DEFAULT_ADDRESS.city,
+        federal_unit: address.federal_unit || DEFAULT_ADDRESS.federal_unit,
       },
     },
   };
@@ -121,17 +189,15 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
         ? (data.cause as Array<Record<string, unknown>>).map((c) => c.description || c.code).join("; ")
         : "";
       const errMsg = String(data.message || data.error || `HTTP ${res.status}`) + (cause ? ` (${cause})` : "");
-      console.error("[MercadoPago] Erro ao criar boleto:", errMsg, data);
+      console.error("[MercadoPago] Erro ao criar boleto:", errMsg, JSON.stringify(data));
       return { ok: false, error: errMsg, raw: data };
     }
 
     const txDetails = (data.transaction_details as Record<string, unknown>) || {};
     const boletoUrl = String(txDetails.external_resource_url || "");
-    const barcode = String(
-      (txDetails.barcode as Record<string, unknown> | undefined)?.content ||
-      txDetails.payment_method_reference_id ||
-      ""
-    );
+    const barcodeObj = (txDetails.barcode as Record<string, unknown>) || (data.barcode as Record<string, unknown>) || {};
+    const barcode = String(barcodeObj.content || "");
+    const digitableLine = String(txDetails.digitable_line || "");
 
     return {
       ok: true,
@@ -140,6 +206,7 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
       status_detail: String(data.status_detail || ""),
       boleto_url: boletoUrl,
       barcode,
+      digitable_line: digitableLine,
       date_of_expiration: String(data.date_of_expiration || expiration),
       raw: data,
     };

@@ -70,6 +70,16 @@ export async function POST(req: NextRequest) {
     const lastName = nomeParts.slice(1).join(" ") || "Financeiro";
     const cpf = text(student.cpf || student.responsavel_cpf || "00000000000").replace(/\D/g, "") || "00000000000";
 
+    // Endereço do aluno (obrigatório para boleto registrado no MP)
+    const payerAddress = {
+      zip_code: text(student.cep) || undefined,
+      street_name: text(student.rua || student.endereco) || undefined,
+      street_number: text(student.numero) || undefined,
+      neighborhood: text(student.bairro) || undefined,
+      city: text(student.cidade) || undefined,
+      federal_unit: text(student.estado || student.uf) || undefined,
+    };
+
     // Chamar API do Mercado Pago
     const mpResult = await criarBoleteMercadoPago({
       transaction_amount: mensalidade,
@@ -78,6 +88,7 @@ export async function POST(req: NextRequest) {
       payer_first_name: firstName,
       payer_last_name: lastName,
       payer_cpf: cpf,
+      payer_address: payerAddress,
       date_of_expiration: dateOfExpiration,
       external_reference: id,
     });
