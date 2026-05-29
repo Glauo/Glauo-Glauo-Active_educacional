@@ -50,6 +50,8 @@ services:
       PORT: "3000"
       # Mercado Pago — Boleto Bancario
       MP_ACCESS_TOKEN: "APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237"
+      # Cron de regeracao de boletos (mesmo segredo do wizbot)
+      CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
     expose:
       - "3000"
     depends_on:
@@ -76,6 +78,9 @@ services:
       WAPI_TOKEN: ${WAPI_TOKEN}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
       WIZBOT_PAUSED: "1"
+      # Cron de regeracao de boletos
+      CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
+      FRONTEND_INTERNAL_URL: "http://frontend:3000"
     expose:
       - "8787"
     networks:
