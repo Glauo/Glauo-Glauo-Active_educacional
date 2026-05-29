@@ -2556,6 +2556,44 @@ def _render_finance_settings_editor(panel_key="finance_settings"):
             key=f"{panel_key}_boleto_uf",
         )
 
+        st.markdown("#### Agendamento de Envio de Boletos")
+        st.caption("Configure quando os boletos serao enviados automaticamente por WhatsApp e e-mail.")
+        ag1, ag2 = st.columns(2)
+        with ag1:
+            cfg_reminder_enabled = st.selectbox(
+                "Envio automatico",
+                ["1", "0"],
+                index=0 if str(current_cfg.get("boleto_reminder_enabled", "1")).strip() in ("1", "true", "sim") else 1,
+                format_func=lambda x: "Ativado" if x == "1" else "Desativado",
+                key=f"{panel_key}_reminder_enabled",
+            )
+            cfg_reminder_days_before = st.text_input(
+                "Dias antes do vencimento",
+                value=str(current_cfg.get("boleto_reminder_days_before", "5")),
+                help="Enviar lembrete X dias antes. Separe multiplos por virgula (ex: 5,10).",
+                key=f"{panel_key}_reminder_days_before",
+            )
+            cfg_reminder_on_due = st.selectbox(
+                "Enviar no dia do vencimento",
+                ["1", "0"],
+                index=0 if str(current_cfg.get("boleto_reminder_on_due_date", "1")).strip() in ("1", "true", "sim") else 1,
+                format_func=lambda x: "Sim" if x == "1" else "Nao",
+                key=f"{panel_key}_reminder_on_due",
+            )
+        with ag2:
+            cfg_reminder_days_after = st.text_input(
+                "Dias apos vencimento (cobranca)",
+                value=str(current_cfg.get("boleto_reminder_days_after", "3")),
+                help="Enviar cobranca X dias apos vencer. Separe multiplos por virgula (ex: 3,7).",
+                key=f"{panel_key}_reminder_days_after",
+            )
+            cfg_reminder_repeat = st.text_input(
+                "Reenviar cobranca a cada X dias",
+                value=str(current_cfg.get("boleto_reminder_repeat_after_days", "7")),
+                help="Apos vencer, reenviar periodicamente. 0 para desativar.",
+                key=f"{panel_key}_reminder_repeat",
+            )
+
         salvar_fin_cfg = st.form_submit_button("Salvar configuracoes financeiras", type="primary")
         if salvar_fin_cfg:
             save_finance_settings(
@@ -2573,6 +2611,11 @@ def _render_finance_settings_editor(panel_key="finance_settings"):
                     "boleto_api_key": cfg_boleto_api_key,
                     "boleto_api_auth_header": cfg_boleto_api_auth,
                     "boleto_default_federal_unit": cfg_boleto_default_federal_unit,
+                    "boleto_reminder_enabled": cfg_reminder_enabled,
+                    "boleto_reminder_days_before": cfg_reminder_days_before,
+                    "boleto_reminder_on_due_date": cfg_reminder_on_due,
+                    "boleto_reminder_days_after": cfg_reminder_days_after,
+                    "boleto_reminder_repeat_after_days": cfg_reminder_repeat,
                 }
             )
             st.success("Configuracoes financeiras salvas.")
@@ -3061,6 +3104,126 @@ def _run_receivable_due_reminders(days_before=10, force=False):
         changed = True
         if ok_send:
             rec_obj[reminder_sent_key] = due_txt
+            totals["sent"] += 1
+        else:
+            totals["failed"] += 1
+    if changed:
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    return totals
+
+def _run_scheduled_boleto_reminders():
+    """Executa envio automatico de boletos conforme agendamento configuravel."""
+    cfg = get_finance_settings()
+    enabled = str(cfg.get("boleto_reminder_enabled", "1")).strip()
+    if enabled not in ("1", "true", "sim", "yes"):
+        return
+    days_before_raw = str(cfg.get("boleto_reminder_days_before", "5")).strip()
+    on_due = str(cfg.get("boleto_reminder_on_due_date", "1")).strip() in ("1", "true", "sim", "yes")
+    days_after_raw = str(cfg.get("boleto_reminder_days_after", "3")).strip()
+    repeat_after_raw = str(cfg.get("boleto_reminder_repeat_after_days", "7")).strip()
+    def _parse_days(raw):
+        result = []
+        for part in re.split(r"[;, ]+", raw):
+            part = part.strip()
+            if part.lstrip("-").isdigit():
+                result.append(int(part))
+        return result
+    days_before_list = _parse_days(days_before_raw)
+    days_after_list = _parse_days(days_after_raw)
+    repeat_after = int(repeat_after_raw) if repeat_after_raw.isdigit() and int(repeat_after_raw) > 0 else 0
+    for d in days_before_list:
+        if d > 0:
+            _run_receivable_due_reminders(days_before=d, force=False)
+    if on_due:
+        _run_receivable_due_reminders(days_before=0, force=False)
+    for d in days_after_list:
+        if d > 0:
+            _run_overdue_boleto_reminders(days_after=d, force=False)
+    if repeat_after > 0:
+        _run_overdue_repeat_reminders(repeat_every=repeat_after, force=False)
+
+def _run_overdue_boleto_reminders(days_after=3, force=False):
+    """Envia cobranca para boletos vencidos ha exatamente X dias."""
+    can_run, _ = _wiz_can_operate_system()
+    if not can_run and not force:
+        return {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    today = datetime.date.today()
+    today_txt = today.strftime("%d/%m/%Y")
+    reminder_sent_key = f"auto_overdue_reminder_{int(days_after)}d_sent"
+    reminder_attempt_key = f"auto_overdue_reminder_{int(days_after)}d_attempt_date"
+    totals = {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    changed = False
+    for rec_obj in st.session_state.get("receivables", []):
+        if str(rec_obj.get("categoria_lancamento", "Aluno")).strip() != "Aluno":
+            totals["skipped"] += 1
+            continue
+        if str(rec_obj.get("status", "")).strip().lower() in {"pago", "cancelado"}:
+            totals["skipped"] += 1
+            continue
+        due_date = parse_date(rec_obj.get("vencimento", ""))
+        if not due_date:
+            totals["skipped"] += 1
+            continue
+        days_overdue = (today - due_date).days
+        if not force and days_overdue != int(days_after):
+            totals["skipped"] += 1
+            continue
+        due_txt = due_date.strftime("%d/%m/%Y")
+        if str(rec_obj.get(reminder_sent_key, "")).strip() == due_txt:
+            totals["skipped"] += 1
+            continue
+        if not force and str(rec_obj.get(reminder_attempt_key, "")).strip() == today_txt:
+            totals["skipped"] += 1
+            continue
+        totals["checked"] += 1
+        rec_obj[reminder_attempt_key] = today_txt
+        ok_send, status_send, _ = send_receivable_boleto_to_student(rec_obj)
+        changed = True
+        if ok_send:
+            rec_obj[reminder_sent_key] = due_txt
+            totals["sent"] += 1
+        else:
+            totals["failed"] += 1
+    if changed:
+        save_list(RECEIVABLES_FILE, st.session_state.get("receivables", []))
+    return totals
+
+def _run_overdue_repeat_reminders(repeat_every=7, force=False):
+    """Reenvia cobranca periodica para boletos vencidos a cada X dias."""
+    can_run, _ = _wiz_can_operate_system()
+    if not can_run and not force:
+        return {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    today = datetime.date.today()
+    today_txt = today.strftime("%d/%m/%Y")
+    totals = {"checked": 0, "sent": 0, "failed": 0, "skipped": 0}
+    changed = False
+    for rec_obj in st.session_state.get("receivables", []):
+        if str(rec_obj.get("categoria_lancamento", "Aluno")).strip() != "Aluno":
+            totals["skipped"] += 1
+            continue
+        if str(rec_obj.get("status", "")).strip().lower() in {"pago", "cancelado"}:
+            totals["skipped"] += 1
+            continue
+        due_date = parse_date(rec_obj.get("vencimento", ""))
+        if not due_date:
+            totals["skipped"] += 1
+            continue
+        days_overdue = (today - due_date).days
+        if days_overdue <= 0:
+            totals["skipped"] += 1
+            continue
+        if days_overdue % int(repeat_every) != 0:
+            totals["skipped"] += 1
+            continue
+        repeat_key = f"auto_overdue_repeat_{int(repeat_every)}d_last_sent"
+        if str(rec_obj.get(repeat_key, "")).strip() == today_txt:
+            totals["skipped"] += 1
+            continue
+        totals["checked"] += 1
+        ok_send, status_send, _ = send_receivable_boleto_to_student(rec_obj)
+        changed = True
+        if ok_send:
+            rec_obj[repeat_key] = today_txt
             totals["sent"] += 1
         else:
             totals["failed"] += 1
@@ -16902,7 +17065,7 @@ if st.session_state.get("logged_in", False) and not st.session_state.get("_activ
     if "finance_due_reminders_checked" not in st.session_state:
         st.session_state["finance_due_reminders_checked"] = False
     if not st.session_state["finance_due_reminders_checked"]:
-        _run_receivable_due_reminders(days_before=10, force=False)
+        _run_scheduled_boleto_reminders()
         st.session_state["finance_due_reminders_checked"] = True
 
     st.session_state["_active_runtime_loaded"] = True
