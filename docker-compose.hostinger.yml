@@ -22,6 +22,10 @@ services:
       WAPI_BASE_URL: ${WAPI_BASE_URL}
       WAPI_TOKEN: ${WAPI_TOKEN}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
+      # ── Mercado Pago (boleto automático) ────────────────────────────────────
+      ACTIVE_BOLETO_PROVIDER: mercado_pago
+      ACTIVE_BOLETO_API_URL: https://api.mercadopago.com
+      ACTIVE_BOLETO_API_KEY: APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237
     volumes:
       - ./data:/app/data
     expose:
