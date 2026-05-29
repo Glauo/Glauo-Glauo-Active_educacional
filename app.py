@@ -14598,6 +14598,8 @@ def run_student_finance_assistant():
     a_vencer = []
     vencidos = []
     pagos = []
+    mes_vigente = hoje.month
+    ano_vigente = hoje.year
     for item in recebiveis_aluno:
         status = str(item.get("status", "")).strip().lower()
         if status == "pago":
@@ -14606,8 +14608,9 @@ def run_student_finance_assistant():
         dt_venc = parse_date(item.get("vencimento", ""))
         if dt_venc and dt_venc < hoje:
             vencidos.append(item)
-        else:
+        elif dt_venc and dt_venc.month == mes_vigente and dt_venc.year == ano_vigente:
             a_vencer.append(item)
+        # débitos futuros (além do mês vigente) não são exibidos ao aluno
 
     total_a_vencer = sum(_valor_item(i) for i in a_vencer)
     total_vencido = sum(_valor_item(i) for i in vencidos)
