@@ -23098,6 +23098,29 @@ div[data-baseweb="select"] > div {
                             st.session_state["fin_rec_bulk_reset_pending"] = True
                             st.success(f"{removed_rec} recebimento(s) excluido(s).")
                             st.rerun()
+                st.markdown("---")
+                st.markdown("#### Limpeza de boletos internos")
+                st.caption("Remove todos os lancamentos sem boleto real do Mercado Pago (sem boleto_url). Use para limpar cobrancas geradas antes da integracao com o MP.")
+                col_clean1, col_clean2 = st.columns([1.5, 2.5])
+                with col_clean1:
+                    confirm_clean = st.checkbox("Confirmo a exclusao dos boletos internos", key="fin_clean_internal_confirm")
+                with col_clean2:
+                    if st.button("Apagar boletos sem Mercado Pago", type="primary", key="fin_clean_internal_btn"):
+                        if not confirm_clean:
+                            st.error("Marque a confirmacao antes de apagar.")
+                        else:
+                            before_clean = len(st.session_state.get("receivables", []))
+                            st.session_state["receivables"] = [
+                                r for r in st.session_state.get("receivables", [])
+                                if str(r.get("boleto_url", "")).strip().startswith("http")
+                                or str(r.get("pix_url", "")).strip().startswith("http")
+                                or str(r.get("boleto_linha_digitavel", "")).strip()
+                                or str(r.get("status", "")).strip().lower() == "pago"
+                            ]
+                            removed_clean = before_clean - len(st.session_state.get("receivables", []))
+                            save_list(RECEIVABLES_FILE, st.session_state["receivables"])
+                            st.success(f"{removed_clean} boleto(s) interno(s) removido(s) com sucesso.")
+                            st.rerun()
 
             if finance_receber_menu == "Gerenciamento de Recebimentos":
                 _finance_pane_header("Gerenciamento de recebimentos", "Edição detalhada, anexos, links e exclusão agrupada por lançamento.")
