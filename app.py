@@ -2777,6 +2777,30 @@ def _extract_pix_info_from_json(payload):
             qr_image_b64 = base64.b64encode(generated_png).decode("ascii")
     return pix_url, qr_code, qr_image_b64
 
+def _alert_admin_boleto_failure(rec_obj, motivo):
+    """Envia alerta WhatsApp ao admin quando a geração de boleto falha."""
+    try:
+        aluno = str(rec_obj.get("aluno", "")).strip() if isinstance(rec_obj, dict) else ""
+        vencimento = str(rec_obj.get("vencimento", "")).strip() if isinstance(rec_obj, dict) else ""
+        valor = str(rec_obj.get("valor_parcela", rec_obj.get("valor", ""))).strip() if isinstance(rec_obj, dict) else ""
+        descricao = str(rec_obj.get("descricao", "")).strip() if isinstance(rec_obj, dict) else ""
+        msg = (
+            "⚠️ *FALHA NA GERAÇÃO DE BOLETO*\n"
+            f"Aluno: {aluno}\n"
+            f"Descrição: {descricao}\n"
+            f"Valor: {valor}\n"
+            f"Vencimento: {vencimento}\n"
+            f"Motivo: {motivo}\n"
+            f"Data/Hora: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        )
+        for number in _wiz_admin_whatsapp_numbers():
+            try:
+                _send_whatsapp_auto(number, msg, allow_when_paused=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 def generate_boleto_for_receivable(rec_obj, force=False):
     if not isinstance(rec_obj, dict):
         return False, "recebimento invalido"
@@ -2909,6 +2933,7 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             msg = "nao foi possivel gerar Pix no Mercado Pago"
             if erro_api:
                 msg = f"{msg} ({erro_api})"
+            _alert_admin_boleto_failure(rec_obj, msg)
             return False, msg
         rec_obj["pix_url"] = str(pix_url or boleto_url).strip()
         rec_obj["pix_qr_code"] = str(pix_qr_code).strip()
@@ -2924,6 +2949,7 @@ def generate_boleto_for_receivable(rec_obj, force=False):
             msg = "nao foi possivel gerar boleto no Mercado Pago"
         if erro_api:
             msg = f"{msg} ({erro_api})"
+        _alert_admin_boleto_failure(rec_obj, msg)
         return False, msg
 
     rec_obj["boleto_url"] = str(boleto_url).strip()
@@ -14653,19 +14679,42 @@ def run_student_finance_assistant():
         tabela_msg = "Nenhum lancamento financeiro encontrado."
 
     if dados_tabela:
-        df = pd.DataFrame(dados_tabela)
-        col_order = [
-            "data",
-            "vencimento",
-            "descricao",
-            "categoria",
-            "valor_parcela",
-            "parcela",
-            "cobranca",
-            "status",
-        ]
-        df = df[[c for c in col_order if c in df.columns]]
-        st.dataframe(df, use_container_width=True)
+        for idx, item in enumerate(dados_tabela):
+            with st.container():
+                c1, c2, c3 = st.columns([3, 2, 2])
+                with c1:
+                    st.markdown(f"**{item.get('descricao', 'Cobrança')}**")
+                    st.caption(f"Vencimento: {item.get('vencimento', '-')}  |  Parcela: {item.get('parcela', '-')}")
+                with c2:
+                    st.metric("Valor", str(item.get("valor_parcela", item.get("valor", "-"))))
+                    status_item = str(item.get("status", "")).strip()
+                    cor = "🟢" if status_item.lower() == "pago" else ("🔴" if parse_date(item.get("vencimento","")) and parse_date(item.get("vencimento","")) < datetime.date.today() else "🟡")
+                    st.caption(f"{cor} {status_item or 'Em aberto'}")
+                with c3:
+                    boleto_url_item = str(item.get("boleto_url", "")).strip()
+                    linha_dig = str(item.get("boleto_linha_digitavel", "")).strip()
+                    pix_url_item = str(item.get("pix_url", "")).strip()
+                    pix_qr = str(item.get("pix_qr_code", "")).strip()
+                    if boleto_url_item:
+                        st.link_button("📄 Abrir Boleto", boleto_url_item, use_container_width=True)
+                    if linha_dig:
+                        with st.expander("Linha digitável"):
+                            st.code(linha_dig, language=None)
+                    if pix_url_item:
+                        st.link_button("💠 Pagar via Pix", pix_url_item, use_container_width=True)
+                    if pix_qr:
+                        with st.expander("Pix copia e cola"):
+                            st.code(pix_qr, language=None)
+                    if str(item.get("status", "")).strip().lower() != "pago":
+                        if st.button("📨 Reenviar WhatsApp/E-mail", key=f"reenviar_boleto_{idx}", use_container_width=True):
+                            ok_send, status_send, stats_send = send_receivable_boleto_to_student(item)
+                            if ok_send:
+                                wok = stats_send.get("whatsapp_ok", 0)
+                                eok = stats_send.get("email_ok", 0)
+                                st.success(f"Enviado! WhatsApp: {wok} | E-mail: {eok}")
+                            else:
+                                st.error(f"Falha ao reenviar: {status_send}")
+                st.divider()
     else:
         st.info(tabela_msg)
 
