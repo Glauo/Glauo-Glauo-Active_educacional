@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 
 type SistemaConfig = { nome_escola?: string; cnpj?: string; telefone?: string; email_contato?: string; endereco?: string; cidade?: string; estado?: string; cep?: string; [k: string]: unknown };
 type SmtpConfig = { host?: string; port?: number | string; user?: string; from_name?: string; from_email?: string; tls?: string | boolean; enabled?: boolean; [k: string]: unknown };
-type BoletoConfig = { banco?: string; agencia?: string; conta?: string; cedente?: string; carteira?: string; instrucoes?: string; dias_vencimento?: number | string; [k: string]: unknown };
+type BoletoConfig = { banco?: string; agencia?: string; conta?: string; cedente?: string; carteira?: string; instrucoes?: string; dias_vencimento?: number | string; mp_access_token?: string; mp_public_key?: string; mp_client_id?: string; [k: string]: unknown };
 
 type Props = { sistema: SistemaConfig; smtp: SmtpConfig; boleto: BoletoConfig };
 
@@ -329,6 +329,24 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
               <div className="form-group form-group-span2">
                 <label className="form-label">Instruções do boleto</label>
                 <textarea className="form-input form-textarea" rows={3} value={String(boleto.instrucoes || "")} onChange={(e) => bol("instrucoes", e.target.value)} placeholder="Não receber após o vencimento. Multa de 2% e juros de 1% ao mês." />
+              </div>
+            </div>
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+              <div className="section-eyebrow" style={{ marginBottom: 12, fontSize: "0.7rem", color: "var(--text-muted)" }}>Mercado Pago — Boleto Bancário</div>
+              <div className="form-grid">
+                <div className="form-group form-group-span2">
+                  <label className="form-label">Access Token (MP)</label>
+                  <input className="form-input" type="password" value={String(boleto.mp_access_token || "")} onChange={(e) => bol("mp_access_token", e.target.value)} placeholder="APP_USR-..." />
+                  <div className="form-help">Token de acesso do Mercado Pago. Obtenha em mercadopago.com.br/developers. Se preenchido, sobrescreve a chave padrão do sistema.</div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Public Key (MP)</label>
+                  <input className="form-input" value={String(boleto.mp_public_key || "")} onChange={(e) => bol("mp_public_key", e.target.value)} placeholder="APP_USR-..." />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Client ID (MP)</label>
+                  <input className="form-input" value={String(boleto.mp_client_id || "")} onChange={(e) => bol("mp_client_id", e.target.value)} placeholder="4713753450558393" />
+                </div>
               </div>
             </div>
           </div>

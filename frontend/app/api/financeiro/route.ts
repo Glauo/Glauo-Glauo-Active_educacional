@@ -5,6 +5,7 @@ import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendEmail } from "@/lib/email";
 import { isAdmin } from "@/lib/roles";
 import { financeMessage } from "@/lib/finance-message";
+import { criarBoleteMercadoPago } from "@/lib/mercadopago";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -103,12 +104,63 @@ export async function POST(req: NextRequest) {
       boleto_pdf_url: `/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}`,
       boleto_pdf_mime: text(data.boleto_pdf_mime) || "application/pdf",
     } : {};
-    const boletoUpdate = data.gerar_boleto ? {
-      boleto_status: "Gerado",
-      boleto_codigo: text(data.boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
-      boleto_gerado_em: new Date().toISOString(),
-      status: data.status || "Boleto gerado",
-    } : {};
+
+    // Integracao Mercado Pago: gerar boleto real ao marcar "gerar_boleto"
+    let boletoUpdate: Record<string, unknown> = {};
+    if (data.gerar_boleto && tipo !== "despesas") {
+      const valor = parseFloat(String(data.valor || data.valor_parcela || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
+      const nomeAluno = text(data.aluno || data.nome || "");
+      const nomeParts = nomeAluno.split(" ");
+      const payerEmail = text(data.email || data.email_responsavel || "") ||
+        `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
+      const vencimento = text(data.vencimento || data.data_vencimento || "");
+      const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+
+      const mpResult = await criarBoleteMercadoPago({
+        transaction_amount: valor,
+        description: text(data.descricao) || `Mensalidade - ${nomeAluno}`,
+        payer_email: payerEmail,
+        payer_first_name: nomeParts[0] || "Responsavel",
+        payer_last_name: nomeParts.slice(1).join(" ") || "Financeiro",
+        payer_cpf: text(data.cpf || data.responsavel_cpf || ""),
+        date_of_expiration: dateOfExpiration,
+        external_reference: id,
+      });
+
+      if (mpResult.ok) {
+        boletoUpdate = {
+          boleto_status: "Gerado MP",
+          boleto_url: mpResult.boleto_url,
+          boleto_codigo: mpResult.barcode || "",
+          boleto_linha_digitavel: mpResult.barcode || "",
+          mp_payment_id: mpResult.payment_id,
+          mp_status: mpResult.status,
+          mp_status_detail: mpResult.status_detail,
+          mp_date_of_expiration: mpResult.date_of_expiration,
+          boleto_gerado_em: new Date().toISOString(),
+          status: data.status || "Boleto gerado",
+        };
+      } else {
+        // Falha na API do MP: registra o erro mas nao bloqueia o lancamento
+        boletoUpdate = {
+          boleto_status: "Erro MP",
+          boleto_erro: mpResult.error,
+          boleto_codigo: `AE-${String(id).slice(0, 8).toUpperCase()}`,
+          boleto_gerado_em: new Date().toISOString(),
+          status: data.status || "Boleto pendente",
+        };
+        console.error("[financeiro POST] Erro Mercado Pago:", mpResult.error);
+      }
+    } else if (data.gerar_boleto) {
+      // Despesas: manter comportamento anterior (sem MP)
+      boletoUpdate = {
+        boleto_status: "Gerado",
+        boleto_codigo: text(data.boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
+        boleto_gerado_em: new Date().toISOString(),
+        status: data.status || "Boleto gerado",
+      };
+    }
+
     const novo = {
       ...data,
       ...boletoUpdate,
@@ -185,12 +237,60 @@ export async function PUT(req: NextRequest) {
       boleto_pdf_url: `/api/financeiro/boleto-pdf?id=${encodeURIComponent(id)}`,
       boleto_pdf_mime: text(updates.boleto_pdf_mime) || "application/pdf",
     } : {};
-    const boletoUpdate = updates.gerar_boleto ? {
-      boleto_status: "Gerado",
-      boleto_codigo: text(lancamentos[idx].boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
-      boleto_gerado_em: new Date().toISOString(),
-      status: updates.status || "Boleto gerado",
-    } : {};
+    // Integracao Mercado Pago no PUT (re-gerar boleto)
+    let boletoUpdate: Record<string, unknown> = {};
+    if (updates.gerar_boleto && tipo !== "despesas") {
+      const lancAtual = lancamentos[idx];
+      const valor = parseFloat(String(updates.valor || lancAtual.valor || updates.valor_parcela || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
+      const nomeAluno = text(updates.aluno || lancAtual.aluno || updates.nome || lancAtual.nome || "");
+      const nomeParts = nomeAluno.split(" ");
+      const payerEmail = text(updates.email || lancAtual.email || updates.email_responsavel || "") ||
+        `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
+      const vencimento = text(updates.vencimento || lancAtual.vencimento || updates.data_vencimento || "");
+      const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+
+      const mpResult = await criarBoleteMercadoPago({
+        transaction_amount: valor,
+        description: text(updates.descricao || lancAtual.descricao) || `Mensalidade - ${nomeAluno}`,
+        payer_email: payerEmail,
+        payer_first_name: nomeParts[0] || "Responsavel",
+        payer_last_name: nomeParts.slice(1).join(" ") || "Financeiro",
+        payer_cpf: text(updates.cpf || lancAtual.cpf || updates.responsavel_cpf || lancAtual.responsavel_cpf || ""),
+        date_of_expiration: dateOfExpiration,
+        external_reference: id,
+      });
+
+      if (mpResult.ok) {
+        boletoUpdate = {
+          boleto_status: "Gerado MP",
+          boleto_url: mpResult.boleto_url,
+          boleto_codigo: mpResult.barcode || "",
+          boleto_linha_digitavel: mpResult.barcode || "",
+          mp_payment_id: mpResult.payment_id,
+          mp_status: mpResult.status,
+          mp_status_detail: mpResult.status_detail,
+          mp_date_of_expiration: mpResult.date_of_expiration,
+          boleto_gerado_em: new Date().toISOString(),
+          status: updates.status || "Boleto gerado",
+        };
+      } else {
+        boletoUpdate = {
+          boleto_status: "Erro MP",
+          boleto_erro: mpResult.error,
+          boleto_codigo: text(lancamentos[idx].boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
+          boleto_gerado_em: new Date().toISOString(),
+          status: updates.status || "Boleto pendente",
+        };
+        console.error("[financeiro PUT] Erro Mercado Pago:", mpResult.error);
+      }
+    } else if (updates.gerar_boleto) {
+      boletoUpdate = {
+        boleto_status: "Gerado",
+        boleto_codigo: text(lancamentos[idx].boleto_codigo) || `AE-${String(id).slice(0, 8).toUpperCase()}`,
+        boleto_gerado_em: new Date().toISOString(),
+        status: updates.status || "Boleto gerado",
+      };
+    }
 
     const estornoUpdate = isReversal ? {
       status: "Pendente",

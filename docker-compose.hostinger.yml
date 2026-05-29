@@ -48,6 +48,8 @@ services:
       DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       JWT_SECRET: "ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb"
       PORT: "3000"
+      # Mercado Pago — Boleto Bancario
+      MP_ACCESS_TOKEN: "APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237"
     expose:
       - "3000"
     depends_on:
