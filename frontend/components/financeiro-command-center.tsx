@@ -277,6 +277,43 @@ function ResultPill({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+function RegerarBoletosButton() {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  async function regerar() {
+    if (!confirm("Regerar via Mercado Pago todos os boletos que ainda nao possuem URL real (codigos AE-XXXX ou Erro MP)?\n\nIsso pode demorar alguns segundos.")) return;
+    setSaving(true);
+    setMsg("");
+    const res = await fetch("/api/financeiro/regerar-boleto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ todos_sem_mp: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      setMsg(text(data.error) || "Erro ao regerar boletos.");
+      return;
+    }
+    if (data.message) {
+      setMsg(data.message);
+    } else {
+      setMsg(`${data.regerados || 0} boleto(s) regerado(s) no Mercado Pago. ${data.erros || 0} erro(s).`);
+      router.refresh();
+    }
+    setTimeout(() => setMsg(""), 8000);
+  }
+  return (
+    <>
+      <button className="btn btn-secondary" onClick={regerar} disabled={saving} title="Regera via Mercado Pago todos os boletos com codigo interno AE-XXXX">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+        {saving ? "Regerando..." : "Regerar boletos MP"}
+      </button>
+      {msg && <div style={{ fontSize: "0.8rem", color: msg.includes("erro") || msg.includes("Erro") ? "var(--red-600)" : "var(--green-700)", padding: "4px 8px", background: msg.includes("erro") || msg.includes("Erro") ? "rgba(239,68,68,0.08)" : "rgba(34,197,94,0.08)", borderRadius: 6, border: "1px solid currentColor" }}>{msg}</div>}
+    </>
+  );
+}
 function BatchBoletosButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -528,6 +565,7 @@ export function FinanceiroCommandCenter({
               )}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <RegerarBoletosButton />
               <BatchBoletosButton />
               <button className="btn btn-secondary" onClick={() => window.print()}>Relatorio rapido</button>
             </div>
