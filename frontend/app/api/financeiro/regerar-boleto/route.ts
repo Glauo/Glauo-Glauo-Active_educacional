@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
   if (body.id) {
     const found = lancamentos.find((r) => text(r.id) === body.id);
     if (!found) return NextResponse.json({ error: "Lancamento nao encontrado" }, { status: 404 });
+    // Quando ID especifico: sempre regera (mesmo que ja tenha boleto_url), para permitir geracao manual
     alvos = [found];
   } else if (body.todos_sem_mp) {
     alvos = lancamentos.filter((r) => {
@@ -73,8 +74,12 @@ export async function POST(req: NextRequest) {
     const payerEmail =
       text(lanc.email || lanc.email_responsavel) ||
       `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
-    const vencimento = text(lanc.vencimento || lanc.data_vencimento);
-    const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+    const vencimentoRaw = text(lanc.vencimento || lanc.data_vencimento);
+    // Converter data BR (DD/MM/YYYY) para ISO (YYYY-MM-DD) se necessario
+    let vencimentoISO = vencimentoRaw;
+    const brMatch = vencimentoRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (brMatch) vencimentoISO = `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+    const dateOfExpiration = vencimentoISO ? `${vencimentoISO}T23:59:59.000-03:00` : undefined;
 
     if (!valor || valor <= 0) {
       resultados.push({ id, aluno: nomeAluno, ok: false, erro: "Valor invalido" });

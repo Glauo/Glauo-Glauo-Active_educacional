@@ -127,8 +127,10 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.000${offset}`;
     })();
 
-  const cpfLimpo = (input.payer_cpf || "00000000000").replace(/\D/g, "");
-  const cpfFinal = cpfLimpo.length >= 11 ? cpfLimpo.slice(0, 11) : cpfLimpo.padEnd(11, "0");
+  const cpfLimpo = (input.payer_cpf || "").replace(/\D/g, "");
+  // Só envia CPF se tiver 11 dígitos e não for sequência de zeros
+  const cpfValido = cpfLimpo.length === 11 && !/^0+$/.test(cpfLimpo) && !/^(\d)\1{10}$/.test(cpfLimpo);
+  const cpfFinal = cpfValido ? cpfLimpo : null;
 
   // Endereço: usa o do aluno se fornecido, senão busca o padrão da escola
   let address: MpPayerAddress;
@@ -147,10 +149,7 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
       email: input.payer_email || "pagador@activeeducacional.com.br",
       first_name: (input.payer_first_name || "Responsavel").slice(0, 60),
       last_name: (input.payer_last_name || "Financeiro").slice(0, 60),
-      identification: {
-        type: "CPF",
-        number: cpfFinal,
-      },
+      ...(cpfFinal ? { identification: { type: "CPF", number: cpfFinal } } : {}),
       address: {
         zip_code: address.zip_code || DEFAULT_ADDRESS.zip_code,
         street_name: address.street_name || DEFAULT_ADDRESS.street_name,

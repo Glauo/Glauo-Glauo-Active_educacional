@@ -211,6 +211,119 @@ function groupByMes(items: Lancamento[]): { key: string; label: string; items: L
     });
 }
 
+/* ── Modal de Geração Manual de Boleto MP ── */
+function GerarBoletoMPModal({ lancamento, onClose, onSuccess }: { lancamento: Lancamento; onClose: () => void; onSuccess: (boletoUrl: string) => void }) {
+  const id = String(lancamento.id || "");
+  const [cpf, setCpf] = useState(String(lancamento.cpf || lancamento.responsavel_cpf || ""));
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function gerar() {
+    if (!id) return;
+    setLoading(true);
+    setErro("");
+    try {
+      // Atualiza o CPF no lançamento se informado antes de gerar
+      if (cpf.replace(/\D/g, "").length === 11) {
+        await fetch("/api/financeiro", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, tipo: "recebimentos", cpf: cpf.replace(/\D/g, "") }),
+        });
+      }
+      const res = await fetch("/api/financeiro/regerar-boleto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; resultados?: { ok: boolean; boleto_url?: string; erro?: string }[]; error?: string };
+      if (!res.ok || !data.ok) {
+        setErro(String(data.error || "Erro ao gerar boleto no Mercado Pago."));
+        return;
+      }
+      const resultado = data.resultados?.[0];
+      if (!resultado?.ok) {
+        setErro(String(resultado?.erro || "Mercado Pago retornou erro. Verifique o CPF e tente novamente."));
+        return;
+      }
+      onSuccess(resultado.boleto_url || "");
+    } catch {
+      setErro("Erro de conexão ao gerar boleto.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const aluno = String(lancamento.aluno || lancamento.nome || "");
+  const valor = parseValor(lancamento.valor_parcela ?? lancamento.valor ?? 0);
+  const venc = String(lancamento.vencimento || lancamento.data_vencimento || "");
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 480 }}>
+        <div className="modal-header">
+          <div className="modal-title">Gerar Boleto — Mercado Pago</div>
+          <button className="modal-close" onClick={onClose}>
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 20px", marginBottom: 20, padding: "14px 16px", background: "var(--surface-raised)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
+            <div><div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 3 }}>Aluno</div><div style={{ fontWeight: 700 }}>{aluno}</div></div>
+            <div><div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 3 }}>Valor</div><div style={{ fontWeight: 700 }}>{formatBRL(valor)}</div></div>
+            <div><div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 3 }}>Vencimento</div><div style={{ fontWeight: 700 }}>{venc ? fmtDate(venc) : "—"}</div></div>
+            <div><div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 3 }}>Código atual</div><div style={{ fontWeight: 600, fontSize: "0.8rem", color: "var(--text-secondary)" }}>{String(lancamento.boleto_codigo || "Sem código")}</div></div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">CPF do Responsável / Pagador <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(recomendado)</span></label>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="000.000.000-00"
+              value={cpf}
+              onChange={(e) => setCpf(e.target.value)}
+              maxLength={14}
+            />
+            <div className="form-help">O CPF é necessário para gerar boleto registrado. Se não informado, o Mercado Pago pode rejeitar.</div>
+          </div>
+          {erro && <div className="form-error" style={{ marginTop: 8 }}>{erro}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="btn btn-primary" onClick={gerar} disabled={loading}>
+            {loading ? "Gerando boleto..." : "Gerar Boleto MP"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GerarBoletoMPBtn({ lancamento }: { lancamento: Lancamento }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [boletoUrl, setBoletoUrl] = useState(String(lancamento.boleto_url || ""));
+  const temBoletoReal = boletoUrl.startsWith("http");
+
+  function handleSuccess(url: string) {
+    setBoletoUrl(url);
+    setOpen(false);
+    router.refresh();
+    if (url) window.open(url, "_blank");
+  }
+
+  return (
+    <>
+      {temBoletoReal ? (
+        <a className="btn btn-primary btn-sm" href={boletoUrl} target="_blank" rel="noreferrer" style={{ background: "var(--blue-600)" }}>Abrir Boleto MP</a>
+      ) : (
+        <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)} style={{ background: "var(--blue-600)" }}>Gerar Boleto MP</button>
+      )}
+      {open && <GerarBoletoMPModal lancamento={lancamento} onClose={() => setOpen(false)} onSuccess={handleSuccess} />}
+    </>
+  );
+}
+
 function BoletoBtn({ lancamento }: { lancamento: Lancamento }) {
   const [loading, setLoading] = useState(false);
   const id = String(lancamento.id || "");
@@ -690,7 +803,7 @@ function RecebimentosTab({ recebimentos, canReversePayments }: { recebimentos: L
                           <td><span style={{ fontWeight: 600, color: atrasado ? "var(--red-600)" : "inherit" }}>{venc !== "—" ? fmtDate(venc) : "—"}{atrasado && " ⚠"}</span></td>
 	                          <td><span style={{ fontWeight: 700, fontSize: "0.9375rem" }}>{formatBRL(valorParcela(r))}</span></td>
                           <td><span className={`badge badge-${statusBadge(status)}`}><span className="badge-dot" />{status}</span></td>
-                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" canReverse={canReversePayments} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
+                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><BaixaBtn lancamento={r} tipo="recebimentos" /><GerarBoletoMPBtn lancamento={r} /><BoletoBtn lancamento={r} /><ReciboBtn lancamento={r} /><EstornoBtn lancamento={r} tipo="recebimentos" canReverse={canReversePayments} /><EditarLancamentoBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
                       );
                     })}
@@ -1163,7 +1276,7 @@ function InadimplenciaTab({ recebimentos }: { recebimentos: Lancamento[] }) {
                           <td style={{ fontWeight: 800, color: "var(--red-700)" }}>{formatBRL(valorParcela(r))}</td>
                           <td><span className={`badge badge-${faixa(r.dias as number)}`}><span className="badge-dot" />{r.dias as number} dias</span></td>
                           <td>{String(extra(r, "responsavel") || "—")}</td>
-                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><AutoWhatsAppButton phone={extra(r, "telefone") || extra(r, "whatsapp")} message={msg} /><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
+                          <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}><AutoWhatsAppButton phone={extra(r, "telefone") || extra(r, "whatsapp")} message={msg} /><GerarBoletoMPBtn lancamento={r} /><BoletoBtn lancamento={r} /><BaixaBtn lancamento={r} tipo="recebimentos" /></div></td>
                         </tr>
                       );
                     })}

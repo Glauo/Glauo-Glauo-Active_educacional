@@ -113,8 +113,10 @@ export async function POST(req: NextRequest) {
       const nomeParts = nomeAluno.split(" ");
       const payerEmail = text(data.email || data.email_responsavel || "") ||
         `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
-      const vencimento = text(data.vencimento || data.data_vencimento || "");
-      const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+      const vencimentoRaw = text(data.vencimento || data.data_vencimento || "");
+      const brMatchPost = vencimentoRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      const vencimentoISO = brMatchPost ? `${brMatchPost[3]}-${brMatchPost[2]}-${brMatchPost[1]}` : vencimentoRaw;
+      const dateOfExpiration = vencimentoISO ? `${vencimentoISO}T23:59:59.000-03:00` : undefined;
 
       // Endereço do pagador (obrigatório para boleto registrado no MP)
       const payerAddress = {
@@ -256,8 +258,10 @@ export async function PUT(req: NextRequest) {
       const nomeParts = nomeAluno.split(" ");
       const payerEmail = text(updates.email || lancAtual.email || updates.email_responsavel || "") ||
         `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
-      const vencimento = text(updates.vencimento || lancAtual.vencimento || updates.data_vencimento || "");
-      const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+      const vencimentoRawPut = text(updates.vencimento || lancAtual.vencimento || updates.data_vencimento || "");
+      const brMatchPut = vencimentoRawPut.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      const vencimentoISOPut = brMatchPut ? `${brMatchPut[3]}-${brMatchPut[2]}-${brMatchPut[1]}` : vencimentoRawPut;
+      const dateOfExpiration = vencimentoISOPut ? `${vencimentoISOPut}T23:59:59.000-03:00` : undefined;
 
       // Endereço do pagador (obrigatório para boleto registrado no MP)
       const payerAddress = {

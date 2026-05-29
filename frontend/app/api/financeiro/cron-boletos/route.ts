@@ -90,8 +90,10 @@ export async function GET(req: NextRequest) {
       const payerEmail =
         text(lanc.email || lanc.email_responsavel) ||
         `aluno.${nomeAluno.replace(/\s+/g, ".").toLowerCase()}@activeeducacional.com.br`;
-      const vencimento = text(lanc.vencimento || lanc.data_vencimento);
-      const dateOfExpiration = vencimento ? `${vencimento}T23:59:59.000-03:00` : undefined;
+      const vencimentoRawCron = text(lanc.vencimento || lanc.data_vencimento);
+      const brMatchCron = vencimentoRawCron.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      const vencimentoISOCron = brMatchCron ? `${brMatchCron[3]}-${brMatchCron[2]}-${brMatchCron[1]}` : vencimentoRawCron;
+      const dateOfExpiration = vencimentoISOCron ? `${vencimentoISOCron}T23:59:59.000-03:00` : undefined;
 
       if (!valor || valor <= 0) {
         detalhes.push({ id, aluno: nomeAluno, ok: false, erro: "Valor invalido" });
