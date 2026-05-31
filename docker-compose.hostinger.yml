@@ -1,7 +1,8 @@
 services:
 
-  # Next.js frontend (interface publica Node.js)
-  frontend:
+  # Next.js app (interface publica Node.js)
+  # O Easypanel mantem um override para o servico "app"; por isso o nome fica app.
+  app:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -37,6 +38,7 @@ services:
       default: {}
       easypanel:
         aliases:
+          - frontend
           - ativo-educacional_github_frontend
 
   # Wiz webhook / automacoes WhatsApp
