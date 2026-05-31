@@ -39,7 +39,7 @@ services:
       default: {}
       easypanel:
         aliases:
-          - frontend
+          - ativo-educacional_github_app
           - ativo-educacional_github_frontend
 
   # Wiz webhook / automacoes WhatsApp

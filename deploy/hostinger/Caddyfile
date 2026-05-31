@@ -11,7 +11,7 @@
     reverse_proxy wizbot:8787
   }
 
-  # Next.js frontend
-  reverse_proxy frontend:3000
+  # Next.js app
+  reverse_proxy app:3000
   encode gzip
 }
