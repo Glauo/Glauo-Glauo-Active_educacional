@@ -75,7 +75,7 @@ function errorHtml(title: string, message: string, detail?: string) {
   return new NextResponse(html, { status: 422, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
-async function createMercadoPagoBoleto(lancamento: Row, id: string) {
+async function createMercadoPagoBoleto(lancamento: Row, id: string, origin: string) {
   const config = await dbGet<Row>("boleto_config.json");
   const token = boletoToken(config);
   if (!token) {
@@ -119,7 +119,7 @@ async function createMercadoPagoBoleto(lancamento: Row, id: string) {
     },
   };
 
-  const notificationUrl = text(process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL || config?.webhook_url);
+  const notificationUrl = text(process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL || config?.webhook_url) || `${origin}/api/financeiro/mercado-pago/webhook`;
   if (notificationUrl) payload.notification_url = notificationUrl;
 
   const res = await fetch("https://api.mercadopago.com/v1/payments", {
@@ -187,7 +187,7 @@ export async function GET(req: NextRequest) {
   const existingMercadoPagoUrl = text(lancamento.mercado_pago_ticket_url || lancamento.boleto_pdf_url);
   if (existingMercadoPagoUrl.startsWith("http")) return NextResponse.redirect(existingMercadoPagoUrl);
 
-  const generated = await createMercadoPagoBoleto(lancamento, id);
+  const generated = await createMercadoPagoBoleto(lancamento, id, new URL(req.url).origin);
   if (generated.ok) return NextResponse.redirect(generated.url);
 
   const codigo = text(lancamento.boleto_codigo) || `AE-${id.slice(0, 8).toUpperCase()}`;
