@@ -5,7 +5,7 @@ const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "active-educacional-secret-2026-change-in-production"
 );
 
-const PUBLIC_PATHS = ["/login", "/aluno/login", "/limpar-cache", "/api/auth"];
+const PUBLIC_PATHS = ["/login", "/aluno/login", "/limpar-cache", "/api/auth", "/api/financeiro/mercado-pago/webhook"];
 const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js", "/limpar-cache.html"];
 
 export async function middleware(req: NextRequest) {

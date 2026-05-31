@@ -98,6 +98,10 @@ export async function POST(req: NextRequest) {
   const paymentId = text(data.id || url.searchParams.get("data.id") || url.searchParams.get("id"));
   const topic = lower(body.type || body.topic || url.searchParams.get("type") || url.searchParams.get("topic"));
 
+  if (body.live_mode === false || paymentId === "123456") {
+    return NextResponse.json({ ok: true, test: true });
+  }
+
   if (!paymentId || (topic && !topic.includes("payment"))) {
     return NextResponse.json({ ok: true, ignored: true });
   }
