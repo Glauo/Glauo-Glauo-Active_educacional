@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { dbList } from "@/lib/db";
+import { dbGet, dbList, dbSet } from "@/lib/db";
 
 type Row = Record<string, unknown>;
 
@@ -11,6 +11,164 @@ function text(value: unknown) {
 function money(value: unknown) {
   const n = parseFloat(String(value || "0").replace(/[^\d.,-]/g, "").replace(",", "."));
   return (Number.isFinite(n) ? n : 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function moneyNumber(value: unknown) {
+  const n = parseFloat(String(value || "0").replace(/[^\d.,-]/g, "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Number(n.toFixed(2)) : 0;
+}
+
+function digits(value: unknown) {
+  return text(value).replace(/\D/g, "");
+}
+
+function firstName(fullName: string) {
+  return fullName.split(/\s+/).filter(Boolean)[0] || "Aluno";
+}
+
+function lastName(fullName: string) {
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts.slice(1).join(" ") : "Active";
+}
+
+function boletoToken(config: Row | null) {
+  return text(
+    process.env.ACTIVE_MERCADO_PAGO_ACCESS_TOKEN ||
+    process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+    config?.mercado_pago_access_token ||
+    config?.MERCADO_PAGO_ACCESS_TOKEN ||
+    config?.access_token ||
+    config?.api_key
+  );
+}
+
+function payerEmail(lancamento: Row, config: Row | null) {
+  return text(
+    lancamento.email ||
+    lancamento.aluno_email ||
+    lancamento.responsavel_email ||
+    lancamento.email_responsavel ||
+    config?.payer_email ||
+    process.env.ACTIVE_MERCADO_PAGO_PAYER_EMAIL ||
+    process.env.MERCADO_PAGO_PAYER_EMAIL
+  );
+}
+
+function expirationDate(value: unknown) {
+  const parsed = new Date(text(value));
+  let date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  if (date < now) {
+    date = new Date();
+    date.setDate(date.getDate() + 3);
+  }
+  date.setHours(23, 59, 0, 0);
+  return date.toISOString();
+}
+
+function errorHtml(title: string, message: string, detail?: string) {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font-family:Arial,sans-serif;background:#f8fafc;color:#172033;margin:0;padding:40px}.box{max-width:760px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.08)}
+    h1{font-size:22px;margin:0 0 10px}.muted{color:#64748b;line-height:1.55}.detail{margin-top:16px;padding:12px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+  </style></head><body><div class="box"><h1>${title}</h1><p class="muted">${message}</p>${detail ? `<div class="detail">${detail}</div>` : ""}</div></body></html>`;
+  return new NextResponse(html, { status: 422, headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
+async function createMercadoPagoBoleto(lancamento: Row, id: string) {
+  const config = await dbGet<Row>("boleto_config.json");
+  const token = boletoToken(config);
+  if (!token) {
+    return {
+      ok: false as const,
+      response: errorHtml(
+        "Mercado Pago nao configurado",
+        "Para gerar boleto real, configure ACTIVE_MERCADO_PAGO_ACCESS_TOKEN ou MERCADO_PAGO_ACCESS_TOKEN no ambiente do Node.js, ou informe o Access Token nas configuracoes de boleto.",
+      ),
+    };
+  }
+
+  const amount = moneyNumber(lancamento.valor_parcela ?? lancamento.valor);
+  if (!amount) {
+    return { ok: false as const, response: errorHtml("Valor invalido", "Este lancamento nao tem valor valido para gerar boleto.") };
+  }
+
+  const email = payerEmail(lancamento, config);
+  if (!email) {
+    return { ok: false as const, response: errorHtml("E-mail do aluno obrigatorio", "O Mercado Pago exige e-mail do pagador. Preencha o e-mail no cadastro do aluno ou no lancamento financeiro.") };
+  }
+
+  const nome = text(lancamento.aluno || lancamento.nome || lancamento.pagador || "Aluno Active");
+  const cpf = digits(lancamento.cpf || lancamento.aluno_cpf || lancamento.responsavel_cpf);
+  const payload: Record<string, unknown> = {
+    transaction_amount: amount,
+    description: text(lancamento.descricao) || "Mensalidade escolar",
+    payment_method_id: "bolbradesco",
+    date_of_expiration: expirationDate(lancamento.vencimento || lancamento.data_vencimento),
+    external_reference: id,
+    payer: {
+      email,
+      first_name: firstName(nome),
+      last_name: lastName(nome),
+      ...(cpf.length === 11 ? { identification: { type: "CPF", number: cpf } } : {}),
+    },
+    metadata: {
+      sistema: "active_educacional",
+      lancamento_id: id,
+      aluno: nome,
+    },
+  };
+
+  const notificationUrl = text(process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL || config?.webhook_url);
+  if (notificationUrl) payload.notification_url = notificationUrl;
+
+  const res = await fetch("https://api.mercadopago.com/v1/payments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      "X-Idempotency-Key": `active-boleto-${id}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({})) as Row;
+  if (!res.ok) {
+    const detail = text(data.message || data.error || JSON.stringify(data).slice(0, 220));
+    return {
+      ok: false as const,
+      response: errorHtml("Falha ao gerar boleto Mercado Pago", "O Mercado Pago recusou a geracao do boleto. Revise token, e-mail, CPF e valor do lancamento.", detail),
+    };
+  }
+
+  const details = (data.transaction_details || {}) as Row;
+  const point = (data.point_of_interaction || {}) as Row;
+  const transactionData = (point.transaction_data || {}) as Row;
+  const barcode = (data.barcode || {}) as Row;
+  const boletoUrl = text(details.external_resource_url || data.external_resource_url || transactionData.ticket_url);
+  const linha = text(details.digitable_line || barcode.content);
+  if (!boletoUrl) {
+    return {
+      ok: false as const,
+      response: errorHtml("Boleto gerado sem link", "O Mercado Pago retornou pagamento, mas nao enviou o link do boleto. Verifique a conta Mercado Pago.", text(data.id)),
+    };
+  }
+
+  const recebimentos = await dbList<Row>("receivables.json");
+  await dbSet("receivables.json", recebimentos.map((item) => text(item.id) === id ? {
+    ...item,
+    mercado_pago_payment_id: text(data.id),
+    mercado_pago_status: text(data.status),
+    mercado_pago_detail: text(data.status_detail),
+    mercado_pago_ticket_url: boletoUrl,
+    boleto_pdf_url: boletoUrl,
+    boleto_linha_digitavel: linha,
+    boleto_status: "Mercado Pago",
+    boleto_codigo: text(data.id) || text(item.boleto_codigo),
+    boleto_gerado_em: new Date().toISOString(),
+    status: text(item.status) || "Boleto gerado",
+  } : item));
+
+  return { ok: true as const, url: boletoUrl };
 }
 
 export async function GET(req: NextRequest) {
@@ -25,6 +183,12 @@ export async function GET(req: NextRequest) {
   if (session.perfil === "Aluno" && text(lancamento.aluno || lancamento.nome) !== session.pessoa) {
     return NextResponse.json({ error: "Nao autorizado" }, { status: 403 });
   }
+
+  const existingMercadoPagoUrl = text(lancamento.mercado_pago_ticket_url || lancamento.boleto_pdf_url);
+  if (existingMercadoPagoUrl.startsWith("http")) return NextResponse.redirect(existingMercadoPagoUrl);
+
+  const generated = await createMercadoPagoBoleto(lancamento, id);
+  if (generated.ok) return NextResponse.redirect(generated.url);
 
   const codigo = text(lancamento.boleto_codigo) || `AE-${id.slice(0, 8).toUpperCase()}`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Boleto ${codigo}</title><style>
@@ -43,5 +207,5 @@ export async function GET(req: NextRequest) {
     <button onclick="window.print()">Gerar PDF</button>
   </div></body></html>`;
 
-  return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+  return generated.response || new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

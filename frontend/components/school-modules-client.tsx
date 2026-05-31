@@ -42,11 +42,12 @@ function closeIcon() {
   return <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>;
 }
 
-export function MuralCreateButton({ canPin }: { canPin: boolean }) {
+export function MuralCreateButton({ canPin, turmas = [] }: { canPin: boolean; turmas?: Row[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState("");
+  const turmaOptions = useMemo(() => uniqueClassNames(turmas), [turmas]);
   const [form, setForm] = useState({
     titulo: "",
     tipo_post: "Aviso Geral",
@@ -114,9 +115,27 @@ export function MuralCreateButton({ canPin }: { canPin: boolean }) {
               <div className="form-grid">
                 <div className="form-group form-group-span2"><label className="form-label">Titulo *</label><input className="form-input" maxLength={100} value={form.titulo} onChange={(e) => update("titulo", e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Tipo</label><select className="form-input" value={form.tipo_post} onChange={(e) => update("tipo_post", e.target.value)}><option>Comunicado Importante</option><option>Evento</option><option>Informacao Pedagogica</option><option>Conquista / Reconhecimento</option><option>Urgente</option><option>Aviso Geral</option></select></div>
-                <div className="form-group"><label className="form-label">Turma principal</label><input className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)} placeholder="Todas, 8A, Teens..." /></div>
+                <div className="form-group">
+                  <label className="form-label">Turma principal</label>
+                  <select className="form-input" value={form.turma} onChange={(e) => update("turma", e.target.value)}>
+                    <option value="Todas">Todas as turmas</option>
+                    {turmaOptions.map((turma) => <option key={turma} value={turma}>{turma}</option>)}
+                  </select>
+                </div>
                 <div className="form-group form-group-span2"><label className="form-label">Conteudo *</label><textarea className="form-input form-textarea" rows={5} value={form.mensagem} onChange={(e) => update("mensagem", e.target.value)} placeholder="Escreva o comunicado com clareza..." /></div>
-                <div className="form-group"><label className="form-label">Turmas adicionais</label><textarea className="form-input form-textarea" rows={3} value={form.turmas} onChange={(e) => update("turmas", e.target.value)} placeholder="Uma turma por linha" /></div>
+                <div className="form-group">
+                  <label className="form-label">Turmas adicionais</label>
+                  <select
+                    className="form-input form-textarea"
+                    multiple
+                    value={splitLines(form.turmas)}
+                    onChange={(e) => update("turmas", Array.from(e.target.selectedOptions).map((option) => option.value).join("\n"))}
+                    style={{ minHeight: 92 }}
+                  >
+                    {turmaOptions.map((turma) => <option key={turma} value={turma}>{turma}</option>)}
+                  </select>
+                  <div className="form-help">Use Ctrl para selecionar mais de uma turma.</div>
+                </div>
                 <div className="form-group"><label className="form-label">Aluno especifico</label><input className="form-input" value={form.aluno} onChange={(e) => update("aluno", e.target.value)} placeholder="Opcional" /></div>
                 <div className="form-group"><label className="form-label">Publicar em</label><input className="form-input" type="datetime-local" value={form.publicar_em} onChange={(e) => update("publicar_em", e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Expira em</label><input className="form-input" type="datetime-local" value={form.expira_em} onChange={(e) => update("expira_em", e.target.value)} /></div>

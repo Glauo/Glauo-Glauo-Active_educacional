@@ -12,7 +12,7 @@ Data: 2026-05-06
 - Visualizacao de faturas/boletos no detalhe do aluno.
 - Envio de login e senha por WhatsApp via link pronto apos alterar credenciais.
 
-## Gaps ainda identificados no antigo `app.py`
+## Gaps ainda identificados no sistema antigo
 
 - Cadastro completo do aluno:
   - matricula automatica

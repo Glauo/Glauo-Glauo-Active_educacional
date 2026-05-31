@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { MuralCreateButton } from "@/components/school-modules-client";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
+import { getSchoolClasses } from "@/lib/school-data";
 import { canManageAllSchoolContent, canManageSchoolContent, tagBadge, text, type WallPost } from "@/lib/school-modules";
 import { redirect } from "next/navigation";
 
@@ -15,7 +16,10 @@ function sortPosts(posts: WallPost[]) {
 export default async function MuralPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  const posts = await dbList<WallPost>("messages.json");
+  const [posts, turmas] = await Promise.all([
+    dbList<WallPost>("messages.json"),
+    getSchoolClasses(),
+  ]);
   const active = posts.filter((post) => !text(post.status).toLowerCase().includes("expir"));
   const needRead = posts.reduce((sum, post) => sum + (post.requer_confirmacao ? 1 : 0), 0);
   const confirmations = posts.reduce((sum, post) => sum + (Array.isArray(post.confirmacoes) ? post.confirmacoes.length : 0), 0);
@@ -29,7 +33,7 @@ export default async function MuralPage() {
           <h1 className="page-title">Mural de noticias e comunicados</h1>
           <p className="page-description">Canal oficial para comunicados, eventos, enquetes e confirmacoes de leitura no portal do aluno.</p>
         </div>
-        <div className="page-actions">{canCreate && <MuralCreateButton canPin={canManageAllSchoolContent(session)} />}</div>
+        <div className="page-actions">{canCreate && <MuralCreateButton canPin={canManageAllSchoolContent(session)} turmas={turmas} />}</div>
       </div>
 
       <div className="metric-grid metric-grid-4">

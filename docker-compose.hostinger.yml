@@ -1,36 +1,6 @@
 services:
 
-  # ── Streamlit / Wiz backend (interno, não exposto ao público) ──────────────
-  app:
-    build:
-      context: .
-      args:
-        GIT_SHA: ${GIT_SHA:-local}
-    restart: unless-stopped
-    environment:
-      ACTIVE_DATA_DIR: /app/data
-      ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
-      DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
-      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_CHALLENGE_MODEL: ${ACTIVE_CHALLENGE_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
-      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
-      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
-      WAPI_BASE_URL: ${WAPI_BASE_URL}
-      WAPI_TOKEN: ${WAPI_TOKEN}
-      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
-    volumes:
-      - ./data:/app/data
-    expose:
-      - "8501"
-    networks:
-      - default
-      - easypanel
-
-  # ── Next.js frontend (interface pública) ────────────────────────────────────
+  # Next.js frontend (interface publica Node.js)
   frontend:
     build:
       context: .
@@ -44,17 +14,31 @@ services:
       DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       JWT_SECRET: "ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb"
       PORT: "3000"
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
+      ACTIVE_OPENAI_API_KEY: ${ACTIVE_OPENAI_API_KEY}
+      ACTIVE_AI_BASE_URL: ${ACTIVE_AI_BASE_URL}
+      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_HOMEWORK_GRADER_MODEL: ${ACTIVE_HOMEWORK_GRADER_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_MERCADO_PAGO_ACCESS_TOKEN: ${ACTIVE_MERCADO_PAGO_ACCESS_TOKEN}
+      MERCADO_PAGO_ACCESS_TOKEN: ${MERCADO_PAGO_ACCESS_TOKEN}
+      ACTIVE_MERCADO_PAGO_WEBHOOK_URL: ${ACTIVE_MERCADO_PAGO_WEBHOOK_URL}
+      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
+      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
+      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
+      WAPI_BASE_URL: ${WAPI_BASE_URL}
+      WAPI_TOKEN: ${WAPI_TOKEN}
+      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
     expose:
       - "3000"
-    depends_on:
-      - app
     networks:
       default: {}
       easypanel:
         aliases:
           - ativo-educacional_github_frontend
 
-  # ── Wiz webhook / automações WhatsApp ────────────────────────────────────────
+  # Wiz webhook / automacoes WhatsApp
   wizbot:
     build:
       context: ./deploy/wizbot

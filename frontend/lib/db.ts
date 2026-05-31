@@ -54,8 +54,8 @@ export function getPool(): Pool | null {
   return globalThis._pgPool ?? null;
 }
 
-// Streamlit stores keys without the .json extension (uses Path.stem).
-// Strip it here so both systems share the same namespace.
+// Legacy data keys may exist without the .json extension.
+// Strip it here so old and new records share the same namespace.
 function normalizeKey(key: string): string {
   return key.endsWith(".json") ? key.slice(0, -5) : key;
 }

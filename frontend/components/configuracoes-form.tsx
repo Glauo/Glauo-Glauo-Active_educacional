@@ -268,6 +268,15 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
                 <input className="form-input" value={String(sistema.WAPI_INSTANCE_ID || "")} onChange={(e) => sys("WAPI_INSTANCE_ID", e.target.value)} placeholder="ID/nome da instancia" />
               </div>
               <div className="form-group form-group-span2">
+                <label className="form-label">Wiz IA - chave Groq/OpenAI</label>
+                <input className="form-input" type="password" value={String(sistema.ACTIVE_GROQ_API_KEY || sistema.GROQ_API_KEY || "")} onChange={(e) => sys("ACTIVE_GROQ_API_KEY", e.target.value)} placeholder="Cole a chave da IA para correcoes automaticas" />
+              </div>
+              <div className="form-group form-group-span2">
+                <label className="form-label">Modelo da Wiz IA</label>
+                <input className="form-input" value={String(sistema.ACTIVE_WIZ_MODEL || "")} onChange={(e) => sys("ACTIVE_WIZ_MODEL", e.target.value)} placeholder="llama-3.3-70b-versatile" />
+                <div className="form-help">Se o ambiente do servidor ja tiver a chave, este campo pode ficar vazio.</div>
+              </div>
+              <div className="form-group form-group-span2">
                 <div className="form-help">Preencha URL, token e instância. Ao salvar, boletos, credenciais, respostas e envios em massa disparam automaticamente pelo backend. O link manual continua aparecendo como fallback.</div>
               </div>
             </div>
@@ -305,6 +314,11 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
               <div className="form-group form-group-span2">
                 <label className="form-label">Cedente</label>
                 <input className="form-input" value={String(boleto.cedente || "")} onChange={(e) => bol("cedente", e.target.value)} placeholder="Nome do cedente" />
+              </div>
+              <div className="form-group form-group-span2">
+                <label className="form-label">Mercado Pago Access Token</label>
+                <input className="form-input" type="password" value={String(boleto.mercado_pago_access_token || "")} onChange={(e) => bol("mercado_pago_access_token", e.target.value)} placeholder="APP_USR-..." />
+                <div className="form-help">Usado para gerar boleto real pelo Mercado Pago no Node.js. Variaveis de ambiente continuam tendo prioridade.</div>
               </div>
               <div className="form-group">
                 <label className="form-label">Banco</label>
