@@ -41,5 +41,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png|manifest.json|sw.js|limpar-cache.html|icons/|uploads/).*)"]
+  matcher: ["/((?!api/financeiro/mercado-pago/webhook|_next/static|_next/image|favicon.ico|logo.png|manifest.json|sw.js|limpar-cache.html|icons/|uploads/).*)"]
 };
