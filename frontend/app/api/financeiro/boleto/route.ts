@@ -31,6 +31,10 @@ function lastName(fullName: string) {
   return parts.length > 1 ? parts.slice(1).join(" ") : "Active";
 }
 
+function firstPresent(...values: unknown[]) {
+  return values.map(text).find(Boolean) || "";
+}
+
 function boletoToken(config: Row | null) {
   return text(
     process.env.ACTIVE_MERCADO_PAGO_ACCESS_TOKEN ||
@@ -42,16 +46,56 @@ function boletoToken(config: Row | null) {
   );
 }
 
-function payerEmail(lancamento: Row, config: Row | null) {
+function payerEmail(lancamento: Row, aluno: Row | null, config: Row | null) {
   return text(
     lancamento.email ||
     lancamento.aluno_email ||
     lancamento.responsavel_email ||
     lancamento.email_responsavel ||
+    aluno?.responsavel_email ||
+    aluno?.email_responsavel ||
+    aluno?.emailResponsavel ||
+    aluno?.aluno_email ||
+    aluno?.email ||
     config?.payer_email ||
     process.env.ACTIVE_MERCADO_PAGO_PAYER_EMAIL ||
     process.env.MERCADO_PAGO_PAYER_EMAIL
   );
+}
+
+function splitAddress(value: unknown) {
+  const parts = text(value).split(",").map((item) => item.trim()).filter(Boolean);
+  return {
+    street_name: parts[0] || "",
+    street_number: parts[1] || "",
+    neighborhood: parts[2] || "",
+    city: parts[3] || "",
+  };
+}
+
+function payerAddress(lancamento: Row, aluno: Row | null, sistema: Row | null) {
+  const parsedLancamento = splitAddress(lancamento.endereco || lancamento.address);
+  const parsedAluno = splitAddress(aluno?.endereco || aluno?.address);
+  const parsedSistema = splitAddress(sistema?.endereco || sistema?.address);
+  return {
+    zip_code: digits(firstPresent(lancamento.cep, lancamento.zip_code, aluno?.cep, aluno?.zip_code, sistema?.cep, sistema?.zip_code)),
+    street_name: firstPresent(lancamento.rua, lancamento.street_name, parsedLancamento.street_name, aluno?.rua, aluno?.street_name, parsedAluno.street_name, sistema?.rua, sistema?.street_name, parsedSistema.street_name, "Rua nao informada"),
+    street_number: firstPresent(lancamento.numero, lancamento.number, lancamento.street_number, parsedLancamento.street_number, aluno?.numero, aluno?.number, aluno?.street_number, parsedAluno.street_number, sistema?.numero, sistema?.street_number, parsedSistema.street_number, "S/N"),
+    neighborhood: firstPresent(lancamento.bairro, lancamento.neighborhood, parsedLancamento.neighborhood, aluno?.bairro, aluno?.neighborhood, parsedAluno.neighborhood, sistema?.bairro, sistema?.neighborhood, parsedSistema.neighborhood, "Centro"),
+    city: firstPresent(lancamento.cidade, lancamento.city, parsedLancamento.city, aluno?.cidade, aluno?.city, parsedAluno.city, sistema?.cidade, sistema?.city, "Sao Paulo"),
+    federal_unit: firstPresent(lancamento.estado, lancamento.uf, lancamento.federal_unit, aluno?.estado, aluno?.uf, aluno?.federal_unit, sistema?.estado, sistema?.uf, sistema?.federal_unit, "SP").slice(0, 2).toUpperCase(),
+  };
+}
+
+function findStudent(students: Row[], lancamento: Row) {
+  const id = text(lancamento.aluno_id);
+  const login = text(lancamento.aluno_login || lancamento.login);
+  const nome = text(lancamento.aluno || lancamento.nome);
+  return students.find((student) =>
+    (id && text(student.id || student._id || student.uuid || student.codigo) === id) ||
+    (login && text(student.login || student.usuario) === login) ||
+    (nome && text(student.nome || student.name) === nome)
+  ) || null;
 }
 
 function expirationDate(value: unknown) {
@@ -76,7 +120,12 @@ function errorHtml(title: string, message: string, detail?: string) {
 }
 
 async function createMercadoPagoBoleto(lancamento: Row, id: string, origin: string) {
-  const config = await dbGet<Row>("boleto_config.json");
+  const [config, sistema, students] = await Promise.all([
+    dbGet<Row>("boleto_config.json"),
+    dbGet<Row>("sistema_config.json"),
+    dbList<Row>("students.json"),
+  ]);
+  const aluno = findStudent(students, lancamento);
   const token = boletoToken(config);
   if (!token) {
     return {
@@ -93,29 +142,52 @@ async function createMercadoPagoBoleto(lancamento: Row, id: string, origin: stri
     return { ok: false as const, response: errorHtml("Valor invalido", "Este lancamento nao tem valor valido para gerar boleto.") };
   }
 
-  const email = payerEmail(lancamento, config);
+  const email = payerEmail(lancamento, aluno, config);
   if (!email) {
     return { ok: false as const, response: errorHtml("E-mail do aluno obrigatorio", "O Mercado Pago exige e-mail do pagador. Preencha o e-mail no cadastro do aluno ou no lancamento financeiro.") };
   }
 
   const nome = text(lancamento.aluno || lancamento.nome || lancamento.pagador || "Aluno Active");
-  const cpf = digits(lancamento.cpf || lancamento.aluno_cpf || lancamento.responsavel_cpf);
+  const cpf = digits(lancamento.cpf || lancamento.aluno_cpf || lancamento.responsavel_cpf || aluno?.cpf || aluno?.responsavel_cpf);
+  const address = payerAddress(lancamento, aluno, sistema);
+  if (!address.zip_code) {
+    return { ok: false as const, response: errorHtml("CEP obrigatorio para boleto", "O Mercado Pago exige CEP do pagador para gerar boleto. Preencha o CEP no cadastro do aluno ou nas configuracoes da escola.") };
+  }
   const payload: Record<string, unknown> = {
     transaction_amount: amount,
     description: text(lancamento.descricao) || "Mensalidade escolar",
     payment_method_id: "bolbradesco",
     date_of_expiration: expirationDate(lancamento.vencimento || lancamento.data_vencimento),
     external_reference: id,
+    binary_mode: true,
+    statement_descriptor: "ACTIVE EDUCACIONAL",
     payer: {
       email,
       first_name: firstName(nome),
       last_name: lastName(nome),
       ...(cpf.length === 11 ? { identification: { type: "CPF", number: cpf } } : {}),
+      address,
+    },
+    additional_info: {
+      items: [{
+        id,
+        title: text(lancamento.descricao) || "Mensalidade escolar",
+        description: text(lancamento.observacoes) || text(lancamento.categoria) || "Servico educacional",
+        quantity: 1,
+        unit_price: amount,
+        category_id: "services",
+      }],
+      payer: {
+        first_name: firstName(nome),
+        last_name: lastName(nome),
+      },
     },
     metadata: {
       sistema: "active_educacional",
       lancamento_id: id,
       aluno: nome,
+      aluno_id: text(lancamento.aluno_id || aluno?.id),
+      aluno_login: text(lancamento.aluno_login || aluno?.login || aluno?.usuario),
     },
   };
 
