@@ -62,9 +62,19 @@ function introFor(category: string) {
 export function financeMessage(row: Record<string, unknown>, origin = "") {
   const id = text(row.id);
   const pdfUrl = text(row.boleto_pdf_url || row.boleto_pdf_public_url);
-  const link = pdfUrl
-    ? (pdfUrl.startsWith("http") ? pdfUrl : `${origin}${pdfUrl}`)
-    : (id ? `${origin}/api/financeiro/boleto?id=${encodeURIComponent(id)}` : origin);
+  const boletoUrl = text(row.boleto_url);
+  const digitableLine = text(row.digitable_line);
+  const barcode = text(row.barcode);
+  
+  let link = "";
+  if (boletoUrl && boletoUrl.startsWith("http")) {
+    link = boletoUrl;
+  } else if (pdfUrl) {
+    link = pdfUrl.startsWith("http") ? pdfUrl : `${origin}${pdfUrl}`;
+  } else if (id) {
+    link = `${origin}/api/financeiro/boleto?id=${encodeURIComponent(id)}`;
+  }
+
   const category = financeCategory(row);
   const title = categoryTitle(category);
   const aluno = text(row.aluno || row.nome || "Aluno");
@@ -73,6 +83,7 @@ export function financeMessage(row: Record<string, unknown>, origin = "") {
   const vencimento = text(row.vencimento || row.data_vencimento);
   const status = text(row.status || row.situacao);
   const subject = `${title} Active Educacional - ${referencia || aluno}`;
+  
   const lines = [
     `Olá, ${aluno}!`,
     "",
@@ -83,11 +94,26 @@ export function financeMessage(row: Record<string, unknown>, origin = "") {
     `Valor: ${money(row.valor_parcela || row.valor || row.valor_total)}`,
     vencimento ? `Vencimento: ${vencimento}` : "",
     status ? `Status: ${status}` : "",
-    "",
-    link ? `Acesse aqui: ${link}` : "",
-    "",
-    "Em caso de dúvida, fale com a secretaria da Active Educacional.",
-  ].filter((line) => line !== "");
+  ];
 
-  return { subject: polishPortugueseText(subject), body: polishPortugueseText(lines.join("\n")) };
+  if (digitableLine) {
+    lines.push("");
+    lines.push("LINHA DIGITÁVEL:");
+    lines.push(digitableLine);
+  }
+
+  if (barcode && !digitableLine) {
+    lines.push("");
+    lines.push(`Código de barras: ${barcode}`);
+  }
+
+  lines.push("");
+  if (link) {
+    lines.push(`Acesse aqui: ${link}`);
+  }
+
+  lines.push("");
+  lines.push("Em caso de dúvida, fale com a secretaria da Active Educacional.");
+
+  return { subject: polishPortugueseText(subject), body: polishPortugueseText(lines.filter((line) => line !== "").join("\n")) };
 }
