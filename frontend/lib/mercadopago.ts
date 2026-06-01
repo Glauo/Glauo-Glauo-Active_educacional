@@ -179,6 +179,7 @@ export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBo
         "X-Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify(body),
+      redirect: "follow", // CORREÇÃO: segue redirects (incluindo 307)
     });
 
     const data = (await res.json()) as Record<string, unknown>;
