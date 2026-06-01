@@ -46,8 +46,10 @@ function boletoToken(config: Row | null) {
   return text(
     process.env.ACTIVE_MERCADO_PAGO_ACCESS_TOKEN ||
     process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+    process.env.MP_ACCESS_TOKEN ||
     config?.mercado_pago_access_token ||
     config?.MERCADO_PAGO_ACCESS_TOKEN ||
+    config?.mp_access_token ||
     config?.access_token ||
     config?.api_key
   );
@@ -91,6 +93,10 @@ function verifySignature(req: NextRequest, dataId: string, secret: string) {
   return safeCompareHex(expected, v1);
 }
 
+export async function GET() {
+  return NextResponse.json({ ok: true, endpoint: "mercado-pago-webhook" });
+}
+
 export async function POST(req: NextRequest) {
   const url = new URL(req.url);
   const body = await req.json().catch(() => ({})) as Row;
@@ -129,6 +135,7 @@ export async function POST(req: NextRequest) {
     const idx = recebimentos.findIndex((item) =>
       text(item.id) === externalReference ||
       text(item.mercado_pago_payment_id) === paymentId ||
+      text(item.mp_payment_id) === paymentId ||
       text(item.boleto_codigo) === paymentId
     );
 
@@ -148,8 +155,11 @@ export async function POST(req: NextRequest) {
     const next = {
       ...before,
       mercado_pago_payment_id: paymentId,
+      mp_payment_id: paymentId,
       mercado_pago_status: status,
+      mp_status: status,
       mercado_pago_detail: statusDetail,
+      mp_status_detail: statusDetail,
       mercado_pago_webhook_at: now,
       ...(paid ? {
         status: "Pago",

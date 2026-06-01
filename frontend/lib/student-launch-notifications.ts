@@ -28,11 +28,24 @@ function studentClass(row: Row) {
 }
 
 function studentPhone(row: Row) {
-  return text(row.whatsapp || row.telefone || row.responsavel_telefone || row.phone);
+  const responsavel = (row.responsavel && typeof row.responsavel === "object" ? row.responsavel : {}) as Row;
+  return text(
+    row.whatsapp ||
+    row.celular ||
+    row.telefone ||
+    row.responsavel_telefone ||
+    row.telefone_responsavel ||
+    row.whatsapp_responsavel ||
+    responsavel.whatsapp ||
+    responsavel.celular ||
+    responsavel.telefone ||
+    row.phone
+  );
 }
 
 function studentEmail(row: Row) {
-  return text(row.email || row.responsavel_email);
+  const responsavel = (row.responsavel && typeof row.responsavel === "object" ? row.responsavel : {}) as Row;
+  return text(row.email || row.responsavel_email || row.email_responsavel || responsavel.email);
 }
 
 function firstName(value: unknown) {
