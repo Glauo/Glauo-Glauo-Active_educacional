@@ -48,9 +48,6 @@ export interface MpBoletoResult {
   raw?: unknown;
 }
 
-const DEFAULT_ACCESS_TOKEN =
-  "APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237";
-
 /**
  * Endereço padrão da escola — usado quando o aluno não tem endereço cadastrado.
  * O Mercado Pago EXIGE endereço completo para boleto registrado.
@@ -67,7 +64,10 @@ const DEFAULT_ADDRESS: MpPayerAddress = {
 async function getAccessToken(): Promise<string> {
   // 1. Variável de ambiente
   const envToken =
-    process.env.MP_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN;
+    process.env.ACTIVE_MERCADO_PAGO_ACCESS_TOKEN ||
+    process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+    process.env.MP_ACCESS_TOKEN ||
+    process.env.MERCADOPAGO_ACCESS_TOKEN;
   if (envToken) return envToken;
 
   // 2. Configuração salva no banco de dados
@@ -80,7 +80,7 @@ async function getAccessToken(): Promise<string> {
   }
 
   // 3. Fallback: token padrão
-  return DEFAULT_ACCESS_TOKEN;
+  return "";
 }
 
 /**
@@ -114,6 +114,12 @@ async function getDefaultAddress(): Promise<MpPayerAddress> {
  */
 export async function criarBoleteMercadoPago(input: MpBoletoInput): Promise<MpBoletoResult> {
   const accessToken = await getAccessToken();
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: "Mercado Pago Access Token nao configurado. Configure ACTIVE_MERCADO_PAGO_ACCESS_TOKEN no EasyPanel ou nas configuracoes de boleto.",
+    };
+  }
 
   // Data de expiração padrão: 3 dias a partir de hoje
   const expiration =

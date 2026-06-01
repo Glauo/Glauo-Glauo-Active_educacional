@@ -63,8 +63,8 @@ export function financeMessage(row: Record<string, unknown>, origin = "") {
   const id = text(row.id);
   const pdfUrl = text(row.boleto_pdf_url || row.boleto_pdf_public_url);
   const boletoUrl = text(row.boleto_url);
-  const digitableLine = text(row.digitable_line);
-  const barcode = text(row.barcode);
+  const digitableLine = text(row.digitable_line || row.boleto_linha_digitavel);
+  const barcode = text(row.barcode || row.boleto_codigo);
   
   let link = "";
   if (boletoUrl && boletoUrl.startsWith("http")) {

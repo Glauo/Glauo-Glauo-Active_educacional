@@ -11,6 +11,14 @@ function money(value: unknown) {
   return parseFloat(String(value || "0").replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
 }
 
+function webhookUrl() {
+  return (
+    process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL ||
+    process.env.MERCADO_PAGO_WEBHOOK_URL ||
+    "https://ativoeducacional.tech/api/financeiro/mercado-pago/webhook"
+  );
+}
+
 function activeStudent(student: Record<string, unknown>) {
   const status = text(student.status || student.situacao).toLowerCase();
   return !status.includes("inativ") && !status.includes("cancel") && !status.includes("tranc");
@@ -91,6 +99,7 @@ export async function POST(req: NextRequest) {
       payer_address: payerAddress,
       date_of_expiration: dateOfExpiration,
       external_reference: id,
+      notification_url: webhookUrl(),
     });
 
     if (!mpResult.ok) {
@@ -138,7 +147,7 @@ export async function POST(req: NextRequest) {
       boleto_status: "Gerado MP",
       boleto_url: mpResult.boleto_url,
       boleto_codigo: mpResult.barcode || "",
-      boleto_linha_digitavel: mpResult.barcode || "",
+      boleto_linha_digitavel: mpResult.digitable_line || mpResult.barcode || "",
       mp_payment_id: mpResult.payment_id,
       mp_status: mpResult.status,
       mp_status_detail: mpResult.status_detail,

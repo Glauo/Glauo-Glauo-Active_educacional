@@ -1,41 +1,5 @@
 services:
-
-  # ── Streamlit / Wiz backend (interno, não exposto ao público) ──────────────
   app:
-    build:
-      context: .
-      args:
-        GIT_SHA: ${GIT_SHA:-local}
-    restart: unless-stopped
-    environment:
-      ACTIVE_DATA_DIR: /app/data
-      ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
-      DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY}
-      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_CHALLENGE_MODEL: ${ACTIVE_CHALLENGE_MODEL:-llama-3.3-70b-versatile}
-      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
-      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
-      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
-      WAPI_BASE_URL: ${WAPI_BASE_URL}
-      WAPI_TOKEN: ${WAPI_TOKEN}
-      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
-      # ── Mercado Pago (boleto automático) ────────────────────────────────────
-      ACTIVE_BOLETO_PROVIDER: mercado_pago
-      ACTIVE_BOLETO_API_URL: https://api.mercadopago.com
-      ACTIVE_BOLETO_API_KEY: APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237
-    volumes:
-      - ./data:/app/data
-    expose:
-      - "8501"
-    networks:
-      - default
-      - easypanel
-
-  # ── Next.js frontend (interface pública) ────────────────────────────────────
-  frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -44,25 +8,63 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      PORT: "3000"
+      GIT_SHA: ${GIT_SHA:-local}
+      ACTIVE_DATA_DIR: /app/data
       ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
-      JWT_SECRET: "ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb"
-      PORT: "3000"
-      # Mercado Pago — Boleto Bancario
-      MP_ACCESS_TOKEN: "APP_USR-4713753450558393-052911-fe06bce27704ad491468ea178b863b04-3424597237"
-      # Cron de regeracao de boletos (mesmo segredo do wizbot)
+      JWT_SECRET: ${JWT_SECRET:-ativo-educacional-jwt-2026-pyioBAUq7fhAx26IL7hVd1HAnw6cLb}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://ativoeducacional.tech}
+      APP_URL: ${APP_URL:-https://ativoeducacional.tech}
+      ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
+      ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ACTIVE_GROQ_API_KEY: ${ACTIVE_GROQ_API_KEY:-}
+      ACTIVE_OPENAI_API_KEY: ${ACTIVE_OPENAI_API_KEY:-}
+      ACTIVE_AI_BASE_URL: ${ACTIVE_AI_BASE_URL:-}
+      ACTIVE_CHATBOT_MODEL: ${ACTIVE_CHATBOT_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_WIZ_MODEL: ${ACTIVE_WIZ_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_CHALLENGE_MODEL: ${ACTIVE_CHALLENGE_MODEL:-llama-3.3-70b-versatile}
+      ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
+      WAPI_BASE_URL: ${WAPI_BASE_URL:-}
+      WAPI_TOKEN: ${WAPI_TOKEN:-}
+      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID:-}
+      ACTIVE_WAPI_URL: ${ACTIVE_WAPI_URL:-}
+      ACTIVE_WAPI_TOKEN: ${ACTIVE_WAPI_TOKEN:-}
+      ACTIVE_WAPI_INSTANCE: ${ACTIVE_WAPI_INSTANCE:-}
+      ACTIVE_SMTP_HOST: ${ACTIVE_SMTP_HOST:-}
+      ACTIVE_SMTP_PORT: ${ACTIVE_SMTP_PORT:-587}
+      ACTIVE_SMTP_USER: ${ACTIVE_SMTP_USER:-}
+      ACTIVE_SMTP_PASS: ${ACTIVE_SMTP_PASS:-}
+      ACTIVE_EMAIL_FROM: ${ACTIVE_EMAIL_FROM:-}
+      ACTIVE_EMAIL_FROM_NAME: ${ACTIVE_EMAIL_FROM_NAME:-Active Educacional}
+      ACTIVE_SMTP_TLS: ${ACTIVE_SMTP_TLS:-1}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Active Educacional}
+      SMTP_TLS: ${SMTP_TLS:-1}
+      ACTIVE_BOLETO_PROVIDER: mercado_pago
+      ACTIVE_BOLETO_API_URL: https://api.mercadopago.com
+      ACTIVE_MERCADO_PAGO_ACCESS_TOKEN: ${ACTIVE_MERCADO_PAGO_ACCESS_TOKEN:-}
+      MERCADO_PAGO_ACCESS_TOKEN: ${MERCADO_PAGO_ACCESS_TOKEN:-}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      ACTIVE_MERCADO_PAGO_WEBHOOK_SECRET: ${ACTIVE_MERCADO_PAGO_WEBHOOK_SECRET:-}
+      MERCADO_PAGO_WEBHOOK_SECRET: ${MERCADO_PAGO_WEBHOOK_SECRET:-}
+      ACTIVE_MERCADO_PAGO_WEBHOOK_URL: ${ACTIVE_MERCADO_PAGO_WEBHOOK_URL:-https://ativoeducacional.tech/api/financeiro/mercado-pago/webhook}
       CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
+    volumes:
+      - ./data:/app/data
     expose:
       - "3000"
-    depends_on:
-      - app
     networks:
       default: {}
       easypanel:
         aliases:
-          - ativo-educacional_github_frontend
+          - ativo-educacional_github_app
 
-  # ── Wiz webhook / automações WhatsApp ────────────────────────────────────────
   wizbot:
     build:
       context: ./deploy/wizbot
@@ -73,14 +75,13 @@ services:
       ACTIVE_DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       DATABASE_URL: "postgres://postgres:yzaf9IIANpm3C51phXHLGlnn@postgres_active_local:5432/ativo_educacional?sslmode=disable"
       ACTIVE_WIZ_WEBHOOK_TOKEN: ${ACTIVE_WIZ_WEBHOOK_TOKEN:-2523wiz}
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      WAPI_BASE_URL: ${WAPI_BASE_URL}
-      WAPI_TOKEN: ${WAPI_TOKEN}
-      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      WAPI_BASE_URL: ${WAPI_BASE_URL:-}
+      WAPI_TOKEN: ${WAPI_TOKEN:-}
+      WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID:-}
       WIZBOT_PAUSED: "1"
-      # Cron de regeracao de boletos
       CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
-      FRONTEND_INTERNAL_URL: "http://frontend:3000"
+      FRONTEND_INTERNAL_URL: "http://app:3000"
     expose:
       - "8787"
     networks:

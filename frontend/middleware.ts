@@ -5,7 +5,14 @@ const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "active-educacional-secret-2026-change-in-production"
 );
 
-const PUBLIC_PATHS = ["/login", "/aluno/login", "/limpar-cache", "/api/auth"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/aluno/login",
+  "/limpar-cache",
+  "/api/auth",
+  "/api/version",
+  "/api/financeiro/mercado-pago/webhook",
+];
 const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js", "/limpar-cache.html"];
 
 export async function middleware(req: NextRequest) {
@@ -41,5 +48,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png|manifest.json|sw.js|limpar-cache.html|icons/|uploads/).*)"]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png|manifest.json|sw.js|limpar-cache.html|icons/|uploads/|api/version|api/financeiro/mercado-pago/webhook).*)"]
 };

@@ -971,7 +971,7 @@ def _get_frontend_base_url():
     if url:
         return url.rstrip("/")
     # Nome do servico na rede interna do Docker Compose
-    return "http://frontend:3000"
+    return "http://app:3000"
 
 
 def _cron_regerar_boletos():

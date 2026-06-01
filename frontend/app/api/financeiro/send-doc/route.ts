@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const allOk = Object.values(results).some((s) => s === "enviado" || s === "ok" || s.includes("250") || s.includes("sent"));
+  const allOk = Object.values(results).some((s) =>
+    /enviado|enviada|ok|success|sent|queued|accepted|250/i.test(s)
+  );
   return NextResponse.json({ ok: allOk, results });
 }

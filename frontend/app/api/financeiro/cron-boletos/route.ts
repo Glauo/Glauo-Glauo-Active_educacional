@@ -26,6 +26,14 @@ function money(v: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function webhookUrl() {
+  return (
+    process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL ||
+    process.env.MERCADO_PAGO_WEBHOOK_URL ||
+    "https://ativoeducacional.tech/api/financeiro/mercado-pago/webhook"
+  );
+}
+
 function precisaRegerar(r: Row) {
   const boletoUrl = text(r.boleto_url);
   const status = text(r.boleto_status);
@@ -120,6 +128,7 @@ export async function GET(req: NextRequest) {
         payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
+        notification_url: webhookUrl(),
       });
       if (mpResult.ok) {
         updatedMap.set(id, {
@@ -127,7 +136,7 @@ export async function GET(req: NextRequest) {
           boleto_status: "Gerado MP",
           boleto_url: mpResult.boleto_url,
           boleto_codigo: mpResult.barcode || "",
-          boleto_linha_digitavel: mpResult.barcode || "",
+          boleto_linha_digitavel: mpResult.digitable_line || mpResult.barcode || "",
           mp_payment_id: mpResult.payment_id,
           mp_status: mpResult.status,
           mp_status_detail: mpResult.status_detail,

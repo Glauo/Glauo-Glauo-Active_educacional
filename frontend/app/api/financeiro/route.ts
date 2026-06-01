@@ -11,6 +11,14 @@ function text(value: unknown) {
   return String(value || "").trim();
 }
 
+function mercadoPagoWebhookUrl() {
+  return (
+    process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL ||
+    process.env.MERCADO_PAGO_WEBHOOK_URL ||
+    "https://ativoeducacional.tech/api/financeiro/mercado-pago/webhook"
+  );
+}
+
 const HEAVY_KEYS = ["boleto_pdf_b64", "file_b64", "pdf_b64", "base64", "arquivo_b64", "foto_b64", "imagem_b64", "documento_b64", "anexo_b64"];
 
 function isPaid(value: unknown) {
@@ -137,6 +145,7 @@ export async function POST(req: NextRequest) {
         payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
+        notification_url: mercadoPagoWebhookUrl(),
       });
 
       if (mpResult.ok) {
@@ -144,7 +153,7 @@ export async function POST(req: NextRequest) {
           boleto_status: "Gerado MP",
           boleto_url: mpResult.boleto_url,
           boleto_codigo: mpResult.barcode || "",
-          boleto_linha_digitavel: mpResult.barcode || "",
+          boleto_linha_digitavel: mpResult.digitable_line || mpResult.barcode || "",
           mp_payment_id: mpResult.payment_id,
           mp_status: mpResult.status,
           mp_status_detail: mpResult.status_detail,
@@ -282,6 +291,7 @@ export async function PUT(req: NextRequest) {
         payer_address: payerAddress,
         date_of_expiration: dateOfExpiration,
         external_reference: id,
+        notification_url: mercadoPagoWebhookUrl(),
       });
 
       if (mpResult.ok) {
@@ -289,7 +299,7 @@ export async function PUT(req: NextRequest) {
           boleto_status: "Gerado MP",
           boleto_url: mpResult.boleto_url,
           boleto_codigo: mpResult.barcode || "",
-          boleto_linha_digitavel: mpResult.barcode || "",
+          boleto_linha_digitavel: mpResult.digitable_line || mpResult.barcode || "",
           mp_payment_id: mpResult.payment_id,
           mp_status: mpResult.status,
           mp_status_detail: mpResult.status_detail,
