@@ -1,6 +1,32 @@
 export const SALES_LEADS_KEY = "sales_leads.json";
 export const SALES_AGENDA_KEY = "sales_agenda.json";
 
+export const COMMERCIAL_WEBSITE = "https://condojob.org";
+export const CONDOJOB_PRESENTATION_MESSAGE = `Olá, tudo bem? Sou *Glauco Volpini, da CondoJob*.
+Quero apresentar uma solução criada para facilitar uma das maiores dificuldades dos síndicos: *encontrar profissionais quando o condomínio mais precisa.*
+A *CondoJob não é uma empresa terceirizada*. Somos uma *plataforma de captação, qualificação e treinamento de profissionais para condomínios*.
+Por meio da plataforma, o síndico pode buscar profissionais para diferentes necessidades:
+• *FT / diária*
+• *Folguistas*
+• *Cobertura de férias e afastamentos*
+• *Vagas fixas*
+• *Contratações emergenciais*
+Trabalhamos com profissionais para *portaria, zeladoria, limpeza, manutenção, piscina e outras funções condominiais*.
+A proposta é simples: *faltou um funcionário ou surgiu uma necessidade de última hora? O síndico tem um lugar para procurar profissionais disponíveis e capacitados*, sem depender apenas de indicações e grupos de WhatsApp.
+Além da captação, a CondoJob também oferece *treinamento voltado à rotina de condomínios*, ajudando a preparar melhor os candidatos para o trabalho.
+🌐 *condojob.org*
+📲 *(16) 99604-3314*
+*CondoJob — o profissional que seu condomínio precisa, na hora que precisa.*`;
+
+// Display business terminology without changing values in existing records.
+export function leadStatusLabel(status: string) {
+  return status === "Indicacao de alunos" ? "Indicação de clientes" : status;
+}
+
+export function agendaTypeLabel(type: string) {
+  return type === "Matricula" ? "Contratação" : type;
+}
+
 export const LEAD_STATUS_OPTIONS = [
   "Novo contato",
   "Leads frios",
@@ -63,6 +89,11 @@ export type CommercialLead = {
   interacoes?: unknown[];
   landing_pages?: unknown[];
   conversoes?: unknown[];
+  primeiro_contato?: {
+    mensagem: string;
+    imagem_id: string;
+    status: "Preparado";
+  };
   [key: string]: unknown;
 };
 

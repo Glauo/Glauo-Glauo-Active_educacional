@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { ComercialCrm } from "@/components/comercial-crm";
 import { getSession } from "@/lib/auth";
 import {
+  COMMERCIAL_WEBSITE,
   SALES_AGENDA_KEY,
   SALES_LEADS_KEY,
   canManageCommercial,
@@ -31,20 +32,21 @@ export default async function ComercialPage() {
   const userName = session.pessoa || session.usuario;
 
   return (
-    <AppShell breadcrumb="Comercial" userName={userName} userRole={session.perfil} userUnit={session.unit}>
+    <AppShell breadcrumb="Comercial CondoJob" userName={userName} userRole={session.perfil} userUnit={session.unit}>
       <div className="page-header">
         <div className="page-title-block">
-          <div className="page-eyebrow"><span className="page-eyebrow-dot" />COMERCIAL</div>
-          <h1 className="page-title">Painel Comercial</h1>
-          <p className="page-description">Funil de vendas, contatos e retornos comerciais no fluxo operacional do Active.</p>
+          <div className="page-eyebrow"><span className="page-eyebrow-dot" />CONDOJOB · COMERCIAL</div>
+          <h1 className="page-title">Comercial CondoJob</h1>
+          <p className="page-description">Relacionamento com síndicos, administradoras e condomínios. Captação, qualificação e treinamento de profissionais.</p>
         </div>
         <div className="page-actions">
+          <a className="btn btn-primary" href={COMMERCIAL_WEBSITE} target="_blank" rel="noopener noreferrer">condojob.org</a>
           <a className="btn btn-secondary" href="/atendimento">Atendimento</a>
         </div>
       </div>
 
       <section className="metric-grid metric-grid-3">
-        <div className="metric-card"><div className="metric-label">Leads cadastrados</div><div className="metric-value">{leads.length}</div><div className="metric-note">Base comercial ativa</div></div>
+        <div className="metric-card"><div className="metric-label">Leads cadastrados</div><div className="metric-value">{leads.length}</div><div className="metric-note">Relacionamento comercial CondoJob</div></div>
         <div className="metric-card metric-card-gold"><div className="metric-label">Pendentes</div><div className="metric-value">{pendentes}</div><div className="metric-note">Precisam de continuidade</div></div>
         <div className="metric-card metric-card-green"><div className="metric-label">Agenda aberta</div><div className="metric-value">{agendados}</div><div className="metric-note">{quentes} oportunidades quentes | {pagamentos.length} registros financeiros</div></div>
       </section>

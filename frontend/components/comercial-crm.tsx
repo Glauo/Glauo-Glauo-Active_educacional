@@ -5,12 +5,16 @@ import { useRouter } from "next/navigation";
 import { AutoWhatsAppButton } from "@/components/auto-whatsapp-button";
 import {
   AGENDA_TYPE_OPTIONS,
+  COMMERCIAL_WEBSITE,
+  CONDOJOB_PRESENTATION_MESSAGE,
   LEAD_STATUS_OPTIONS,
   PIPELINE_STAGE_OPTIONS,
+  agendaTypeLabel,
   leadName,
   leadPhone,
   leadStage,
   leadStatus,
+  leadStatusLabel,
   normalizeTags,
   text,
   type CommercialAgendaItem,
@@ -26,6 +30,8 @@ type LeadForm = {
   estagio_funil: string;
   origem: string;
   interesse: string;
+  empresa: string;
+  cargo: string;
   vendedor: string;
   cidade: string;
   estado: string;
@@ -89,8 +95,10 @@ function leadForm(lead?: CommercialLead, seller = ""): LeadForm {
     email: text(lead?.email),
     status: leadStatus(lead || {}),
     estagio_funil: leadStage(lead || {}),
-    origem: text(lead?.origem),
+    origem: text(lead?.origem || (lead ? "" : "condojob.org")),
     interesse: text(lead?.interesse || lead?.curso || lead?.modulo),
+    empresa: text(lead?.empresa),
+    cargo: text(lead?.cargo),
     vendedor: text(lead?.vendedor || lead?.responsavel || lead?.atendente || seller),
     cidade: text(lead?.cidade),
     estado: text(lead?.estado),
@@ -130,7 +138,7 @@ function agendaDetails(item: CommercialAgendaItem) {
 
 function waMessage(lead: CommercialLead) {
   const interest = text(lead.interesse || lead.curso || lead.modulo);
-  return `Ola ${leadName(lead)}! Aqui e da Active Educacional. Quero dar continuidade ao seu atendimento${interest ? ` sobre ${interest}` : ""}.`;
+  return `Olá ${leadName(lead)}! Aqui é da CondoJob. Quero dar continuidade ao seu atendimento${interest ? ` sobre ${interest}` : " sobre profissionais para condomínios"}.\n${COMMERCIAL_WEBSITE}\nWhatsApp: (16) 99604-3314`;
 }
 
 function leadQueueKey(lead: CommercialLead) {
@@ -138,15 +146,16 @@ function leadQueueKey(lead: CommercialLead) {
 }
 
 function salesMessage(template: string, lead: CommercialLead, seller: string) {
-  const interest = text(lead.interesse || lead.curso || lead.modulo || "nossos cursos");
+  const interest = text(lead.interesse || lead.curso || lead.modulo || "profissionais para condomínios");
   const variables: Record<string, string> = {
     nome: leadName(lead),
     interesse: interest,
     consultor: text(seller || lead.vendedor || lead.responsavel || "equipe comercial"),
-    origem: text(lead.origem || "Active Educacional"),
+    origem: text(lead.origem || "CondoJob"),
+    site: COMMERCIAL_WEBSITE,
   };
   return template
-    .replace(/\{\s*(nome|interesse|consultor|origem)\s*\}/gi, (_, key: string) => variables[key.toLowerCase()] || "")
+    .replace(/\{\s*(nome|interesse|consultor|origem|site)\s*\}/gi, (_, key: string) => variables[key.toLowerCase()] || "")
     .trim();
 }
 
@@ -219,7 +228,7 @@ function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; 
     <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal-box commercial-modal-box">
         <div className="modal-header">
-          <div><div className="modal-title">{isEdit ? "Editar lead" : "Novo lead"}</div><div className="modal-subtitle">Cadastro ligado ao funil e agenda.</div></div>
+          <div><div className="modal-title">{isEdit ? "Editar lead" : "Novo lead"}</div><div className="modal-subtitle">Relacionamento comercial CondoJob.</div></div>
           <button className="modal-close" type="button" aria-label="Fechar" onClick={onClose}>{closeIcon()}</button>
         </div>
         <div className="modal-body">
@@ -229,10 +238,12 @@ function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; 
             <div className="form-group"><label className="form-label">Celular</label><input className="form-input" value={form.celular} onChange={(event) => update("celular", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">E-mail</label><input className="form-input" type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">Consultor</label><input className="form-input" value={form.vendedor} onChange={(event) => update("vendedor", event.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Condomínio / empresa</label><input className="form-input" value={form.empresa} onChange={(event) => update("empresa", event.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Cargo / função do contato</label><input className="form-input" placeholder="Síndico, administradora, gestor..." value={form.cargo} onChange={(event) => update("cargo", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">Etapa do funil</label><select className="form-input" value={form.estagio_funil} onChange={(event) => update("estagio_funil", event.target.value)}>{PIPELINE_STAGE_OPTIONS.map((stage) => <option key={stage}>{stage}</option>)}</select></div>
-            <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={form.status} onChange={(event) => update("status", event.target.value)}>{LEAD_STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={form.status} onChange={(event) => update("status", event.target.value)}>{LEAD_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{leadStatusLabel(status)}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Origem</label><input className="form-input" placeholder="Instagram, indicacao..." value={form.origem} onChange={(event) => update("origem", event.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Interesse / curso</label><input className="form-input" value={form.interesse} onChange={(event) => update("interesse", event.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Necessidade / serviço</label><input className="form-input" placeholder="FT / diária, folguista, vaga fixa, treinamento..." value={form.interesse} onChange={(event) => update("interesse", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">Cidade</label><input className="form-input" value={form.cidade} onChange={(event) => update("cidade", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">Estado</label><input className="form-input" maxLength={2} value={form.estado} onChange={(event) => update("estado", event.target.value.toUpperCase())} /></div>
             <div className="form-group form-group-span2"><label className="form-label">Tags</label><input className="form-input" placeholder="VIP, retorno, indicacao" value={form.tags} onChange={(event) => update("tags", event.target.value)} /></div>
@@ -277,7 +288,7 @@ function AgendaModal({ item, lead, leads, onClose, onSaved }: { item?: Commercia
     <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal-box">
         <div className="modal-header">
-          <div><div className="modal-title">{isEdit ? "Editar agendamento" : "Novo agendamento"}</div><div className="modal-subtitle">Retorno comercial ligado ao lead.</div></div>
+          <div><div className="modal-title">{isEdit ? "Editar agendamento" : "Novo agendamento"}</div><div className="modal-subtitle">Retorno comercial CondoJob ligado ao lead.</div></div>
           <button className="modal-close" type="button" aria-label="Fechar" onClick={onClose}>{closeIcon()}</button>
         </div>
         <div className="modal-body">
@@ -289,7 +300,7 @@ function AgendaModal({ item, lead, leads, onClose, onSaved }: { item?: Commercia
                 {leads.map((current) => <option key={text(current.id)} value={text(current.id)}>{leadName(current)} {leadPhone(current) ? `- ${leadPhone(current)}` : ""}</option>)}
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Tipo</label><select className="form-input" value={form.tipo} onChange={(event) => update("tipo", event.target.value)}>{AGENDA_TYPE_OPTIONS.map((type) => <option key={type}>{type}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">Tipo</label><select className="form-input" value={form.tipo} onChange={(event) => update("tipo", event.target.value)}>{AGENDA_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{agendaTypeLabel(type)}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Status</label><select className="form-input" value={form.status} onChange={(event) => update("status", event.target.value)}><option>Agendado</option><option>Concluido</option><option>Cancelado</option></select></div>
             <div className="form-group"><label className="form-label">Data *</label><input className="form-input" type="date" value={form.data} onChange={(event) => update("data", event.target.value)} /></div>
             <div className="form-group"><label className="form-label">Horario</label><input className="form-input" type="time" value={form.hora} onChange={(event) => update("hora", event.target.value)} /></div>
@@ -308,11 +319,58 @@ function AgendaModal({ item, lead, leads, onClose, onSaved }: { item?: Commercia
   );
 }
 
+function FirstContactModal({ lead, onClose }: { lead: CommercialLead; onClose: () => void }) {
+  const [notice, setNotice] = useState("");
+  const contact = lead.primeiro_contato;
+  if (!contact) return null;
+  const imageUrl = `/api/comercial/imagem?id=${encodeURIComponent(contact.imagem_id)}`;
+  const digits = leadPhone(lead).replace(/\D/g, "");
+  const phone = digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(contact!.mensagem);
+      setNotice("Mensagem copiada.");
+    } catch {
+      setNotice("Selecione e copie o texto abaixo.");
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal-box commercial-first-contact-modal" role="dialog" aria-modal="true" aria-label={`Primeiro contato com ${leadName(lead)}`}>
+        <div className="modal-header">
+          <div><div className="modal-title">Primeiro contato</div><div className="modal-subtitle">{leadName(lead)} · Material preparado</div></div>
+          <button className="modal-close" type="button" aria-label="Fechar" onClick={onClose}>{closeIcon()}</button>
+        </div>
+        <div className="modal-body">
+          <p className="form-help">Baixe a imagem, abra o WhatsApp e anexe a imagem junto da mensagem. O envio e a confirmação ficam com você.</p>
+          <div className="commercial-first-contact-content">
+            {/* Original supplied artwork, served only to commercial users. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="commercial-first-contact-image" src={imageUrl} alt="Apresentação CondoJob: profissionais qualificados para condomínios" />
+            <div className="form-group">
+              <label className="form-label" htmlFor="first-contact-message">Mensagem de apresentação</label>
+              <textarea id="first-contact-message" className="form-input form-textarea" rows={18} readOnly value={contact.mensagem} />
+            </div>
+          </div>
+          {notice && <div className="commercial-notice" role="status">{notice}</div>}
+        </div>
+        <div className="modal-footer commercial-first-contact-actions">
+          <button className="btn btn-secondary" type="button" onClick={copyMessage}>Copiar mensagem</button>
+          <a className="btn btn-secondary" href={`${imageUrl}&download=1`}>Baixar imagem</a>
+          {phone && <a className="btn btn-primary" href={`https://wa.me/${phone}?text=${encodeURIComponent(contact.mensagem)}`} target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]; seller: string; onClose: () => void }) {
   const eligibleLeads = useMemo(() => salesLeads(leads), [leads]);
   const stopRef = useRef(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [template, setTemplate] = useState("Ola {nome}! Tudo bem? Aqui e {consultor}, da Active Educacional. Vi seu interesse em {interesse}. Posso te ajudar a escolher a melhor opcao de aula?");
+  const [template, setTemplate] = useState(CONDOJOB_PRESENTATION_MESSAGE);
   const [intervalSeconds, setIntervalSeconds] = useState("90");
   const [allowed, setAllowed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -387,7 +445,7 @@ function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]
     <div className="modal-overlay" onClick={(event) => !running && event.target === event.currentTarget && onClose()}>
       <div className="modal-box commercial-sales-modal">
         <div className="modal-header">
-          <div><div className="modal-title">Mensagem de vendas no WhatsApp</div><div className="modal-subtitle">Envio sequencial para leads filtrados do Comercial.</div></div>
+          <div><div className="modal-title">WhatsApp comercial CondoJob</div><div className="modal-subtitle">Envio sequencial para leads filtrados do Comercial.</div></div>
           <button className="modal-close" type="button" aria-label="Fechar" onClick={onClose} disabled={running}>{closeIcon()}</button>
         </div>
         <div className="modal-body">
@@ -395,8 +453,8 @@ function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]
             <div className="commercial-sales-compose">
               <div className="form-group">
                 <label className="form-label">Mensagem</label>
-                <textarea className="form-input form-textarea commercial-sales-template" rows={6} value={template} onChange={(event) => setTemplate(event.target.value)} disabled={running} />
-                <div className="form-help">Variaveis: {"{nome}"}, {"{interesse}"}, {"{consultor}"} e {"{origem}"}.</div>
+                <textarea className="form-input form-textarea commercial-sales-template" rows={10} value={template} onChange={(event) => setTemplate(event.target.value)} disabled={running} />
+                <div className="form-help">Variaveis: {"{nome}"}, {"{interesse}"}, {"{consultor}"}, {"{origem}"} e {"{site}"}. Este envio usa apenas texto; para anexar a apresentação, use Primeiro contato.</div>
               </div>
               <div className="commercial-sales-controls">
                 <div className="form-group">
@@ -446,13 +504,14 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
   const [leadModal, setLeadModal] = useState<CommercialLead | "new" | null>(null);
   const [agendaModal, setAgendaModal] = useState<{ item?: CommercialAgendaItem; lead?: CommercialLead } | null>(null);
   const [salesModal, setSalesModal] = useState(false);
+  const [firstContactLead, setFirstContactLead] = useState<CommercialLead | null>(null);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
 
   const visibleLeads = useMemo(() => {
     const query = lower(search);
     return leads.filter((lead) => {
-      const searchable = [leadName(lead), leadPhone(lead), lead.email, lead.interesse, lead.origem, lead.vendedor, tagsText(lead.tags)].map(lower).join(" ");
+      const searchable = [leadName(lead), leadPhone(lead), lead.email, lead.interesse, lead.empresa, lead.cargo, lead.origem, lead.vendedor, tagsText(lead.tags)].map(lower).join(" ");
       const statusOk = statusFilter === "Todos" || leadStatus(lead) === statusFilter;
       return statusOk && (!query || searchable.includes(query));
     });
@@ -501,13 +560,13 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
     <>
       <section className="card commercial-workbench">
         <div className="card-header commercial-card-header">
-          <div><div className="section-eyebrow">FUNIL</div><h3 className="section-title">Pipeline de leads</h3><p className="section-subtitle">Mova o lead por etapa, agende retornos e mantenha o atendimento no mesmo painel.</p></div>
+          <div><div className="section-eyebrow">CONDOJOB</div><h3 className="section-title">Funil comercial</h3><p className="section-subtitle">Acompanhe síndicos, administradoras e condomínios, da apresentação ao fechamento.</p></div>
           <div className="commercial-toolbar-actions"><button className="btn btn-secondary" type="button" onClick={() => setSalesModal(true)} disabled={visibleLeads.length === 0}>WhatsApp vendas</button><button className="btn btn-secondary" type="button" onClick={() => setAgendaModal({})} disabled={leads.length === 0}>{plusIcon()}Agendar</button><button className="btn btn-primary" type="button" onClick={() => setLeadModal("new")}>{plusIcon()}Novo lead</button></div>
         </div>
         <div className="card-body commercial-workbench-body">
           <div className="commercial-filters">
             <div className="search-bar"><span className="search-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.5 3a5.5 5.5 0 104.07 9.2l3.61 3.62a1 1 0 001.42-1.42l-3.62-3.61A5.5 5.5 0 008.5 3zm-3.5 5.5a3.5 3.5 0 117 0 3.5 3.5 0 01-7 0z" clipRule="evenodd" /></svg></span><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar lead, telefone, origem ou interesse" /></div>
-            <select className="form-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todos</option>{LEAD_STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}</select>
+            <select className="form-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Todos</option>{LEAD_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{leadStatusLabel(status)}</option>)}</select>
           </div>
           {notice && <div className="commercial-notice">{notice}</div>}
           <div className="commercial-board" aria-label="Funil comercial">
@@ -522,12 +581,12 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
                       <article className="commercial-lead" key={text(lead.id) || `${leadName(lead)}-${stage}`}>
                         <div className="commercial-lead-head"><button className="commercial-lead-name" type="button" onClick={() => setLeadModal(lead)}>{leadName(lead)}</button><button className="btn btn-ghost btn-sm btn-icon" type="button" title="Editar lead" onClick={() => setLeadModal(lead)}>{editIcon()}</button></div>
                         <div className="commercial-lead-meta">{text(lead.interesse || lead.curso || lead.origem || "Sem interesse informado")}</div>
-                        <div className="commercial-lead-badges"><span className={`badge badge-${tone(leadStatus(lead))}`}><span className="badge-dot" />{leadStatus(lead)}</span>{leadPhone(lead) && <span className="commercial-phone">{leadPhone(lead)}</span>}</div>
+                        <div className="commercial-lead-badges"><span className={`badge badge-${tone(leadStatus(lead))}`}><span className="badge-dot" />{leadStatusLabel(leadStatus(lead))}</span>{leadPhone(lead) && <span className="commercial-phone">{leadPhone(lead)}</span>}</div>
                         <div className="commercial-inline-fields">
                           <select className="form-input" aria-label={`Etapa de ${leadName(lead)}`} value={leadStage(lead)} disabled={busy === `lead-${lead.id}`} onChange={(event) => patchLead(lead, { estagio_funil: event.target.value })}>{PIPELINE_STAGE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>
-                          <select className="form-input" aria-label={`Status de ${leadName(lead)}`} value={leadStatus(lead)} disabled={busy === `lead-${lead.id}`} onChange={(event) => patchLead(lead, { status: event.target.value })}>{LEAD_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>
+                          <select className="form-input" aria-label={`Status de ${leadName(lead)}`} value={leadStatus(lead)} disabled={busy === `lead-${lead.id}`} onChange={(event) => patchLead(lead, { status: event.target.value })}>{LEAD_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{leadStatusLabel(option)}</option>)}</select>
                         </div>
-                        <div className="commercial-lead-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={() => setAgendaModal({ lead })}>Agendar</button>{leadPhone(lead) && <AutoWhatsAppButton phone={leadPhone(lead)} message={waMessage(lead)} className="btn btn-ghost btn-sm" />}</div>
+                        <div className="commercial-lead-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={() => setAgendaModal({ lead })}>Agendar</button>{lead.primeiro_contato ? <button className="btn btn-primary btn-sm" type="button" onClick={() => setFirstContactLead(lead)}>Primeiro contato</button> : leadPhone(lead) && <AutoWhatsAppButton phone={leadPhone(lead)} message={waMessage(lead)} className="btn btn-ghost btn-sm" />}</div>
                       </article>
                     ))}
                   </div>
@@ -540,7 +599,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
 
       <section className="card">
         <div className="card-header commercial-card-header">
-          <div><div className="section-eyebrow">AGENDA</div><h3 className="section-title">Tarefas e retornos comerciais</h3><p className="section-subtitle">A agenda mantem o proximo contato visivel para cada oportunidade.</p></div>
+          <div><div className="section-eyebrow">AGENDA CONDOJOB</div><h3 className="section-title">Tarefas e retornos comerciais</h3><p className="section-subtitle">Contatos, visitas e reuniões para atender às necessidades dos condomínios.</p></div>
           <button className="btn btn-secondary" type="button" onClick={() => setAgendaModal({})} disabled={leads.length === 0}>{plusIcon()}Novo retorno</button>
         </div>
         <div className="card-body commercial-agenda-wrap">
@@ -552,7 +611,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
                   <tr key={text(item.id) || index}>
                     <td><strong>{text(item.data || item.date) || "-"}</strong><div className="muted">{text(item.hora) || "--:--"} | {text(item.duracao_minutos || 45)} min</div></td>
                     <td><span className="table-name-primary">{agendaClient(item)}</span><div className="muted">{text(item.lead_telefone)}</div></td>
-                    <td>{text(item.tipo || "Retorno")}</td>
+                    <td>{agendaTypeLabel(text(item.tipo || "Retorno"))}</td>
                     <td><span className={`badge badge-${tone(item.status || item.situacao)}`}><span className="badge-dot" />{text(item.status || item.situacao || "Agendado")}</span></td>
                     <td>{agendaDetails(item) || "-"}</td>
                     <td><div className="commercial-agenda-actions"><button className="btn btn-ghost btn-sm btn-icon" type="button" title="Editar agendamento" onClick={() => setAgendaModal({ item })}>{editIcon()}</button><button className="btn btn-secondary btn-sm" type="button" disabled={busy === `agenda-${item.id}`} onClick={() => patchAgenda(item, "Concluido")}>Concluir</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy === `agenda-${item.id}`} onClick={() => patchAgenda(item, "Cancelado")}>Cancelar</button></div></td>
@@ -567,6 +626,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
       {leadModal && <LeadModal lead={leadModal === "new" ? undefined : leadModal} seller={seller} onClose={() => setLeadModal(null)} onSaved={saved} />}
       {agendaModal && <AgendaModal item={agendaModal.item} lead={agendaModal.lead} leads={leads} onClose={() => setAgendaModal(null)} onSaved={saved} />}
       {salesModal && <SalesMessageModal leads={visibleLeads} seller={seller} onClose={() => setSalesModal(false)} />}
+      {firstContactLead && <FirstContactModal lead={firstContactLead} onClose={() => setFirstContactLead(null)} />}
     </>
   );
 }

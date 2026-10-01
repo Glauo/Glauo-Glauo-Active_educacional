@@ -139,7 +139,7 @@ const navSections = [
       },
       {
         href: "/comercial",
-        label: "Comercial",
+        label: "Comercial CondoJob",
         icon: (
           <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
             <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 2a1 1 0 000 2h7a1 1 0 100-2H5zm0 4a1 1 0 100 2h4a1 1 0 100-2H5z" />
@@ -242,6 +242,7 @@ export function AppShell({
   userUnit
 }: AppShellProps) {
   const pathname = usePathname();
+  const isCondoJobCommercial = pathname === "/comercial" || pathname.startsWith("/comercial/");
   const router = useRouter();
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -297,7 +298,7 @@ export function AppShell({
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isCondoJobCommercial ? " app-shell-condojob" : ""}`}>
       {/* Backdrop mobile */}
       <div
         className={`sidebar-backdrop${mobileOpen ? " open" : ""}`}
@@ -309,11 +310,11 @@ export function AppShell({
         <div className="sidebar-brand">
           <div className="brand-logo-row">
             <div className="brand-icon">
-              <img src="/logo.png" alt="Ativo Educacional Sistema" />
+              {isCondoJobCommercial ? <span aria-hidden="true">CJ</span> : <img src="/logo.png" alt="Ativo Educacional Sistema" />}
             </div>
             <div>
-              <div className="brand-name">Ativo Educacional</div>
-              <div className="brand-tagline">Sistema Educacional</div>
+              <div className="brand-name">{isCondoJobCommercial ? "CondoJob" : "Ativo Educacional"}</div>
+              <div className="brand-tagline">{isCondoJobCommercial ? "condojob.org" : "Sistema Educacional"}</div>
             </div>
           </div>
           <div className="brand-status">
@@ -386,7 +387,7 @@ export function AppShell({
               </svg>
             </button>
             <div className="topbar-breadcrumb">
-              <span>Ativo Educacional</span>
+              <span>{isCondoJobCommercial ? "CondoJob" : "Ativo Educacional"}</span>
               {breadcrumb && (
                 <>
                   <span className="breadcrumb-sep">/</span>

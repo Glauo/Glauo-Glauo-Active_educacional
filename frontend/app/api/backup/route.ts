@@ -34,6 +34,7 @@ const BACKUP_KEYS = [
   "material_orders.json",
   "stock.json",
   "sales_leads.json",
+  "sales_contact_images.json",
   "sales_agenda.json",
   "sales_payments.json",
   "class_sessions.json",

@@ -3739,3 +3739,12 @@
     flex-direction: column;
   }
 }
+.commercial-first-contact-modal { width: min(960px, 95vw); max-width: 960px; }
+.app-shell-condojob .brand-icon { background: #5b1688; color: #fff; font-weight: 700; }
+.commercial-first-contact-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 20px; align-items: start; }
+.commercial-first-contact-image { display: block; width: 100%; height: auto; border-radius: 8px; }
+.commercial-first-contact-content .form-group { min-width: 0; }
+.commercial-first-contact-actions { flex-wrap: wrap; }
+@media (max-width: 680px) {
+  .commercial-first-contact-content { grid-template-columns: 1fr; }
+}
