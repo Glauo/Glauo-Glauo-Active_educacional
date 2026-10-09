@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "active-educacional-secret-2026-change-in-production"
-);
+import { jwtSecret } from "./lib/jwt-config";
 
 const PUBLIC_PATHS = ["/login", "/aluno/login", "/limpar-cache", "/api/auth", "/api/version", "/api/financeiro/mercado-pago/webhook", "/api/backup/auto", "/api/financeiro/dedupe"];
 const PUBLIC_FILES = ["/logo.png", "/manifest.json", "/sw.js", "/limpar-cache.html"];
@@ -32,7 +30,11 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, jwtSecret());
+    if (payload.must_change_password && pathname !== "/alterar-senha") {
+      if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Altere sua senha para continuar." }, { status: 403 });
+      return NextResponse.redirect(new URL("/alterar-senha", req.url));
+    }
     return NextResponse.next();
   } catch {
     const loginUrl = new URL("/login", req.url);

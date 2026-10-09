@@ -223,8 +223,9 @@ function routeBlocked(href: string, blockedRoutes: string[]) {
 
 function canSeeNavItem(userRole: string, href: string, blockedRoutes: string[] = []) {
   const role = userRole.toLowerCase();
+  if (role.includes("admin")) return true;
   if (routeBlocked(href, blockedRoutes)) return false;
-  if (role.includes("admin") || role.includes("coord") || role.includes("dire")) return true;
+  if (role.includes("coord") || role.includes("dire")) return true;
   if (role.includes("comercial")) {
     return ["/", "/alunos", "/financeiro", "/contratos", "/agenda", "/condojob", "/comercial", "/atendimento", "/wiz"].includes(href);
   }
@@ -251,7 +252,7 @@ export function AppShell({
   const [blockedRoutes, setBlockedRoutes] = useState<string[]>([]);
 
   const initials = userName.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
-  const canManageAccess = userRole.toLowerCase().includes("admin") || userRole.toLowerCase().includes("coord");
+  const canManageAccess = userRole.toLowerCase().includes("admin");
 
   useEffect(() => {
     let alive = true;

@@ -63,7 +63,7 @@ export function applyGeneratedStudentCredentials<T extends StudentCredentialRow>
     ...row,
     login: generated.login || text(row.login || row.usuario).toLowerCase(),
     usuario: generated.login || text(row.login || row.usuario).toLowerCase(),
-    senha: generated.senha || text(row.senha),
+    senha: text(row.senha).startsWith("scrypt$") ? text(row.senha) : generated.senha || text(row.senha),
   };
 }
 
@@ -84,7 +84,7 @@ export function studentCredentialMessage(row: StudentCredentialRow, login = text
     "Seu acesso ao portal do aluno Active Educacional está liberado.",
     "",
     `Login: ${login}`,
-    `Senha: ${senha}`,
+    senha.startsWith("scrypt$") ? "Use sua senha pessoal. Se necessario, solicite uma redefinicao ao administrador." : `Senha: ${senha}`,
     "",
     "Portal: https://ativoeducacional.tech/aluno/login",
     "",

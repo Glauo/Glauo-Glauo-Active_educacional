@@ -80,11 +80,13 @@ export function isRouteBlocked(path: string, blockedRoutes: string[]) {
 }
 
 export function canAccessPath(perfil: unknown, path: string, blockedRoutes: string[] = []) {
+  if (lower(perfil).includes("admin")) return true;
   return defaultCanAccess(perfil, path) && !isRouteBlocked(path, blockedRoutes);
 }
 
 export async function getAccessForSession(session: Pick<SessionUser, "usuario" | "perfil"> | null) {
   if (!session) return { blockedRoutes: [] as string[] };
+  if (lower(session.perfil).includes("admin")) return { blockedRoutes: [] as string[] };
   const users = await dbList<UserAccessRecord>("users.json");
   const user = users.find((item) => lower(item.usuario) === lower(session.usuario));
   return { blockedRoutes: blockedRoutesFromUser(user) };

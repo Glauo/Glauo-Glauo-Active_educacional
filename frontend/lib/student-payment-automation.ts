@@ -49,17 +49,6 @@ function receivableRefs(receivable: Row) {
   };
 }
 
-function matchesStudent(receivable: Row, student: Row) {
-  const studentKey = studentRefs(student);
-  const receivableKey = receivableRefs(receivable);
-  return (
-    receivableKey.ids.some((value) => studentKey.ids.includes(value)) ||
-    receivableKey.logins.some((value) => studentKey.logins.includes(value)) ||
-    receivableKey.names.some((value) => studentKey.names.includes(value)) ||
-    receivableKey.cpfs.some((value) => studentKey.cpfs.includes(value))
-  );
-}
-
 async function audit(entry: Row) {
   await dbUpdate<Row[]>("finance_audit.json", (log) => [
     ...(Array.isArray(log) ? log : []),
@@ -69,7 +58,15 @@ async function audit(entry: Row) {
 
 export async function releaseStudentAccessAfterPayment(receivable: Row, paymentId: string) {
   const students = await dbList<Row>("students.json");
-  const idx = students.findIndex((student) => matchesStudent(receivable, student));
+  const reference = receivableRefs(receivable);
+  const matching = students.map((student, index) => {
+    const refs = studentRefs(student);
+    const matched = reference.ids.length ? reference.ids.some(id => refs.ids.includes(id)) :
+      reference.logins.length ? reference.logins.some(login => refs.logins.includes(login)) :
+      reference.cpfs.length ? reference.cpfs.some(cpf => refs.cpfs.includes(cpf)) : false;
+    return matched ? index : -1;
+  }).filter(index => index >= 0);
+  const idx = matching.length === 1 ? matching[0] : -1;
   if (idx === -1) {
     await audit({
       acao: "liberacao_aluno_pagamento_sem_match",
@@ -82,6 +79,7 @@ export async function releaseStudentAccessAfterPayment(receivable: Row, paymentI
   }
 
   const before = students[idx];
+  if (text(before.portal_liberado_por_pagamento_id) === paymentId) return { matched: true, updated: false, notified: false };
   const needsRelease = looksLikeEnrollment(receivable) || isInactiveStudent(before) || !hasPortalAccess(before);
   if (!needsRelease) {
     await audit({
@@ -96,7 +94,7 @@ export async function releaseStudentAccessAfterPayment(receivable: Row, paymentI
   }
 
   const now = new Date().toISOString();
-  const prepared = applyGeneratedStudentCredentials(before);
+  const prepared = hasPortalAccess(before) ? before : applyGeneratedStudentCredentials(before);
   const next: Row = {
     ...prepared,
     is_active: true,
@@ -144,8 +142,8 @@ export async function releaseStudentAccessAfterPayment(receivable: Row, paymentI
     login: text(next.login || next.usuario),
     notificado: shouldNotify,
     notification_status: notificationStatus || {},
-    antes: before,
-    depois: next,
+    antes: { status: before.status, is_active: before.is_active },
+    depois: { status: next.status, is_active: next.is_active },
   });
 
   return { matched: true, updated: true, notified: shouldNotify, student: next, notificationStatus };

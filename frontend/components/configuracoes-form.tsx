@@ -396,7 +396,7 @@ export function ConfiguracoesForm({ sistema: s0, smtp: m0, boleto: b0 }: Props) 
               </div>
               <div className="form-group form-group-span2">
                 <label className="form-label">Instruções do boleto</label>
-                <textarea className="form-input form-textarea" rows={3} value={String(boleto.instrucoes || "")} onChange={(e) => bol("instrucoes", e.target.value)} placeholder="Boleto pode ser pago mesmo após o vencimento. Multa de 10% e juros de 1% ao dia de atraso." />
+                <textarea className="form-input form-textarea" rows={3} value={String(boleto.instrucoes || "")} onChange={(e) => bol("instrucoes", e.target.value)} placeholder="A parcela pode receber encargos após o vencimento financeiro. O boleto Mercado Pago tem vencimento bancário próprio; solicite uma segunda via atualizada se ele expirar." />
               </div>
             </div>
           </div>

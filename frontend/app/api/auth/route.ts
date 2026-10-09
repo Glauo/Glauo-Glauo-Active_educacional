@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateCredentials, signToken, COOKIE_NAME, TTL_SECONDS, dashboardForPerfil } from "@/lib/auth";
-import { dbList, dbSet } from "@/lib/db";
+import { dbUpdate } from "@/lib/db";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -23,17 +23,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Usuario ou senha incorretos." }, { status: 401 });
     }
 
-    const users = await dbList<Record<string, unknown>>("users.json");
-    const idx = users.findIndex((item) => lower(item.usuario) === lower(user.usuario));
-    if (idx >= 0) {
-      users[idx] = { ...users[idx], last_login_at: new Date().toISOString() };
-      await dbSet("users.json", users);
+    // Updating last-login is audit metadata, not part of credential validation.
+    // A transient write failure must not reject an otherwise valid sign-in.
+    try {
+      await dbUpdate<Record<string, unknown>[]>("users.json", rows =>
+        (rows || []).map(item => lower(item.usuario) === lower(user.usuario) &&
+          (user.record_id ? String(item.id ?? "") === String(user.record_id) : text(item.pessoa || item.nome) === user.pessoa)
+          ? { ...item, last_login_at: new Date().toISOString() } : item), []);
+    } catch (err) {
+      console.error("[auth] Nao foi possivel atualizar o ultimo acesso; login validado sera mantido.", err);
     }
 
     const token = await signToken(user);
-    const redirectTo = String(user.unit || "").toLowerCase().includes("condojob")
-      ? "/condojob"
-      : dashboardForPerfil(user.perfil);
+    const isAdmin = String(user.perfil || "").toLowerCase().includes("admin");
+    const redirectTo = user.must_change_password
+      ? "/alterar-senha"
+      : (!isAdmin && String(user.unit || "").toLowerCase().includes("condojob")
+        ? "/condojob"
+        : dashboardForPerfil(user.perfil));
 
     const res = NextResponse.json({ ok: true, user, redirectTo });
     res.cookies.set(COOKIE_NAME, token, {

@@ -123,6 +123,8 @@ export async function dbUpdate<T = unknown>(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      // Lock even when the key does not exist yet (FOR UPDATE alone cannot).
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [normalizedKey]);
       const res = await client.query<{ value: T }>(
         "SELECT value FROM active_kv WHERE key = $1 FOR UPDATE",
         [normalizedKey]
@@ -152,9 +154,55 @@ export async function dbUpdate<T = unknown>(
   throw new Error(`Nao foi possivel atualizar ${normalizedKey} apos ${RETRIES} tentativas`);
 }
 
+// Atomic changes across related KV records. Never fall back to cached data for writes.
+export async function dbTransaction<T>(
+  keys: string[],
+  updater: (values: Record<string, unknown>) => T | Promise<T>,
+): Promise<T> {
+  const pool = getPool();
+  if (!pool) throw new Error("Banco de dados indisponivel.");
+  const names = [...new Set(keys.map(normalizeKey))].sort();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const values: Record<string, unknown> = {};
+    for (const key of names) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
+      const result = await client.query("SELECT value FROM active_kv WHERE key = $1 FOR UPDATE", [key]);
+      values[key] = result.rows[0]?.value ?? null;
+    }
+    const result = await updater(values);
+    for (const key of names) {
+      if (values[key] === null) continue;
+      await client.query(
+        `INSERT INTO active_kv (key, value, updated_at) VALUES ($1, $2::jsonb, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [key, JSON.stringify(values[key])],
+      );
+    }
+    await client.query("COMMIT");
+    for (const key of names) cache().set(key, values[key]);
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function dbList<T = unknown>(key: string): Promise<T[]> {
   const result = await dbGet<T[]>(key);
   return Array.isArray(result) ? result : [];
+}
+
+// Security decisions must never use a stale, process-local cache.
+export async function dbListFresh<T = unknown>(key: string): Promise<T[]> {
+  const pool = getPool();
+  if (!pool) throw new Error("Banco indisponivel para validar acesso.");
+  const result = await pool.query("SELECT value FROM active_kv WHERE key = $1", [normalizeKey(key)]);
+  const value = result.rows[0]?.value;
+  return Array.isArray(value) ? value as T[] : [];
 }
 
 export async function dbListWithoutKeys<T = unknown>(key: string, keys: string[]): Promise<T[]> {

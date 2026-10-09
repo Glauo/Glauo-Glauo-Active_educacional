@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateStudentCredentials, signToken, COOKIE_NAME, TTL_SECONDS, dashboardForPerfil } from "@/lib/auth";
-import { dbList, dbSet } from "@/lib/db";
+import { dbUpdate } from "@/lib/db";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -23,15 +23,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Login ou senha incorretos." }, { status: 401 });
     }
 
-    const students = await dbList<Record<string, unknown>>("students.json");
-    const idx = students.findIndex((item) => lower(item.login || item.usuario) === lower(user.usuario));
-    if (idx >= 0) {
-      students[idx] = { ...students[idx], last_login_at: new Date().toISOString() };
-      await dbSet("students.json", students);
-    }
+    await dbUpdate<Record<string, unknown>[]>("students.json", rows =>
+      (rows || []).map(item => lower(item.login || item.usuario) === lower(user.usuario) &&
+        (user.record_id ? String(item.id) === user.record_id : text(item.nome || item.name) === user.pessoa)
+        ? { ...item, last_login_at: new Date().toISOString() } : item), []);
 
     const token = await signToken(user);
-    const res = NextResponse.json({ ok: true, user, redirectTo: dashboardForPerfil(user.perfil) });
+    const res = NextResponse.json({ ok: true, user, redirectTo: (user.must_change_password ? "/alterar-senha" : dashboardForPerfil(user.perfil)) });
     res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

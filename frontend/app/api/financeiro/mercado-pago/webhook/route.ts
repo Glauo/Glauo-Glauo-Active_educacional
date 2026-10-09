@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { dbGet, dbList, dbSet } from "@/lib/db";
+import { dbGet, dbUpdate } from "@/lib/db";
 import { syncMercadoPagoPayment } from "@/lib/mercadopago-sync";
 
 type Row = Record<string, unknown>;
@@ -57,11 +57,10 @@ function webhookSecret(config: Row | null) {
 }
 
 async function audit(entry: Row) {
-  const log = await dbList<Row>("finance_audit.json");
-  await dbSet("finance_audit.json", [
-    ...log,
+  await dbUpdate<Row[]>("finance_audit.json", log => [
+    ...(Array.isArray(log) ? log : []),
     { id: crypto.randomUUID(), data: new Date().toISOString(), ...entry },
-  ]);
+  ], []);
 }
 
 function verifySignature(req: NextRequest, dataId: string, secret: string) {
@@ -71,7 +70,7 @@ function verifySignature(req: NextRequest, dataId: string, secret: string) {
   if (!signature || !requestId || !dataId) return { configured: true, valid: false, reason: "headers_missing" };
   const { ts, v1 } = parseSignature(signature);
   if (!ts || !v1) return { configured: true, valid: false, reason: "signature_malformed" };
-  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${ts};`;
   const expected = createHmac("sha256", secret).update(manifest).digest("hex");
   return { configured: true, valid: safeCompareHex(expected, v1), reason: "checked" };
 }
@@ -84,12 +83,12 @@ export async function POST(req: NextRequest) {
   const url = new URL(req.url);
   const body = await req.json().catch(() => ({})) as Row;
   const data = (body.data || {}) as Row;
-  const paymentId = text(data.id || url.searchParams.get("data.id") || url.searchParams.get("id"));
-  const topic = lower(body.type || body.topic || url.searchParams.get("type") || url.searchParams.get("topic"));
-
-  if (body.live_mode === false || paymentId === "123456") {
-    return NextResponse.json({ ok: true, test: true });
+  const queryId = text(url.searchParams.get("data.id") || url.searchParams.get("id"));
+  const paymentId = queryId || text(data.id);
+  if (queryId && data.id && queryId !== text(data.id)) {
+    return NextResponse.json({ error: "Identificadores divergentes." }, { status: 400 });
   }
+  const topic = lower(body.type || body.topic || url.searchParams.get("type") || url.searchParams.get("topic"));
 
   if (!paymentId || (topic && !topic.includes("payment"))) {
     return NextResponse.json({ ok: true, ignored: true });
@@ -99,13 +98,23 @@ export async function POST(req: NextRequest) {
   const token = boletoToken(config);
   if (!token) return NextResponse.json({ error: "Mercado Pago Access Token nao configurado." }, { status: 500 });
 
-  const signature = verifySignature(req, paymentId, webhookSecret(config));
-  if (signature.configured && !signature.valid) {
+  const secret = webhookSecret(config);
+  if (!secret) {
+    await audit({
+      acao: "mercado_pago_webhook_sem_chave_secreta",
+      mercado_pago_payment_id: paymentId,
+    });
+    return NextResponse.json({ error: "Configure a chave secreta do webhook Mercado Pago." }, { status: 503 });
+  }
+
+  const signature = verifySignature(req, paymentId, secret);
+  if (!signature.valid) {
     await audit({
       acao: "mercado_pago_webhook_assinatura_nao_validada",
       mercado_pago_payment_id: paymentId,
       motivo: signature.reason,
     });
+    return NextResponse.json({ error: "Assinatura invalida." }, { status: 401 });
   }
 
   try {
@@ -118,7 +127,8 @@ export async function POST(req: NextRequest) {
       status: result.status,
       assinatura_webhook_validada: signature.valid,
     });
-    return NextResponse.json(result);
+    return NextResponse.json({ ok: true, matched: result.matched, paid: result.paid,
+      requiresReview: result.requiresReview === true, paymentId, status: result.status });
   } catch (err) {
     console.error("[mercado-pago webhook]", err);
     await audit({

@@ -36,7 +36,7 @@ services:
       ACTIVE_MERCADO_PAGO_WEBHOOK_URL: ${ACTIVE_MERCADO_PAGO_WEBHOOK_URL:-https://ativoeducacional.tech/api/financeiro/mercado-pago/webhook}
       ACTIVE_MERCADO_PAGO_WEBHOOK_SECRET: ${ACTIVE_MERCADO_PAGO_WEBHOOK_SECRET:-}
       MERCADO_PAGO_WEBHOOK_SECRET: ${MERCADO_PAGO_WEBHOOK_SECRET:-}
-      CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
+      CRON_SECRET: ${CRON_SECRET:?Configure um CRON_SECRET exclusivo com pelo menos 32 caracteres}
       ACTIVE_PORTAL_URL: ${ACTIVE_PORTAL_URL:-https://ativoeducacional.tech}
       ALUNO_PORTAL_URL: ${ALUNO_PORTAL_URL:-https://ativoeducacional.tech}
       ACTIVE_WHATSAPP_PROVIDER: ${ACTIVE_WHATSAPP_PROVIDER:-wapi}
@@ -89,7 +89,7 @@ services:
       WAPI_TOKEN: ${WAPI_TOKEN:-}
       WAPI_INSTANCE_ID: ${WAPI_INSTANCE_ID:-}
       WIZBOT_PAUSED: ${WIZBOT_PAUSED:-0}
-      CRON_SECRET: ${CRON_SECRET:-ae-cron-boletos-2026}
+      CRON_SECRET: ${CRON_SECRET:?Configure um CRON_SECRET exclusivo com pelo menos 32 caracteres}
       FRONTEND_INTERNAL_URL: "http://ativo_educacional_app:3000"
     expose:
       - "8787"

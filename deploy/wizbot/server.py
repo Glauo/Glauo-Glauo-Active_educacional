@@ -1000,6 +1000,43 @@ def _cron_regerar_boletos():
         print(f"[cron-boletos] Erro ao chamar rota de cron: {exc}", flush=True)
 
 
+def _cron_verificar_pagamentos():
+    """Confere pagamentos pendentes do Mercado Pago pelo endpoint interno autenticado."""
+    cron_secret = str(os.getenv("CRON_SECRET", "")).strip()
+    if not cron_secret:
+        print("[cron-pagamentos] CRON_SECRET nao configurado, pulando execucao.", flush=True)
+        return
+    base_url = _get_frontend_base_url()
+    url = f"{base_url}/api/financeiro/cron-pagamentos"
+    try:
+        req = urllib.request.Request(url, method="POST", headers={"x-cron-secret": cron_secret})
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            print(
+                "[cron-pagamentos] Concluido: "
+                f"{data.get('checked', 0)} consultado(s), {data.get('paid', 0)} baixa(s), "
+                f"{data.get('errors', 0)} erro(s).",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"[cron-pagamentos] Erro ao chamar rota de cron: {exc}", flush=True)
+
+
+def _payment_reconcile_scheduler_loop():
+    """Executa conferencia de pagamentos a cada cinco minutos sem acionar emissao de boletos."""
+    time.sleep(60)
+    last_run = 0.0
+    while True:
+        try:
+            now = time.monotonic()
+            if now - last_run >= 300:
+                last_run = now
+                _cron_verificar_pagamentos()
+        except Exception as exc:
+            print(f"[cron-pagamentos] Erro no agendador: {exc}", flush=True)
+        time.sleep(30)
+
+
 def _scheduler_loop():
     """
     Loop de agendamento em thread separada.
@@ -1028,6 +1065,7 @@ def _scheduler_loop():
 def main():
     host = str(os.getenv("WIZ_WEBHOOK_HOST", "0.0.0.0")).strip() or "0.0.0.0"
     port = int(str(os.getenv("WIZ_WEBHOOK_PORT", "8787")).strip() or "8787")
+    threading.Thread(target=_payment_reconcile_scheduler_loop, name="mercado-pago-reconcile", daemon=True).start()
     server = ThreadingHTTPServer((host, port), WizWebhookHandler)
     print(f"Wizbot standalone listening on {host}:{port}", flush=True)
     server.serve_forever()

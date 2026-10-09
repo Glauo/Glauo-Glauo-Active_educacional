@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next typegen && tsc --noEmit --incremental false"
+    "lint": "next typegen && tsc --noEmit --incremental false",
+    "test": "node --test scripts/financial-users.test.cjs"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
@@ -14,6 +15,7 @@
     "@tailwindcss/postcss": "^4.2.4",
     "@types/pg": "^8.20.0",
     "autoprefixer": "^10.5.0",
+    "bcryptjs": "^3.0.3",
     "jose": "^6.2.3",
     "mercadopago": "^3.0.0",
     "next": "^16.2.4",

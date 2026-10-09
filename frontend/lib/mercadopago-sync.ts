@@ -1,4 +1,4 @@
-import { dbGet, dbList, dbSet, dbUpdate } from "@/lib/db";
+import { dbGet, dbList, dbSet, dbUpdate, dbTransaction } from "@/lib/db";
 import { releaseStudentAccessAfterPayment } from "@/lib/student-payment-automation";
 
 type Row = Record<string, unknown>;
@@ -103,7 +103,9 @@ export async function loadMercadoPagoPayment(paymentId: string) {
     throw new Error("Mercado Pago Access Token nao configurado.");
   }
 
+  if (!/^[0-9]+$/.test(paymentId)) throw new Error("Identificador de pagamento invalido.");
   const res = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, {
+    signal: AbortSignal.timeout(15000),
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
@@ -111,6 +113,7 @@ export async function loadMercadoPagoPayment(paymentId: string) {
   if (!res.ok) {
     throw new Error(text(data.message || data.error || `Mercado Pago HTTP ${res.status}`));
   }
+  if (text(data.id) !== paymentId) throw new Error("Pagamento retornado nao corresponde ao solicitado.");
   return data;
 }
 
@@ -153,72 +156,26 @@ function mappedFinanceStatus(status: string) {
   }
 }
 
-function candidateReferences(payment: Row) {
+export function findReceivableIndex(receivables: Row[], payment: Row, paymentId: string) {
   const metadata = paymentMetadata(payment);
-  const additional = asRow(payment.additional_info);
-  const payer = asRow(payment.payer);
-  const payerIdentification = asRow(payer.identification);
-  const exact = Array.from(new Set([
-    payment.id,
-    payment.external_reference,
-    metadata.lancamento_id,
-    metadata.external_reference,
-    metadata.invoice_id,
-    metadata.installment_id,
-    additional.external_reference,
-    additional.items && Array.isArray(additional.items) ? (additional.items[0] as Row | undefined)?.id : "",
-  ].map(text).filter(Boolean)));
-  const student = Array.from(new Set([
-    metadata.aluno_id,
-    metadata.aluno_login,
-    metadata.aluno,
-    payer.email,
-    payerIdentification.number,
-  ].map(text).filter(Boolean)));
-  return { exact, student };
-}
-
-function findReceivableIndex(receivables: Row[], payment: Row, paymentId: string) {
-  const refs = candidateReferences(payment);
-  const exactMatch = receivables.findIndex((item) => {
-    const itemRefs = [
-      item.id,
-      item.external_reference,
-      item.payment_external_reference,
-      item.mercado_pago_payment_id,
-      item.mercado_pago_previous_payment_id,
-      item.mp_payment_id,
-      item.boleto_codigo,
-      item.pix_codigo,
-      ...(Array.isArray(item.mercado_pago_payment_history) ? item.mercado_pago_payment_history : []),
-    ].map(text).filter(Boolean);
-    return itemRefs.includes(paymentId) || refs.exact.some((ref) => itemRefs.includes(ref));
-  });
-  if (exactMatch >= 0) return exactMatch;
-
-  const amount = moneyNumber(payment.transaction_amount);
-  const studentMatches = receivables
-    .map((item, index) => {
-      const studentRefs = [
-        item.aluno_id,
-        item.aluno_login,
-        item.email,
-        item.aluno_email,
-        item.cpf,
-        item.cpf_aluno,
-        item.responsavel_cpf,
-      ].map(text).filter(Boolean);
-      const itemAmount =
-        moneyNumber(item.valor_parcela) ||
-        moneyNumber(item.valor) ||
-        moneyNumber(item.valor_total);
-      const sameStudent = refs.student.some((ref) => studentRefs.includes(ref));
-      const sameAmount = amount > 0 && itemAmount > 0 && Math.abs(itemAmount - amount) < 0.01;
-      return sameStudent && sameAmount ? index : -1;
-    })
-    .filter((index) => index >= 0);
-
-  return studentMatches.length === 1 ? studentMatches[0] : -1;
+  const refs = [payment.external_reference, metadata.lancamento_id, metadata.external_reference,
+    metadata.invoice_id, metadata.installment_id].map(text).filter(Boolean);
+  const matches = receivables.map((item, index) => {
+    const ids = [item.mercado_pago_payment_id, item.mercado_pago_previous_payment_id,
+      item.mp_payment_id, item.boleto_codigo, item.pix_codigo,
+      ...(Array.isArray(item.mercado_pago_payment_history) ? item.mercado_pago_payment_history : [])].map(text).filter(Boolean);
+    const invoiceRefs = [item.id, item.external_reference, item.payment_external_reference].map(text).filter(Boolean);
+    return ids.includes(paymentId) || refs.some(ref => invoiceRefs.includes(ref)) ? index : -1;
+  }).filter(index => index >= 0);
+  // Never infer the installment from a name, CPF, email or amount.
+  if (matches.length !== 1) return -1;
+  const item = receivables[matches[0]];
+  const invoiceRefs = [item.id, item.external_reference, item.payment_external_reference].map(text).filter(Boolean);
+  if (refs.some(ref => !invoiceRefs.includes(ref))) return -1;
+  const studentId = text(metadata.aluno_id || metadata.student_id);
+  const storedStudentId = text(item.aluno_id || item.student_id);
+  if (studentId && storedStudentId && studentId !== storedStudentId) return -1;
+  return matches[0];
 }
 
 export type MercadoPagoSyncResult = {
@@ -227,6 +184,9 @@ export type MercadoPagoSyncResult = {
   paid: boolean;
   paymentId: string;
   status: string;
+  requiresReview?: boolean;
+  expectedAmount?: number;
+  actualAmount?: number;
   lancamento?: Row;
 }
 
@@ -263,165 +223,124 @@ function isLockActive(state: ReconcileState | null) {
   return !Number.isNaN(parsed.getTime()) && parsed.getTime() > Date.now();
 }
 
-export async function syncMercadoPagoPayment(paymentId: string, source: "webhook" | "manual") : Promise<MercadoPagoSyncResult> {
+export async function syncMercadoPagoPayment(paymentId: string, source: "webhook" | "manual", expectedReceivableId?: string): Promise<MercadoPagoSyncResult> {
   const payment = await loadMercadoPagoPayment(paymentId);
-  const metadata = paymentMetadata(payment);
-  const externalReference = text(payment.external_reference || metadata.lancamento_id || metadata.external_reference);
   const status = lower(payment.status);
   const statusDetail = text(payment.status_detail);
-  const paid = status === "approved";
+  const metadata = paymentMetadata(payment);
+  const externalReference = text(payment.external_reference || metadata.lancamento_id || metadata.external_reference);
   const now = new Date().toISOString();
-  const receivables = await dbList<Row>("receivables.json");
-  const idx = findReceivableIndex(receivables, payment, paymentId);
-
-  await audit({
-    acao: source === "webhook" ? "mercado_pago_webhook_recebido" : "mercado_pago_verificacao_manual",
-    mercado_pago_payment_id: paymentId,
-    external_reference: externalReference,
-    status,
-    status_detail: statusDetail,
-  });
-
-  if (idx === -1) {
-    await audit({
-      acao: "mercado_pago_pagamento_sem_lancamento",
-      mercado_pago_payment_id: paymentId,
-      external_reference: externalReference,
-      status,
-      status_detail: statusDetail,
-      origem: source,
-    });
-    return { ok: true, matched: false, paid, paymentId, status };
-  }
-
-  const before = receivables[idx];
-  const currentPaymentId = text(before.mercado_pago_payment_id || before.mp_payment_id);
-  const paymentHistory = Array.isArray(before.mercado_pago_payment_history)
-    ? before.mercado_pago_payment_history.map(text)
-    : [];
-  const stalePayment = Boolean(currentPaymentId && currentPaymentId !== paymentId && paymentHistory.includes(paymentId));
-  if (stalePayment && !paid) {
-    await audit({
-      acao: "ignorar_status_pagamento_mercado_pago_substituido",
-      origem: source,
-      lancamento_id: before.id,
-      mercado_pago_payment_id: paymentId,
-      mercado_pago_payment_id_atual: currentPaymentId,
-      status,
-      status_detail: statusDetail,
-    });
-    return { ok: true, matched: true, paid: false, paymentId, status, lancamento: before };
-  }
-  const paymentDate = toIsoDate(payment.date_approved || payment.date_last_updated || payment.date_created, now);
-  const paidAmount =
-    moneyNumber((payment.transaction_details as Row | undefined)?.total_paid_amount) ||
-    moneyNumber(payment.transaction_amount) ||
-    moneyNumber(before.valor_pago) ||
-    moneyNumber(before.valor_parcela) ||
-    moneyNumber(before.valor);
-  const nextStatus = mappedFinanceStatus(status);
-  const alreadySettled = isSettledStatus(before.status || before.situacao);
-  const manualSettlementLocked = isManualSettlementLocked(before);
-
-  const next: Row = {
-    ...before,
-    external_reference: externalReference || text(before.external_reference || before.id),
-    payment_status: status,
-    mercado_pago_status: status,
-    mp_status: status,
-    mercado_pago_detail: statusDetail,
-    mp_status_detail: statusDetail,
-    mercado_pago_payment_id: paymentId,
-    mp_payment_id: paymentId,
-    mercado_pago_payment_method: paymentMethodId(payment),
-    payment_method: paymentMethodLabel(payment),
-    webhook_received_at: source === "webhook" ? now : text(before.webhook_received_at),
-    mercado_pago_webhook_at: source === "webhook" ? now : text(before.mercado_pago_webhook_at),
-    last_payment_check_at: now,
-    paid_amount: paidAmount || moneyNumber(before.paid_amount || before.valor_pago),
-    paid_at: paid ? paymentDate : text(before.paid_at),
-    updated_at: now,
-    updated_by: source === "webhook" ? "Mercado Pago" : "Verificacao manual Mercado Pago",
-  };
-
-  if (paid) {
-    next.status = "Pago";
-    next.situacao = "Pago";
-    next.data_baixa = text(before.data_baixa) || paymentDate;
-    next.valor_pago = paidAmount || text(before.valor_pago);
-    next.forma_pagamento = paymentMethodLabel(payment);
-    next.baixado_por = text(before.baixado_por) || "Mercado Pago";
-  } else if (!manualSettlementLocked) {
-    next.status = nextStatus;
-    next.situacao = nextStatus;
-    if (!alreadySettled) {
-      next.forma_pagamento = text(before.forma_pagamento);
-    }
-  }
-
-  const writes: Promise<unknown>[] = [
-    dbUpdate<Row[]>("receivables.json", (current) => {
-      const latest = Array.isArray(current) ? current : [];
-      const currentIdx = latest.findIndex((item) => text(item.id) === text(before.id));
-      if (currentIdx === -1) return latest;
-      return latest.map((item, index) => index === currentIdx ? { ...item, ...next } : item);
-    }, []),
-  ];
-
-  if (paid) {
-    const receipts = await dbList<Row>("receipts.json");
-    const alreadyReceipt = receipts.some((receipt) =>
-      text(receipt.mercado_pago_payment_id) === paymentId ||
-      text(receipt.autenticidade) === `AE-MP-${paymentId}`
-    );
-    if (!alreadyReceipt) {
-      writes.push(dbUpdate<Row[]>("receipts.json", (current) => [
-        ...(Array.isArray(current) ? current : receipts),
-        {
-          id: crypto.randomUUID(),
-          lancamento_id: text(before.id),
-          tipo: "recebimentos",
-          pessoa: before.aluno || before.nome,
-          descricao: before.descricao || "Mensalidade escolar",
-          valor: before.valor,
-          valor_pago: paidAmount,
-          forma_pagamento: paymentMethodLabel(payment),
-          data: now,
-          autenticidade: `AE-MP-${paymentId}`,
-          gerado_automaticamente: true,
+  const result = await dbTransaction(
+    ["receivables", "receipts", "finance_audit"],
+    (values) => {
+      const receivables = (Array.isArray(values.receivables) ? values.receivables : []) as Row[];
+      const receipts = (Array.isArray(values.receipts) ? values.receipts : []) as Row[];
+      const logs = (Array.isArray(values.finance_audit) ? values.finance_audit : []) as Row[];
+      const log = (entry: Row) => logs.push({ id: crypto.randomUUID(), data: now, origem: source,
+        mercado_pago_payment_id: paymentId, external_reference: externalReference, status, status_detail: statusDetail, ...entry });
+      values.finance_audit = logs;
+      const idx = findReceivableIndex(receivables, payment, paymentId);
+      if (idx < 0 || (expectedReceivableId && text(receivables[idx]?.id) !== expectedReceivableId)) {
+        log({ acao: "mercado_pago_pagamento_sem_lancamento_seguro" });
+        return { ok: true as const, matched: false, paid: false, paymentId, status };
+      }
+      const before = receivables[idx];
+      const currentId = text(before.mercado_pago_payment_id || before.mp_payment_id);
+      const settled = isSettledStatus(before.status || before.situacao);
+      const paid = status === "approved";
+      const staleDate = Date.parse(text(payment.date_last_updated));
+      const storedDate = Date.parse(text(before.mercado_pago_updated_at));
+      if ((currentId && currentId !== paymentId && (!paid || settled)) ||
+          (currentId === paymentId && Number.isFinite(staleDate) && Number.isFinite(storedDate) && staleDate < storedDate) ||
+          (settled && !paid && !["refunded", "charged_back"].includes(status))) {
+        log({ acao: "mercado_pago_status_antigo_ignorado", lancamento_id: before.id });
+        return { ok: true as const, matched: true, paid: paid && settled, paymentId, status, lancamento: before };
+      }
+      // transaction_amount is the amount applied to the receivable. total_paid_amount
+      // may include payer-side fees and must not be credited to the school account.
+      const paidAmount = moneyNumber(payment.transaction_amount);
+      if (paid && (paidAmount <= 0 || (text(payment.currency_id) && payment.currency_id !== "BRL"))) {
+        throw new Error("Pagamento aprovado com valor ou moeda invalida.");
+      }
+      const expectedAmount = [
+        before.mercado_pago_transaction_amount,
+        before.boleto_valor_atualizado,
+        before.pix_valor_atualizado,
+        before.valor_parcela,
+        before.valor,
+        before.valor_total,
+      ].map(moneyNumber).find(value => value > 0) || 0;
+      if (paid && (expectedAmount <= 0 || Math.abs(paidAmount - expectedAmount) >= 0.01)) {
+        const discrepancy: Row = {
+          ...before,
           mercado_pago_payment_id: paymentId,
-        },
-      ], receipts));
+          mp_payment_id: paymentId,
+          mercado_pago_status: status,
+          payment_status: status,
+          mercado_pago_detail: statusDetail,
+          mercado_pago_updated_at: text(payment.date_last_updated),
+          last_payment_check_at: now,
+          mercado_pago_revisao_necessaria: true,
+          mercado_pago_valor_esperado: expectedAmount,
+          mercado_pago_valor_recebido: paidAmount,
+        };
+        receivables[idx] = discrepancy;
+        values.receivables = receivables;
+        log({ acao: "mercado_pago_valor_divergente_revisao_manual", lancamento_id: before.id,
+          valor_esperado: expectedAmount, valor_recebido: paidAmount });
+        return { ok: true as const, matched: true, paid: false, requiresReview: true,
+          expectedAmount, actualAmount: paidAmount, paymentId, status, lancamento: discrepancy };
+      }
+      const paymentDate = toIsoDate(payment.date_approved || payment.date_last_updated, now);
+      const next: Row = {
+        ...before,
+        external_reference: externalReference || text(before.external_reference || before.id),
+        payment_status: status, mercado_pago_status: status, mp_status: status,
+        mercado_pago_detail: statusDetail, mp_status_detail: statusDetail,
+        mercado_pago_payment_id: paymentId, mp_payment_id: paymentId,
+        mercado_pago_payment_method: paymentMethodId(payment), payment_method: paymentMethodLabel(payment),
+        mercado_pago_updated_at: text(payment.date_last_updated),
+        last_payment_check_at: now,
+        ...(source === "webhook" ? { webhook_received_at: now, mercado_pago_webhook_at: now } : {}),
+        updated_at: now, updated_by: source === "webhook" ? "Mercado Pago" : "Verificacao manual Mercado Pago",
+      };
+      if (paid) {
+        Object.assign(next, { status: "Pago", situacao: "Pago", paid_at: paymentDate,
+          paid_amount: paidAmount, valor_pago: paidAmount, data_baixa: text(before.data_baixa) || paymentDate,
+          forma_pagamento: paymentMethodLabel(payment), baixado_por: text(before.baixado_por) || "Mercado Pago",
+          mercado_pago_revisao_necessaria: false, mercado_pago_valor_esperado: expectedAmount,
+          mercado_pago_valor_recebido: paidAmount });
+        if (!receipts.some(receipt => text(receipt.mercado_pago_payment_id) === paymentId ||
+            text(receipt.autenticidade) === `AE-MP-${paymentId}`)) {
+          receipts.push({ id: crypto.randomUUID(), lancamento_id: text(before.id), tipo: "recebimentos",
+            pessoa: before.aluno || before.nome, descricao: before.descricao || "Mensalidade escolar",
+            valor: before.valor, valor_pago: paidAmount, forma_pagamento: paymentMethodLabel(payment),
+            data: now, autenticidade: `AE-MP-${paymentId}`, gerado_automaticamente: true,
+            mercado_pago_payment_id: paymentId });
+        }
+      } else if (!isManualSettlementLocked(before)) {
+        next.status = mappedFinanceStatus(status);
+        next.situacao = next.status;
+      }
+      receivables[idx] = next;
+      values.receivables = receivables;
+      values.receipts = receipts;
+      log({ acao: paid ? (settled ? "mercado_pago_baixa_duplicada_ignorada" : "baixar_pagamento_mercado_pago") :
+        "atualizar_status_mercado_pago", lancamento_id: before.id, antes: before, depois: next });
+      return { ok: true as const, matched: true, paid, paymentId, status, lancamento: next };
+    },
+  );
+  if (result.paid && result.lancamento && status === "approved") {
+    // Financial commit is durable even if a downstream school automation fails.
+    try {
+      await releaseStudentAccessAfterPayment(result.lancamento, paymentId);
+    } catch {
+      await audit({ acao: "mercado_pago_liberacao_aluno_pendente", mercado_pago_payment_id: paymentId,
+        lancamento_id: result.lancamento.id });
     }
   }
-
-  await Promise.all(writes);
-
-  let releaseResult: Row | null = null;
-  if (paid) {
-    releaseResult = await releaseStudentAccessAfterPayment(next, paymentId) as unknown as Row;
+    return result;
   }
-
-  await audit({
-    acao: manualSettlementLocked && !paid
-      ? "ignorar_status_mercado_pago_por_baixa_manual"
-      : paid && !alreadySettled
-        ? "baixar_pagamento_mercado_pago"
-        : "atualizar_status_mercado_pago",
-    origem: source,
-    tipo: "recebimentos",
-    lancamento_id: before.id,
-    mercado_pago_payment_id: paymentId,
-    external_reference: externalReference,
-    status,
-    status_detail: statusDetail,
-    liberacao_aluno: releaseResult || {},
-    antes: before,
-    depois: next,
-  });
-
-  return { ok: true, matched: true, paid, paymentId, status, lancamento: next };
-}
 
 export async function reconcileMercadoPagoPendingReceivables(input: number | ReconcileOptions = 12) {
   const options = typeof input === "number" ? { limit: input } : input;

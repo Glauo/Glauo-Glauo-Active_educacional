@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList, dbSet } from "@/lib/db";
-import { createMercadoPagoBoleto, resolveMercadoPagoBoletoCharge } from "@/lib/mercadopago-boleto";
+import { createMercadoPagoBoleto, isMercadoPagoPaymentExpired, resolveMercadoPagoBoletoCharge } from "@/lib/mercadopago-boleto";
 import { extractBoletoPdfUrl, extractLinhaDigitavel } from "@/lib/criar-pagamento-boleto";
 import { cancelMercadoPagoPayment, loadMercadoPagoPayment } from "@/lib/mercadopago-sync";
 
@@ -64,7 +64,7 @@ function sameStudentInvoice(row: Row, session: { usuario?: string; pessoa?: stri
 function boletoFallbackHtml(
   lancamento: Row,
   payment: Row | null,
-  charge: { baseAmount: number; transactionAmount: number; daysLate: number; finePercent: number; dailyInterestPercent: number } | null = null,
+  charge: { baseAmount: number; transactionAmount: number; daysLate: number; finePercent: number; dailyInterestPercent: number; dueDate?: string } | null = null,
 ) {
   const nome = text(lancamento.aluno || lancamento.nome || "Aluno");
   const valor = text(lancamento.valor_parcela || lancamento.valor);
@@ -74,10 +74,15 @@ function boletoFallbackHtml(
   const paymentId = text(payment?.id || lancamento.mercado_pago_payment_id || lancamento.boleto_codigo);
   const currentValue = charge && charge.transactionAmount > 0 ? charge.transactionAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "";
   const originalValue = charge && charge.baseAmount > 0 ? charge.baseAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "";
+  const financialDueDate = text(lancamento.vencimento || lancamento.data_vencimento || charge?.dueDate);
+  const technicalExpiration = text(payment?.date_of_expiration || lancamento.boleto_vencimento_tecnico_mp);
+  const technicalExpirationLabel = technicalExpiration && !Number.isNaN(Date.parse(technicalExpiration))
+    ? new Date(technicalExpiration).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+    : "nao informado";
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Boleto Mercado Pago</title><style>
     body{font-family:Arial,sans-serif;background:#f8fafc;color:#172033;margin:0;padding:40px}.box{max-width:760px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.08)}
     h1{font-size:22px;margin:0 0 10px}.muted{color:#64748b;line-height:1.55}.label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-top:18px}.note{margin-top:16px;padding:12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}textarea{width:100%;min-height:92px;margin-top:8px;border:1px solid #cbd5e1;border-radius:8px;padding:12px;font-family:monospace}
-  </style></head><body><div class="box"><h1>Boleto Mercado Pago</h1><p class="muted">${nome}${valor ? ` - ${valor}` : ""}</p><p class="muted">Status do pagamento no Mercado Pago: <strong>${status}</strong>${detail ? ` (${detail})` : ""}</p>${paymentId ? `<p class="muted">Pagamento MP: <strong>${paymentId}</strong></p>` : ""}${charge ? `<div class="note">Boleto sem validade automatica. Pode ser pago mesmo em atraso.<br/>${charge.daysLate > 0 ? `Valor original: <strong>${originalValue}</strong><br/>Valor atualizado: <strong>${currentValue}</strong><br/>Atraso: <strong>${charge.daysLate} dia(s)</strong> com multa de ${charge.finePercent}% e juros de ${charge.dailyInterestPercent}% ao dia.` : `Valor atual para pagamento: <strong>${currentValue || originalValue}</strong>. Em caso de atraso, aplica multa de ${charge.finePercent}% e juros de ${charge.dailyInterestPercent}% ao dia.`}</div>` : ""}${linha ? `<div class="label">Linha digitavel</div><textarea readonly>${linha}</textarea>` : `<p class="muted">O boleto foi criado, mas o Mercado Pago ainda nao devolveu um link publico para abertura. Tente novamente em alguns instantes ou use o botao Verificar pagamento no financeiro.</p>`}</div></body></html>`;
+  </style></head><body><div class="box"><h1>Boleto Mercado Pago</h1><p class="muted">${nome}${valor ? ` - ${valor}` : ""}</p><p class="muted">Status do pagamento no Mercado Pago: <strong>${status}</strong>${detail ? ` (${detail})` : ""}</p>${paymentId ? `<p class="muted">Pagamento MP: <strong>${paymentId}</strong></p>` : ""}${charge ? `<div class="note">Vencimento financeiro da parcela: <strong>${financialDueDate || "nao informado"}</strong>.<br/>Vencimento tecnico deste boleto Mercado Pago: <strong>${technicalExpirationLabel}</strong>. O boleto pode ser recusado ou estornado apos o vencimento tecnico; solicite uma segunda via atualizada se expirado.<br/>${charge.daysLate > 0 ? `Valor original: <strong>${originalValue}</strong><br/>Valor atualizado: <strong>${currentValue}</strong><br/>Atraso: <strong>${charge.daysLate} dia(s)</strong> com multa de ${charge.finePercent}% e juros de ${charge.dailyInterestPercent}% ao dia.` : `Valor atual para pagamento: <strong>${currentValue || originalValue}</strong>. Em caso de atraso financeiro, aplica multa de ${charge.finePercent}% e juros de ${charge.dailyInterestPercent}% ao dia.`}</div>` : ""}${linha ? `<div class="label">Linha digitavel</div><textarea readonly>${linha}</textarea>` : `<p class="muted">O boleto foi criado, mas o Mercado Pago ainda nao devolveu um link publico para abertura. Tente novamente em alguns instantes ou use o botao Verificar pagamento no financeiro.</p>`}</div></body></html>`;
   return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
@@ -106,6 +111,7 @@ export async function GET(req: NextRequest) {
       const paymentAmount = moneyNumber(payment.transaction_amount);
       const needsReplacement =
         paymentStatusRequiresReplacement(paymentStatus) ||
+        isMercadoPagoPaymentExpired(payment) ||
         (charge.transactionAmount > 0 && paymentAmount > 0 && Math.abs(paymentAmount - charge.transactionAmount) >= 0.01);
       if (needsReplacement) {
         if (["pending", "in_process", "authorized"].includes(paymentStatus.toLowerCase())) {

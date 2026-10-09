@@ -55,6 +55,18 @@ function dateLabel(value?: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("pt-BR");
 }
 
+async function apiFetch(url: string, options: RequestInit = {}) {
+  try {
+    const response = await fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+    if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
+      return Response.json({ error: "Sua sessao expirou. Entre novamente." }, { status: 401 });
+    }
+    return response;
+  } catch {
+    return Response.json({ error: "Falha de conexao. Atualize a lista antes de repetir a operacao." }, { status: 503 });
+  }
+}
+
 export default function CredenciaisUsuariosPage() {
   const [usuarios, setUsuarios] = useState<ManagedUser[]>([]);
   const [permissoes, setPermissoes] = useState<UsuarioPermissao[]>([]);
@@ -73,12 +85,13 @@ export default function CredenciaisUsuariosPage() {
   async function carregarTudo() {
     setLoading(true);
     const [usuariosRes, permissoesRes] = await Promise.all([
-      fetch("/api/usuarios/gestao", { cache: "no-store" }),
-      fetch("/api/acessos/permissoes", { cache: "no-store" }),
+      apiFetch("/api/usuarios/gestao", { cache: "no-store" }),
+      apiFetch("/api/acessos/permissoes", { cache: "no-store" }),
     ]);
 
     const usuariosData = await usuariosRes.json().catch(() => ({}));
     const permissoesData = await permissoesRes.json().catch(() => ({}));
+    if (!usuariosRes.ok) setFeedback(text(usuariosData.error || "Erro ao carregar usuarios."));
 
     setUsuarios(Array.isArray(usuariosData.usuarios) ? usuariosData.usuarios : []);
     setPermissoes(Array.isArray(permissoesData.usuarios) ? permissoesData.usuarios : []);
@@ -95,7 +108,8 @@ export default function CredenciaisUsuariosPage() {
       user.telefone,
       user.cpf,
     ].map(lower).join(" ");
-    const matchBusca = !busca || haystack.includes(lower(busca));
+    const numericSearch = busca.replace(/[^0-9]/g, "");
+    const matchBusca = !busca || haystack.includes(lower(busca)) || (numericSearch.length >= 3 && [user.telefone, user.cpf].some(value => value.replace(/[^0-9]/g, "").includes(numericSearch)));
     const matchPerfil = perfilFiltro === "Todos" || text(user.perfil) === perfilFiltro;
     const matchOrigem = origemFiltro === "Todos" || user.source === origemFiltro;
     return matchBusca && matchPerfil && matchOrigem;
@@ -118,7 +132,10 @@ export default function CredenciaisUsuariosPage() {
 
   async function salvarEdicao() {
     if (!edit) return;
-    const res = await fetch("/api/usuarios/gestao", {
+    const original = usuarios.find(user => user.source === edit.source && user.id === edit.id);
+    if (original && (original.perfil !== edit.perfil || original.is_active !== edit.is_active) &&
+        !confirm("Confirmar a alteracao de perfil ou de acesso deste usuario?")) return;
+    const res = await apiFetch("/api/usuarios/gestao", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(edit),
@@ -135,7 +152,7 @@ export default function CredenciaisUsuariosPage() {
 
   async function resetarSenha(user: ManagedUser) {
     if (!confirm(`Redefinir a senha de ${user.nome}?`)) return;
-    const res = await fetch("/api/usuarios/gestao", {
+    const res = await apiFetch("/api/usuarios/gestao", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "reset_password", source: user.source, id: user.id }),
@@ -152,7 +169,7 @@ export default function CredenciaisUsuariosPage() {
 
   async function excluirUsuario(user: ManagedUser) {
     if (!confirm(`Desativar ${user.nome}? O cadastro sera preservado para historico e auditoria.`)) return;
-    const res = await fetch(`/api/usuarios/gestao?source=${encodeURIComponent(user.source)}&id=${encodeURIComponent(user.id)}`, {
+    const res = await apiFetch(`/api/usuarios/gestao?source=${encodeURIComponent(user.source)}&id=${encodeURIComponent(user.id)}`, {
       method: "DELETE",
     });
     const data = await res.json().catch(() => ({}));
@@ -171,7 +188,7 @@ export default function CredenciaisUsuariosPage() {
 
     const blocked_routes = Array.from(atual);
     setSavingPermissao(`${usuario.usuario}:${module.path}`);
-    const res = await fetch("/api/acessos/permissoes", {
+    const res = await apiFetch("/api/acessos/permissoes", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ usuario: usuario.usuario, blocked_routes }),
@@ -196,6 +213,7 @@ export default function CredenciaisUsuariosPage() {
 
   return (
     <AppShell breadcrumb="Acessos">
+      <div className="users-management">
       <div className="page-header">
         <div className="page-title-block">
           <div className="page-eyebrow"><span className="page-eyebrow-dot" />Administracao</div>
@@ -377,6 +395,7 @@ export default function CredenciaisUsuariosPage() {
           </div>
         </div>
       )}
+      </div>
     </AppShell>
   );
 }

@@ -27,8 +27,8 @@ export type MercadoPagoBoletoCharge = {
 };
 
 type MercadoPagoBoletoExpiration = {
-  dateOfExpiration: "";
-  reason: "not_sent_active_managed";
+  dateOfExpiration: string;
+  reason: "maximum_30_days_from_issue";
 };
 
 function text(value: unknown) {
@@ -102,14 +102,6 @@ function diffDays(start: Date, end: Date) {
   return Math.max(0, Math.floor((safeEnd.getTime() - safeStart.getTime()) / 86400000));
 }
 
-function isoDateOnly(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function isoExpirationEndOfDay(date: Date) {
-  return `${isoDateOnly(date)}T23:59:59.000-03:00`;
-}
-
 function isSettledFinanceStatus(value: unknown) {
   const status = normalize(value);
   return status.includes("pago") || status.includes("baixado") || status.includes("liquidado");
@@ -122,9 +114,19 @@ function boletoPenaltyRates(_config: Row | null) {
   };
 }
 
-function resolveMercadoPagoBoletoExpiration(lancamento: Row): MercadoPagoBoletoExpiration {
-  void lancamento;
-  return { dateOfExpiration: "", reason: "not_sent_active_managed" };
+export function resolveMercadoPagoBoletoExpiration(now = new Date()): MercadoPagoBoletoExpiration {
+  const maximumDurationMs = 30 * 24 * 60 * 60 * 1000;
+  return {
+    dateOfExpiration: new Date(now.getTime() + maximumDurationMs).toISOString(),
+    reason: "maximum_30_days_from_issue",
+  };
+}
+
+export function isMercadoPagoPaymentExpired(payment: Row, now = new Date()) {
+  const status = normalize(payment.status);
+  const expiresAt = new Date(text(payment.date_of_expiration));
+  return ["pending", "in_process", "authorized"].includes(status) &&
+    !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime();
 }
 
 function calculateBoletoCharge(lancamento: Row, config: Row | null): MercadoPagoBoletoCharge {
@@ -460,7 +462,7 @@ export async function createMercadoPagoBoleto(
   }
 
   const notificationUrl = text(process.env.ACTIVE_MERCADO_PAGO_WEBHOOK_URL || config?.webhook_url) || `${origin}/api/financeiro/mercado-pago/webhook`;
-  const expiration = resolveMercadoPagoBoletoExpiration(boletoLancamento);
+  const expiration = resolveMercadoPagoBoletoExpiration();
   const idempotencyKey = options.forceNewPayment
     ? `active-boleto-${id}-${Date.now()}`
     : `active-boleto-${id}`;
@@ -469,7 +471,7 @@ export async function createMercadoPagoBoleto(
     transactionAmount: charge.transactionAmount,
     description: text(boletoLancamento.descricao) || "Mensalidade escolar",
     externalReference: id,
-    dateOfExpiration: expiration.dateOfExpiration || undefined,
+    dateOfExpiration: expiration.dateOfExpiration,
     notificationUrl,
     idempotencyKey,
     metadata: {
@@ -479,7 +481,8 @@ export async function createMercadoPagoBoleto(
       aluno_id: text(boletoLancamento.aluno_id || aluno?.id),
       aluno_login: text(boletoLancamento.aluno_login || aluno?.login || aluno?.usuario),
       regenerated_at: options.forceNewPayment ? new Date().toISOString() : "",
-      boleto_sem_validade: true,
+      boleto_permite_pagamento_apos_vencimento_financeiro: true,
+      boleto_sem_validade: false,
       valor_original: charge.baseAmount,
       valor_atualizado: charge.transactionAmount,
       dias_atraso: charge.daysLate,
@@ -549,8 +552,8 @@ export async function createMercadoPagoBoleto(
       boleto_vencimento_tecnico_mp: expiration.dateOfExpiration,
       boleto_vencimento_tecnico_mp_regra: expiration.reason,
       boleto_atualizado_em: new Date().toISOString(),
-      boleto_permite_pagamento_apos_vencimento: true,
-      boleto_sem_validade: true,
+      boleto_permite_pagamento_apos_vencimento_financeiro: true,
+      boleto_sem_validade: false,
       status: isSettledFinanceStatus(item.status || item.situacao) ? text(item.status || item.situacao) : "Pendente",
       situacao: isSettledFinanceStatus(item.status || item.situacao) ? text(item.situacao || item.status) : "Pendente",
     };
@@ -742,6 +745,7 @@ export async function createMercadoPagoPix(
 export function applyMercadoPagoToLancamento(lancamento: Row, result: Extract<MercadoPagoBoletoResult, { ok: true }>) {
   return {
     ...lancamento,
+    ...(result.lancamento || {}),
     external_reference: text(lancamento.external_reference || lancamento.id),
     payment_external_reference: text(lancamento.payment_external_reference || lancamento.id),
     mercado_pago_payment_id: result.paymentId,
@@ -756,8 +760,8 @@ export function applyMercadoPagoToLancamento(lancamento: Row, result: Extract<Me
     boleto_status: "Mercado Pago",
     boleto_codigo: result.paymentId,
     boleto_gerado_em: new Date().toISOString(),
-    boleto_permite_pagamento_apos_vencimento: true,
-    boleto_sem_validade: true,
+    boleto_permite_pagamento_apos_vencimento_financeiro: true,
+    boleto_sem_validade: false,
     status: isSettledFinanceStatus(lancamento.status || lancamento.situacao) ? text(lancamento.status || lancamento.situacao) : "Pendente",
     situacao: isSettledFinanceStatus(lancamento.status || lancamento.situacao) ? text(lancamento.situacao || lancamento.status) : "Pendente",
   };

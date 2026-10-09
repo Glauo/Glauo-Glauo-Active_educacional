@@ -2476,6 +2476,9 @@
 }
 
 @media (max-width: 640px) {
+  .users-management .page-header { flex-direction: column; align-items: stretch; gap: 16px; }
+  .users-management .page-title-block, .users-management .page-description { width: 100%; max-width: none; }
+  .users-management .page-actions { justify-content: flex-start; flex-wrap: wrap; }
   .turma-modal-box {
     max-height: calc(100dvh - 16px);
   }
@@ -3747,4 +3750,16 @@
 .commercial-first-contact-actions { flex-wrap: wrap; }
 @media (max-width: 680px) {
   .commercial-first-contact-content { grid-template-columns: 1fr; }
+}
+/* Password reset stays usable without entering the administrative shell. */
+.password-change-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+.password-change-card { width: 100%; max-width: 480px; padding: 24px; }
+.password-change-card form { display: grid; gap: 16px; margin-top: 24px; }
+.password-change-card .form-group { display: grid; gap: 8px; }
+.users-management { min-width: 0; max-width: 100%; }
+.users-management .card-body { overflow-x: auto; max-width: 100%; }
+@media (max-width: 640px) {
+  .users-management .toolbar, .users-management .toolbar-left, .users-management .toolbar-right { min-width: 0; flex-wrap: wrap; }
+  .users-management .search-bar { width: 100%; min-width: 0; }
+  .users-management .filter-select { max-width: 100%; }
 }
