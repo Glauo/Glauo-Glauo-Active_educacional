@@ -25,6 +25,24 @@ function text(value: unknown) {
   return String(value || "").trim();
 }
 
+function validPaymentId(value: unknown) {
+  const candidate = text(value);
+  return /^[0-9]+$/.test(candidate) ? candidate : "";
+}
+
+export function mercadoPagoPaymentIdFromReceivable(row: Row) {
+  return [
+    row.mercado_pago_payment_id,
+    row.mp_payment_id,
+    row.boleto_mercado_pago_payment_id,
+    row.pix_mercado_pago_payment_id,
+    // Older records stored the Mercado Pago payment id in these generic fields.
+    // Accept them only when they are numeric; barcodes and internal UUIDs are not payment ids.
+    row.boleto_codigo,
+    row.pix_codigo,
+  ].map(validPaymentId).find(Boolean) || "";
+}
+
 function lower(value: unknown) {
   return text(value).toLowerCase();
 }
@@ -161,9 +179,9 @@ export function findReceivableIndex(receivables: Row[], payment: Row, paymentId:
   const refs = [payment.external_reference, metadata.lancamento_id, metadata.external_reference,
     metadata.invoice_id, metadata.installment_id].map(text).filter(Boolean);
   const matches = receivables.map((item, index) => {
-    const ids = [item.mercado_pago_payment_id, item.mercado_pago_previous_payment_id,
-      item.mp_payment_id, item.boleto_codigo, item.pix_codigo,
-      ...(Array.isArray(item.mercado_pago_payment_history) ? item.mercado_pago_payment_history : [])].map(text).filter(Boolean);
+    const ids = [mercadoPagoPaymentIdFromReceivable(item), item.mercado_pago_previous_payment_id,
+      ...(Array.isArray(item.mercado_pago_payment_history) ? item.mercado_pago_payment_history : [])]
+      .map(validPaymentId).filter(Boolean);
     const invoiceRefs = [item.id, item.external_reference, item.payment_external_reference].map(text).filter(Boolean);
     return ids.includes(paymentId) || refs.some(ref => invoiceRefs.includes(ref)) ? index : -1;
   }).filter(index => index >= 0);
@@ -382,7 +400,7 @@ export async function reconcileMercadoPagoPendingReceivables(input: number | Rec
   const receivables = await dbList<Row>("receivables.json");
   const candidates = receivables
     .filter((row) => {
-      const paymentId = text(row.mercado_pago_payment_id || row.mp_payment_id || row.boleto_codigo || row.pix_codigo);
+      const paymentId = mercadoPagoPaymentIdFromReceivable(row);
       if (!paymentId) return false;
       if (isManualSettlementLocked(row)) return false;
       if (!isOpenFinanceStatus(row.status || row.situacao)) return false;
@@ -404,7 +422,7 @@ export async function reconcileMercadoPagoPendingReceivables(input: number | Rec
 
   try {
     for (const row of candidates) {
-      const paymentId = text(row.mercado_pago_payment_id || row.mp_payment_id || row.boleto_codigo || row.pix_codigo);
+      const paymentId = mercadoPagoPaymentIdFromReceivable(row);
       if (!paymentId) continue;
       checked++;
       try {

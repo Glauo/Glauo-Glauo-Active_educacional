@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbList } from "@/lib/db";
 import { isAdminOrCoordinator } from "@/lib/roles";
-import { syncMercadoPagoPayment } from "@/lib/mercadopago-sync";
+import { mercadoPagoPaymentIdFromReceivable, syncMercadoPagoPayment } from "@/lib/mercadopago-sync";
 
 type Row = Record<string, unknown>;
 
@@ -27,12 +27,7 @@ export async function POST(req: NextRequest) {
     if (!lancamento) {
       return NextResponse.json({ error: "Lancamento nao encontrado." }, { status: 404 });
     }
-    paymentId = text(
-      lancamento.mercado_pago_payment_id ||
-      lancamento.mp_payment_id ||
-      lancamento.boleto_codigo ||
-      lancamento.pix_codigo
-    );
+    paymentId = mercadoPagoPaymentIdFromReceivable(lancamento);
   }
 
   if (!paymentId) {

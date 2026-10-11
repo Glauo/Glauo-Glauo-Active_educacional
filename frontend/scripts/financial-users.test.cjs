@@ -150,6 +150,25 @@ test('scheduled payment reconciliation requires internal secret and returns aggr
   assert.deepEqual(await response.json().then(({ ok, checked, matched, paid, errors }) => ({ ok, checked, matched, paid, errors })),
     { ok: true, checked: 2, matched: 2, paid: 1, errors: 0 });
 });
+test('automatic reconciliation ignores internal document codes that are not Mercado Pago payment ids', async () => {
+  const db = memoryDb({ receivables: [
+    { id: 'internal-code', status: 'Pendente', boleto_codigo: 'AE-BOLETO-38E8' },
+    { id: 'legacy-numeric', status: 'Pendente', boleto_codigo: '987' },
+  ] });
+  let requested = '';
+  const mod = load('lib/mercadopago-sync.ts', {
+    '@/lib/db': db,
+    '@/lib/student-payment-automation': { releaseStudentAccessAfterPayment: async () => ({}) },
+  }, { fetch: async url => {
+    requested = url;
+    return { ok: true, json: async () => ({ ...payment, external_reference: 'legacy-numeric' }) };
+  } });
+  const result = await mod.reconcileMercadoPagoPendingReceivables({ limit: 10, minIntervalMs: 0, force: true });
+  assert.equal(result.checked, 1);
+  assert.equal(result.errors, 0);
+  assert.equal(requested, 'https://api.mercadopago.com/v1/payments/987');
+  assert.equal(mod.mercadoPagoPaymentIdFromReceivable({ boleto_codigo: 'AE-BOLETO-38E8' }), '');
+});
 test('middleware lets the secret-protected payment reconciliation route reach its handler', async () => {
   const middleware = load('middleware.ts', {
     jose: { jwtVerify: async () => { throw new Error('not expected'); } },
