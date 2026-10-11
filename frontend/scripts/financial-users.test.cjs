@@ -217,11 +217,18 @@ test('last admin cannot be demoted, disabled or soft-deleted', () => {
 });
 test('admin can edit all supported sources including coordinator, with linked data preserved', () => {
   for (const [source, key, profile] of [['internal', 'users', 'Coordenador'], ['internal', 'users', 'Comercial'], ['teacher', 'teachers', 'Professor'], ['student', 'students', 'Aluno']]) {
-    const values = { users: [], [key]: [{ id: 'u', usuario: 'test', nome: 'Original', perfil: profile, aluno_id: 'preserve', responsavel_email: 'guardian@example.test' }] };
-    const next = management.mutateManagedUser(values, { source, id: 'u', nome: 'Edited', email: 'new@example.test' }, 'edit', 'admin');
+    const values = { users: [], [key]: [{ id: 'u', usuario: 'test', nome: 'Original', perfil: profile, cpf: '12345678901', aluno_id: 'preserve', responsavel_email: 'guardian@example.test' }] };
+    const next = management.mutateManagedUser(values, { source, id: 'u', nome: 'Edited', email: 'new@example.test', cpf: '12345678901' }, 'edit', 'admin');
     assert.equal(next.nome, 'Edited'); assert.equal(next.aluno_id, 'preserve');
     assert.equal(next.responsavel_email, 'guardian@example.test');
+    if (source === 'teacher') assert.equal(next.usuario, 'new@example.test');
     assert.equal(values.users_audit.length, 1);
+  }
+});
+test('teacher management requires complete email and CPF before enabling standard login', () => {
+  for (const body of [{ email: '', cpf: '12345678901' }, { email: 'teacher@example.test', cpf: '123' }]) {
+    const values = { users: [], teachers: [{ id: 't', usuario: 'legacy', nome: 'Teacher' }] };
+    assert.throws(() => management.mutateManagedUser(values, { source: 'teacher', id: 't', ...body }, 'edit', 'admin'), /Informe/);
   }
 });
 test('student login edits cannot collide with active staff accounts', () => {

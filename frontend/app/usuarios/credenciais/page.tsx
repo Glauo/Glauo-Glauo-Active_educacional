@@ -15,6 +15,8 @@ type ManagedUser = {
   status: string;
   is_active: boolean;
   tem_acesso: boolean;
+  credencial_completa?: boolean;
+  pendencia_credencial?: string;
   created_at?: string;
   last_login_at?: string;
   deleted_at?: string;
@@ -296,9 +298,16 @@ export default function CredenciaisUsuariosPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={`badge badge-${user.is_active ? "success" : "neutral"}`}>
-                        <span className="badge-dot" />{user.status}
-                      </span>
+                      <div className="table-name-cell">
+                        <span className={`badge badge-${user.is_active ? "success" : "neutral"}`}>
+                          <span className="badge-dot" />{user.status}
+                        </span>
+                        {user.source === "teacher" && user.credencial_completa === false && (
+                          <span className="table-name-secondary" style={{ color: "var(--warning, #b45309)", fontWeight: 700 }}>
+                            {user.pendencia_credencial || "Complete o acesso"}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td>{dateLabel(user.last_login_at)}</td>
                     <td>
@@ -375,10 +384,10 @@ export default function CredenciaisUsuariosPage() {
             <div className="modal-body">
               <div className="form-grid">
                 <div className="form-group"><label className="form-label">Nome</label><input className="form-input" value={edit.nome} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Login</label><input className="form-input" value={edit.usuario} onChange={(e) => setEdit({ ...edit, usuario: e.target.value })} /></div>
+                <div className="form-group"><label className="form-label">{edit.source === "teacher" ? "Login (e-mail)" : "Login"}</label><input className="form-input" value={edit.source === "teacher" ? edit.email.trim().toLowerCase() : edit.usuario} onChange={(e) => setEdit({ ...edit, usuario: e.target.value })} readOnly={edit.source === "teacher"} /></div>
                 <div className="form-group"><label className="form-label">Perfil</label><input className="form-input" value={edit.perfil} onChange={(e) => setEdit({ ...edit, perfil: e.target.value })} disabled={edit.source !== "internal"} /></div>
                 <div className="form-group"><label className="form-label">CPF</label><input className="form-input" value={edit.cpf} onChange={(e) => setEdit({ ...edit, cpf: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">E-mail</label><input className="form-input" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></div>
+                <div className="form-group"><label className="form-label">E-mail</label><input className="form-input" type="email" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value, ...(edit.source === "teacher" ? { usuario: e.target.value.trim().toLowerCase() } : {}) })} /></div>
                 <div className="form-group"><label className="form-label">Telefone</label><input className="form-input" value={edit.telefone} onChange={(e) => setEdit({ ...edit, telefone: e.target.value })} /></div>
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label className="checkbox-row">

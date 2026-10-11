@@ -3,6 +3,7 @@ const text = (v: unknown) => String(v || "").trim();
 const lower = (v: unknown) => text(v).toLowerCase();
 const active = (row: Row) => row.is_active !== false && !row.deleted_at && !/inativ|cancel|arquiv/i.test(text(row.status));
 const admin = (row: Row) => lower(row.perfil).includes("admin");
+const digits = (value: unknown) => text(value).replace(/\D/g, "");
 
 export class UserManagementError extends Error {
   constructor(message: string, public status: number) { super(message); }
@@ -30,7 +31,15 @@ export function mutateManagedUser(values: Record<string, unknown>, body: Row, ac
   const now = new Date().toISOString();
   const next: Row = { ...current, updated_at: now, updated_by: actor };
   if (action === "edit") {
-    const login = lower(body.usuario || current.usuario || current.login);
+    const teacherEmail = source === "teacher" ? lower(body.email ?? current.email) : "";
+    const teacherCpf = source === "teacher" ? digits(body.cpf ?? current.cpf) : "";
+    if (source === "teacher" && !/^\S+@\S+\.\S+$/.test(teacherEmail)) {
+      throw new UserManagementError("Informe um e-mail valido. Ele sera o login do professor.", 400);
+    }
+    if (source === "teacher" && teacherCpf.length !== 11) {
+      throw new UserManagementError("Informe o CPF completo com 11 digitos.", 400);
+    }
+    const login = source === "teacher" ? teacherEmail : lower(body.usuario || current.usuario || current.login);
     if (!login) throw new UserManagementError("Login obrigatorio.", 400);
     const conflicts = source === "student" ? [...rows, ...users] : users;
     if (conflicts.some(row => row !== current && row !== linked && active(row) && lower(row.usuario || row.login) === login)) {
@@ -46,6 +55,7 @@ export function mutateManagedUser(values: Record<string, unknown>, body: Row, ac
     for (const field of ["email", "cpf", "telefone"]) {
       if (body[field] !== undefined) next[field] = field === "cpf" ? text(body[field]).replace(/\D/g, "") : text(body[field]);
     }
+    if (source === "teacher") Object.assign(next, { email: teacherEmail, cpf: teacherCpf });
     if (body.telefone !== undefined) Object.assign(next, { celular: next.telefone, whatsapp: next.telefone });
     // Do not overwrite the guardian's separate contact with the student's contact.
   } else if (action === "delete") {

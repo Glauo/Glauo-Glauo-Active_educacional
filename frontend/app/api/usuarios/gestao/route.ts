@@ -58,18 +58,24 @@ function listPayload(users: Row[], teachers: Row[], students: Row[]) {
   const teachersPayload = teachers.map((teacher) => {
     const linked = linkedTeacherUser(users, teacher);
     const nome = text(teacher.nome || teacher.name);
+    const email = lower(teacher.email || linked?.email);
+    const cpf = digits(teacher.cpf || linked?.cpf);
+    const credentialReady = /^\S+@\S+\.\S+$/.test(email) && cpf.length === 11;
     return {
       source: "teacher",
       id: text(teacher.id || nome),
       nome,
       usuario: text(linked?.usuario || teacher.usuario || teacher.login),
       perfil: text(linked?.perfil || "Professor"),
-      email: text(teacher.email || linked?.email),
+      email,
       telefone: text(teacher.celular || teacher.telefone || teacher.whatsapp || linked?.celular || linked?.telefone),
-      cpf: text(teacher.cpf),
+      cpf,
       status: isActiveRow(teacher) ? "Ativo" : "Inativo",
       is_active: isActiveRow(teacher),
       tem_acesso: Boolean(text(linked?.usuario || teacher.usuario || teacher.login) && text(linked?.senha || teacher.senha)),
+      credencial_completa: credentialReady,
+      pendencia_credencial: credentialReady ? "" : !email && cpf.length !== 11
+        ? "Informe e-mail e CPF" : !email ? "Informe o e-mail" : "Informe o CPF completo",
       created_at: text(teacher.created_at || linked?.created_at),
       last_login_at: text(linked?.last_login_at),
       deleted_at: text(teacher.deleted_at || linked?.deleted_at),
