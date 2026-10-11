@@ -150,6 +150,18 @@ test('scheduled payment reconciliation requires internal secret and returns aggr
   assert.deepEqual(await response.json().then(({ ok, checked, matched, paid, errors }) => ({ ok, checked, matched, paid, errors })),
     { ok: true, checked: 2, matched: 2, paid: 1, errors: 0 });
 });
+test('middleware lets the secret-protected payment reconciliation route reach its handler', async () => {
+  const middleware = load('middleware.ts', {
+    jose: { jwtVerify: async () => { throw new Error('not expected'); } },
+    '@/lib/jwt-config': { jwtSecret: () => new Uint8Array(32) },
+    './lib/jwt-config': { jwtSecret: () => new Uint8Array(32) },
+  });
+  const response = await middleware.middleware(new NextRequest('https://example.test/api/financeiro/cron-pagamentos', {
+    method: 'POST', headers: { 'x-cron-secret': 'test-secret' },
+  }));
+  assert.equal(response.headers.get('x-middleware-next'), '1');
+  assert.match(middleware.config.matcher[0], /cron-pagamentos/);
+});
 test('boleto creation sends the resolved technical expiration and installment reference', async () => {
   let submitted;
   const mod = load('lib/criar-pagamento-boleto.ts', { mercadopago: {
