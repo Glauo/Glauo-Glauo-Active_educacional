@@ -162,12 +162,12 @@ const [error, setError] = useState("");
 
 
 <div className="form-group">
-              <label className="form-label" htmlFor="usuario">Usuário</label>
+              <label className="form-label" htmlFor="usuario">E-mail ou usuário</label>
               <input
                 id="usuario"
                 type="text"
                 className="form-input"
-                placeholder="Seu usuário de acesso"
+                placeholder="Seu e-mail ou usuário de acesso"
                 value={usuario}
                 onChange={(e) => setUsuario(e.target.value)}
                 required

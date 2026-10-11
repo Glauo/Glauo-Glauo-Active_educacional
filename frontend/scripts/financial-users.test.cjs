@@ -290,6 +290,44 @@ test('administrator can authenticate with an existing bcrypt credential hash', a
   assert.equal(user.usuario, 'admin');
   assert.equal(await auth.validateCredentials('admin', 'wrong'), null);
 });
+test('legacy professor can authenticate with registered email and full CPF without gaining admin access', async () => {
+  const db = memoryDb({
+    users: [{ id: 'u1', professor_id: 'p1', usuario: 'old-login', senha: 'old-password', perfil: 'Professor', pessoa: 'Docente', is_active: true }],
+    teachers: [{ id: 'p1', nome: 'Docente', email: 'docente@example.test', cpf: '123.456.789-01', is_active: true }],
+  });
+  const auth = load('lib/auth.ts', { '@/lib/db': db, jose: {}, 'next/headers': {} });
+  const user = await auth.validateCredentials(' DOCENTE@example.test ', '12345678901');
+  assert.equal(user.perfil, 'Professor');
+  assert.equal(user.usuario, 'old-login');
+  assert.equal(await auth.validateCredentials('docente@example.test', '12345678900'), null);
+});
+test('CPF fallback never authenticates an administrator', async () => {
+  const db = memoryDb({ users: [{ usuario: 'admin@example.test', email: 'admin@example.test', cpf: '12345678901',
+    senha: 'real-admin-password', perfil: 'Admin', pessoa: 'Administrador', is_active: true }] });
+  const auth = load('lib/auth.ts', { '@/lib/db': db, jose: {}, 'next/headers': {} });
+  assert.equal(await auth.validateCredentials('admin@example.test', '12345678901'), null);
+  assert.equal((await auth.validateCredentials('admin@example.test', 'real-admin-password')).perfil, 'Admin');
+});
+test('new professor stores email login and hashed full CPF password in teacher and user records', async () => {
+  const db = memoryDb({ users: [], teachers: [] });
+  const route = load('app/api/professores/route.ts', {
+    '@/lib/auth': { getSession: async () => ({ usuario: 'admin', perfil: 'Admin' }) },
+    '@/lib/db': db,
+  });
+  const response = await route.POST(new NextRequest('https://example.test/api/professores', { method: 'POST',
+    body: JSON.stringify({ nome: 'Docente Nova', email: 'DOCENTE@EXAMPLE.TEST', cpf: '123.456.789-01', status: 'Ativo' }) }));
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.professor.usuario, 'docente@example.test');
+  assert.equal(body.professor.senha, undefined);
+  const snapshot = db.snapshot();
+  assert.equal(snapshot.users[0].usuario, 'docente@example.test');
+  assert.equal(snapshot.users[0].perfil, 'Professor');
+  assert.equal(snapshot.users[0].must_change_password, false);
+  assert.match(snapshot.users[0].senha, /^scrypt\$/);
+  assert.equal(await load('lib/passwords.ts').verifyPassword('12345678901', snapshot.users[0].senha), true);
+  assert.equal(await load('lib/passwords.ts').verifyPassword('12345', snapshot.users[0].senha), false);
+});
 test('valid administrator login is not rejected when last-login audit write fails', async () => {
   const route = load('app/api/auth/route.ts', {
     '@/lib/auth': {

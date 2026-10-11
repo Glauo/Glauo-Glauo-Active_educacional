@@ -75,16 +75,8 @@ function toPtDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
-function autoLogin(dateValue: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-    const [year, month, day] = dateValue.split("-");
-    return `${day}${month}${year}`;
-  }
-  return digits(dateValue);
-}
-
 function autoPassword(cpf: string) {
-  return digits(cpf).slice(0, 5);
+  return digits(cpf);
 }
 
 function text(value: unknown) {
@@ -139,8 +131,8 @@ function fromProf(p?: ProfessorData): Form {
     endereco: String(p?.endereco || ""),
     observacoes: String(p?.observacoes || ""),
     status: String(p?.status || "Ativo"),
-    login: String(p?.usuario || p?.login || autoLogin(toInputDate(p?.data_nascimento))),
-    senha: String(p?.senha || autoPassword(String(p?.cpf || ""))),
+    login: String(p?.email || p?.usuario || p?.login || "").trim().toLowerCase(),
+    senha: autoPassword(String(p?.cpf || "")),
   };
 }
 
@@ -170,7 +162,7 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
   function preencherAcessoAutomatico() {
     setForm((prev) => ({
       ...prev,
-      login: autoLogin(prev.data_nascimento),
+      login: prev.email.trim().toLowerCase(),
       senha: autoPassword(prev.cpf),
     }));
     setErro("");
@@ -181,12 +173,14 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
       setErro("O nome do professor e obrigatorio.");
       return;
     }
-    if (!form.login.trim()) {
-      setErro("Informe o login do professor.");
+    const loginPadrao = form.email.trim().toLowerCase();
+    const senhaPadrao = autoPassword(form.cpf);
+    if (!/^\S+@\S+\.\S+$/.test(loginPadrao)) {
+      setErro("Informe um e-mail valido. Ele sera o login do professor.");
       return;
     }
-    if (form.senha.trim().length < 4) {
-      setErro("Senha precisa ter pelo menos 4 caracteres.");
+    if (senhaPadrao.length !== 11) {
+      setErro("Informe o CPF completo com 11 digitos. Ele sera a senha inicial.");
       return;
     }
     setSaving(true);
@@ -203,9 +197,9 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
       whatsapp: form.celular.trim(),
       data_nascimento: toPtDate(form.data_nascimento),
       cpf: form.cpf.trim(),
-      usuario: form.login.trim().toLowerCase(),
-      login: form.login.trim().toLowerCase(),
-      senha: form.senha.trim(),
+      usuario: loginPadrao,
+      login: loginPadrao,
+      senha: senhaPadrao,
     };
     const res = await fetch("/api/professores", {
       method: isEdit ? "PUT" : "POST",
@@ -264,7 +258,11 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
             </div>
             <div className="form-group">
               <label className="form-label">E-mail</label>
-              <input className="form-input" type="email" placeholder="email@exemplo.com" value={form.email} onChange={(e) => update("email", e.target.value)} />
+              <input className="form-input" type="email" placeholder="email@exemplo.com" value={form.email} onChange={(e) => {
+                const email = e.target.value;
+                setForm((prev) => ({ ...prev, email, login: email.trim().toLowerCase() }));
+                setErro("");
+              }} />
             </div>
             <div className="form-group">
               <label className="form-label">Celular / WhatsApp</label>
@@ -276,22 +274,26 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
             </div>
             <div className="form-group">
               <label className="form-label">CPF *</label>
-              <input className="form-input" placeholder="CPF" value={form.cpf} onChange={(e) => update("cpf", e.target.value)} />
+              <input className="form-input" placeholder="CPF" value={form.cpf} onChange={(e) => {
+                const cpf = e.target.value;
+                setForm((prev) => ({ ...prev, cpf, senha: autoPassword(cpf) }));
+                setErro("");
+              }} />
             </div>
             <div className="form-group">
-              <label className="form-label">Login do professor</label>
-              <input className="form-input" value={form.login} onChange={(e) => update("login", e.target.value)} placeholder="login manual" />
+              <label className="form-label">Login do professor (e-mail)</label>
+              <input className="form-input" value={form.email.trim().toLowerCase()} readOnly placeholder="Preencha o e-mail" />
             </div>
             <div className="form-group">
-              <label className="form-label">Senha do professor</label>
-              <input className="form-input" value={form.senha} onChange={(e) => update("senha", e.target.value)} placeholder="senha manual" />
-              <div className="form-help">O ADM pode digitar manualmente ou gerar pela data/CPF.</div>
+              <label className="form-label">Senha inicial do professor</label>
+              <input className="form-input" value={autoPassword(form.cpf)} readOnly placeholder="CPF completo sem pontuacao" />
+              <div className="form-help">Padrao obrigatorio: e-mail cadastrado e CPF completo sem pontuacao.</div>
             </div>
             <div className="form-group form-group-span2">
               <label className="form-label">Envio de acesso</label>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="btn btn-secondary btn-sm" type="button" onClick={preencherAcessoAutomatico}>
-                  Gerar login/senha automatico
+                  Aplicar padrao e-mail / CPF
                 </button>
                 <button
                   type="button"
@@ -364,7 +366,7 @@ function ProfessorModal({ professor, onClose, onSaved }: { professor?: Professor
               <textarea className="form-input form-textarea" rows={3} value={form.observacoes} onChange={(e) => update("observacoes", e.target.value)} />
             </div>
           </div>
-          <div style={{ marginTop: 12 }} className="form-success">Login e senha podem ser preenchidos manualmente pelo ADM. Use o botao automatico quando quiser seguir o padrao antigo.</div>
+          <div style={{ marginTop: 12 }} className="form-success">Acesso do funcionario: login pelo e-mail e senha inicial pelo CPF completo, sem pontuacao. O perfil Professor nao recebe acesso administrativo.</div>
           {erro && <div className="form-error">{erro}</div>}
         </div>
 

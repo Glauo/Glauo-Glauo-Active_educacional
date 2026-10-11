@@ -166,7 +166,7 @@ export default async function ProfessoresPage() {
                           <span className="badge-dot" />{status}
                         </span>
                       </td>
-                      <td>{manage && <EditarProfessorBtn professor={p} />}</td>
+                      <td>{manage && <EditarProfessorBtn professor={{ ...p, senha: undefined }} />}</td>
                     </tr>
                   );
                 })}

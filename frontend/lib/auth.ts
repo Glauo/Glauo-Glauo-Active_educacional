@@ -19,10 +19,13 @@ export type SessionUser = {
 
 type RawUser = {
   id?: string;
-  usuario: string;
-  senha: string;
-  perfil: string;
-  pessoa: string;
+  usuario?: string;
+  senha?: string;
+  perfil?: string;
+  pessoa?: string;
+  email?: string;
+  cpf?: string;
+  professor_id?: string;
   unit?: string;
   is_active?: boolean;
   status?: string;
@@ -85,6 +88,14 @@ function normalize(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
+function digits(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function isAdminProfile(value: unknown) {
+  return normalize(value).includes("admin");
+}
+
 function isActiveRecord(record: { is_active?: boolean; status?: string; deleted_at?: string } | null | undefined) {
   if (!record) return false;
   if (record.is_active === false) return false;
@@ -113,10 +124,36 @@ export async function validateCredentials(
   const users: RawUser[] = await dbList<RawUser>("users.json");
 
 
-  const candidates = users.filter(u => isActiveRecord(u) && normalize(u.usuario) === login);
+  const candidates = users.filter(u => isActiveRecord(u) &&
+    (normalize(u.usuario) === login || normalize(u.email) === login));
   const matches = [];
-  for (const user of candidates) if (await verifyPassword(password, user.senha)) matches.push(user);
-  const found = matches.length === 1 ? matches[0] : null;
+  for (const user of candidates) {
+    const passwordMatches = await verifyPassword(password, user.senha);
+    const cpfMatches = !isAdminProfile(user.perfil) && digits(password).length === 11 &&
+      digits(user.cpf) === digits(password);
+    if (passwordMatches || cpfMatches) matches.push(user);
+  }
+  let found = matches.length === 1 ? matches[0] : null;
+
+  // Legacy professor records may have the CPF only in teachers and an old
+  // login/password in users. Email + full CPF is accepted only for a uniquely
+  // linked, active, non-admin account.
+  if (!found && login.includes("@") && digits(password).length === 11) {
+    const teachers = await dbList<Record<string, unknown>>("teachers.json");
+    const teacherMatches = teachers.filter(teacher => isActiveRecord(teacher) &&
+      normalize(teacher.email) === login && digits(teacher.cpf) === digits(password));
+    if (teacherMatches.length === 1) {
+      const teacher = teacherMatches[0];
+      const teacherId = String(teacher.id || teacher.nome || "").trim();
+      const teacherName = normalize(teacher.nome || teacher.name);
+      const linkedUsers = users.filter(user => isActiveRecord(user) && !isAdminProfile(user.perfil) && (
+        (teacherId && String(user.professor_id || "").trim() === teacherId) ||
+        normalize(user.usuario) === login || normalize(user.email) === login ||
+        (teacherName && normalize(user.pessoa) === teacherName)
+      ));
+      if (linkedUsers.length === 1) found = linkedUsers[0];
+    }
+  }
 
   if (!found) {
     return validateStudentCredentials(login, password);
@@ -126,9 +163,9 @@ export async function validateCredentials(
     must_change_password: Boolean(found.must_change_password),
     password_reset_at: String(found.password_reset_at || ""),
     record_id: found.id == null ? undefined : String(found.id),
-    usuario: found.usuario,
-    perfil: found.perfil,
-    pessoa: found.pessoa,
+    usuario: String(found.usuario || found.email || login),
+    perfil: String(found.perfil || ""),
+    pessoa: String(found.pessoa || found.usuario || found.email || login),
     unit: unit || found.unit || "Matriz"
   };
 }
