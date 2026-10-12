@@ -13,6 +13,7 @@ import {
   type CommercialLead,
 } from "@/lib/comercial";
 import { dbList } from "@/lib/db";
+import { isAdmin } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
 export default async function ComercialPage() {
@@ -51,7 +52,7 @@ export default async function ComercialPage() {
         <div className="metric-card metric-card-green"><div className="metric-label">Agenda aberta</div><div className="metric-value">{agendados}</div><div className="metric-note">{quentes} oportunidades quentes | {pagamentos.length} registros financeiros</div></div>
       </section>
 
-      <ComercialCrm leads={leads} agenda={agenda} seller={userName} />
+      <ComercialCrm leads={leads} agenda={agenda} seller={userName} canDelete={isAdmin(session)} />
     </AppShell>
   );
 }

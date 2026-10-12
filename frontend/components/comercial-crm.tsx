@@ -200,7 +200,7 @@ async function sendSalesWhatsApp(phone: string, message: string) {
   return text((data as { status?: string }).status || "enviado");
 }
 
-function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; seller: string; onClose: () => void; onSaved: () => void }) {
+function LeadModal({ lead, seller, canDelete, onClose, onSaved }: { lead?: CommercialLead; seller: string; canDelete: boolean; onClose: () => void; onSaved: () => void }) {
   const isEdit = Boolean(lead?.id);
   const [form, setForm] = useState<LeadForm>(() => leadForm(lead, seller));
   const [saving, setSaving] = useState(false);
@@ -219,6 +219,24 @@ function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; 
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar lead.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!lead?.id) return;
+    const company = text(lead.empresa);
+    const label = company ? `${company} / ${leadName(lead)}` : leadName(lead);
+    const confirmed = window.confirm(`Excluir definitivamente o cadastro "${label}"?\n\nOs agendamentos vinculados tambem serao removidos. Registros financeiros permanecem preservados.`);
+    if (!confirmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiRequest(`/api/comercial/leads?id=${encodeURIComponent(text(lead.id))}`, "DELETE");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao excluir cadastro.");
     } finally {
       setSaving(false);
     }
@@ -252,6 +270,7 @@ function LeadModal({ lead, seller, onClose, onSaved }: { lead?: CommercialLead; 
           {error && <div className="form-error">{error}</div>}
         </div>
         <div className="modal-footer">
+          {isEdit && canDelete && <button className="btn btn-danger btn-sm" type="button" onClick={remove} disabled={saving} style={{ marginRight: "auto" }}>Excluir empresa / contato</button>}
           <button className="btn btn-secondary" type="button" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="btn btn-primary" type="button" onClick={save} disabled={saving}>{saving ? "Salvando..." : isEdit ? "Salvar lead" : "Criar lead"}</button>
         </div>
@@ -497,7 +516,7 @@ function SalesMessageModal({ leads, seller, onClose }: { leads: CommercialLead[]
   );
 }
 
-export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[]; agenda: CommercialAgendaItem[]; seller: string }) {
+export function ComercialCrm({ leads, agenda, seller, canDelete }: { leads: CommercialLead[]; agenda: CommercialAgendaItem[]; seller: string; canDelete: boolean }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
@@ -623,7 +642,7 @@ export function ComercialCrm({ leads, agenda, seller }: { leads: CommercialLead[
         </div>
       </section>
 
-      {leadModal && <LeadModal lead={leadModal === "new" ? undefined : leadModal} seller={seller} onClose={() => setLeadModal(null)} onSaved={saved} />}
+      {leadModal && <LeadModal lead={leadModal === "new" ? undefined : leadModal} seller={seller} canDelete={canDelete} onClose={() => setLeadModal(null)} onSaved={saved} />}
       {agendaModal && <AgendaModal item={agendaModal.item} lead={agendaModal.lead} leads={leads} onClose={() => setAgendaModal(null)} onSaved={saved} />}
       {salesModal && <SalesMessageModal leads={visibleLeads} seller={seller} onClose={() => setSalesModal(false)} />}
       {firstContactLead && <FirstContactModal lead={firstContactLead} onClose={() => setFirstContactLead(null)} />}

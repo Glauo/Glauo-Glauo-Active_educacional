@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { dbList, dbSet } from "@/lib/db";
+import { dbList, dbSet, dbTransaction } from "@/lib/db";
 import {
+  SALES_AGENDA_KEY,
+  SALES_AUDIT_KEY,
   SALES_LEADS_KEY,
   canManageCommercial,
   leadPhone,
@@ -10,6 +12,7 @@ import {
   text,
   type CommercialLead,
 } from "@/lib/comercial";
+import { isAdmin } from "@/lib/roles";
 
 function unauthorized() {
   return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
@@ -129,4 +132,60 @@ export async function PUT(req: NextRequest) {
   leads[index] = next;
   await dbSet(SALES_LEADS_KEY, leads);
   return NextResponse.json({ lead: next });
+}
+
+class LeadDeleteError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return unauthorized();
+  if (!isAdmin(session)) {
+    return NextResponse.json({ error: "Apenas o administrador pode excluir empresas e contatos." }, { status: 403 });
+  }
+
+  const id = text(new URL(req.url).searchParams.get("id"));
+  if (!id) return NextResponse.json({ error: "id obrigatorio." }, { status: 400 });
+
+  try {
+    const result = await dbTransaction(
+      [SALES_LEADS_KEY, SALES_AGENDA_KEY, SALES_AUDIT_KEY],
+      (values) => {
+        const leads = Array.isArray(values.sales_leads) ? values.sales_leads as CommercialLead[] : [];
+        const index = leads.findIndex((lead) => text(lead.id) === id);
+        if (index === -1) throw new LeadDeleteError("Cadastro nao encontrado.", 404);
+
+        const lead = leads[index];
+        const agenda = Array.isArray(values.sales_agenda) ? values.sales_agenda as Record<string, unknown>[] : [];
+        const relatedAgenda = agenda.filter((item) => text(item.lead_id) === id);
+        const audit = Array.isArray(values.sales_audit) ? values.sales_audit as Record<string, unknown>[] : [];
+
+        values.sales_leads = leads.filter((_, leadIndex) => leadIndex !== index);
+        values.sales_agenda = agenda.filter((item) => text(item.lead_id) !== id);
+        values.sales_audit = [...audit, {
+          id: crypto.randomUUID(),
+          data_hora: nowIso(),
+          acao: "excluir_empresa_contato",
+          responsavel: text(session.pessoa || session.usuario),
+          lead_id: id,
+          nome: text(lead.nome || lead.name),
+          empresa: text(lead.empresa),
+          agendamentos_removidos: relatedAgenda.length,
+        }];
+
+        return { removedAgenda: relatedAgenda.length };
+      },
+    );
+
+    return NextResponse.json({ ok: true, agendamentos_removidos: result.removedAgenda });
+  } catch (error) {
+    if (error instanceof LeadDeleteError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("[comercial/leads] Falha ao excluir cadastro", error);
+    return NextResponse.json({ error: "Nao foi possivel excluir o cadastro." }, { status: 500 });
+  }
 }

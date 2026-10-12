@@ -41,6 +41,39 @@ test('administrator entering through CondoJob still lands in the full admin dash
   assert.equal(response.status, 200);
   assert.equal((await response.json()).redirectTo, '/');
 });
+test('only administrator can delete a commercial company/contact with linked agenda and audit trail', async () => {
+  const initial = {
+    sales_leads: [
+      { id: 'lead-1', nome: 'Sindica Alpha', empresa: 'Condominio Alpha' },
+      { id: 'lead-2', nome: 'Sindico Beta', empresa: 'Condominio Beta' },
+    ],
+    sales_agenda: [
+      { id: 'agenda-1', lead_id: 'lead-1' },
+      { id: 'agenda-2', lead_id: 'lead-2' },
+    ],
+    sales_audit: [],
+  };
+  const db = memoryDb(initial);
+  const route = load('app/api/comercial/leads/route.ts', {
+    '@/lib/auth': { getSession: async () => ({ perfil: 'Admin', usuario: 'admin', pessoa: 'Administrador' }) },
+    '@/lib/db': db,
+  });
+  const response = await route.DELETE(new NextRequest('https://example.test/api/comercial/leads?id=lead-1', { method: 'DELETE' }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(db.snapshot().sales_leads.map(item => item.id), ['lead-2']);
+  assert.deepEqual(db.snapshot().sales_agenda.map(item => item.id), ['agenda-2']);
+  assert.equal(db.snapshot().sales_audit.at(-1).acao, 'excluir_empresa_contato');
+  assert.equal(db.snapshot().sales_audit.at(-1).responsavel, 'Administrador');
+
+  const forbiddenDb = memoryDb(initial);
+  const forbiddenRoute = load('app/api/comercial/leads/route.ts', {
+    '@/lib/auth': { getSession: async () => ({ perfil: 'Comercial', usuario: 'vendas' }) },
+    '@/lib/db': forbiddenDb,
+  });
+  const forbidden = await forbiddenRoute.DELETE(new NextRequest('https://example.test/api/comercial/leads?id=lead-1', { method: 'DELETE' }));
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbiddenDb.snapshot().sales_leads.length, 2);
+});
 test('concurrent duplicate webhooks create exactly one receipt', async () => {
   const f = finance();
   await Promise.all(Array.from({ length: 15 }, () => f.syncMercadoPagoPayment('987', 'webhook')));

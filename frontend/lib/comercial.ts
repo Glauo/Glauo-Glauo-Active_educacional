@@ -1,5 +1,6 @@
 export const SALES_LEADS_KEY = "sales_leads.json";
 export const SALES_AGENDA_KEY = "sales_agenda.json";
+export const SALES_AUDIT_KEY = "sales_audit.json";
 
 export const COMMERCIAL_WEBSITE = "https://condojob.org";
 export const CONDOJOB_PRESENTATION_MESSAGE = `Olá, tudo bem? Sou *Glauco Volpini, da CondoJob*.
